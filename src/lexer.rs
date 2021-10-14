@@ -1,5 +1,4 @@
 use crate::token;
-use std::str::Chars;
 
 pub struct Lexer {
   input: Vec<char>,
