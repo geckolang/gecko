@@ -1,12 +1,12 @@
-use crate::{pass, int_kind, void_kind, prototype, function, block};
+use crate::{int_kind, pass, void_kind};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyKindNode {
-  IntKind(int_kind::IntKind),
-  VoidKind(void_kind::VoidKind),
+pub enum AnyKindNode<'a> {
+  IntKind(&'a int_kind::IntKind),
+  VoidKind(&'a void_kind::VoidKind),
 }
 
-impl AnyKindNode {
+impl AnyKindNode<'_> {
   pub fn into_int_kind(&self) -> Option<&int_kind::IntKind> {
     if let AnyKindNode::IntKind(t) = self {
       return Some(t);
@@ -24,22 +24,10 @@ impl AnyKindNode {
   }
 }
 
-impl From<int_kind::IntKind> for AnyKindNode {
-  fn from(int_kind: int_kind::IntKind) -> Self {
-    AnyKindNode::IntKind(int_kind)
-  }
-}
-
-impl From<void_kind::VoidKind> for AnyKindNode {
-  fn from(void_kind: void_kind::VoidKind) -> Self {
-    AnyKindNode::VoidKind(void_kind)
-  }
-}
-
 pub trait Node {
   fn accept(&self, ps: &dyn pass::Pass);
 
-  fn get_children(&self, ) -> Vec<&dyn Node> {
+  fn get_children(&self) -> Vec<&dyn Node> {
     vec![]
   }
 }

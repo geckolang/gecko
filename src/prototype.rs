@@ -9,6 +9,6 @@ pub struct Prototype {
 
 impl node::Node for Prototype {
   fn accept(&self, pass: &dyn pass::Pass) {
-    pass.visit_prototype(self);
+    // pass.visit_prototype(self);
   }
 }

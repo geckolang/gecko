@@ -8,6 +8,6 @@ pub struct IntKind {
 
 impl node::Node for IntKind {
   fn accept(&self, pass: &dyn pass::Pass) {
-    pass.visit_int_kind(self);
+    // pass.visit_int_kind(self);
   }
 }

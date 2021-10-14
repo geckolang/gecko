@@ -8,6 +8,6 @@ pub struct Function {
 
 impl node::Node for Function {
   fn accept(&self, pass: &dyn pass::Pass) {
-    pass.visit_function(self);
+    // pass.visit_function(self);
   }
 }

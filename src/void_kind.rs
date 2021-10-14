@@ -8,6 +8,6 @@ pub struct VoidKind {
 
 impl node::Node for VoidKind {
   fn accept(&self, pass: &dyn pass::Pass) {
-    pass.visit_void_kind(self);
+    // pass.visit_void_kind(self);
   }
 }
