@@ -77,7 +77,7 @@ impl Iterator for Lexer {
 
     match self.current_char {
       '{' => {
-        token = token::Token::BraceL(self.current_char);
+        token = token::Token::BraceL;
       }
       '\0' => {
         token = token::Token::EOF;

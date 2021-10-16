@@ -1,12 +1,21 @@
-use crate::{block, node, token};
+use crate::{block, int_kind, node, prototype, token};
 
 macro_rules! skip {
-  ($self:expr, $tok:expr) => {
-    if (!$self.is($tok)) {
+  ($self:expr, $token:expr) => {
+    if (!$self.is($token)) {
       return None;
     }
 
     $self.skip();
+  };
+}
+
+macro_rules! require {
+  ($self:expr, $expr:expr) => {
+    match $expr {
+      None => return None,
+      _ => $expr.unwrap(),
+    };
   };
 }
 
@@ -25,10 +34,7 @@ impl Parser {
       return false;
     }
 
-    match &self.tokens[self.index] {
-      token => true,
-      _ => false,
-    }
+    self.tokens[self.index] == token
   }
 
   fn skip(&mut self) {
@@ -59,20 +65,71 @@ impl Parser {
   }
 
   pub fn parse_block(&mut self) -> Option<block::Block> {
-    skip!(self, token::Token::BraceL('{'));
+    skip!(self, token::Token::BraceL);
 
     // TODO: Do not depend on an EOF token, (can't enforce its presence in tokens vector).
-    while !self.is(token::Token::BraceR('}')) && !self.is(token::Token::EOF) {
+    while !self.is(token::Token::BraceR) && !self.is(token::Token::EOF) {
       // TODO: Parse expressions.
     }
 
-    skip!(self, token::Token::BraceR('}'));
+    skip!(self, token::Token::BraceR);
 
     if self.is(token::Token::EOF) {
       return None;
     }
 
     Some(block::Block {})
+  }
+
+  pub fn parse_int_kind(&mut self) -> Option<int_kind::IntKind> {
+    let token = self.tokens[self.index];
+
+    self.skip();
+
+    match token {
+      token::Token::Identifier(chars) => Some(int_kind::IntKind {
+        size: match chars.iter().cloned().collect::<String>().as_str() {
+          "i8" => int_kind::IntSize::Signed8,
+          "i16" => int_kind::IntSize::Signed16,
+          "i32" => int_kind::IntSize::Signed32,
+          "i64" => int_kind::IntSize::Signed64,
+          "i128" => int_kind::IntSize::Signed128,
+          _ => return None,
+        },
+      }),
+      _ => None,
+    }
+  }
+
+  pub fn parse_kind(&mut self) -> Option<node::AnyKindNode> {
+    // TODO: Simplify?
+    match self.tokens[self.index] {
+      token::Token::Identifier(chars) => {
+        let int_kind = self.parse_int_kind();
+
+        if int_kind.is_none() {
+          return None;
+        }
+
+        return Some(node::AnyKindNode::IntKind(&int_kind.unwrap()));
+      }
+      _ => return None,
+    };
+  }
+
+  pub fn parse_prototype(&mut self) -> Option<prototype::Prototype> {
+    skip!(self, token::Token::ParenthesesL);
+
+    let args = vec![];
+
+    while self.is(token::Token::ParenthesesR) && !self.is(token::Token::EOF) {
+      args.push((
+        require!(self, self.parse_kind()),
+        require!(self, self.parse_name()),
+      ));
+    }
+
+    None
   }
 }
 
@@ -128,9 +185,18 @@ mod tests {
 
   #[test]
   fn parser_parse_block() {
-    let mut parser = Parser::new(vec![token::Token::BraceL('{'), token::Token::BraceR('}')]);
+    let mut parser = Parser::new(vec![token::Token::BraceL, token::Token::BraceR]);
     let block = parser.parse_block();
 
     assert_eq!(false, block.is_none());
+  }
+
+  #[test]
+  fn parse_kind() {
+    let mut parser = Parser::new(vec![token::Token::Identifier(vec!['i', '8'])]);
+    let int_kind = parser.parse_int_kind();
+
+    assert_eq!(false, int_kind.is_none());
+    assert_eq!(int_kind.unwrap().size, int_kind::IntSize::Signed8);
   }
 }
