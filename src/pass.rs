@@ -30,11 +30,11 @@ pub trait Pass<'a> {
     //
   }
 
-  fn visit_int_kind(&'a mut self, _int_kind: &'a int_kind::IntKind) {
+  fn visit_int_kind(&mut self, _int_kind: &'a int_kind::IntKind) {
     //
   }
 
-  fn visit_void_kind(&mut self, _void_kind: &void_kind::VoidKind) {
+  fn visit_void_kind(&mut self, _void_kind: &'a void_kind::VoidKind) {
     //
   }
 }
