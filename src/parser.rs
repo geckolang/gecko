@@ -1,4 +1,4 @@
-use crate::{block, int_kind, node, prototype, token};
+use crate::{block, external, function, int_kind, node, prototype, token};
 
 macro_rules! skip {
   ($self:expr, $token:expr) => {
@@ -118,11 +118,15 @@ impl Parser {
   }
 
   pub fn parse_prototype(&mut self) -> Option<prototype::Prototype> {
+    let name = require!(self, self.parse_name());
+
     skip!(self, token::Token::ParenthesesL);
 
     let args = vec![];
 
     while self.is(token::Token::ParenthesesR) && !self.is(token::Token::EOF) {
+      // TODO: Support for variadic.
+
       args.push((
         require!(self, self.parse_kind()),
         require!(self, self.parse_name()),
@@ -130,6 +134,25 @@ impl Parser {
     }
 
     None
+  }
+
+  pub fn parse_function(&mut self) -> Option<function::Function> {
+    skip!(self, token::Token::Fn);
+
+    Some(function::Function {
+      prototype: require!(self, self.parse_prototype()),
+
+      // FIXME:
+      body: require!(self, self.parse_block()),
+    })
+  }
+
+  fn parse_external(&mut self) -> Option<external::External> {
+    skip!(self, token::Token::Extern);
+
+    Some(external::External{
+      prototype: require!(self, self.parse_prototype())
+    })
   }
 }
 
