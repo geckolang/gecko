@@ -150,8 +150,8 @@ impl Parser {
   fn parse_external(&mut self) -> Option<external::External> {
     skip!(self, token::Token::Extern);
 
-    Some(external::External{
-      prototype: require!(self, self.parse_prototype())
+    Some(external::External {
+      prototype: require!(self, self.parse_prototype()),
     })
   }
 }
@@ -222,4 +222,6 @@ mod tests {
     assert_eq!(false, int_kind.is_none());
     assert_eq!(int_kind.unwrap().size, int_kind::IntSize::Signed8);
   }
+
+  // TODO: Add missing tests.
 }
