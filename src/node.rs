@@ -25,9 +25,14 @@ impl AnyKindNode<'_> {
 }
 
 pub trait Node {
-  fn accept(&self, ps: &dyn pass::Pass);
+  fn accept(&mut self, ps: &dyn pass::Pass);
 
   fn get_children(&self) -> Vec<&dyn Node> {
     vec![]
   }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct Identifier {
+  name: String,
 }

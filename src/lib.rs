@@ -1,10 +1,11 @@
-pub mod token;
-pub mod lexer;
-pub mod pass;
 pub mod block;
-pub mod node;
 pub mod function;
-pub mod prototype;
 pub mod int_kind;
-pub mod void_kind;
+pub mod lexer;
 pub mod llvm_lowering_pass;
+pub mod node;
+pub mod parser;
+pub mod pass;
+pub mod prototype;
+pub mod token;
+pub mod void_kind;

@@ -30,9 +30,6 @@ impl<'a> LlvmLoweringPass<'a> {
         node::AnyKindNode::VoidKind(_) => self.visit_void_kind(node.into_void_kind().unwrap()),
       };
 
-      // TODO:
-      // self.visit();5
-
       if !self.llvm_type_map.contains_key(node) {
         return None;
       }
@@ -52,7 +49,11 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     self.llvm_type_map.insert(
       node::AnyKindNode::IntKind(int_kind),
       match int_kind.size {
+        int_kind::IntSize::Signed8 => self.llvm_context.i8_type().as_any_type_enum(),
+        int_kind::IntSize::Signed16 => self.llvm_context.i16_type().as_any_type_enum(),
         int_kind::IntSize::Signed32 => self.llvm_context.i32_type().as_any_type_enum(),
+        int_kind::IntSize::Signed64 => self.llvm_context.i64_type().as_any_type_enum(),
+        int_kind::IntSize::Signed128 => self.llvm_context.i128_type().as_any_type_enum(),
       },
     );
   }
@@ -78,18 +79,6 @@ mod tests {
   }
 
   #[test]
-  fn llvm_lowering_pass_visit_int_kind() {
-    let llvm_context = inkwell::context::Context::create();
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
-
-    llvm_lowering_pass.visit_int_kind(&int_kind::IntKind {
-      size: int_kind::IntSize::Signed32,
-    });
-
-    assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
-  }
-
-  #[test]
   fn llvm_lowering_pass_visit_or_retrieve_type() {
     let llvm_context = inkwell::context::Context::create();
     let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
@@ -109,5 +98,26 @@ mod tests {
 
     // TODO:
     // assert_eq!(1, llvm_lowering_pass.llvm_type_map.len());
+  }
+
+  #[test]
+  fn llvm_lowering_pass_visit_void_kind() {
+    let llvm_context = inkwell::context::Context::create();
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
+
+    llvm_lowering_pass.visit_void_kind(&void_kind::VoidKind {});
+    assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
+  }
+
+  #[test]
+  fn llvm_lowering_pass_visit_int_kind() {
+    let llvm_context = inkwell::context::Context::create();
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
+
+    llvm_lowering_pass.visit_int_kind(&int_kind::IntKind {
+      size: int_kind::IntSize::Signed32,
+    });
+
+    assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
   }
 }
