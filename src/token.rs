@@ -1,22 +1,31 @@
+use crate::diagnostic;
+
 #[derive(PartialEq, Debug)]
 pub enum Token {
   EOF,
-  Identifier(Vec<char>),
+  Identifier(String),
   Integer(Vec<char>),
-  Fn,
-  Extern,
-  BraceL,
-  BraceR,
-  ParenthesesL,
-  ParenthesesR,
+  KeywordPub,
+  KeywordFn,
+  KeywordExtern,
+  TypeVoid,
+  TypeIntSigned32,
+  SymbolBraceL,
+  SymbolBraceR,
+  SymbolParenthesesL,
+  SymbolParenthesesR,
 }
 
-pub fn get_keyword_token(chars: &Vec<char>) -> Result<Token, String> {
-  let identifier: String = chars.into_iter().collect();
-
-  match &identifier[..] {
-    "fn" => Ok(Token::Fn),
-    "extern" => Ok(Token::Extern),
-    _ => Err(String::from("Not a keyword")),
+pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnostic::Diagnostic> {
+  match identifier_str {
+    "pub" => Ok(Token::KeywordPub),
+    "fn" => Ok(Token::KeywordFn),
+    "extern" => Ok(Token::KeywordExtern),
+    "void" => Ok(Token::TypeVoid),
+    "i32" => Ok(Token::TypeIntSigned32),
+    _ => Err(diagnostic::Diagnostic {
+      message: format!("identifier `{}` is not a keyword", identifier_str),
+      severity: diagnostic::DiagnosticSeverity::Error,
+    }),
   }
 }

@@ -1,23 +1,61 @@
-use crate::{block, external, function, int_kind, node, prototype, token};
+use crate::{block, diagnostic, external, function, int_kind, node, prototype, token, void_kind};
 
-macro_rules! skip {
+macro_rules! skip_past {
   ($self:expr, $token:expr) => {
-    if (!$self.is($token)) {
-      return None;
+    if !$self.is($token) {
+      return Err(diagnostic::Diagnostic {
+        message: format!(
+          "expected token `{:?}` but got `{:?}`",
+          $token, $self.tokens[$self.index]
+        ),
+        severity: diagnostic::DiagnosticSeverity::Error,
+      });
     }
 
     $self.skip();
   };
 }
 
-macro_rules! require {
-  ($self:expr, $expr:expr) => {
-    match $expr {
-      None => return None,
-      _ => $expr.unwrap(),
-    };
+#[macro_export]
+macro_rules! assert {
+  ($condition:expr) => {
+    match $condition {
+      true => true,
+      false => {
+        return Err(diagnostic::Diagnostic {
+          message: format!("assertion failed: `{}`", stringify!($condition)),
+          severity: diagnostic::DiagnosticSeverity::Internal,
+        });
+      }
+    }
   };
 }
+
+macro_rules! assert_ok {
+  ($expr:expr) => {
+    match $expr {
+      Ok(_) => $expr.ok().unwrap(),
+      Err(_) => return Result::Err($expr.err().unwrap()),
+    }
+  };
+}
+
+macro_rules! assert_some {
+  ($expr:expr) => {
+    match $expr {
+      None => {
+        return Err(diagnostic::Diagnostic {
+          // TODO:
+          message: String::from("todo temporary val"),
+          severity: diagnostic::DiagnosticSeverity::Error,
+        });
+      }
+      _ => $expr.unwrap(),
+    }
+  };
+}
+
+type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 
 struct Parser {
   tokens: Vec<token::Token>,
@@ -37,121 +75,142 @@ impl Parser {
     self.tokens[self.index] == token
   }
 
-  fn skip(&mut self) {
+  fn skip(&mut self) -> Option<&token::Token> {
     // FIXME: Address out of bounds problem.
     if self.index + 1 >= self.tokens.len() {
-      return;
+      return None;
     }
 
     self.index += 1;
+
+    Some(&self.tokens[self.index])
   }
 
-  pub fn parse_name(&mut self) -> Option<String> {
-    // TODO: Empty vector?
-    skip!(self, token::Token::Identifier(vec![]));
+  pub fn parse_name(&mut self) -> ParserResult<String> {
+    // TODO: Empty string?
+    skip_past!(self, token::Token::Identifier(String::from("")));
 
     let name = match &self.tokens[self.index] {
-      token::Token::Identifier(chars) => Some(chars),
+      token::Token::Identifier(value) => Some(value),
       _ => None,
     };
 
-    if name.is_none() {
-      return None;
-    }
+    // TODO:
+    // if name.is_none() {
+    //   return None;
+    // }
 
-    Some(String::from(
-      name.unwrap().iter().cloned().collect::<String>(),
-    ))
+    Ok(name.unwrap().clone())
   }
 
-  pub fn parse_block(&mut self) -> Option<block::Block> {
-    skip!(self, token::Token::BraceL);
+  pub fn parse_block(&mut self) -> ParserResult<block::Block> {
+    skip_past!(self, token::Token::SymbolBraceL);
 
     // TODO: Do not depend on an EOF token, (can't enforce its presence in tokens vector).
-    while !self.is(token::Token::BraceR) && !self.is(token::Token::EOF) {
+    while !self.is(token::Token::SymbolBraceR) && !self.is(token::Token::EOF) {
       // TODO: Parse expressions.
     }
 
-    skip!(self, token::Token::BraceR);
+    skip_past!(self, token::Token::SymbolBraceR);
 
-    if self.is(token::Token::EOF) {
-      return None;
-    }
+    // TODO:
+    // if self.is(token::Token::EOF) {
+    //   return None;
+    // }
 
-    Some(block::Block {})
+    Ok(block::Block {})
   }
 
-  pub fn parse_int_kind(&mut self) -> Option<int_kind::IntKind> {
-    let token = self.tokens[self.index];
-
-    self.skip();
+  pub fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
+    let token = assert_some!(self.skip());
 
     match token {
-      token::Token::Identifier(chars) => Some(int_kind::IntKind {
-        size: match chars.iter().cloned().collect::<String>().as_str() {
+      token::Token::Identifier(value) => Ok(int_kind::IntKind {
+        size: match value.as_str() {
           "i8" => int_kind::IntSize::Signed8,
           "i16" => int_kind::IntSize::Signed16,
           "i32" => int_kind::IntSize::Signed32,
           "i64" => int_kind::IntSize::Signed64,
           "i128" => int_kind::IntSize::Signed128,
-          _ => return None,
+          _ => {
+            return Err(diagnostic::Diagnostic {
+              // TODO:
+              message: String::from(format!("invalid integer type name")),
+              severity: diagnostic::DiagnosticSeverity::Error,
+            });
+          }
         },
       }),
-      _ => None,
-    }
-  }
-
-  pub fn parse_kind(&mut self) -> Option<node::AnyKindNode> {
-    // TODO: Simplify?
-    match self.tokens[self.index] {
-      token::Token::Identifier(chars) => {
-        let int_kind = self.parse_int_kind();
-
-        if int_kind.is_none() {
-          return None;
-        }
-
-        return Some(node::AnyKindNode::IntKind(&int_kind.unwrap()));
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: String::from("invalid"),
+          severity: diagnostic::DiagnosticSeverity::Error,
+        })
       }
-      _ => return None,
-    };
+    }
   }
 
-  pub fn parse_prototype(&mut self) -> Option<prototype::Prototype> {
-    let name = require!(self, self.parse_name());
+  pub fn parse_void_kind(&mut self) -> ParserResult<node::AnyKindNode> {
+    skip_past!(self, token::Token::TypeVoid);
 
-    skip!(self, token::Token::ParenthesesL);
+    Ok(node::AnyKindNode::VoidKind(void_kind::VoidKind {}))
+  }
 
-    let args = vec![];
+  pub fn parse_kind(&mut self) -> ParserResult<node::AnyKindNode> {
+    assert!(match self.tokens[self.index] {
+      token::Token::Identifier(_) => true,
+      _ => false,
+    });
 
-    while self.is(token::Token::ParenthesesR) && !self.is(token::Token::EOF) {
-      // TODO: Support for variadic.
+    // TODO: Support for more types.
 
-      args.push((
-        require!(self, self.parse_kind()),
-        require!(self, self.parse_name()),
-      ));
+    let int_kind = self.parse_int_kind();
+
+    if int_kind.is_err() {
+      return Result::Err(int_kind.err().unwrap());
     }
 
-    None
+    return Ok(node::AnyKindNode::IntKind(int_kind.ok().unwrap()));
   }
 
-  pub fn parse_function(&mut self) -> Option<function::Function> {
-    skip!(self, token::Token::Fn);
+  pub fn parse_prototype(&mut self) -> ParserResult<prototype::Prototype> {
+    skip_past!(self, token::Token::SymbolParenthesesL);
 
-    Some(function::Function {
-      prototype: require!(self, self.parse_prototype()),
+    // let mut args = vec![];
 
-      // FIXME:
-      body: require!(self, self.parse_block()),
+    // FIXME: And EOF token.
+    // while self.is(token::Token::ParenthesesR) {
+    Ok(prototype::Prototype {
+      name: assert_ok!(self.parse_name()),
+      // TODO: Support for variadic.
+      is_variadic: false,
+      return_kind: assert_ok!(self.parse_kind()),
+    })
+    // }
+  }
+
+  pub fn parse_function(&mut self) -> ParserResult<function::Function> {
+    let mut is_public = false;
+
+    if self.is(token::Token::KeywordPub) {
+      is_public = true;
+      self.skip();
+    }
+
+    skip_past!(self, token::Token::KeywordFn);
+
+    Ok(function::Function {
+      is_public,
+      prototype: self.parse_prototype().ok().unwrap(),
+      body: self.parse_block().ok().unwrap(),
     })
   }
 
-  fn parse_external(&mut self) -> Option<external::External> {
-    skip!(self, token::Token::Extern);
+  fn parse_external(&mut self) -> ParserResult<external::External> {
+    skip_past!(self, token::Token::KeywordExtern);
 
-    Some(external::External {
-      prototype: require!(self, self.parse_prototype()),
+    Ok(external::External {
+      prototype: assert_ok!(self.parse_prototype()),
     })
   }
 }
@@ -169,21 +228,21 @@ mod tests {
 
   #[test]
   fn parser_is() {
-    let parser = Parser::new(vec![token::Token::Fn]);
+    let parser = Parser::new(vec![token::Token::KeywordFn]);
 
-    assert_eq!(true, parser.is(token::Token::Fn));
+    assert_eq!(true, parser.is(token::Token::KeywordFn));
   }
 
   #[test]
   fn parser_is_empty() {
     let parser = Parser::new(vec![]);
 
-    assert_eq!(false, parser.is(token::Token::Fn));
+    assert_eq!(false, parser.is(token::Token::KeywordFn));
   }
 
   #[test]
   fn parser_skip() {
-    let mut parser = Parser::new(vec![token::Token::Fn, token::Token::Fn]);
+    let mut parser = Parser::new(vec![token::Token::KeywordFn, token::Token::KeywordFn]);
 
     parser.skip();
     assert_eq!(1, parser.index);
@@ -191,7 +250,7 @@ mod tests {
 
   #[test]
   fn parser_skip_out_of_bounds() {
-    let mut parser = Parser::new(vec![token::Token::Fn]);
+    let mut parser = Parser::new(vec![token::Token::KeywordFn]);
 
     parser.skip();
     assert_eq!(0, parser.index);
@@ -199,28 +258,28 @@ mod tests {
 
   #[test]
   fn parser_parse_name() {
-    let mut parser = Parser::new(vec![token::Token::Identifier(vec!['f', 'o', 'o'])]);
+    let mut parser = Parser::new(vec![token::Token::Identifier(String::from("foo"))]);
     let name = parser.parse_name();
 
-    assert_eq!(false, name.is_none());
-    assert_eq!(String::from("foo"), parser.parse_name().unwrap());
+    assert_eq!(false, name.is_err());
+    assert_eq!(String::from("foo"), parser.parse_name().ok().unwrap());
   }
 
   #[test]
   fn parser_parse_block() {
-    let mut parser = Parser::new(vec![token::Token::BraceL, token::Token::BraceR]);
+    let mut parser = Parser::new(vec![token::Token::SymbolBraceL, token::Token::SymbolBraceR]);
     let block = parser.parse_block();
 
-    assert_eq!(false, block.is_none());
+    assert_eq!(false, block.is_err());
   }
 
   #[test]
   fn parse_kind() {
-    let mut parser = Parser::new(vec![token::Token::Identifier(vec!['i', '8'])]);
+    let mut parser = Parser::new(vec![token::Token::Identifier(String::from("i8"))]);
     let int_kind = parser.parse_int_kind();
 
-    assert_eq!(false, int_kind.is_none());
-    assert_eq!(int_kind.unwrap().size, int_kind::IntSize::Signed8);
+    assert_eq!(false, int_kind.is_err());
+    assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Signed8);
   }
 
   // TODO: Add missing tests.

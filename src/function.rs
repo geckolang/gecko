@@ -1,12 +1,13 @@
 use crate::{block, node, pass, prototype};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct Function<'a> {
-  prototype: prototype::Prototype<'a>,
-  body: block::Block,
+pub struct Function {
+  pub is_public: bool,
+  pub prototype: prototype::Prototype,
+  pub body: block::Block,
 }
 
-impl<'a> node::Node for Function<'a> {
+impl node::Node for Function {
   fn accept(&mut self, pass: &dyn pass::Pass) {
     // TODO:
     // pass.visit_function(self);

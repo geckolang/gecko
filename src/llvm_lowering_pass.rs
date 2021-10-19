@@ -1,9 +1,9 @@
-use crate::{int_kind, node, pass, pass::Pass, prototype, void_kind};
+use crate::{function, int_kind, node, pass, pass::Pass, prototype, void_kind};
 use inkwell::types::AnyType;
 
 struct LlvmLoweringPass<'a> {
   llvm_context: &'a inkwell::context::Context,
-  llvm_type_map: std::collections::HashMap<node::AnyKindNode<'a>, inkwell::types::AnyTypeEnum<'a>>,
+  llvm_type_map: std::collections::HashMap<node::AnyKindNode, inkwell::types::AnyTypeEnum<'a>>,
 }
 
 impl<'a> LlvmLoweringPass<'a> {
@@ -22,32 +22,28 @@ impl<'a> LlvmLoweringPass<'a> {
   /// into the LLVM types map.
   fn visit_or_retrieve_type(
     &mut self,
-    node: &'a node::AnyKindNode,
+    node: node::AnyKindNode,
   ) -> Option<&'a inkwell::types::AnyTypeEnum> {
-    if !self.llvm_type_map.contains_key(node) {
+    if !self.llvm_type_map.contains_key(&node) {
       match node {
-        node::AnyKindNode::IntKind(_) => self.visit_int_kind(node.into_int_kind().unwrap()),
-        node::AnyKindNode::VoidKind(_) => self.visit_void_kind(node.into_void_kind().unwrap()),
+        node::AnyKindNode::IntKind(value) => self.visit_int_kind(&value),
+        node::AnyKindNode::VoidKind(value) => self.visit_void_kind(&value),
       };
-
-      if !self.llvm_type_map.contains_key(node) {
-        return None;
-      }
     }
 
-    self.llvm_type_map.get(node)
+    self.llvm_type_map.get(&node)
   }
 }
 
-impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
+impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   fn visit_prototype(&mut self, _prototype: &prototype::Prototype) {
     // TODO
     // inkwell::values::GenericValue
   }
 
-  fn visit_int_kind(&mut self, int_kind: &'a int_kind::IntKind) {
+  fn visit_int_kind(&mut self, int_kind: &int_kind::IntKind) {
     self.llvm_type_map.insert(
-      node::AnyKindNode::IntKind(int_kind),
+      node::AnyKindNode::IntKind(*int_kind),
       match int_kind.size {
         int_kind::IntSize::Signed8 => self.llvm_context.i8_type().as_any_type_enum(),
         int_kind::IntSize::Signed16 => self.llvm_context.i16_type().as_any_type_enum(),
@@ -58,11 +54,24 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     );
   }
 
-  fn visit_void_kind(&mut self, void_kind: &'a void_kind::VoidKind) {
+  fn visit_void_kind(&mut self, void_kind: &void_kind::VoidKind) {
+    let v = node::AnyKindNode::VoidKind(*void_kind);
+
+    self
+      .llvm_type_map
+      .insert(v, self.llvm_context.void_type().as_any_type_enum());
+
     self.llvm_type_map.insert(
-      node::AnyKindNode::VoidKind(void_kind),
+      node::AnyKindNode::VoidKind(*void_kind),
       self.llvm_context.void_type().as_any_type_enum(),
     );
+  }
+
+  fn visit_function(&mut self, function: &function::Function) {
+    // let a = self.visit_or_retrieve_type(function.prototype.return_kind);
+
+    // TODO:
+    // parser::assert!(a.is_some());
   }
 }
 
@@ -83,16 +92,14 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
 
-    let int_kind = int_kind::IntKind {
+    let int_kind_box = node::AnyKindNode::IntKind(int_kind::IntKind {
       size: int_kind::IntSize::Signed32,
-    };
-
-    let int_kind_box = node::AnyKindNode::IntKind(&int_kind);
+    });
 
     assert_eq!(
       true,
       llvm_lowering_pass
-        .visit_or_retrieve_type(&int_kind_box)
+        .visit_or_retrieve_type(int_kind_box)
         .is_some()
     );
 

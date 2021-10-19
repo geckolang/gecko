@@ -1,7 +1,7 @@
 use crate::node;
 use crate::pass;
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum IntSize {
   Signed8,
   Signed16,
@@ -10,7 +10,7 @@ pub enum IntSize {
   Signed128,
 }
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct IntKind {
   pub size: IntSize,
 }

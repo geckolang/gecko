@@ -51,14 +51,18 @@ impl Iterator for Lexer {
   type Item = token::Token;
 
   fn next(&mut self) -> Option<Self::Item> {
-    let read_identifier = |lexer: &mut Lexer| -> Vec<char> {
+    let read_identifier = |lexer: &mut Lexer| -> String {
       let index = lexer.index;
 
       while lexer.index < lexer.input.len() && is_letter(lexer.current_char) {
         lexer.read_char();
       }
 
-      lexer.input[index..lexer.index].to_vec()
+      lexer.input[index..lexer.index]
+        .to_vec()
+        .iter()
+        .cloned()
+        .collect::<String>()
     };
 
     let read_number = |lexer: &mut Lexer| -> Vec<char> {
@@ -73,36 +77,31 @@ impl Iterator for Lexer {
 
     self.skip_whitespace();
 
-    let token: token::Token;
-
-    match self.current_char {
-      '{' => {
-        token = token::Token::BraceL;
-      }
-      '\0' => {
-        token = token::Token::EOF;
-      }
+    let token: token::Token = match self.current_char {
+      '{' => token::Token::SymbolBraceL,
+      '}' => token::Token::SymbolBraceR,
+      '(' => token::Token::SymbolParenthesesL,
+      ')' => token::Token::SymbolParenthesesR,
+      '\0' => token::Token::EOF,
       _ => {
         if is_letter(self.current_char) {
-          let identifier: Vec<char> = read_identifier(self);
+          let identifier = read_identifier(self);
 
-          match token::get_keyword_token(&identifier) {
+          match token::get_keyword_or_type_token(identifier.as_str()) {
             Ok(keyword_token) => {
               return Some(keyword_token);
             }
-            Err(_err) => {
+            Err(_) => {
               return Some(token::Token::Identifier(identifier));
             }
           }
         } else if is_digit(self.current_char) {
-          let identifier: Vec<char> = read_number(self);
-
-          return Some(token::Token::Integer(identifier));
+          return Some(token::Token::Integer(read_number(self)));
         } else {
           return None;
         }
       }
-    }
+    };
 
     self.read_char();
 
@@ -151,7 +150,10 @@ mod tests {
 
     lexer.read_char();
 
-    assert_eq!(Some(token::Token::Identifier(vec!['a'])), lexer.next());
+    assert_eq!(
+      Some(token::Token::Identifier(String::from("a"))),
+      lexer.next()
+    );
   }
 
   #[test]

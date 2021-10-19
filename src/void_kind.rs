@@ -1,7 +1,7 @@
 use crate::node;
 use crate::pass;
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct VoidKind {
   //
 }

@@ -1,4 +1,5 @@
 pub mod block;
+pub mod diagnostic;
 pub mod external;
 pub mod function;
 pub mod int_kind;

@@ -1,11 +1,11 @@
 use crate::{node, pass, prototype};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct External<'a> {
-  prototype: prototype::Prototype<'a>,
+pub struct External {
+  pub prototype: prototype::Prototype,
 }
 
-impl<'a> node::Node for External<'a> {
+impl node::Node for External {
   fn accept(&mut self, pass: &dyn pass::Pass) {
     // TODO:
     // pass.visit_function(self);
