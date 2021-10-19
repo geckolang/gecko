@@ -40,21 +40,6 @@ macro_rules! assert_ok {
   };
 }
 
-macro_rules! assert_some {
-  ($expr:expr) => {
-    match $expr {
-      None => {
-        return Err(diagnostic::Diagnostic {
-          // TODO:
-          message: String::from("todo temporary val"),
-          severity: diagnostic::DiagnosticSeverity::Error,
-        });
-      }
-      _ => $expr.unwrap(),
-    }
-  };
-}
-
 type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 
 struct Parser {
@@ -75,20 +60,24 @@ impl Parser {
     self.tokens[self.index] == token
   }
 
-  fn skip(&mut self) -> Option<&token::Token> {
+  fn skip(&mut self) -> bool {
     // FIXME: Address out of bounds problem.
     if self.index + 1 >= self.tokens.len() {
-      return None;
+      return false;
     }
 
     self.index += 1;
 
-    Some(&self.tokens[self.index])
+    true
   }
 
   pub fn parse_name(&mut self) -> ParserResult<String> {
-    // TODO: Empty string?
-    skip_past!(self, token::Token::Identifier(String::from("")));
+    // TODO: Wrong error message.
+    assert!(match &self.tokens[self.index] {
+      token::Token::Identifier(value) => true,
+      _ => false,
+    });
+    // skip_past!(self, token::Token::Identifier(String::from("")));
 
     let name = match &self.tokens[self.index] {
       token::Token::Identifier(value) => Some(value),
@@ -122,7 +111,10 @@ impl Parser {
   }
 
   pub fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
-    let token = assert_some!(self.skip());
+    let token = match self.skip() {
+      true => &self.tokens[self.index - 1],
+      false => &self.tokens[self.index],
+    };
 
     match token {
       token::Token::Identifier(value) => Ok(int_kind::IntKind {
@@ -262,7 +254,7 @@ mod tests {
     let name = parser.parse_name();
 
     assert_eq!(false, name.is_err());
-    assert_eq!(String::from("foo"), parser.parse_name().ok().unwrap());
+    assert_eq!("foo", name.ok().unwrap().as_str());
   }
 
   #[test]
