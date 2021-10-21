@@ -1,4 +1,4 @@
-use crate::{diagnostic, int_kind, pass, void_kind};
+use crate::{int_kind, pass, void_kind};
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum AnyKindNode {
@@ -10,10 +10,6 @@ pub trait Node {
   fn accept(&mut self, pass: &dyn pass::Pass);
 
   fn get_children(&self) -> Vec<&dyn Node> {
-    vec![]
-  }
-
-  fn get_diagnostics(&self) -> Vec<diagnostic::Diagnostic> {
     vec![]
   }
 }

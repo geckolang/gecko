@@ -114,18 +114,20 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
 mod tests {
   use super::*;
 
+  fn create_llvm_lowering_pass(llvm_context: &inkwell::context::Context) -> LlvmLoweringPass {
+    LlvmLoweringPass::new(llvm_context, &llvm_context.create_module("test"))
+  }
+
   #[test]
   fn llvm_lowering_pass_proper_initial_values() {
-    let llvm_context = inkwell::context::Context::create();
-    let llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
+    let mut llvm_lowering_pass = create_llvm_lowering_pass(&inkwell::context::Context::create());
 
     assert_eq!(true, llvm_lowering_pass.llvm_type_map.is_empty());
   }
 
   #[test]
   fn llvm_lowering_pass_visit_or_retrieve_type() {
-    let llvm_context = inkwell::context::Context::create();
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
+    let mut llvm_lowering_pass = create_llvm_lowering_pass(&inkwell::context::Context::create());
 
     let int_kind_box = node::AnyKindNode::IntKind(int_kind::IntKind {
       size: int_kind::IntSize::Signed32,
@@ -143,8 +145,7 @@ mod tests {
 
   #[test]
   fn llvm_lowering_pass_visit_void_kind() {
-    let llvm_context = inkwell::context::Context::create();
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
+    let mut llvm_lowering_pass = create_llvm_lowering_pass(&inkwell::context::Context::create());
 
     llvm_lowering_pass.visit_void_kind(&void_kind::VoidKind {});
     assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
@@ -152,8 +153,7 @@ mod tests {
 
   #[test]
   fn llvm_lowering_pass_visit_int_kind() {
-    let llvm_context = inkwell::context::Context::create();
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context);
+    let mut llvm_lowering_pass = create_llvm_lowering_pass(&inkwell::context::Context::create());
 
     llvm_lowering_pass.visit_int_kind(&int_kind::IntKind {
       size: int_kind::IntSize::Signed32,
