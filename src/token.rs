@@ -9,7 +9,7 @@ pub enum Token {
   KeywordFn,
   KeywordExtern,
   TypeVoid,
-  TypeIntSigned32,
+  TypeInt32,
   SymbolBraceL,
   SymbolBraceR,
   SymbolParenthesesL,
@@ -22,7 +22,7 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnost
     "fn" => Ok(Token::KeywordFn),
     "extern" => Ok(Token::KeywordExtern),
     "void" => Ok(Token::TypeVoid),
-    "i32" => Ok(Token::TypeIntSigned32),
+    "i32" => Ok(Token::TypeInt32),
     _ => Err(diagnostic::Diagnostic {
       message: format!("identifier `{}` is not a keyword", identifier_str),
       severity: diagnostic::DiagnosticSeverity::Error,

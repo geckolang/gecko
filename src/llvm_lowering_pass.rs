@@ -93,10 +93,11 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
         float_type.fn_type(&[], function.prototype.is_variadic)
       }
       _ => {
+        // FIXME: Finish implementing.
         return Err(diagnostic::Diagnostic {
           message: String::from("tmp"),
           severity: diagnostic::DiagnosticSeverity::Error,
-        })
+        });
       }
     };
 
