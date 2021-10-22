@@ -62,24 +62,6 @@ mod tests {
     }
   }
 
-  struct TestPassWithVisit<'a> {
-    pub is_visit_invoked: &'a bool,
-  }
-
-  impl<'a> TestPassWithVisit<'a> {
-    pub fn new(is_visit_invoked: &'a bool) -> Self {
-      Self { is_visit_invoked }
-    }
-  }
-
-  impl<'a> pass::Pass<'_> for TestPassWithVisit<'a> {
-    fn visit(&mut self, _: &dyn node::Node) -> pass::PassResult {
-      self.is_visit_invoked = &true;
-
-      Ok(())
-    }
-  }
-
   struct TestNode {
     //
   }
@@ -111,17 +93,5 @@ mod tests {
     pass_manager.add_pass(Box::new(TestPassNoRegister {}));
 
     assert_eq!(true, pass_manager.passes.is_empty());
-  }
-
-  #[test]
-  fn pass_manager_run_invoke_visit() {
-    let mut pass_manager = PassManager::new();
-    let mut is_visit_invoked = &false;
-    let test_pass = Box::new(TestPassWithVisit::new(&mut is_visit_invoked));
-
-    pass_manager.add_pass(test_pass);
-    pass_manager.run(&TestNode {});
-
-    assert_eq!(true, *is_visit_invoked);
   }
 }
