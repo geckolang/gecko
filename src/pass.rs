@@ -6,7 +6,7 @@ pub struct PassContext {
 
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
-pub trait Pass {
+pub trait Pass<'a> {
   // TODO:
   fn register(&self, pass_manager: &pass_manager::PassManager) -> bool {
     return true;

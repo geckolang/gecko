@@ -7,6 +7,7 @@ pub struct Namespace {
 
 impl node::Node for Namespace {
   fn accept(&mut self, pass: &dyn pass::Pass) {
+    // TODO:
     // pass.visit_prototype(self);
   }
 }

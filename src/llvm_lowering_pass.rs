@@ -12,16 +12,17 @@ macro_rules! assert {
   };
 }
 
-struct LlvmLoweringPass<'a> {
+pub struct LlvmLoweringPass<'a> {
   llvm_context: &'a inkwell::context::Context,
-  llvm_module: Box<inkwell::module::Module<'a>>,
+  llvm_module: inkwell::module::Module<'a>,
   llvm_type_map: std::collections::HashMap<node::AnyKindNode, inkwell::types::AnyTypeEnum<'a>>,
 }
 
 impl<'a> LlvmLoweringPass<'a> {
+  // TODO: `llvm_module` is being moved.
   pub fn new(
     llvm_context: &'a inkwell::context::Context,
-    llvm_module: Box<inkwell::module::Module<'a>>,
+    llvm_module: inkwell::module::Module<'a>,
   ) -> Self {
     Self {
       llvm_context,
@@ -38,20 +39,40 @@ impl<'a> LlvmLoweringPass<'a> {
   /// into the LLVM types map.
   fn visit_or_retrieve_type(
     &mut self,
-    node: node::AnyKindNode,
-  ) -> Option<&inkwell::types::AnyTypeEnum> {
-    if !self.llvm_type_map.contains_key(&node) {
+    node: &node::AnyKindNode,
+  ) -> Result<Option<&inkwell::types::AnyTypeEnum<'a>>, diagnostic::Diagnostic> {
+    if !self.llvm_type_map.contains_key(node) {
       match node {
-        node::AnyKindNode::IntKind(value) => self.visit_int_kind(&value),
-        node::AnyKindNode::VoidKind(value) => self.visit_void_kind(&value),
+        node::AnyKindNode::IntKind(value) => self.visit_int_kind(&value)?,
+        node::AnyKindNode::VoidKind(value) => self.visit_void_kind(&value)?,
       };
     }
 
-    self.llvm_type_map.get(&node)
+    Ok(self.llvm_type_map.get(&node))
+  }
+
+  fn foo(&mut self) -> Result<Option<inkwell::types::BasicTypeEnum<'a>>, diagnostic::Diagnostic> {
+    // let n = node::AnyKindNode::VoidKind(void_kind::VoidKind {});
+
+    // if !self.llvm_type_map.contains_key(&n) {
+    //   match n {
+    //     node::AnyKindNode::IntKind(value) => self.visit_int_kind(&value),
+    //     node::AnyKindNode::VoidKind(value) => self.visit_void_kind(&value),
+    //   };
+    // }
+
+    // Ok(Some(*self.llvm_type_map.get(&n).unwrap()))
+    Ok(None)
+  }
+
+  fn testt(&self) -> Result<inkwell::types::BasicTypeEnum<'a>, ()> {
+    Ok(inkwell::types::BasicTypeEnum::IntType(
+      self.llvm_context.i8_type(),
+    ))
   }
 }
 
-impl<'a> pass::Pass for LlvmLoweringPass<'a> {
+impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
   fn visit_prototype(&mut self, _prototype: &prototype::Prototype) -> pass::PassResult {
     // TODO
     // inkwell::values::GenericValue
@@ -83,35 +104,34 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   }
 
   fn visit_function(&mut self, function: &function::Function) -> pass::PassResult {
-    // TODO:
-    let llvm_return_type = self.visit_or_retrieve_type(function.prototype.return_kind);
+    let llvm_return_type = self.visit_or_retrieve_type(&function.prototype.return_kind)?;
 
     assert!(llvm_return_type.is_some());
 
-    // let llvm_function_type = match llvm_return_type.unwrap() {
-    //   inkwell::types::AnyTypeEnum::IntType(int_type) => {
-    //     int_type.fn_type(&[], function.prototype.is_variadic)
-    //   }
-    //   inkwell::types::AnyTypeEnum::FloatType(float_type) => {
-    //     float_type.fn_type(&[], function.prototype.is_variadic)
-    //   }
-    //   inkwell::types::AnyTypeEnum::VoidType(void_type) => {
-    //     void_type.fn_type(&[], function.prototype.is_variadic)
-    //   }
-    //   _ => {
-    //     // TODO: Better implementation.
-    //     return Err(diagnostic::Diagnostic {
-    //       message: String::from("unexpected point reached"),
-    //       severity: diagnostic::DiagnosticSeverity::Internal,
-    //     });
-    //   }
-    // };
+    let llvm_function_type = match llvm_return_type.unwrap() {
+      inkwell::types::AnyTypeEnum::IntType(int_type) => {
+        int_type.fn_type(&[], function.prototype.is_variadic)
+      }
+      inkwell::types::AnyTypeEnum::FloatType(float_type) => {
+        float_type.fn_type(&[], function.prototype.is_variadic)
+      }
+      inkwell::types::AnyTypeEnum::VoidType(void_type) => {
+        void_type.fn_type(&[], function.prototype.is_variadic)
+      }
+      _ => {
+        // TODO: Better implementation.
+        return Err(diagnostic::Diagnostic {
+          message: String::from("unexpected point reached"),
+          severity: diagnostic::DiagnosticSeverity::Internal,
+        });
+      }
+    };
 
-    // self.llvm_module.add_function(
-    //   function.prototype.name.as_str(),
-    //   llvm_function_type,
-    //   Some(inkwell::module::Linkage::Private),
-    // );
+    self.llvm_module.add_function(
+      function.prototype.name.as_str(),
+      llvm_function_type,
+      Some(inkwell::module::Linkage::Private),
+    );
 
     Ok(())
   }
@@ -124,29 +144,30 @@ mod tests {
   #[test]
   fn llvm_lowering_pass_proper_initial_values() {
     let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
-    let llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, Box::new(llvm_module));
+    let llvm_module: inkwell::module::Module = llvm_context.create_module("test");
 
-    assert_eq!(true, llvm_lowering_pass.llvm_type_map.is_empty());
+    assert_eq!(
+      true,
+      LlvmLoweringPass::new(&llvm_context, llvm_module)
+        .llvm_type_map
+        .is_empty()
+    );
   }
 
   #[test]
   fn llvm_lowering_pass_visit_or_retrieve_type() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, Box::new(llvm_module));
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
 
     let int_kind_box = node::AnyKindNode::IntKind(int_kind::IntKind {
       size: int_kind::IntSize::Signed32,
     });
 
-    assert_eq!(
-      true,
-      llvm_lowering_pass
-        .visit_or_retrieve_type(int_kind_box)
-        .is_some()
-    );
+    let visit_or_retrieve_result = llvm_lowering_pass.visit_or_retrieve_type(&int_kind_box);
 
+    assert_eq!(true, visit_or_retrieve_result.is_ok());
+    assert_eq!(true, visit_or_retrieve_result.ok().is_some());
     assert_eq!(1, llvm_lowering_pass.llvm_type_map.len());
   }
 
@@ -154,9 +175,11 @@ mod tests {
   fn llvm_lowering_pass_visit_void_kind() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, Box::new(llvm_module));
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
 
-    llvm_lowering_pass.visit_void_kind(&void_kind::VoidKind {});
+    let visit_void_kind_result = llvm_lowering_pass.visit_void_kind(&void_kind::VoidKind {});
+
+    assert_eq!(true, visit_void_kind_result.is_ok());
     assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
   }
 
@@ -164,12 +187,13 @@ mod tests {
   fn llvm_lowering_pass_visit_int_kind() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, Box::new(llvm_module));
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
 
-    llvm_lowering_pass.visit_int_kind(&int_kind::IntKind {
+    let visit_int_kind_result = llvm_lowering_pass.visit_int_kind(&int_kind::IntKind {
       size: int_kind::IntSize::Signed32,
     });
 
+    assert_eq!(true, visit_int_kind_result.is_ok());
     assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
   }
 }

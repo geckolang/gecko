@@ -135,7 +135,7 @@ Function definitions & calls follow conventional norms. They are easy to define 
 The return type of functions must always be specified, regardless of whether the function returns `void` or not. Functions with the `void` return type are not required to include a `return` statement.
 
 ```rust
-fn main(i32 argc, i32[] argv) -> i32 {
+fn main(argc: i32, argv: i32[]) -> i32 {
   return 0;
 }
 ```
@@ -145,7 +145,7 @@ Variable declaration, assignment and reference follow straight-forward rules and
 
 ```rust
 fn double(i32 number) -> i32 {
-  i32 doubledNumber = number * 2;
+  let doubledNumber: i32 = number * 2;
 
   return doubledNumber;
 }
@@ -179,13 +179,13 @@ fn doWork() -> void {
   else if (false) { }
   else { }
 
-  while (true) { break; }
+  loop { }
 
-  do { } while (true);
+  while true { break; }
 
-  for (i32 i = 0; i < 10; i += 1) { }
+  for i32 i = 0; i < 10; i += 1 { }
 
-  match (true) {
+  match true {
     true -> doWork(),
     false -> doWork(),
     _ -> doWork()
