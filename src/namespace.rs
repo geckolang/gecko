@@ -2,10 +2,7 @@ use crate::{node, pass};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Namespace {
-  pub name: String,
-  // pub args: (node::AnyKindNode<'a>, String),
-  pub is_variadic: bool,
-  pub return_kind: node::AnyKindNode,
+  // TODO: Fields.
 }
 
 impl node::Node for Namespace {

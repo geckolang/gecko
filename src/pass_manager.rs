@@ -1,15 +1,15 @@
 use crate::{diagnostic, node, pass};
 
-pub struct PassManager<'a> {
-  passes: Vec<&'a dyn pass::Pass>,
+pub struct PassManager {
+  passes: Vec<Box<dyn pass::Pass>>,
 }
 
-impl<'a> PassManager<'a> {
+impl PassManager {
   pub fn new() -> Self {
     Self { passes: vec![] }
   }
 
-  pub fn add_pass(&mut self, pass: &'a dyn pass::Pass) -> bool {
+  pub fn add_pass(&mut self, pass: Box<dyn pass::Pass>) -> bool {
     if !pass.register(self) {
       return false;
     }
@@ -19,16 +19,16 @@ impl<'a> PassManager<'a> {
     true
   }
 
-  pub fn run(&self, root_node: &dyn node::Node) -> Vec<diagnostic::Diagnostic> {
+  pub fn run(&mut self, root_node: &dyn node::Node) -> Vec<diagnostic::Diagnostic> {
     // TODO: Better structure/organization of diagnostics.
 
     let mut diagnostics = vec![];
 
-    for pass in self.passes.iter() {
+    for pass in &mut self.passes {
       let visitation_result = pass.visit(root_node);
 
       for diagnostic in pass.get_diagnostics().iter() {
-        diagnostics.push(*diagnostic);
+        diagnostics.push(diagnostic.clone());
       }
 
       if visitation_result.is_err() {
@@ -44,41 +44,49 @@ impl<'a> PassManager<'a> {
 mod tests {
   use super::*;
 
-  struct TestPassEmpty {}
+  struct TestPassEmpty {
+    //
+  }
 
-  impl pass::Pass for TestPassEmpty {}
+  impl pass::Pass for TestPassEmpty {
+    //
+  }
 
-  struct TestPassNoRegister {}
+  struct TestPassNoRegister {
+    //
+  }
 
   impl pass::Pass for TestPassNoRegister {
-    fn register(&self, pass_manager: &PassManager) -> bool {
+    fn register(&self, _: &PassManager) -> bool {
       return false;
     }
   }
 
-  struct TestPassWithVisit {
-    pub is_visit_invoked: bool,
+  struct TestPassWithVisit<'a> {
+    pub is_visit_invoked: &'a bool,
   }
 
-  impl TestPassWithVisit {
-    pub fn new() -> Self {
-      Self {
-        is_visit_invoked: false,
-      }
+  impl<'a> TestPassWithVisit<'a> {
+    pub fn new(is_visit_invoked: &'a bool) -> Self {
+      Self { is_visit_invoked }
     }
   }
 
-  struct TestNode {}
-
-  impl node::Node for TestNode {
-    fn accept(&mut self, pass: &dyn pass::Pass) {}
-  }
-
-  impl pass::Pass for TestPassWithVisit {
-    fn visit(&mut self, node: &dyn node::Node) -> pass::PassResult {
-      self.is_visit_invoked = true;
+  impl<'a> pass::Pass for TestPassWithVisit<'a> {
+    fn visit(&mut self, _: &dyn node::Node) -> pass::PassResult {
+      self.is_visit_invoked = &true;
 
       Ok(())
+    }
+  }
+
+  struct TestNode {
+    //
+  }
+
+  impl node::Node for TestNode {
+    fn accept(&mut self, _: &dyn pass::Pass) {
+      //
     }
   }
 
@@ -91,7 +99,7 @@ mod tests {
   fn pass_manager_add_pass() {
     let mut pass_manager = PassManager::new();
 
-    pass_manager.add_pass(&TestPassEmpty {});
+    pass_manager.add_pass(Box::new(TestPassEmpty {}));
 
     assert_eq!(1, pass_manager.passes.len());
   }
@@ -100,7 +108,7 @@ mod tests {
   fn pass_manager_add_pass_no_register() {
     let mut pass_manager = PassManager::new();
 
-    pass_manager.add_pass(&TestPassNoRegister {});
+    pass_manager.add_pass(Box::new(TestPassNoRegister {}));
 
     assert_eq!(true, pass_manager.passes.is_empty());
   }
@@ -108,11 +116,12 @@ mod tests {
   #[test]
   fn pass_manager_run_invoke_visit() {
     let mut pass_manager = PassManager::new();
-    let mut test_pass = TestPassWithVisit::new();
+    let mut is_visit_invoked = &false;
+    let test_pass = Box::new(TestPassWithVisit::new(&mut is_visit_invoked));
 
-    pass_manager.add_pass(&test_pass);
+    pass_manager.add_pass(test_pass);
     pass_manager.run(&TestNode {});
 
-    assert_eq!(true, test_pass.is_visit_invoked);
+    assert_eq!(true, *is_visit_invoked);
   }
 }
