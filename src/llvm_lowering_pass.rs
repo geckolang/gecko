@@ -50,26 +50,6 @@ impl<'a> LlvmLoweringPass<'a> {
 
     Ok(self.llvm_type_map.get(&node))
   }
-
-  fn foo(&mut self) -> Result<Option<inkwell::types::BasicTypeEnum<'a>>, diagnostic::Diagnostic> {
-    // let n = node::AnyKindNode::VoidKind(void_kind::VoidKind {});
-
-    // if !self.llvm_type_map.contains_key(&n) {
-    //   match n {
-    //     node::AnyKindNode::IntKind(value) => self.visit_int_kind(&value),
-    //     node::AnyKindNode::VoidKind(value) => self.visit_void_kind(&value),
-    //   };
-    // }
-
-    // Ok(Some(*self.llvm_type_map.get(&n).unwrap()))
-    Ok(None)
-  }
-
-  fn testt(&self) -> Result<inkwell::types::BasicTypeEnum<'a>, ()> {
-    Ok(inkwell::types::BasicTypeEnum::IntType(
-      self.llvm_context.i8_type(),
-    ))
-  }
 }
 
 impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
