@@ -1,4 +1,6 @@
-use crate::{block, diagnostic, external, function, int_kind, node, prototype, token, void_kind};
+use crate::{
+  block, diagnostic, external, function, int_kind, namespace, node, prototype, token, void_kind,
+};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -38,8 +40,16 @@ struct Parser {
   index: usize,
 }
 
+fn find_top_level_node_name(top_level_node: &namespace::TopLevelNode) -> Option<String> {
+  Some(match top_level_node {
+    namespace::TopLevelNode::Function(function) => function.prototype.name.clone(),
+    namespace::TopLevelNode::External(external) => external.prototype.name.clone(),
+    _ => return None,
+  })
+}
+
 impl Parser {
-  fn new(tokens: Vec<token::Token>) -> Self {
+  pub fn new(tokens: Vec<token::Token>) -> Self {
     Self { tokens, index: 0 }
   }
 
@@ -60,6 +70,10 @@ impl Parser {
     self.index += 1;
 
     true
+  }
+
+  fn is_eof(&self) -> bool {
+    self.tokens.len() == 0 || self.index == self.tokens.len() - 1
   }
 
   pub fn parse_name(&mut self) -> ParserResult<String> {
@@ -190,12 +204,52 @@ impl Parser {
     })
   }
 
-  fn parse_external(&mut self) -> ParserResult<external::External> {
+  pub fn parse_external(&mut self) -> ParserResult<external::External> {
     skip_past!(self, token::Token::KeywordExtern);
 
     Ok(external::External {
       prototype: self.parse_prototype()?,
     })
+  }
+
+  pub fn parse_namespace(&mut self) -> ParserResult<namespace::Namespace> {
+    skip_past!(self, token::Token::KeywordNamespace);
+
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolBraceL);
+
+    let mut namespace = namespace::Namespace::new(name);
+
+    while !self.is_eof() {
+      let top_level_node = match self.tokens[self.index] {
+        token::Token::KeywordFn => namespace::TopLevelNode::Function(self.parse_function()?),
+        token::Token::KeywordExtern => namespace::TopLevelNode::External(self.parse_external()?),
+        _ => {
+          return Err(diagnostic::Diagnostic {
+            message: format!("unexpected token: {:?}", self.tokens[self.index]),
+            severity: diagnostic::DiagnosticSeverity::Error,
+          })
+        }
+      };
+
+      let top_level_node_name = find_top_level_node_name(&top_level_node);
+
+      if top_level_node_name.is_none() {
+        return Err(diagnostic::Diagnostic {
+          message: String::from("top-level node name could not be determined"),
+          severity: diagnostic::DiagnosticSeverity::Internal,
+        });
+      }
+
+      namespace
+        .symbol_table
+        .insert(top_level_node_name.unwrap(), top_level_node);
+    }
+
+    skip_past!(self, token::Token::SymbolBraceR);
+
+    Ok(namespace)
   }
 }
 
@@ -266,5 +320,5 @@ mod tests {
     assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Signed8);
   }
 
-  // TODO: Add missing tests.
+  // TODO: Add missing tests (is_eof, parse_namespace, etc.).
 }

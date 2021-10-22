@@ -8,6 +8,7 @@ pub enum Token {
   KeywordPub,
   KeywordFn,
   KeywordExtern,
+  KeywordNamespace,
   TypeVoid,
   TypeInt32,
   SymbolBraceL,
@@ -17,15 +18,18 @@ pub enum Token {
 }
 
 pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnostic::Diagnostic> {
-  match identifier_str {
-    "pub" => Ok(Token::KeywordPub),
-    "fn" => Ok(Token::KeywordFn),
-    "extern" => Ok(Token::KeywordExtern),
-    "void" => Ok(Token::TypeVoid),
-    "i32" => Ok(Token::TypeInt32),
-    _ => Err(diagnostic::Diagnostic {
-      message: format!("identifier `{}` is not a keyword", identifier_str),
-      severity: diagnostic::DiagnosticSeverity::Error,
-    }),
-  }
+  Ok(match identifier_str {
+    "pub" => Token::KeywordPub,
+    "fn" => Token::KeywordFn,
+    "extern" => Token::KeywordExtern,
+    "void" => Token::TypeVoid,
+    "i32" => Token::TypeInt32,
+    "namespace" => Token::KeywordNamespace,
+    _ => {
+      return Err(diagnostic::Diagnostic {
+        message: format!("identifier `{}` is not a keyword", identifier_str),
+        severity: diagnostic::DiagnosticSeverity::Error,
+      })
+    }
+  })
 }

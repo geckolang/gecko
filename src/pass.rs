@@ -1,4 +1,6 @@
-use crate::{block, diagnostic, function, int_kind, node, pass_manager, prototype, void_kind};
+use crate::{
+  block, diagnostic, function, int_kind, namespace, node, pass_manager, prototype, void_kind,
+};
 
 pub struct PassContext {
   diagnostics: Vec<diagnostic::Diagnostic>,
@@ -49,6 +51,10 @@ pub trait Pass<'a> {
   }
 
   fn visit_void_kind(&mut self, _: &void_kind::VoidKind) -> PassResult {
+    Ok(())
+  }
+
+  fn visit_namespace(&mut self, _: &namespace::Namespace) -> PassResult {
     Ok(())
   }
 }
