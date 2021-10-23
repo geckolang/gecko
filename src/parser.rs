@@ -35,17 +35,16 @@ macro_rules! assert {
 
 type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 
-struct Parser {
+pub struct Parser {
   tokens: Vec<token::Token>,
   index: usize,
 }
 
-fn find_top_level_node_name(top_level_node: &namespace::TopLevelNode) -> Option<String> {
-  Some(match top_level_node {
+fn find_top_level_node_name(top_level_node: &namespace::TopLevelNode) -> String {
+  match top_level_node {
     namespace::TopLevelNode::Function(function) => function.prototype.name.clone(),
     namespace::TopLevelNode::External(external) => external.prototype.name.clone(),
-    _ => return None,
-  })
+  }
 }
 
 impl Parser {
@@ -79,22 +78,22 @@ impl Parser {
   pub fn parse_name(&mut self) -> ParserResult<String> {
     // TODO: Wrong error message.
     assert!(match &self.tokens[self.index] {
-      token::Token::Identifier(value) => true,
+      token::Token::Identifier(_) => true,
       _ => false,
     });
     // skip_past!(self, token::Token::Identifier(String::from("")));
 
-    let name = match &self.tokens[self.index] {
-      token::Token::Identifier(value) => Some(value),
-      _ => None,
+    let name = {
+      match &self.tokens[self.index] {
+        token::Token::Identifier(value) => Some(value.clone()),
+        _ => None,
+      }
     };
 
-    // TODO:
-    // if name.is_none() {
-    //   return None;
-    // }
+    assert!(name.is_some());
+    self.skip();
 
-    Ok(name.unwrap().clone())
+    Ok(name.unwrap())
   }
 
   pub fn parse_block(&mut self) -> ParserResult<block::Block> {
@@ -148,41 +147,43 @@ impl Parser {
     }
   }
 
-  pub fn parse_void_kind(&mut self) -> ParserResult<node::AnyKindNode> {
+  pub fn parse_void_kind(&mut self) -> ParserResult<void_kind::VoidKind> {
     skip_past!(self, token::Token::TypeVoid);
 
-    Ok(node::AnyKindNode::VoidKind(void_kind::VoidKind {}))
+    Ok(void_kind::VoidKind {})
   }
 
   pub fn parse_kind(&mut self) -> ParserResult<node::AnyKindNode> {
-    assert!(match self.tokens[self.index] {
-      token::Token::Identifier(_) => true,
-      _ => false,
-    });
-
     // TODO: Support for more types.
-
-    let int_kind = self.parse_int_kind();
-
-    if int_kind.is_err() {
-      return Result::Err(int_kind.err().unwrap());
-    }
-
-    return Ok(node::AnyKindNode::IntKind(int_kind.ok().unwrap()));
+    Ok(match self.tokens[self.index] {
+      token::Token::TypeVoid => node::AnyKindNode::VoidKind(self.parse_void_kind()?),
+      token::Token::TypeInt32 => node::AnyKindNode::IntKind(self.parse_int_kind()?),
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: String::from("foo"),
+          severity: diagnostic::DiagnosticSeverity::Internal,
+        })
+      }
+    })
   }
 
   pub fn parse_prototype(&mut self) -> ParserResult<prototype::Prototype> {
+    let name = self.parse_name()?;
+
     skip_past!(self, token::Token::SymbolParenthesesL);
 
-    // let mut args = vec![];
+    // TODO: Parse args.
 
-    // FIXME: And EOF token.
-    // while self.is(token::Token::ParenthesesR) {
+    skip_past!(self, token::Token::SymbolParenthesesR);
+    skip_past!(self, token::Token::SymbolTilde);
+
+    let return_kind = self.parse_kind()?;
+
     Ok(prototype::Prototype {
-      name: self.parse_name()?,
+      name,
       // TODO: Support for variadic.
       is_variadic: false,
-      return_kind: self.parse_kind()?,
+      return_kind,
     })
     // }
   }
@@ -197,10 +198,13 @@ impl Parser {
 
     skip_past!(self, token::Token::KeywordFn);
 
+    let prototype = self.parse_prototype()?;
+    let body = self.parse_block()?;
+
     Ok(function::Function {
       is_public,
-      prototype: self.parse_prototype().ok().unwrap(),
-      body: self.parse_block().ok().unwrap(),
+      prototype,
+      body,
     })
   }
 
@@ -221,7 +225,8 @@ impl Parser {
 
     let mut namespace = namespace::Namespace::new(name);
 
-    while !self.is_eof() {
+    // TODO: Verify condition.
+    while !self.is(token::Token::SymbolBraceR) && !self.is_eof() {
       let top_level_node = match self.tokens[self.index] {
         token::Token::KeywordFn => namespace::TopLevelNode::Function(self.parse_function()?),
         token::Token::KeywordExtern => namespace::TopLevelNode::External(self.parse_external()?),
@@ -233,18 +238,11 @@ impl Parser {
         }
       };
 
-      let top_level_node_name = find_top_level_node_name(&top_level_node);
-
-      if top_level_node_name.is_none() {
-        return Err(diagnostic::Diagnostic {
-          message: String::from("top-level node name could not be determined"),
-          severity: diagnostic::DiagnosticSeverity::Internal,
-        });
-      }
+      println!("parsed top-level!!");
 
       namespace
         .symbol_table
-        .insert(top_level_node_name.unwrap(), top_level_node);
+        .insert(find_top_level_node_name(&top_level_node), top_level_node);
     }
 
     skip_past!(self, token::Token::SymbolBraceR);

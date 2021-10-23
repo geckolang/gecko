@@ -1,5 +1,6 @@
 use crate::{
-  block, diagnostic, function, int_kind, namespace, node, pass_manager, prototype, void_kind,
+  block, diagnostic, external, function, int_kind, namespace, node, pass_manager, prototype,
+  void_kind,
 };
 
 pub struct PassContext {
@@ -10,7 +11,7 @@ pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
 pub trait Pass<'a> {
   // TODO:
-  fn register(&self, pass_manager: &pass_manager::PassManager) -> bool {
+  fn register(&self, _: &pass_manager::PassManager) -> bool {
     return true;
   }
 
@@ -55,6 +56,10 @@ pub trait Pass<'a> {
   }
 
   fn visit_namespace(&mut self, _: &namespace::Namespace) -> PassResult {
+    Ok(())
+  }
+
+  fn visit_external(&mut self, _: &external::External) -> PassResult {
     Ok(())
   }
 }

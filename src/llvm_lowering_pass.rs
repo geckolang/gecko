@@ -16,7 +16,7 @@ macro_rules! assert {
 
 pub struct LlvmLoweringPass<'a> {
   llvm_context: &'a inkwell::context::Context,
-  llvm_module: inkwell::module::Module<'a>,
+  pub llvm_module: inkwell::module::Module<'a>,
   llvm_type_map: std::collections::HashMap<node::AnyKindNode, inkwell::types::AnyTypeEnum<'a>>,
 }
 
@@ -112,7 +112,10 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     self.llvm_module.add_function(
       function.prototype.name.as_str(),
       llvm_function_type,
-      Some(inkwell::module::Linkage::Private),
+      Some(match function.is_public {
+        true => inkwell::module::Linkage::External,
+        false => inkwell::module::Linkage::Private,
+      }),
     );
 
     Ok(())
@@ -121,8 +124,8 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
   fn visit_namespace(&mut self, namespace: &namespace::Namespace) -> pass::PassResult {
     for top_level_node in namespace.symbol_table.values() {
       match top_level_node {
-        namespace::TopLevelNode::Function(function) => self.visit(function)?,
-        namespace::TopLevelNode::External(external) => self.visit(external)?,
+        namespace::TopLevelNode::Function(function) => self.visit_function(function)?,
+        namespace::TopLevelNode::External(external) => self.visit_external(external)?,
       };
     }
 

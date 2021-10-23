@@ -67,8 +67,9 @@ mod tests {
   }
 
   impl node::Node for TestNode {
-    fn accept(&mut self, _: &dyn pass::Pass) {
-      //
+    // TODO: Isn't this redundant?
+    fn accept(&mut self, _: &mut dyn pass::Pass) -> pass::PassResult {
+      Ok(())
     }
   }
 

@@ -16,8 +16,9 @@ pub struct IntKind {
 }
 
 impl node::Node for IntKind {
-  fn accept(&mut self, pass: &dyn pass::Pass) {
-    // TODO:
-    // pass.visit_int_kind(self);
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_int_kind(self)?;
+
+    Ok(())
   }
 }

@@ -8,7 +8,9 @@ pub struct Function {
 }
 
 impl node::Node for Function {
-  fn accept(&mut self, pass: &dyn pass::Pass) {
-    // pass.visit_function(self);
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_function(self)?;
+
+    Ok(())
   }
 }

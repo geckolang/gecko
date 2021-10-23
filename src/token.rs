@@ -15,6 +15,7 @@ pub enum Token {
   SymbolBraceR,
   SymbolParenthesesL,
   SymbolParenthesesR,
+  SymbolTilde,
 }
 
 pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnostic::Diagnostic> {

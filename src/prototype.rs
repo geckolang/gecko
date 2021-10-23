@@ -10,7 +10,9 @@ pub struct Prototype {
 }
 
 impl node::Node for Prototype {
-  fn accept(&mut self, pass: &dyn pass::Pass) {
-    // pass.visit_prototype(self);
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_prototype(self)?;
+
+    Ok(())
   }
 }

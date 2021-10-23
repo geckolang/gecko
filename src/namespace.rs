@@ -21,8 +21,9 @@ impl Namespace {
 }
 
 impl node::Node for Namespace {
-  fn accept(&mut self, pass: &dyn pass::Pass) {
-    // TODO:
-    // pass.visit_prototype(self);
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_namespace(self)?;
+
+    Ok(())
   }
 }

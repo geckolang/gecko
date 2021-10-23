@@ -36,14 +36,11 @@ impl Lexer {
     self.read_index += 1;
   }
 
-  fn skip_whitespace(&mut self) {
-    if self.current_char == ' '
+  fn is_whitespace(&mut self) -> bool {
+    self.current_char == ' '
       || self.current_char == '\t'
       || self.current_char == '\n'
       || self.current_char == '\r'
-    {
-      self.read_char();
-    }
   }
 }
 
@@ -75,13 +72,17 @@ impl Iterator for Lexer {
       lexer.input[index..lexer.index].to_vec()
     };
 
-    self.skip_whitespace();
+    // TODO: What if it's EOF + whitespace?
+    while self.is_whitespace() {
+      self.read_char();
+    }
 
     let token: token::Token = match self.current_char {
       '{' => token::Token::SymbolBraceL,
       '}' => token::Token::SymbolBraceR,
       '(' => token::Token::SymbolParenthesesL,
       ')' => token::Token::SymbolParenthesesR,
+      '~' => token::Token::SymbolTilde,
       '\0' => token::Token::EOF,
       _ => {
         if is_letter(self.current_char) {
@@ -197,20 +198,18 @@ mod tests {
   }
 
   #[test]
-  fn lexer_skip_whitespace() {
+  fn lexer_is_whitespace() {
     let mut lexer = Lexer::new(vec![' ']);
 
     lexer.read_char();
-    lexer.skip_whitespace();
-    assert_eq!(lexer.read_index, 2);
+    assert_eq!(true, lexer.is_whitespace());
   }
 
   #[test]
-  fn lexer_skip_whitespace_ignore_non_whitespace() {
+  fn lexer_is_whitespace_not() {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
-    lexer.skip_whitespace();
-    assert_eq!(lexer.read_index, 1);
+    assert_eq!(false, lexer.is_whitespace());
   }
 }

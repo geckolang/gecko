@@ -7,7 +7,7 @@ pub enum AnyKindNode {
 }
 
 pub trait Node {
-  fn accept(&mut self, pass: &dyn pass::Pass);
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult;
 
   fn get_children(&self) -> Vec<&dyn Node> {
     vec![]
@@ -16,5 +16,5 @@ pub trait Node {
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Identifier {
-  name: String,
+  pub name: String,
 }
