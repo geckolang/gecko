@@ -11,10 +11,14 @@ pub struct Lexer {
   current_char: Option<char>,
 }
 
+/// Determine whether a character is a letter, and within
+/// the range of a-Z.
 fn is_letter(character: char) -> bool {
   'a' <= character && character <= 'z' || 'A' <= character && character <= 'Z' || character == '_'
 }
 
+/// Determine if the character is a digit within the range
+/// of 0-9.
 fn is_digit(character: char) -> bool {
   '0' <= character && character <= '9'
 }
@@ -35,6 +39,10 @@ impl Lexer {
     }
   }
 
+  /// Set the current character buffer to the character on
+  /// the next index. If there is no more characters, the
+  /// current character buffer will be set to [`None`] to
+  /// indicate the end of the input string.
   pub fn read_char(&mut self) {
     if self.read_index >= self.input.len() {
       self.current_char = None;
@@ -49,6 +57,8 @@ impl Lexer {
     self.read_index += 1;
   }
 
+  /// Determine if the current character is a whitespace
+  /// character.
   fn is_whitespace(&mut self) -> bool {
     if self.current_char.is_none() {
       return false;
@@ -59,6 +69,8 @@ impl Lexer {
     current_char == ' ' || current_char == '\t' || current_char == '\n' || current_char == '\r'
   }
 
+  /// Determine if the current character is unset, and therefore
+  /// signifies the end of the input string.
   fn is_eof(&self) -> bool {
     self.input.is_empty() || self.index == self.input.len() - 1
   }

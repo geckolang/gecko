@@ -37,7 +37,7 @@ impl<'a> LlvmLoweringPass<'a> {
   /// was already previously visited, simply retrieve and return
   /// the result from the LLVM types map.
   ///
-  /// Returns `None` if visiting the node did not insert a result
+  /// Returns [`None`] if visiting the node did not insert a result
   /// into the LLVM types map.
   fn visit_or_retrieve_type(
     &mut self,

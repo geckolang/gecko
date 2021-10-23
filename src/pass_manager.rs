@@ -9,6 +9,8 @@ impl<'a> PassManager<'a> {
     Self { passes: vec![] }
   }
 
+  /// Register a pass to be run. Returns `true` if the pass'
+  /// restrictions are met.
   pub fn add_pass(&mut self, pass: Box<dyn pass::Pass<'a>>) -> bool {
     if !pass.register(self) {
       return false;
@@ -19,6 +21,8 @@ impl<'a> PassManager<'a> {
     true
   }
 
+  /// Execute all registered passes in a sequential order, over
+  /// the provided root node.
   pub fn run(&mut self, root_node: &dyn node::Node) -> Vec<diagnostic::Diagnostic> {
     // TODO: Better structure/organization of diagnostics.
 
