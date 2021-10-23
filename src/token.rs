@@ -2,7 +2,6 @@ use crate::diagnostic;
 
 #[derive(PartialEq, Debug)]
 pub enum Token {
-  EOF,
   Identifier(String),
   Integer(Vec<char>),
   KeywordPub,
