@@ -112,7 +112,7 @@ impl Iterator for Lexer {
     };
 
     // TODO: What if it's EOF + whitespace?
-    while self.is_whitespace() && self.is_eof() {
+    while self.is_whitespace() && !self.is_eof() {
       self.read_char();
     }
 
@@ -124,6 +124,7 @@ impl Iterator for Lexer {
       '(' => token::Token::SymbolParenthesesL,
       ')' => token::Token::SymbolParenthesesR,
       '~' => token::Token::SymbolTilde,
+      ';' => token::Token::SymbolSemiColon,
       _ => {
         if is_letter(self.current_char.unwrap()) {
           let identifier = read_identifier(self);
@@ -239,7 +240,6 @@ mod tests {
   fn lexer_is_whitespace() {
     let mut lexer = Lexer::new(vec![' ']);
 
-    lexer.read_char();
     assert_eq!(true, lexer.is_whitespace());
   }
 
@@ -247,7 +247,18 @@ mod tests {
   fn lexer_is_whitespace_not() {
     let mut lexer = Lexer::new(vec!['a']);
 
-    lexer.read_char();
     assert_eq!(false, lexer.is_whitespace());
   }
+
+  // TODO:
+  // #[test]
+  // fn lexer_lex_keywords() {
+  //   let mut lexer = Lexer::new(String::from("extern pub fn namespace").chars().collect());
+  //   let tokens: Vec<token::Token> = lexer.collect();
+
+  //   assert_eq!(Some(token::Token::KeywordExtern), tokens.get(0));
+  //   assert_eq!(Some(token::Token::KeywordPub), tokens.get(1));
+  //   assert_eq!(Some(token::Token::KeywordFn), tokens.get(2));
+  //   assert_eq!(Some(token::Token::KeywordNamespace), tokens.get(3));
+  // }
 }
