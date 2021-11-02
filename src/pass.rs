@@ -66,4 +66,8 @@ pub trait Pass<'a> {
   fn visit_return_stmt(&mut self, _: &block::ReturnStmt) -> PassResult {
     Ok(())
   }
+
+  fn visit_bool_literal(&mut self, _: &node::BoolLiteral) -> PassResult {
+    Ok(())
+  }
 }

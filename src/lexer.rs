@@ -138,7 +138,7 @@ impl Iterator for Lexer {
             }
           }
         } else if is_digit(self.current_char.unwrap()) {
-          return Some(token::Token::Integer(read_number(self)));
+          return Some(token::Token::LiteralInt(read_number(self)));
         } else {
           return None;
         }

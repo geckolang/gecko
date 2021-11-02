@@ -41,7 +41,17 @@ fn main(i32 argc, i32[] argv) -> i32 {
 
 ### Building
 #### 1.1 &mdash; Environment variables
-Set the `LLVM_SYS_120_PREFIX` environment variable to the `build` directory inside the LLVM source files. It is expected that LLVM was built from source at this point. Additionally, set the `LLVM_CONFIG` to point to the `build/bin/llvm-config` (or `build/bin/llvm-config.exe` on Windows) executable file.
+Set the `LLVM_SYS_120_PREFIX` environment variable to the `build` directory inside the LLVM source files. It is expected that LLVM was built from source at this point. Additionally, set the `LLVM_CONFIG` to point to the `build/bin/llvm-config` (or `build/bin/llvm-config.exe` on Windows) executable file. Do not wrap the path with quotes, as it might lead to `Access denied` errors when attempting to build `llvm-sys`. If you're using Visual Studio Code, ensure it is seeing the `LLVM_SYS_120_PREFIX` environment variable.
+
+
+#### 1.2 &mdash; Windows
+On the Windows platform, it is recommended to use MSYS2 to install the GCC toolchain. After installing MSYS2, open the `MSYS2 MinGW (64-bit)` console (or the `32-bit` if you're on 32-bit arch.), then install the GCC toolchain using:
+
+```bash
+$ pacman -S mingw-w64-x86_64-gcc
+```
+
+The GCC toolchain (through MSYS2) is required in order to build the `llvm-sys` cargo package (which is a dependency of `inkwell`).
 
 ### Project roadmap
 *🔨 &mdash; Work in progress.* *✔️ &mdash; Completed.*

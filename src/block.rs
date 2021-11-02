@@ -6,9 +6,6 @@ pub enum AnyStatementNode {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyExprNode {}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Block {
   pub statements: Vec<AnyStatementNode>,
 }
@@ -23,7 +20,7 @@ impl node::Node for Block {
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct ReturnStmt {
-  pub value: Option<AnyExprNode>,
+  pub value: Option<node::AnyLiteralNode>,
 }
 
 impl node::Node for ReturnStmt {

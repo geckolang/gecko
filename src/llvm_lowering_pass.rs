@@ -20,7 +20,7 @@ pub struct LlvmLoweringPass<'a> {
   pub llvm_module: inkwell::module::Module<'a>,
   llvm_type_map: std::collections::HashMap<node::AnyKindNode, inkwell::types::AnyTypeEnum<'a>>,
   llvm_value_map:
-    std::collections::HashMap<block::AnyExprNode, inkwell::values::BasicValueEnum<'a>>,
+    std::collections::HashMap<node::AnyLiteralNode, inkwell::values::BasicValueEnum<'a>>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'a>>,
   llvm_basic_block_buffer: Option<inkwell::basic_block::BasicBlock<'a>>,
   llvm_builder_buffer: inkwell::builder::Builder<'a>,
@@ -90,18 +90,12 @@ impl<'a> LlvmLoweringPass<'a> {
   /// Returns [`None`] if visiting the node did not insert a result
   /// into the LLVM values map.
   fn visit_or_retrieve_value(
-    &self,
-    node: &block::AnyExprNode,
+    &mut self,
+    node: &node::AnyLiteralNode,
   ) -> Result<Option<&inkwell::values::BasicValueEnum<'a>>, diagnostic::Diagnostic> {
     if !self.llvm_value_map.contains_key(node) {
       match node {
-        _ => {
-          // TODO: Implement.
-          return Err(diagnostic::Diagnostic {
-            message: String::from("unimplemented"),
-            severity: diagnostic::DiagnosticSeverity::Internal,
-          });
-        }
+        node::AnyLiteralNode::BoolLiteral(value) => self.visit_bool_literal(&value)?,
       };
     }
 
@@ -228,17 +222,29 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
   fn visit_return_stmt(&mut self, return_stmt: &block::ReturnStmt) -> pass::PassResult {
     assert!(self.llvm_basic_block_buffer.is_some());
 
+    let value = if return_stmt.value.is_some() {
+      self.visit_or_retrieve_value(&return_stmt.value.as_ref().unwrap())?
+    } else {
+      None
+    };
+
     self
       .llvm_builder_buffer
-      .build_return(if return_stmt.value.is_some() {
-        Some(
-          self
-            .visit_or_retrieve_value(&return_stmt.value.as_ref().unwrap())?
-            .unwrap(),
-        )
-      } else {
-        None
-      });
+      .build_return(Some(&value.unwrap().into_int_value()));
+
+    Ok(())
+  }
+
+  fn visit_bool_literal(&mut self, bool_literal: &node::BoolLiteral) -> pass::PassResult {
+    self.llvm_value_map.insert(
+      node::AnyLiteralNode::BoolLiteral(*bool_literal),
+      inkwell::values::BasicValueEnum::IntValue(
+        self
+          .llvm_context
+          .bool_type()
+          .const_int(bool_literal.value as u64, false),
+      ),
+    );
 
     Ok(())
   }

@@ -4,10 +4,18 @@ use crate::{
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
+    // FIXME: Something's wrong, we get an error when no input is provided (eof at index 0).
+    // if $self.is_eof() {
+    //   return Err(diagnostic::Diagnostic {
+    //     message: format!("expected token `{}` but reached eof", $token),
+    //     severity: diagnostic::DiagnosticSeverity::Error,
+    //   });
+    // }
+
     if !$self.is($token) {
       return Err(diagnostic::Diagnostic {
         message: format!(
-          "expected token `{:?}` but got `{:?}`",
+          "expected token `{}` but got `{}`",
           $token, $self.tokens[$self.index]
         ),
         severity: diagnostic::DiagnosticSeverity::Error,
@@ -282,11 +290,44 @@ impl Parser {
   pub fn parse_return_stmt(&mut self) -> ParserResult<block::ReturnStmt> {
     skip_past!(self, token::Token::KeywordReturn);
 
-    // TODO: Support for return value.
+    let mut value = None;
+
+    if !self.is(token::Token::SymbolSemiColon) {
+      value = Some(self.parse_literal()?);
+    }
 
     skip_past!(self, token::Token::SymbolSemiColon);
 
-    Ok(block::ReturnStmt { value: None })
+    Ok(block::ReturnStmt { value })
+  }
+
+  pub fn parse_bool_literal(&mut self) -> ParserResult<node::BoolLiteral> {
+    Ok(match self.tokens[self.index] {
+      token::Token::LiteralBool(value) => {
+        self.skip();
+
+        node::BoolLiteral { value }
+      }
+      // TODO: Better error.
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: String::from("unexpected token, expected boolean literal"),
+          severity: diagnostic::DiagnosticSeverity::Error,
+        })
+      }
+    })
+  }
+
+  pub fn parse_literal(&mut self) -> ParserResult<node::AnyLiteralNode> {
+    Ok(match self.tokens[self.index] {
+      token::Token::LiteralBool(_) => node::AnyLiteralNode::BoolLiteral(self.parse_bool_literal()?),
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: String::from("unexpected token, expected literal"),
+          severity: diagnostic::DiagnosticSeverity::Error,
+        })
+      }
+    })
   }
 }
 
@@ -415,6 +456,23 @@ mod tests {
     assert_eq!(false, external_prototype.is_variadic);
 
     // TODO: Verify return kind.
+  }
+
+  #[test]
+  fn parse_bool_literal() {
+    let mut parser_for_true = Parser::new(vec![token::Token::LiteralBool(true)]);
+
+    let true_bool_literal = parser_for_true.parse_bool_literal();
+
+    assert_eq!(true, true_bool_literal.is_ok());
+    assert_eq!(true, true_bool_literal.unwrap().value);
+
+    let mut parser_for_false = Parser::new(vec![token::Token::LiteralBool(false)]);
+
+    let false_bool_literal = parser_for_false.parse_bool_literal();
+
+    assert_eq!(true, false_bool_literal.is_ok());
+    assert_eq!(false, false_bool_literal.unwrap().value);
   }
   // TODO: Add missing tests (is_eof, etc.).
 }
