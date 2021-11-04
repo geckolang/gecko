@@ -34,3 +34,10 @@ impl Node for BoolLiteral {
     pass.visit_bool_literal(self)
   }
 }
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct KindGroup {
+  pub kind: AnyKindNode,
+  pub is_reference: bool,
+  pub is_mutable: bool,
+}

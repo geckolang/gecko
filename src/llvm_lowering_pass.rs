@@ -135,7 +135,8 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
   }
 
   fn visit_function(&mut self, function: &function::Function) -> pass::PassResult {
-    let llvm_return_type = self.visit_or_retrieve_type(&function.prototype.return_kind)?;
+    let llvm_return_type =
+      self.visit_or_retrieve_type(&function.prototype.return_kind_group.kind)?;
 
     assert!(llvm_return_type.is_some());
 
@@ -182,7 +183,7 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
   fn visit_external(&mut self, external: &external::External) -> pass::PassResult {
     let llvm_function_type = LlvmLoweringPass::get_function_type_from(
       self
-        .visit_or_retrieve_type(&external.prototype.return_kind)?
+        .visit_or_retrieve_type(&external.prototype.return_kind_group.kind)?
         .unwrap(),
       external.prototype.is_variadic,
     );
@@ -203,6 +204,7 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     self.llvm_basic_block_buffer = Some(
       self
         .llvm_context
+        // TODO: Name basic block?
         .append_basic_block(self.llvm_function_buffer.unwrap(), ""),
     );
 
@@ -222,15 +224,13 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
   fn visit_return_stmt(&mut self, return_stmt: &block::ReturnStmt) -> pass::PassResult {
     assert!(self.llvm_basic_block_buffer.is_some());
 
-    let value = if return_stmt.value.is_some() {
-      self.visit_or_retrieve_value(&return_stmt.value.as_ref().unwrap())?
-    } else {
-      None
+    let value = match return_stmt.value {
+      Some(value) => self.visit_or_retrieve_value(&value)?,
+      None => None,
     };
 
-    self
-      .llvm_builder_buffer
-      .build_return(Some(&value.unwrap().into_int_value()));
+    // FIXME: Solve error out.
+    self.llvm_builder_buffer.build_return(Some(&value));
 
     Ok(())
   }
@@ -308,5 +308,30 @@ mod tests {
 
     assert_eq!(true, visit_int_kind_result.is_ok());
     assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
+  }
+
+  #[test]
+  fn visit_function() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
+
+    let visit_function_result = llvm_lowering_pass.visit_function(&function::Function {
+      is_public: false,
+      prototype: prototype::Prototype {
+        name: "test".to_string(),
+        return_kind_group: node::KindGroup {
+          kind: node::AnyKindNode::VoidKind(void_kind::VoidKind {}),
+          is_reference: false,
+          is_mutable: false,
+        },
+        parameters: vec![],
+        is_variadic: false,
+      },
+      body: block::Block { statements: vec![] },
+    });
+
+    assert_eq!(true, visit_function_result.is_ok());
+    assert_eq!(llvm_lowering_pass.llvm_value_map.len(), 1);
   }
 }

@@ -188,9 +188,22 @@ impl Parser {
     Ok(void_kind::VoidKind {})
   }
 
-  pub fn parse_kind(&mut self) -> ParserResult<node::AnyKindNode> {
+  pub fn parse_kind_group(&mut self) -> ParserResult<node::KindGroup> {
+    let mut is_reference = false;
+    let mut is_mutable = false;
+
+    if self.is(token::Token::SymbolAmpersand) {
+      is_reference = true;
+      self.skip();
+    }
+
+    if self.is(token::Token::KeywordMut) {
+      is_mutable = true;
+      self.skip();
+    }
+
     // TODO: Support for more types.
-    Ok(match self.tokens[self.index] {
+    let kind = match self.tokens[self.index] {
       token::Token::TypeVoid => node::AnyKindNode::VoidKind(self.parse_void_kind()?),
       token::Token::TypeInt32 => node::AnyKindNode::IntKind(self.parse_int_kind()?),
       _ => {
@@ -199,7 +212,23 @@ impl Parser {
           severity: diagnostic::DiagnosticSeverity::Internal,
         })
       }
+    };
+
+    Ok(node::KindGroup {
+      is_reference,
+      is_mutable,
+      kind,
     })
+  }
+
+  pub fn parse_parameter(&mut self) -> ParserResult<prototype::Parameter> {
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolColon);
+
+    let kind_group = self.parse_kind_group()?;
+
+    Ok((name, kind_group))
   }
 
   pub fn parse_prototype(&mut self) -> ParserResult<prototype::Prototype> {
@@ -207,20 +236,38 @@ impl Parser {
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
-    // TODO: Parse args.
+    let parameters = vec![];
+    let is_variadic = false;
+
+    // TODO: Analyze, and remove posibility of lonely comma.
+    while !self.is(token::Token::SymbolParenthesesR) && !self.is_eof() {
+      if self.is(token::Token::SymbolVariadic) {
+        is_variadic = true;
+        self.skip();
+
+        break;
+      }
+
+      parameters.push(self.parse_parameter()?);
+
+      if !self.is(token::Token::SymbolComma) {
+        break;
+      }
+
+      self.skip();
+    }
 
     skip_past!(self, token::Token::SymbolParenthesesR);
     skip_past!(self, token::Token::SymbolTilde);
 
-    let return_kind = self.parse_kind()?;
+    let return_kind_group = self.parse_kind_group()?;
 
     Ok(prototype::Prototype {
       name,
-      // TODO: Support for variadic.
-      is_variadic: false,
-      return_kind,
+      parameters,
+      is_variadic,
+      return_kind_group,
     })
-    // }
   }
 
   pub fn parse_function(&mut self) -> ParserResult<function::Function> {

@@ -10,6 +10,7 @@ pub enum Token {
   KeywordExtern,
   KeywordNamespace,
   KeywordReturn,
+  KeywordMut,
   TypeVoid,
   TypeInt32,
   SymbolBraceL,
@@ -18,6 +19,11 @@ pub enum Token {
   SymbolParenthesesR,
   SymbolTilde,
   SymbolSemiColon,
+  SymbolColon,
+  SymbolAmpersand,
+  SymbolComma,
+  SymbolVariadic,
+  SymbolArrow,
 }
 
 impl std::fmt::Display for Token {
@@ -37,6 +43,9 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnost
     "return" => Token::KeywordReturn,
     "true" => Token::LiteralBool(true),
     "false" => Token::LiteralBool(false),
+    "mut" => Token::KeywordMut,
+    "..." => Token::SymbolVariadic,
+    "->" => Token::SymbolArrow,
     _ => {
       return Err(diagnostic::Diagnostic {
         message: format!("identifier `{}` is not a keyword", identifier_str),
