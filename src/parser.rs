@@ -48,14 +48,6 @@ pub struct Parser {
   index: usize,
 }
 
-// TODO: Consider moving to the ilc project.
-fn find_top_level_node_name(top_level_node: &package::TopLevelNode) -> String {
-  match top_level_node {
-    package::TopLevelNode::Function(function) => function.prototype.name.clone(),
-    package::TopLevelNode::External(external) => external.prototype.name.clone(),
-  }
-}
-
 impl Parser {
   pub fn new(tokens: Vec<token::Token>) -> Self {
     Self { tokens, index: 0 }
@@ -80,10 +72,6 @@ impl Parser {
     true
   }
 
-  fn is_eof(&self) -> bool {
-    self.tokens.len() == 0 || self.index == self.tokens.len() - 1
-  }
-
   fn peek(&self) -> Option<token::Token> {
     match self.tokens.get(self.index + 1) {
       Some(value) => Some(value.clone()),
@@ -99,6 +87,10 @@ impl Parser {
     }
 
     token == next_token.unwrap()
+  }
+
+  pub fn is_eof(&self) -> bool {
+    self.tokens.len() == 0 || self.index == self.tokens.len() - 1
   }
 
   pub fn parse_name(&mut self) -> ParserResult<String> {
@@ -197,9 +189,12 @@ impl Parser {
       token::Token::TypeInt32 => node::AnyKindNode::IntKind(self.parse_int_kind()?),
       _ => {
         return Err(diagnostic::Diagnostic {
-          // TODO: Error message.
-          message: String::from("foo"),
-          severity: diagnostic::DiagnosticSeverity::Internal,
+          message: format!(
+            "unexpected token `{:?}`, expected type",
+            // TODO: Check if the index is valid?
+            self.tokens[self.index]
+          ),
+          severity: diagnostic::DiagnosticSeverity::Error,
         });
       }
     };
@@ -282,6 +277,7 @@ impl Parser {
 
   pub fn parse_external(&mut self) -> ParserResult<external::External> {
     skip_past!(self, token::Token::KeywordExtern);
+    skip_past!(self, token::Token::KeywordFn);
 
     let prototype = self.parse_prototype()?;
 
@@ -466,6 +462,7 @@ mod tests {
   fn parse_external() {
     let mut parser = Parser::new(vec![
       token::Token::KeywordExtern,
+      token::Token::KeywordFn,
       token::Token::Identifier(String::from("test")),
       token::Token::SymbolParenthesesL,
       token::Token::SymbolParenthesesR,

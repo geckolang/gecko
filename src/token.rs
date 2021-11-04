@@ -23,7 +23,6 @@ pub enum Token {
   SymbolAmpersand,
   SymbolComma,
   SymbolVariadic,
-  SymbolArrow,
 }
 
 impl std::fmt::Display for Token {
@@ -45,7 +44,6 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnost
     "false" => Token::LiteralBool(false),
     "mut" => Token::KeywordMut,
     "..." => Token::SymbolVariadic,
-    "->" => Token::SymbolArrow,
     _ => {
       return Err(diagnostic::Diagnostic {
         message: format!("identifier `{}` is not a keyword", identifier_str),

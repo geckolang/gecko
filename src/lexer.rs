@@ -89,8 +89,11 @@ impl Iterator for Lexer {
 
     let read_identifier = |lexer: &mut Lexer| -> String {
       let index = lexer.index;
+      let current_char = lexer.current_char.unwrap();
 
-      while lexer.index < lexer.input.len() && is_letter(lexer.current_char.unwrap()) {
+      // NOTE: At this point, we know that the first character
+      // of the identifier was a letter.
+      while lexer.index < lexer.input.len() && (is_letter(current_char) || is_digit(current_char)) {
         lexer.read_char();
       }
 
@@ -115,8 +118,6 @@ impl Iterator for Lexer {
     while self.is_whitespace() && !self.is_eof() {
       self.read_char();
     }
-
-    // TODO: Is it okay to use '?' here?
 
     let token: token::Token = match self.current_char? {
       '{' => token::Token::SymbolBraceL,
@@ -251,6 +252,14 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(false, lexer.is_whitespace());
+  }
+
+  #[test]
+  fn lex_types() {
+    // TODO: Add all types.
+    let mut lexer = Lexer::new(String::from("i32").chars().collect());
+
+    assert_eq!(Some(token::Token::TypeInt32), lexer.next());
   }
 
   // TODO:
