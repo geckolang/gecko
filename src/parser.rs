@@ -48,6 +48,7 @@ pub struct Parser {
   index: usize,
 }
 
+// TODO: Consider moving to the ilc project.
 fn find_top_level_node_name(top_level_node: &package::TopLevelNode) -> String {
   match top_level_node {
     package::TopLevelNode::Function(function) => function.prototype.name.clone(),
@@ -452,8 +453,7 @@ mod tests {
     let mut parser = Parser::new(vec![
       token::Token::KeywordPackage,
       token::Token::Identifier(String::from("test")),
-      token::Token::SymbolBraceL,
-      token::Token::SymbolBraceR,
+      token::Token::SymbolSemiColon,
     ]);
 
     let package = parser.parse_package_decl();

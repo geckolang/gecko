@@ -3,10 +3,6 @@ use crate::{
   void_kind,
 };
 
-pub struct PassContext {
-  diagnostics: Vec<diagnostic::Diagnostic>,
-}
-
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
 pub trait Pass<'a> {
