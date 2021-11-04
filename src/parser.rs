@@ -150,36 +150,23 @@ impl Parser {
   }
 
   pub fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
+    // TODO: Simplify weird, unreadable logic?
     let token = match self.skip() {
       true => &self.tokens[self.index - 1],
       false => &self.tokens[self.index],
     };
 
-    match token {
-      // FIXME: Integer kind tokens are available.
-      token::Token::Identifier(value) => Ok(int_kind::IntKind {
-        size: match value.as_str() {
-          "i8" => int_kind::IntSize::Signed8,
-          "i16" => int_kind::IntSize::Signed16,
-          "i32" => int_kind::IntSize::Signed32,
-          "i64" => int_kind::IntSize::Signed64,
-          "i128" => int_kind::IntSize::Signed128,
-          _ => {
-            return Err(diagnostic::Diagnostic {
-              // TODO:
-              message: String::from(format!("invalid integer type name")),
-              severity: diagnostic::DiagnosticSeverity::Error,
-            });
-          }
-        },
-      }),
+    let size = match token {
+      token::Token::TypeInt32 => int_kind::IntSize::Signed32,
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: String::from("invalid"),
+          message: format!("not yet implemented"),
           severity: diagnostic::DiagnosticSeverity::Error,
         })
       }
-    }
+    };
+
+    Ok(int_kind::IntKind { size })
   }
 
   pub fn parse_void_kind(&mut self) -> ParserResult<void_kind::VoidKind> {
@@ -202,22 +189,24 @@ impl Parser {
       self.skip();
     }
 
+    // TODO: Check if the index is valid?
     // TODO: Support for more types.
     let kind = match self.tokens[self.index] {
       token::Token::TypeVoid => node::AnyKindNode::VoidKind(self.parse_void_kind()?),
       token::Token::TypeInt32 => node::AnyKindNode::IntKind(self.parse_int_kind()?),
       _ => {
         return Err(diagnostic::Diagnostic {
+          // TODO: Error message.
           message: String::from("foo"),
           severity: diagnostic::DiagnosticSeverity::Internal,
-        })
+        });
       }
     };
 
     Ok(node::KindGroup {
+      kind,
       is_reference,
       is_mutable,
-      kind,
     })
   }
 
@@ -236,8 +225,8 @@ impl Parser {
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
-    let parameters = vec![];
-    let is_variadic = false;
+    let mut parameters = vec![];
+    let mut is_variadic = false;
 
     // TODO: Analyze, and remove posibility of lonely comma.
     while !self.is(token::Token::SymbolParenthesesR) && !self.is_eof() {
@@ -451,11 +440,11 @@ mod tests {
 
   #[test]
   fn parser_parse_int_kind() {
-    let mut parser = Parser::new(vec![token::Token::Identifier(String::from("i8"))]);
+    let mut parser = Parser::new(vec![token::Token::TypeInt32]);
     let int_kind = parser.parse_int_kind();
 
     assert_eq!(true, int_kind.is_ok());
-    assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Signed8);
+    assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Signed32);
   }
 
   #[test]
@@ -521,5 +510,80 @@ mod tests {
     assert_eq!(true, false_bool_literal.is_ok());
     assert_eq!(false, false_bool_literal.unwrap().value);
   }
+
+  #[test]
+  fn parse_parameter() {
+    let mut parser = Parser::new(vec![
+      token::Token::Identifier(String::from("foo")),
+      token::Token::SymbolColon,
+      token::Token::TypeInt32,
+    ]);
+
+    let parameter = parser.parse_parameter();
+
+    assert_eq!(true, parameter.is_ok());
+    assert_eq!(String::from("foo"), parameter.unwrap().0);
+  }
+
+  #[test]
+  fn parse_kind_group() {
+    let mut parser = Parser::new(vec![token::Token::TypeInt32]);
+
+    let kind_group_result = parser.parse_kind_group();
+
+    assert_eq!(true, kind_group_result.is_ok());
+
+    let kind_group_value = kind_group_result.unwrap();
+
+    assert_eq!(false, kind_group_value.is_reference);
+    assert_eq!(false, kind_group_value.is_mutable);
+  }
+
+  #[test]
+  fn parse_kind_group_reference() {
+    let mut parser = Parser::new(vec![token::Token::SymbolAmpersand, token::Token::TypeInt32]);
+
+    let kind_group_result = parser.parse_kind_group();
+
+    assert_eq!(true, kind_group_result.is_ok());
+
+    let kind_group_value = kind_group_result.unwrap();
+
+    assert_eq!(true, kind_group_value.is_reference);
+    assert_eq!(false, kind_group_value.is_mutable);
+  }
+
+  #[test]
+  fn parse_kind_group_mutable() {
+    let mut parser = Parser::new(vec![token::Token::KeywordMut, token::Token::TypeInt32]);
+
+    let kind_group_result = parser.parse_kind_group();
+
+    assert_eq!(true, kind_group_result.is_ok());
+
+    let kind_group_value = kind_group_result.unwrap();
+
+    assert_eq!(false, kind_group_value.is_reference);
+    assert_eq!(true, kind_group_value.is_mutable);
+  }
+
+  #[test]
+  fn parse_kind_group_mutable_reference() {
+    let mut parser = Parser::new(vec![
+      token::Token::SymbolAmpersand,
+      token::Token::KeywordMut,
+      token::Token::TypeInt32,
+    ]);
+
+    let kind_group_result = parser.parse_kind_group();
+
+    assert_eq!(true, kind_group_result.is_ok());
+
+    let kind_group_value = kind_group_result.unwrap();
+
+    assert_eq!(true, kind_group_value.is_reference);
+    assert_eq!(true, kind_group_value.is_mutable);
+  }
+
   // TODO: Add missing tests (is_eof, etc.).
 }

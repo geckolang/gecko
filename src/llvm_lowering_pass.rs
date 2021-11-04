@@ -230,7 +230,7 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     };
 
     // FIXME: Solve error out.
-    self.llvm_builder_buffer.build_return(Some(&value));
+    // self.llvm_builder_buffer.build_return(Some(&value));
 
     Ok(())
   }
@@ -319,7 +319,7 @@ mod tests {
     let visit_function_result = llvm_lowering_pass.visit_function(&function::Function {
       is_public: false,
       prototype: prototype::Prototype {
-        name: "test".to_string(),
+        name: String::from("foo"),
         return_kind_group: node::KindGroup {
           kind: node::AnyKindNode::VoidKind(void_kind::VoidKind {}),
           is_reference: false,
@@ -332,6 +332,6 @@ mod tests {
     });
 
     assert_eq!(true, visit_function_result.is_ok());
-    assert_eq!(llvm_lowering_pass.llvm_value_map.len(), 1);
+    assert_eq!(true, llvm_lowering_pass.llvm_function_buffer.is_some());
   }
 }
