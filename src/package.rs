@@ -6,12 +6,12 @@ pub enum TopLevelNode {
   External(external::External),
 }
 
-pub struct Namespace {
+pub struct Package {
   pub name: String,
   pub symbol_table: std::collections::HashMap<String, TopLevelNode>,
 }
 
-impl Namespace {
+impl Package {
   pub fn new(name: String) -> Self {
     Self {
       name,
@@ -20,9 +20,9 @@ impl Namespace {
   }
 }
 
-impl node::Node for Namespace {
+impl node::Node for Package {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_namespace(self)?;
+    pass.visit_package(self)?;
 
     Ok(())
   }

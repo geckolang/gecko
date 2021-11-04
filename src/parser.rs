@@ -1,5 +1,5 @@
 use crate::{
-  block, diagnostic, external, function, int_kind, namespace, node, prototype, token, void_kind,
+  block, diagnostic, external, function, int_kind, node, package, prototype, token, void_kind,
 };
 
 macro_rules! skip_past {
@@ -48,10 +48,10 @@ pub struct Parser {
   index: usize,
 }
 
-fn find_top_level_node_name(top_level_node: &namespace::TopLevelNode) -> String {
+fn find_top_level_node_name(top_level_node: &package::TopLevelNode) -> String {
   match top_level_node {
-    namespace::TopLevelNode::Function(function) => function.prototype.name.clone(),
-    namespace::TopLevelNode::External(external) => external.prototype.name.clone(),
+    package::TopLevelNode::Function(function) => function.prototype.name.clone(),
+    package::TopLevelNode::External(external) => external.prototype.name.clone(),
   }
 }
 
@@ -289,38 +289,30 @@ impl Parser {
     Ok(external::External { prototype })
   }
 
-  pub fn parse_namespace(&mut self) -> ParserResult<namespace::Namespace> {
-    skip_past!(self, token::Token::KeywordNamespace);
+  pub fn parse_package_decl(&mut self) -> ParserResult<package::Package> {
+    skip_past!(self, token::Token::KeywordPackage);
 
     let name = self.parse_name()?;
 
-    skip_past!(self, token::Token::SymbolBraceL);
+    skip_past!(self, token::Token::SymbolSemiColon);
 
-    let mut namespace = namespace::Namespace::new(name);
+    Ok(package::Package::new(name))
+  }
 
-    // TODO: Verify condition.
-    while !self.is(token::Token::SymbolBraceR) && !self.is_eof() {
-      // TODO: Support for 'pub' visibility modifier.
-
-      let top_level_node = match self.tokens[self.index] {
-        token::Token::KeywordFn => namespace::TopLevelNode::Function(self.parse_function()?),
-        token::Token::KeywordExtern => namespace::TopLevelNode::External(self.parse_external()?),
-        _ => {
-          return Err(diagnostic::Diagnostic {
-            message: format!("unexpected token: {:?}", self.tokens[self.index]),
-            severity: diagnostic::DiagnosticSeverity::Error,
-          })
-        }
-      };
-
-      namespace
-        .symbol_table
-        .insert(find_top_level_node_name(&top_level_node), top_level_node);
-    }
-
-    skip_past!(self, token::Token::SymbolBraceR);
-
-    Ok(namespace)
+  pub fn parse_top_level_node(&mut self) -> ParserResult<package::TopLevelNode> {
+    Ok(match self.tokens[self.index] {
+      token::Token::KeywordFn => package::TopLevelNode::Function(self.parse_function()?),
+      token::Token::KeywordExtern => package::TopLevelNode::External(self.parse_external()?),
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: format!(
+            "unexpected token: {:?}, expected top-level construct",
+            self.tokens[self.index]
+          ),
+          severity: diagnostic::DiagnosticSeverity::Error,
+        })
+      }
+    })
   }
 
   pub fn parse_return_stmt(&mut self) -> ParserResult<block::ReturnStmt> {
@@ -456,18 +448,18 @@ mod tests {
   }
 
   #[test]
-  fn parser_parse_namespace() {
+  fn parse_package_decl() {
     let mut parser = Parser::new(vec![
-      token::Token::KeywordNamespace,
+      token::Token::KeywordPackage,
       token::Token::Identifier(String::from("test")),
       token::Token::SymbolBraceL,
       token::Token::SymbolBraceR,
     ]);
 
-    let namespace = parser.parse_namespace();
+    let package = parser.parse_package_decl();
 
-    assert_eq!(true, namespace.is_ok());
-    assert_eq!(String::from("test"), namespace.unwrap().name);
+    assert_eq!(true, package.is_ok());
+    assert_eq!(String::from("test"), package.unwrap().name);
   }
 
   #[test]

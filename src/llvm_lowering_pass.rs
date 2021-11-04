@@ -1,5 +1,5 @@
 use crate::{
-  block, diagnostic, external, function, int_kind, namespace, node, pass, pass::Pass, prototype,
+  block, diagnostic, external, function, int_kind, node, package, pass, pass::Pass, prototype,
   void_kind,
 };
 use inkwell::types::AnyType;
@@ -169,11 +169,11 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     })
   }
 
-  fn visit_namespace(&mut self, namespace: &namespace::Namespace) -> pass::PassResult {
-    for top_level_node in namespace.symbol_table.values() {
+  fn visit_package(&mut self, package: &package::Package) -> pass::PassResult {
+    for top_level_node in package.symbol_table.values() {
       match top_level_node {
-        namespace::TopLevelNode::Function(function) => self.visit_function(function)?,
-        namespace::TopLevelNode::External(external) => self.visit_external(external)?,
+        package::TopLevelNode::Function(function) => self.visit_function(function)?,
+        package::TopLevelNode::External(external) => self.visit_external(external)?,
       };
     }
 

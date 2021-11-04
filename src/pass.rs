@@ -1,5 +1,5 @@
 use crate::{
-  block, diagnostic, external, function, int_kind, namespace, node, pass_manager, prototype,
+  block, diagnostic, external, function, int_kind, node, package, pass_manager, prototype,
   void_kind,
 };
 
@@ -55,7 +55,7 @@ pub trait Pass<'a> {
     Ok(())
   }
 
-  fn visit_namespace(&mut self, _: &namespace::Namespace) -> PassResult {
+  fn visit_package(&mut self, _: &package::Package) -> PassResult {
     Ok(())
   }
 
