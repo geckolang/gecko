@@ -165,7 +165,13 @@ impl Parser {
   pub fn parse_void_kind(&mut self) -> ParserResult<void_kind::VoidKind> {
     skip_past!(self, token::Token::TypeVoid);
 
-    Ok(void_kind::VoidKind {})
+    Ok(void_kind::VoidKind)
+  }
+
+  pub fn parse_bool_kind(&mut self) -> ParserResult<int_kind::BoolKind> {
+    skip_past!(self, token::Token::TypeBool);
+
+    Ok(int_kind::BoolKind)
   }
 
   pub fn parse_kind_group(&mut self) -> ParserResult<node::KindGroup> {
@@ -187,6 +193,7 @@ impl Parser {
     let kind = match self.tokens[self.index] {
       token::Token::TypeVoid => node::AnyKindNode::VoidKind(self.parse_void_kind()?),
       token::Token::TypeInt32 => node::AnyKindNode::IntKind(self.parse_int_kind()?),
+      token::Token::TypeBool => node::AnyKindNode::BoolKind(self.parse_bool_kind()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -224,9 +231,9 @@ impl Parser {
     let mut parameters = vec![];
     let mut is_variadic = false;
 
-    // TODO: Analyze, and remove posibility of lonely comma.
+    // TODO: Analyze, and remove possibility of lonely comma.
     while !self.is(token::Token::SymbolParenthesesR) && !self.is_eof() {
-      if self.is(token::Token::SymbolVariadic) {
+      if self.is(token::Token::SymbolPlus) {
         is_variadic = true;
         self.skip();
 

@@ -51,6 +51,10 @@ pub trait Pass<'a> {
     Ok(())
   }
 
+  fn visit_bool_kind(&mut self, _: &int_kind::BoolKind) -> PassResult {
+    Ok(())
+  }
+
   fn visit_package(&mut self, _: &package::Package) -> PassResult {
     Ok(())
   }

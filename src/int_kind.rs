@@ -22,3 +22,14 @@ impl node::Node for IntKind {
     Ok(())
   }
 }
+
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+pub struct BoolKind;
+
+impl node::Node for BoolKind {
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_bool_kind(self)?;
+
+    Ok(())
+  }
+}

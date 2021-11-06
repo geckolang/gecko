@@ -12,15 +12,17 @@ pub struct Lexer {
 }
 
 /// Determine whether a character is a letter, and within
-/// the range of a-Z.
+/// the range of a-Z, or is _.
 fn is_letter(character: char) -> bool {
-  'a' <= character && character <= 'z' || 'A' <= character && character <= 'Z' || character == '_'
+  ('a' <= character && character <= 'z')
+    || ('A' <= character && character <= 'Z')
+    || character == '_'
 }
 
 /// Determine if the character is a digit within the range
 /// of 0-9.
 fn is_digit(character: char) -> bool {
-  '0' <= character && character <= '9'
+  character.is_digit(10)
 }
 
 impl Lexer {
@@ -89,12 +91,18 @@ impl Iterator for Lexer {
 
     let read_identifier = |lexer: &mut Lexer| -> String {
       let index = lexer.index;
-      let current_char = lexer.current_char.unwrap();
+      let mut current_char = lexer.current_char.unwrap();
 
       // NOTE: At this point, we know that the first character
-      // of the identifier was a letter.
+      // of the identifier was a letter, because this closure is
+      // only invoked when that is the case.
       while lexer.index < lexer.input.len() && (is_letter(current_char) || is_digit(current_char)) {
         lexer.read_char();
+
+        // TODO: Simplify.
+        if lexer.index < lexer.input.len() {
+          current_char = lexer.current_char.unwrap();
+        }
       }
 
       lexer.input[index..lexer.index]
@@ -129,18 +137,15 @@ impl Iterator for Lexer {
       ':' => token::Token::SymbolColon,
       '&' => token::Token::SymbolAmpersand,
       ',' => token::Token::SymbolComma,
+      '+' => token::Token::SymbolPlus,
       _ => {
         if is_letter(self.current_char.unwrap()) {
           let identifier = read_identifier(self);
 
-          match token::get_keyword_or_type_token(identifier.as_str()) {
-            Ok(keyword_token) => {
-              return Some(keyword_token);
-            }
-            Err(_) => {
-              return Some(token::Token::Identifier(identifier));
-            }
-          }
+          return match token::get_keyword_or_type_token(identifier.as_str()) {
+            Ok(keyword_token) => Some(keyword_token),
+            Err(_) => Some(token::Token::Identifier(identifier)),
+          };
         } else if is_digit(self.current_char.unwrap()) {
           return Some(token::Token::LiteralInt(read_number(self)));
         } else {
@@ -257,8 +262,9 @@ mod tests {
   #[test]
   fn lex_types() {
     // TODO: Add all types.
-    let mut lexer = Lexer::new(String::from("i32").chars().collect());
+    let mut lexer = Lexer::new(String::from("void i32").chars().collect());
 
+    assert_eq!(Some(token::Token::TypeVoid), lexer.next());
     assert_eq!(Some(token::Token::TypeInt32), lexer.next());
   }
 

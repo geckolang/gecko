@@ -4,6 +4,7 @@ use crate::{int_kind, pass, void_kind};
 pub enum AnyKindNode {
   IntKind(int_kind::IntKind),
   VoidKind(void_kind::VoidKind),
+  BoolKind(int_kind::BoolKind),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]

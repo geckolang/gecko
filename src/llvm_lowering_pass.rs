@@ -43,15 +43,22 @@ impl<'a> LlvmLoweringPass<'a> {
     }
   }
 
+  // TODO: Make use of int_type.as_basic_type_enum(); (needs use inkwell::types::BasicType;).
+
   // TODO: Support for parameters.
   fn get_function_type_from(
+    parameters: &[inkwell::types::BasicMetadataTypeEnum<'a>],
     llvm_return_type: &inkwell::types::AnyTypeEnum<'a>,
     is_variadic: bool,
   ) -> Result<inkwell::types::FunctionType<'a>, diagnostic::Diagnostic> {
     Ok(match llvm_return_type {
-      inkwell::types::AnyTypeEnum::IntType(int_type) => int_type.fn_type(&[], is_variadic),
-      inkwell::types::AnyTypeEnum::FloatType(float_type) => float_type.fn_type(&[], is_variadic),
-      inkwell::types::AnyTypeEnum::VoidType(void_type) => void_type.fn_type(&[], is_variadic),
+      inkwell::types::AnyTypeEnum::IntType(int_type) => int_type.fn_type(parameters, is_variadic),
+      inkwell::types::AnyTypeEnum::FloatType(float_type) => {
+        float_type.fn_type(parameters, is_variadic)
+      }
+      inkwell::types::AnyTypeEnum::VoidType(void_type) => {
+        void_type.fn_type(parameters, is_variadic)
+      }
       _ => {
         // TODO: Better implementation.
         return Err(diagnostic::Diagnostic {
@@ -77,6 +84,7 @@ impl<'a> LlvmLoweringPass<'a> {
       match node {
         node::AnyKindNode::IntKind(value) => self.visit_int_kind(&value)?,
         node::AnyKindNode::VoidKind(value) => self.visit_void_kind(&value)?,
+        node::AnyKindNode::BoolKind(value) => self.visit_bool_kind(&value)?,
       };
     }
 
@@ -134,13 +142,63 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     Ok(())
   }
 
+  fn visit_bool_kind(&mut self, bool_kind: &int_kind::BoolKind) -> pass::PassResult {
+    self.llvm_type_map.insert(
+      node::AnyKindNode::BoolKind(*bool_kind),
+      self.llvm_context.bool_type().as_any_type_enum(),
+    );
+
+    Ok(())
+  }
+
   fn visit_function(&mut self, function: &function::Function) -> pass::PassResult {
+    let mut parameters = vec![];
+
+    // TODO: Further on, need to make use of the parameter's name somehow (maybe during lookups?).
+    for parameter in &function.prototype.parameters {
+      let llvm_parameter_result = self.visit_or_retrieve_type(&parameter.1.kind)?;
+
+      assert!(llvm_parameter_result.is_some());
+
+      parameters.push(match llvm_parameter_result.unwrap() {
+        // TODO: Add other types as they become available.
+        inkwell::types::AnyTypeEnum::IntType(int_type) => {
+          inkwell::types::BasicMetadataTypeEnum::IntType(*int_type)
+        }
+        inkwell::types::AnyTypeEnum::VoidType(_) => {
+          return Err(diagnostic::Diagnostic {
+            message: format!("type of parameter `{}` cannot be void", parameter.0),
+            severity: diagnostic::DiagnosticSeverity::Internal,
+          })
+        }
+        _ => {
+          return Err(diagnostic::Diagnostic {
+            message: format!("unsupported parameter type for `{}`", parameter.0),
+            severity: diagnostic::DiagnosticSeverity::Internal,
+          })
+        }
+      });
+    }
+
     let llvm_return_type =
       self.visit_or_retrieve_type(&function.prototype.return_kind_group.kind)?;
 
     assert!(llvm_return_type.is_some());
 
+    // TODO:
+    // match llvm_lowering_pass
+    //   .visit_or_retrieve_type(&parameter.1.kind)
+    //   .unwrap()
+    //   .unwrap()
+    // {
+    //   inkwell::types::AnyTypeEnum::IntType(int_type) => {
+    //     inkwell::types::BasicMetadataTypeEnum::IntType(*int_type)
+    //   }
+    //   _ => panic!("test"),
+    // }
+
     let llvm_function_type = LlvmLoweringPass::get_function_type_from(
+      parameters.as_slice(),
       &llvm_return_type.unwrap(),
       function.prototype.is_variadic,
     )?;
@@ -148,9 +206,10 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     self.llvm_function_buffer = Some(self.llvm_module.add_function(
       function.prototype.name.as_str(),
       llvm_function_type,
-      Some(match function.is_public {
-        true => inkwell::module::Linkage::External,
-        false => inkwell::module::Linkage::Private,
+      Some(if function.is_public {
+        inkwell::module::Linkage::External
+      } else {
+        inkwell::module::Linkage::Private
       }),
     ));
 
@@ -181,7 +240,9 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
   }
 
   fn visit_external(&mut self, external: &external::External) -> pass::PassResult {
+    // TODO: Support for parameters.
     let llvm_function_type = LlvmLoweringPass::get_function_type_from(
+      &[],
       self
         .visit_or_retrieve_type(&external.prototype.return_kind_group.kind)?
         .unwrap(),
@@ -224,13 +285,32 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
   fn visit_return_stmt(&mut self, return_stmt: &block::ReturnStmt) -> pass::PassResult {
     assert!(self.llvm_basic_block_buffer.is_some());
 
-    let value = match return_stmt.value {
-      Some(value) => self.visit_or_retrieve_value(&value)?,
-      None => None,
-    };
+    // FIXME: This is a temporary fix.
 
-    // FIXME: Solve error out.
-    // self.llvm_builder_buffer.build_return(Some(&value));
+    // let basic_value_enum_result = match return_stmt.value {
+    //   // TODO: Fix unsafe unwrap (not checking for None).
+    //   Some(value) => self.visit_or_retrieve_value(&value)?.unwrap(),
+    //   _ => panic!("NO!"),
+    // };
+
+    if return_stmt.value.is_some() {
+      match return_stmt.value.unwrap() {
+        node::AnyLiteralNode::BoolLiteral(value) => self.visit_bool_literal(&value)?,
+      };
+    }
+
+    self
+      .llvm_builder_buffer
+      .build_return(if return_stmt.value.is_some() {
+        Some(
+          self
+            .llvm_value_map
+            .get(&return_stmt.value.unwrap())
+            .unwrap(),
+        )
+      } else {
+        None
+      });
 
     Ok(())
   }
