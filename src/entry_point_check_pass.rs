@@ -1,9 +1,9 @@
-use crate::{diagnostic, function, int_kind, node, pass};
+use crate::{diagnostic, int_kind, node, pass};
 
 pub struct EntryPointCheckPass {}
 
 impl pass::Pass for EntryPointCheckPass {
-  fn visit_function(&mut self, function: &function::Function) -> pass::PassResult {
+  fn visit_function(&mut self, function: &node::Function) -> pass::PassResult {
     if function.prototype.name != "main" || !function.is_public {
       return Ok(());
     }

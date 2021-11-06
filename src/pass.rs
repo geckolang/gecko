@@ -1,7 +1,4 @@
-use crate::{
-  block, diagnostic, external, function, int_kind, node, package, pass_manager, prototype,
-  void_kind,
-};
+use crate::{diagnostic, int_kind, node, pass_manager, void_kind};
 
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
@@ -31,15 +28,15 @@ pub trait Pass {
     Ok(())
   }
 
-  fn visit_block(&mut self, _: &block::Block) -> PassResult {
+  fn visit_block(&mut self, _: &node::Block) -> PassResult {
     Ok(())
   }
 
-  fn visit_function(&mut self, _: &function::Function) -> PassResult {
+  fn visit_function(&mut self, _: &node::Function) -> PassResult {
     Ok(())
   }
 
-  fn visit_prototype(&mut self, _: &prototype::Prototype) -> PassResult {
+  fn visit_prototype(&mut self, _: &node::Prototype) -> PassResult {
     Ok(())
   }
 
@@ -55,15 +52,15 @@ pub trait Pass {
     Ok(())
   }
 
-  fn visit_package(&mut self, _: &package::Package) -> PassResult {
+  fn visit_package(&mut self, _: &node::Package) -> PassResult {
     Ok(())
   }
 
-  fn visit_external(&mut self, _: &external::External) -> PassResult {
+  fn visit_external(&mut self, _: &node::External) -> PassResult {
     Ok(())
   }
 
-  fn visit_return_stmt(&mut self, _: &block::ReturnStmt) -> PassResult {
+  fn visit_return_stmt(&mut self, _: &node::ReturnStmt) -> PassResult {
     Ok(())
   }
 

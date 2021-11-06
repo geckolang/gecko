@@ -12,7 +12,7 @@ mod tests {
     //   ionlang::llvm_lowering_pass::LlvmLoweringPass::new(&llvm_context, &llvm_module);
 
     // TODO: Continue implementation.
-    // llvm_lowering_pass.visit_function(function: &function::Function)
+    // llvm_lowering_pass.visit_function(function: &node::Function)
 
     assert_eq!(1, 1);
   }

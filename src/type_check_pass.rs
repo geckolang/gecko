@@ -1,9 +1,9 @@
-use crate::{block, diagnostic, function, node, pass};
+use crate::{diagnostic, node, pass};
 
 pub struct TypeCheckPass {}
 
 impl TypeCheckPass {
-  fn find_blocks_of(statement: &block::AnyStatementNode) -> Vec<&block::Block> {
+  fn find_blocks_of(statement: &node::AnyStatementNode) -> Vec<&node::Block> {
     let mut blocks = vec![];
 
     match statement {
@@ -16,7 +16,7 @@ impl TypeCheckPass {
 }
 
 impl pass::Pass for TypeCheckPass {
-  fn visit_function(&mut self, function: &function::Function) -> pass::PassResult {
+  fn visit_function(&mut self, function: &node::Function) -> pass::PassResult {
     let mut block_queue = vec![&function.body];
 
     let should_return_value = match function.prototype.return_kind_group.kind {
@@ -29,7 +29,7 @@ impl pass::Pass for TypeCheckPass {
     while let Some(block) = block_queue.pop() {
       for statement in &block.statements {
         match statement {
-          block::AnyStatementNode::ReturnStmt(return_stmt) => {
+          node::AnyStatementNode::ReturnStmt(return_stmt) => {
             if !should_return_value && return_stmt.value.is_some() {
               return Err(diagnostic::Diagnostic {
                 message: format!(

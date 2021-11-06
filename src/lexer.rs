@@ -81,6 +81,7 @@ impl Lexer {
 impl Iterator for Lexer {
   type Item = token::Token;
 
+  // TODO: Apparently returns None when dealing with illegal character. Fix this.
   /// Attempt to retrieve the next token. If the end of
   /// the input string has been reached, [`None`] will be
   /// returned.
@@ -139,17 +140,17 @@ impl Iterator for Lexer {
       ',' => token::Token::SymbolComma,
       '+' => token::Token::SymbolPlus,
       _ => {
-        if is_letter(self.current_char.unwrap()) {
+        return if is_letter(self.current_char.unwrap()) {
           let identifier = read_identifier(self);
 
-          return match token::get_keyword_or_type_token(identifier.as_str()) {
+          match token::get_keyword_or_type_token(identifier.as_str()) {
             Ok(keyword_token) => Some(keyword_token),
             Err(_) => Some(token::Token::Identifier(identifier)),
-          };
+          }
         } else if is_digit(self.current_char.unwrap()) {
-          return Some(token::Token::LiteralInt(read_number(self)));
+          Some(token::Token::LiteralInt(read_number(self)))
         } else {
-          return None;
+          None
         }
       }
     };

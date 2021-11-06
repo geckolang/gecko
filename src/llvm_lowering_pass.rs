@@ -1,7 +1,4 @@
-use crate::{
-  block, diagnostic, external, function, int_kind, node, package, pass, pass::Pass, prototype,
-  void_kind,
-};
+use crate::{diagnostic, int_kind, node, pass, pass::Pass, void_kind};
 use inkwell::types::AnyType;
 
 macro_rules! assert {
@@ -112,7 +109,7 @@ impl<'a> LlvmLoweringPass<'a> {
 }
 
 impl<'a> pass::Pass for LlvmLoweringPass<'a> {
-  fn visit_prototype(&mut self, _prototype: &prototype::Prototype) -> pass::PassResult {
+  fn visit_prototype(&mut self, _prototype: &node::Prototype) -> pass::PassResult {
     // TODO
     // inkwell::values::GenericValue
     Ok(())
@@ -151,7 +148,8 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     Ok(())
   }
 
-  fn visit_function(&mut self, function: &function::Function) -> pass::PassResult {
+  fn visit_function(&mut self, function: &node::Function) -> pass::PassResult {
+    // TODO Simplify process of lowering parameters for externals as well.
     let mut parameters = vec![];
 
     // TODO: Further on, need to make use of the parameter's name somehow (maybe during lookups?).
@@ -213,8 +211,8 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
       }),
     ));
 
-    let empty_body_block = block::Block {
-      statements: vec![block::AnyStatementNode::ReturnStmt(block::ReturnStmt {
+    let empty_body_block = node::Block {
+      statements: vec![node::AnyStatementNode::ReturnStmt(node::ReturnStmt {
         value: None,
       })],
     };
@@ -228,18 +226,18 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     })
   }
 
-  fn visit_package(&mut self, package: &package::Package) -> pass::PassResult {
+  fn visit_package(&mut self, package: &node::Package) -> pass::PassResult {
     for top_level_node in package.symbol_table.values() {
       match top_level_node {
-        package::TopLevelNode::Function(function) => self.visit_function(function)?,
-        package::TopLevelNode::External(external) => self.visit_external(external)?,
+        node::TopLevelNode::Function(function) => self.visit_function(function)?,
+        node::TopLevelNode::External(external) => self.visit_external(external)?,
       };
     }
 
     Ok(())
   }
 
-  fn visit_external(&mut self, external: &external::External) -> pass::PassResult {
+  fn visit_external(&mut self, external: &node::External) -> pass::PassResult {
     // TODO: Support for parameters.
     let llvm_function_type = Self::get_function_type_from(
       &[],
@@ -259,7 +257,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     Ok(())
   }
 
-  fn visit_block(&mut self, block: &block::Block) -> pass::PassResult {
+  fn visit_block(&mut self, block: &node::Block) -> pass::PassResult {
     assert!(self.llvm_function_buffer.is_some());
 
     self.llvm_basic_block_buffer = Some(
@@ -275,14 +273,14 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
 
     for statement in &block.statements {
       match statement {
-        block::AnyStatementNode::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt)?,
+        node::AnyStatementNode::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt)?,
       };
     }
 
     Ok(())
   }
 
-  fn visit_return_stmt(&mut self, return_stmt: &block::ReturnStmt) -> pass::PassResult {
+  fn visit_return_stmt(&mut self, return_stmt: &node::ReturnStmt) -> pass::PassResult {
     assert!(self.llvm_basic_block_buffer.is_some());
 
     // FIXME: This is a temporary fix.
@@ -398,9 +396,9 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
 
-    let visit_function_result = llvm_lowering_pass.visit_function(&function::Function {
+    let visit_function_result = llvm_lowering_pass.visit_function(&node::Function {
       is_public: false,
-      prototype: prototype::Prototype {
+      prototype: node::Prototype {
         name: String::from("foo"),
         return_kind_group: node::KindGroup {
           kind: node::AnyKindNode::VoidKind(void_kind::VoidKind {}),
@@ -410,7 +408,7 @@ mod tests {
         parameters: vec![],
         is_variadic: false,
       },
-      body: block::Block { statements: vec![] },
+      body: node::Block { statements: vec![] },
     });
 
     assert_eq!(true, visit_function_result.is_ok());

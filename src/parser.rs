@@ -1,6 +1,4 @@
-use crate::{
-  block, diagnostic, external, function, int_kind, node, package, prototype, token, void_kind,
-};
+use crate::{diagnostic, int_kind, node, token, void_kind};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -115,7 +113,7 @@ impl Parser {
     Ok(name.unwrap())
   }
 
-  pub fn parse_block(&mut self) -> ParserResult<block::Block> {
+  pub fn parse_block(&mut self) -> ParserResult<node::Block> {
     skip_past!(self, token::Token::SymbolBraceL);
 
     let mut statements = vec![];
@@ -123,7 +121,7 @@ impl Parser {
     while !self.is(token::Token::SymbolBraceR) && !self.is_eof() {
       statements.push(match self.tokens[self.index] {
         token::Token::KeywordReturn => {
-          block::AnyStatementNode::ReturnStmt(self.parse_return_stmt()?)
+          node::AnyStatementNode::ReturnStmt(self.parse_return_stmt()?)
         }
         _ => {
           return Err(diagnostic::Diagnostic {
@@ -139,7 +137,7 @@ impl Parser {
 
     skip_past!(self, token::Token::SymbolBraceR);
 
-    Ok(block::Block { statements })
+    Ok(node::Block { statements })
   }
 
   pub fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
@@ -222,7 +220,7 @@ impl Parser {
     })
   }
 
-  pub fn parse_parameter(&mut self) -> ParserResult<prototype::Parameter> {
+  pub fn parse_parameter(&mut self) -> ParserResult<node::Parameter> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolColon);
@@ -232,7 +230,7 @@ impl Parser {
     Ok((name, kind_group))
   }
 
-  pub fn parse_prototype(&mut self) -> ParserResult<prototype::Prototype> {
+  pub fn parse_prototype(&mut self) -> ParserResult<node::Prototype> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
@@ -263,7 +261,7 @@ impl Parser {
 
     let return_kind_group = self.parse_kind_group()?;
 
-    Ok(prototype::Prototype {
+    Ok(node::Prototype {
       name,
       parameters,
       is_variadic,
@@ -271,7 +269,7 @@ impl Parser {
     })
   }
 
-  pub fn parse_function(&mut self) -> ParserResult<function::Function> {
+  pub fn parse_function(&mut self) -> ParserResult<node::Function> {
     // TODO: Visibility should not be handled here.
 
     let mut is_public = false;
@@ -286,14 +284,14 @@ impl Parser {
     let prototype = self.parse_prototype()?;
     let body = self.parse_block()?;
 
-    Ok(function::Function {
+    Ok(node::Function {
       is_public,
       prototype,
       body,
     })
   }
 
-  pub fn parse_external(&mut self) -> ParserResult<external::External> {
+  pub fn parse_external(&mut self) -> ParserResult<node::External> {
     // TODO: Support for visibility.
 
     skip_past!(self, token::Token::KeywordExtern);
@@ -303,20 +301,20 @@ impl Parser {
 
     skip_past!(self, token::Token::SymbolSemiColon);
 
-    Ok(external::External { prototype })
+    Ok(node::External { prototype })
   }
 
-  pub fn parse_package_decl(&mut self) -> ParserResult<package::Package> {
+  pub fn parse_package_decl(&mut self) -> ParserResult<node::Package> {
     skip_past!(self, token::Token::KeywordPackage);
 
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolSemiColon);
 
-    Ok(package::Package::new(name))
+    Ok(node::Package::new(name))
   }
 
-  pub fn parse_top_level_node(&mut self) -> ParserResult<package::TopLevelNode> {
+  pub fn parse_top_level_node(&mut self) -> ParserResult<node::TopLevelNode> {
     let mut token = self.tokens.get(self.index);
 
     if self.is(token::Token::KeywordPub) {
@@ -328,8 +326,8 @@ impl Parser {
     }
 
     Ok(match token.unwrap() {
-      token::Token::KeywordFn => package::TopLevelNode::Function(self.parse_function()?),
-      token::Token::KeywordExtern => package::TopLevelNode::External(self.parse_external()?),
+      token::Token::KeywordFn => node::TopLevelNode::Function(self.parse_function()?),
+      token::Token::KeywordExtern => node::TopLevelNode::External(self.parse_external()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -342,7 +340,7 @@ impl Parser {
     })
   }
 
-  pub fn parse_return_stmt(&mut self) -> ParserResult<block::ReturnStmt> {
+  pub fn parse_return_stmt(&mut self) -> ParserResult<node::ReturnStmt> {
     skip_past!(self, token::Token::KeywordReturn);
 
     let mut value = None;
@@ -353,7 +351,7 @@ impl Parser {
 
     skip_past!(self, token::Token::SymbolSemiColon);
 
-    Ok(block::ReturnStmt { value })
+    Ok(node::ReturnStmt { value })
   }
 
   pub fn parse_bool_literal(&mut self) -> ParserResult<node::BoolLiteral> {
