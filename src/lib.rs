@@ -1,5 +1,6 @@
 pub mod block;
 pub mod diagnostic;
+pub mod entry_point_check_pass;
 pub mod external;
 pub mod function;
 pub mod int_kind;

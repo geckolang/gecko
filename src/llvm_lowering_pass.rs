@@ -197,7 +197,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     //   _ => panic!("test"),
     // }
 
-    let llvm_function_type = LlvmLoweringPass::get_function_type_from(
+    let llvm_function_type = Self::get_function_type_from(
       parameters.as_slice(),
       &llvm_return_type.unwrap(),
       function.prototype.is_variadic,
@@ -241,7 +241,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
 
   fn visit_external(&mut self, external: &external::External) -> pass::PassResult {
     // TODO: Support for parameters.
-    let llvm_function_type = LlvmLoweringPass::get_function_type_from(
+    let llvm_function_type = Self::get_function_type_from(
       &[],
       self
         .visit_or_retrieve_type(&external.prototype.return_kind_group.kind)?
