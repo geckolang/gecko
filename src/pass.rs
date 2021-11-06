@@ -5,7 +5,7 @@ use crate::{
 
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
-pub trait Pass<'a> {
+pub trait Pass {
   // TODO:
   fn register(&self, _: &pass_manager::PassManager) -> bool {
     return true;

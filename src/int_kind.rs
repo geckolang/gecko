@@ -3,16 +3,17 @@ use crate::pass;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum IntSize {
-  Signed8,
-  Signed16,
-  Signed32,
-  Signed64,
-  Signed128,
+  Bit8,
+  Bit16,
+  Bit32,
+  Bit64,
+  Bit128,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct IntKind {
   pub size: IntSize,
+  pub signed: bool,
 }
 
 impl node::Node for IntKind {

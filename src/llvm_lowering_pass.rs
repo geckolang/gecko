@@ -111,7 +111,7 @@ impl<'a> LlvmLoweringPass<'a> {
   }
 }
 
-impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
+impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   fn visit_prototype(&mut self, _prototype: &prototype::Prototype) -> pass::PassResult {
     // TODO
     // inkwell::values::GenericValue
@@ -122,11 +122,11 @@ impl<'a> pass::Pass<'a> for LlvmLoweringPass<'a> {
     self.llvm_type_map.insert(
       node::AnyKindNode::IntKind(*int_kind),
       match int_kind.size {
-        int_kind::IntSize::Signed8 => self.llvm_context.i8_type().as_any_type_enum(),
-        int_kind::IntSize::Signed16 => self.llvm_context.i16_type().as_any_type_enum(),
-        int_kind::IntSize::Signed32 => self.llvm_context.i32_type().as_any_type_enum(),
-        int_kind::IntSize::Signed64 => self.llvm_context.i64_type().as_any_type_enum(),
-        int_kind::IntSize::Signed128 => self.llvm_context.i128_type().as_any_type_enum(),
+        int_kind::IntSize::Bit8 => self.llvm_context.i8_type().as_any_type_enum(),
+        int_kind::IntSize::Bit16 => self.llvm_context.i16_type().as_any_type_enum(),
+        int_kind::IntSize::Bit32 => self.llvm_context.i32_type().as_any_type_enum(),
+        int_kind::IntSize::Bit64 => self.llvm_context.i64_type().as_any_type_enum(),
+        int_kind::IntSize::Bit128 => self.llvm_context.i128_type().as_any_type_enum(),
       },
     );
 
@@ -354,7 +354,8 @@ mod tests {
     let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
 
     let int_kind_box = node::AnyKindNode::IntKind(int_kind::IntKind {
-      size: int_kind::IntSize::Signed32,
+      size: int_kind::IntSize::Bit32,
+      signed: true,
     });
 
     let visit_or_retrieve_result = llvm_lowering_pass.visit_or_retrieve_type(&int_kind_box);
@@ -383,7 +384,8 @@ mod tests {
     let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
 
     let visit_int_kind_result = llvm_lowering_pass.visit_int_kind(&int_kind::IntKind {
-      size: int_kind::IntSize::Signed32,
+      size: int_kind::IntSize::Bit32,
+      signed: true,
     });
 
     assert_eq!(true, visit_int_kind_result.is_ok());

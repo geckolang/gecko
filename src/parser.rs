@@ -72,9 +72,9 @@ impl Parser {
     true
   }
 
-  fn peek(&self) -> Option<token::Token> {
+  fn peek(&self) -> Option<&token::Token> {
     match self.tokens.get(self.index + 1) {
-      Some(value) => Some(value.clone()),
+      Some(value) => Some(value),
       None => None,
     }
   }
@@ -86,7 +86,7 @@ impl Parser {
       return false;
     }
 
-    token == next_token.unwrap()
+    token == *next_token.unwrap()
   }
 
   pub fn is_eof(&self) -> bool {
@@ -144,22 +144,31 @@ impl Parser {
 
   pub fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
     // TODO: Simplify weird, unreadable logic?
-    let token = match self.skip() {
-      true => &self.tokens[self.index - 1],
-      false => &self.tokens[self.index],
+    let token = if self.skip() {
+      self.tokens[self.index - 1].clone()
+    } else {
+      self.tokens[self.index].clone()
+    };
+
+    let signed = if token == token::Token::KeywordUnsigned {
+      self.skip();
+
+      false
+    } else {
+      true
     };
 
     let size = match token {
-      token::Token::TypeInt32 => int_kind::IntSize::Signed32,
+      token::Token::TypeInt32 => int_kind::IntSize::Bit32,
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: format!("not yet implemented"),
+          message: format!("unexpected token `{}`, expected integer type", token),
           severity: diagnostic::DiagnosticSeverity::Error,
         })
       }
     };
 
-    Ok(int_kind::IntKind { size })
+    Ok(int_kind::IntKind { size, signed })
   }
 
   pub fn parse_void_kind(&mut self) -> ParserResult<void_kind::VoidKind> {
@@ -263,6 +272,8 @@ impl Parser {
   }
 
   pub fn parse_function(&mut self) -> ParserResult<function::Function> {
+    // TODO: Visibility should not be handled here.
+
     let mut is_public = false;
 
     if self.is(token::Token::KeywordPub) {
@@ -283,6 +294,8 @@ impl Parser {
   }
 
   pub fn parse_external(&mut self) -> ParserResult<external::External> {
+    // TODO: Support for visibility.
+
     skip_past!(self, token::Token::KeywordExtern);
     skip_past!(self, token::Token::KeywordFn);
 
@@ -304,7 +317,17 @@ impl Parser {
   }
 
   pub fn parse_top_level_node(&mut self) -> ParserResult<package::TopLevelNode> {
-    Ok(match self.tokens[self.index] {
+    let mut token = self.tokens.get(self.index);
+
+    if self.is(token::Token::KeywordPub) {
+      token = self.peek();
+    }
+
+    if token.is_none() {
+      return Err(diagnostic::error_unexpected_eof("top-level construct"));
+    }
+
+    Ok(match token.unwrap() {
       token::Token::KeywordFn => package::TopLevelNode::Function(self.parse_function()?),
       token::Token::KeywordExtern => package::TopLevelNode::External(self.parse_external()?),
       _ => {
@@ -440,7 +463,7 @@ mod tests {
     let int_kind = parser.parse_int_kind();
 
     assert_eq!(true, int_kind.is_ok());
-    assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Signed32);
+    assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Bit32);
   }
 
   #[test]

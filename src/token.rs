@@ -11,6 +11,7 @@ pub enum Token {
   KeywordPackage,
   KeywordReturn,
   KeywordMut,
+  KeywordUnsigned,
   TypeVoid,
   TypeInt32,
   TypeBool,
@@ -45,6 +46,7 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnost
     "true" => Token::LiteralBool(true),
     "false" => Token::LiteralBool(false),
     "mut" => Token::KeywordMut,
+    "unsigned" => Token::KeywordUnsigned,
     _ => {
       return Err(diagnostic::Diagnostic {
         message: format!("identifier `{}` is not a keyword", identifier_str),
