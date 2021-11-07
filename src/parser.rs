@@ -148,7 +148,7 @@ impl Parser {
       self.tokens[self.index].clone()
     };
 
-    let signed = if token == token::Token::KeywordUnsigned {
+    let is_signed = if token == token::Token::KeywordUnsigned {
       self.skip();
 
       false
@@ -166,7 +166,7 @@ impl Parser {
       }
     };
 
-    Ok(int_kind::IntKind { size, signed })
+    Ok(int_kind::IntKind { size, is_signed })
   }
 
   pub fn parse_void_kind(&mut self) -> ParserResult<void_kind::VoidKind> {
@@ -371,9 +371,48 @@ impl Parser {
     })
   }
 
+  pub fn parse_int_literal(&mut self) -> ParserResult<node::IntLiteral> {
+    // TODO:
+    // Ok(match self.tokens.get(self.index) {
+    //   Some(token::Token::LiteralInt(value)) => {
+    //     self.skip();
+
+    //     let size = int_kind::calculate_int_size_of(value);
+
+    //     node::IntLiteral {
+    //       value: *value,
+    //       kind: int_kind::IntKind { size, is_signed: true },
+    //     }
+    //   }
+    //   _ => return Err(diagnostic::error_unexpected_eof("integer literal")),
+    // })
+    Ok(match self.tokens[self.index] {
+      token::Token::LiteralInt(value) => {
+        self.skip();
+
+        let mut size = int_kind::calculate_int_size_of(&value);
+
+        if size < int_kind::IntSize::Bit32 {
+          size = int_kind::IntSize::Bit32;
+        }
+
+        node::IntLiteral {
+          value,
+          // TODO: Signed or not.
+          kind: int_kind::IntKind {
+            size,
+            is_signed: true,
+          },
+        }
+      }
+      _ => return Err(diagnostic::error_unexpected_eof("integer literal")),
+    })
+  }
+
   pub fn parse_literal(&mut self) -> ParserResult<node::AnyLiteralNode> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(_) => node::AnyLiteralNode::BoolLiteral(self.parse_bool_literal()?),
+      token::Token::LiteralInt(_) => node::AnyLiteralNode::IntLiteral(self.parse_int_literal()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: String::from("unexpected token, expected literal"),
@@ -514,18 +553,30 @@ mod tests {
   #[test]
   fn parse_bool_literal() {
     let mut parser_for_true = Parser::new(vec![token::Token::LiteralBool(true)]);
-
     let true_bool_literal = parser_for_true.parse_bool_literal();
 
     assert_eq!(true, true_bool_literal.is_ok());
     assert_eq!(true, true_bool_literal.unwrap().value);
 
     let mut parser_for_false = Parser::new(vec![token::Token::LiteralBool(false)]);
-
     let false_bool_literal = parser_for_false.parse_bool_literal();
 
     assert_eq!(true, false_bool_literal.is_ok());
     assert_eq!(false, false_bool_literal.unwrap().value);
+  }
+
+  #[test]
+  fn parse_int_literal() {
+    let mut parser = Parser::new(vec![token::Token::LiteralInt(123)]);
+    let int_literal_result = parser.parse_int_literal();
+
+    assert_eq!(true, int_literal_result.is_ok());
+
+    let int_literal = int_literal_result.unwrap();
+
+    assert_eq!(123, int_literal.value);
+    assert_eq!(int_kind::IntSize::Bit32, int_literal.kind.size);
+    assert_eq!(true, int_literal.kind.is_signed);
   }
 
   #[test]

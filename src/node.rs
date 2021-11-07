@@ -10,6 +10,7 @@ pub enum AnyKindNode {
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum AnyLiteralNode {
   BoolLiteral(BoolLiteral),
+  IntLiteral(IntLiteral),
 }
 
 pub trait Node {
@@ -33,6 +34,18 @@ pub struct BoolLiteral {
 impl Node for BoolLiteral {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
     pass.visit_bool_literal(self)
+  }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+pub struct IntLiteral {
+  pub value: u64,
+  pub kind: int_kind::IntKind,
+}
+
+impl Node for IntLiteral {
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_int_literal(self)
   }
 }
 

@@ -42,7 +42,7 @@ impl pass::Pass for EntryPointCheckPass {
     } else if function.prototype.parameters[0].1.kind
       != node::AnyKindNode::IntKind(int_kind::IntKind {
         size: int_kind::IntSize::Bit32,
-        signed: true,
+        is_signed: true,
       })
     {
       return Err(diagnostic::Diagnostic {
@@ -55,7 +55,7 @@ impl pass::Pass for EntryPointCheckPass {
     } else if function.prototype.parameters[1].1.kind
       != node::AnyKindNode::IntKind(int_kind::IntKind {
         size: int_kind::IntSize::Bit32,
-        signed: true,
+        is_signed: true,
       })
     {
       return Err(diagnostic::Diagnostic {

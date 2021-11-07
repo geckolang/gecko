@@ -67,4 +67,8 @@ pub trait Pass {
   fn visit_bool_literal(&mut self, _: &node::BoolLiteral) -> PassResult {
     Ok(())
   }
+
+  fn visit_int_literal(&mut self, _: &node::IntLiteral) -> PassResult {
+    Ok(())
+  }
 }

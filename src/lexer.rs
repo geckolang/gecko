@@ -113,14 +113,20 @@ impl Iterator for Lexer {
         .collect::<String>()
     };
 
-    let read_number = |lexer: &mut Lexer| -> Vec<char> {
+    let read_number = |lexer: &mut Lexer| -> u64 {
       let index = lexer.index;
 
       while lexer.index < lexer.input.len() && is_digit(lexer.current_char.unwrap()) {
         lexer.read_char();
       }
 
-      lexer.input[index..lexer.index].to_vec()
+      lexer.input[index..lexer.index]
+        .to_vec()
+        .iter()
+        .cloned()
+        .collect::<String>()
+        .parse::<u64>()
+        .unwrap()
     };
 
     // TODO: What if it's EOF + whitespace?

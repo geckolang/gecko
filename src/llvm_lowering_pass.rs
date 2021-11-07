@@ -101,6 +101,7 @@ impl<'a> LlvmLoweringPass<'a> {
     if !self.llvm_value_map.contains_key(node) {
       match node {
         node::AnyLiteralNode::BoolLiteral(value) => self.visit_bool_literal(&value)?,
+        node::AnyLiteralNode::IntLiteral(value) => self.visit_int_literal(&value)?,
       };
     }
 
@@ -123,7 +124,6 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
         int_kind::IntSize::Bit16 => self.llvm_context.i16_type().as_any_type_enum(),
         int_kind::IntSize::Bit32 => self.llvm_context.i32_type().as_any_type_enum(),
         int_kind::IntSize::Bit64 => self.llvm_context.i64_type().as_any_type_enum(),
-        int_kind::IntSize::Bit128 => self.llvm_context.i128_type().as_any_type_enum(),
       },
     );
 
@@ -294,6 +294,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     if return_stmt.value.is_some() {
       match return_stmt.value.unwrap() {
         node::AnyLiteralNode::BoolLiteral(value) => self.visit_bool_literal(&value)?,
+        node::AnyLiteralNode::IntLiteral(value) => self.visit_int_literal(&value)?,
       };
     }
 
@@ -326,6 +327,32 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
 
     Ok(())
   }
+
+  fn visit_int_literal(&mut self, int_literal: &node::IntLiteral) -> pass::PassResult {
+    let llvm_type = self
+      .visit_or_retrieve_type(&node::AnyKindNode::IntKind(int_literal.kind))?
+      .unwrap();
+
+    let llvm_value = match llvm_type {
+      inkwell::types::AnyTypeEnum::IntType(int_type) => {
+        int_type.const_int(int_literal.value as u64, false)
+      }
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          // TODO: Better error message?
+          message: String::from("expected integer type"),
+          severity: diagnostic::DiagnosticSeverity::Internal,
+        });
+      }
+    };
+
+    self.llvm_value_map.insert(
+      node::AnyLiteralNode::IntLiteral(*int_literal),
+      inkwell::values::BasicValueEnum::IntValue(llvm_value),
+    );
+
+    Ok(())
+  }
 }
 
 #[cfg(test)]
@@ -353,7 +380,7 @@ mod tests {
 
     let int_kind_box = node::AnyKindNode::IntKind(int_kind::IntKind {
       size: int_kind::IntSize::Bit32,
-      signed: true,
+      is_signed: true,
     });
 
     let visit_or_retrieve_result = llvm_lowering_pass.visit_or_retrieve_type(&int_kind_box);
@@ -383,7 +410,7 @@ mod tests {
 
     let visit_int_kind_result = llvm_lowering_pass.visit_int_kind(&int_kind::IntKind {
       size: int_kind::IntSize::Bit32,
-      signed: true,
+      is_signed: true,
     });
 
     assert_eq!(true, visit_int_kind_result.is_ok());
