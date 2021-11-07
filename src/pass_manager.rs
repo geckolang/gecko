@@ -48,17 +48,13 @@ impl PassManager {
 mod tests {
   use super::*;
 
-  struct TestPassEmpty {
-    //
-  }
+  struct TestPassEmpty;
 
   impl pass::Pass for TestPassEmpty {
     //
   }
 
-  struct TestPassNoRegister {
-    //
-  }
+  struct TestPassNoRegister;
 
   impl pass::Pass for TestPassNoRegister {
     fn register(&self, _: &PassManager) -> bool {
@@ -66,9 +62,7 @@ mod tests {
     }
   }
 
-  struct TestNode {
-    //
-  }
+  struct TestNode;
 
   impl node::Node for TestNode {
     // TODO: Isn't this redundant?
@@ -87,7 +81,6 @@ mod tests {
     let mut pass_manager = PassManager::new();
 
     pass_manager.add_pass(Box::new(TestPassEmpty {}));
-
     assert_eq!(1, pass_manager.passes.len());
   }
 
@@ -96,7 +89,6 @@ mod tests {
     let mut pass_manager = PassManager::new();
 
     pass_manager.add_pass(Box::new(TestPassNoRegister {}));
-
     assert_eq!(true, pass_manager.passes.is_empty());
   }
 }

@@ -63,9 +63,7 @@ pub struct External {
 
 impl Node for External {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_external(self)?;
-
-    Ok(())
+    pass.visit_external(self)
   }
 }
 
@@ -78,9 +76,7 @@ pub struct Function {
 
 impl Node for Function {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_function(self)?;
-
-    Ok(())
+    pass.visit_function(self)
   }
 }
 
@@ -96,9 +92,7 @@ pub struct Prototype {
 
 impl Node for Prototype {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_prototype(self)?;
-
-    Ok(())
+    pass.visit_prototype(self)
   }
 }
 
@@ -124,27 +118,25 @@ impl Package {
 
 impl Node for Package {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_package(self)?;
-
-    Ok(())
+    pass.visit_package(self)
   }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyStatementNode {
+pub enum AnyStmtNode {
   ReturnStmt(ReturnStmt),
+  ExprWrapperStmt(AnyExprNode),
+  LetStmt(LetStmt),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Block {
-  pub statements: Vec<AnyStatementNode>,
+  pub statements: Vec<AnyStmtNode>,
 }
 
 impl Node for Block {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_block(self)?;
-
-    Ok(())
+    pass.visit_block(self)
   }
 }
 
@@ -155,8 +147,55 @@ pub struct ReturnStmt {
 
 impl Node for ReturnStmt {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_return_stmt(self)?;
-
-    Ok(())
+    pass.visit_return_stmt(self)
   }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct LetStmt {
+  pub name: String,
+  pub kind_group: KindGroup,
+  pub value: AnyExprNode,
+}
+
+impl Node for LetStmt {
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_let_stmt(self)
+  }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub enum AnyExprNode {
+  CallExpr(CallExpr),
+  LiteralWrapperExpr(AnyLiteralNode),
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub enum AnyCalleeNode {
+  Function(Function),
+  External(External),
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct CallExpr {
+  pub callee: Stub<AnyCalleeNode>,
+  pub arguments: Vec<AnyLiteralNode>,
+}
+
+impl Node for CallExpr {
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_call_expr(self)
+  }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub enum StubKind {
+  Callable,
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct Stub<T> {
+  pub name: String,
+  pub kind: StubKind,
+  pub value: Option<T>,
 }

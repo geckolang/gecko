@@ -71,4 +71,12 @@ pub trait Pass {
   fn visit_int_literal(&mut self, _: &node::IntLiteral) -> PassResult {
     Ok(())
   }
+
+  fn visit_call_expr(&mut self, _: &node::CallExpr) -> PassResult {
+    Ok(())
+  }
+
+  fn visit_let_stmt(&mut self, _: &node::LetStmt) -> PassResult {
+    Ok(())
+  }
 }

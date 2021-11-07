@@ -12,6 +12,7 @@ pub enum Token {
   KeywordReturn,
   KeywordMut,
   KeywordUnsigned,
+  KeywordLet,
   TypeVoid,
   TypeInt32,
   TypeBool,
@@ -20,16 +21,17 @@ pub enum Token {
   SymbolParenthesesL,
   SymbolParenthesesR,
   SymbolTilde,
-  SymbolSemiColon,
+  SymbolSemicolon,
   SymbolColon,
   SymbolAmpersand,
   SymbolComma,
   SymbolPlus,
+  SymbolEqual,
 }
 
 impl std::fmt::Display for Token {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{:?}", self)
+  fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(formatter, "{:?}", self)
   }
 }
 
@@ -38,15 +40,16 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnost
     "pub" => Token::KeywordPub,
     "fn" => Token::KeywordFn,
     "extern" => Token::KeywordExtern,
+    "let" => Token::KeywordLet,
+    "mut" => Token::KeywordMut,
+    "unsigned" => Token::KeywordUnsigned,
+    "package" => Token::KeywordPackage,
+    "return" => Token::KeywordReturn,
     "void" => Token::TypeVoid,
     "i32" => Token::TypeInt32,
     "bool" => Token::TypeBool,
-    "package" => Token::KeywordPackage,
-    "return" => Token::KeywordReturn,
     "true" => Token::LiteralBool(true),
     "false" => Token::LiteralBool(false),
-    "mut" => Token::KeywordMut,
-    "unsigned" => Token::KeywordUnsigned,
     _ => {
       return Err(diagnostic::Diagnostic {
         message: format!("identifier `{}` is not a keyword", identifier_str),

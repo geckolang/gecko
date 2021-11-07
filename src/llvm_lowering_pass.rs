@@ -20,6 +20,7 @@ pub struct LlvmLoweringPass<'a> {
     std::collections::HashMap<node::AnyLiteralNode, inkwell::values::BasicValueEnum<'a>>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'a>>,
   llvm_basic_block_buffer: Option<inkwell::basic_block::BasicBlock<'a>>,
+  // TODO: Consider making Option.
   llvm_builder_buffer: inkwell::builder::Builder<'a>,
 }
 
@@ -40,9 +41,6 @@ impl<'a> LlvmLoweringPass<'a> {
     }
   }
 
-  // TODO: Make use of int_type.as_basic_type_enum(); (needs use inkwell::types::BasicType;).
-
-  // TODO: Support for parameters.
   fn get_function_type_from(
     parameters: &[inkwell::types::BasicMetadataTypeEnum<'a>],
     llvm_return_type: &inkwell::types::AnyTypeEnum<'a>,
@@ -110,12 +108,6 @@ impl<'a> LlvmLoweringPass<'a> {
 }
 
 impl<'a> pass::Pass for LlvmLoweringPass<'a> {
-  fn visit_prototype(&mut self, _prototype: &node::Prototype) -> pass::PassResult {
-    // TODO
-    // inkwell::values::GenericValue
-    Ok(())
-  }
-
   fn visit_int_kind(&mut self, int_kind: &int_kind::IntKind) -> pass::PassResult {
     self.llvm_type_map.insert(
       node::AnyKindNode::IntKind(*int_kind),
@@ -212,7 +204,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     ));
 
     let empty_body_block = node::Block {
-      statements: vec![node::AnyStatementNode::ReturnStmt(node::ReturnStmt {
+      statements: vec![node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
         value: None,
       })],
     };
@@ -227,6 +219,11 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   }
 
   fn visit_package(&mut self, package: &node::Package) -> pass::PassResult {
+    // Reset all buffers when visiting a new package.
+    self.llvm_builder_buffer.clear_insertion_position();
+    self.llvm_basic_block_buffer = None;
+    self.llvm_function_buffer = None;
+
     for top_level_node in package.symbol_table.values() {
       match top_level_node {
         node::TopLevelNode::Function(function) => self.visit_function(function)?,
@@ -273,7 +270,13 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
 
     for statement in &block.statements {
       match statement {
-        node::AnyStatementNode::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt)?,
+        node::AnyStmtNode::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt)?,
+        // TODO: Consider relocating as an associated function for Pass?
+        node::AnyStmtNode::ExprWrapperStmt(expr) => match expr {
+          node::AnyExprNode::CallExpr(call_expr) => self.visit_call_expr(call_expr)?,
+          node::AnyExprNode::LiteralWrapperExpr(_) => {}
+        },
+        node::AnyStmtNode::LetStmt(let_stmt) => self.visit_let_stmt(&let_stmt)?,
       };
     }
 
@@ -310,6 +313,41 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
       } else {
         None
       });
+
+    Ok(())
+  }
+
+  fn visit_let_stmt(&mut self, let_stmt: &node::LetStmt) -> pass::PassResult {
+    use inkwell::types::BasicType;
+
+    assert!(self.llvm_basic_block_buffer.is_some());
+
+    let llvm_any_type = self.visit_or_retrieve_type(&let_stmt.kind_group.kind)?;
+
+    assert!(llvm_any_type.is_some());
+
+    let llvm_type = match llvm_any_type.unwrap() {
+      inkwell::types::AnyTypeEnum::IntType(int_type) => int_type.as_basic_type_enum(),
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: format!("illegal declaration type: `{:?}`", llvm_any_type),
+          severity: diagnostic::DiagnosticSeverity::Error,
+        })
+      }
+    };
+
+    let llvm_alloca_inst_ptr = self
+      .llvm_builder_buffer
+      .build_alloca(llvm_type, let_stmt.name.as_str());
+
+    // TODO: Finish implementing.
+    // let llvm_value = self.visit_or_retrieve_value(&let_stmt.value)?;
+
+    // assert!(llvm_value.is_some());
+
+    // self
+    //   .llvm_builder_buffer
+    //   .build_store(llvm_alloca_inst_ptr, llvm_value);
 
     Ok(())
   }

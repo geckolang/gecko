@@ -3,7 +3,7 @@ use crate::{diagnostic, node, pass};
 pub struct TypeCheckPass;
 
 impl TypeCheckPass {
-  fn find_blocks_of(statement: &node::AnyStatementNode) -> Vec<&node::Block> {
+  fn find_blocks_of(statement: &node::AnyStmtNode) -> Vec<&node::Block> {
     let mut blocks = vec![];
 
     match statement {
@@ -29,7 +29,7 @@ impl pass::Pass for TypeCheckPass {
     while let Some(block) = block_queue.pop() {
       for statement in &block.statements {
         match statement {
-          node::AnyStatementNode::ReturnStmt(return_stmt) => {
+          node::AnyStmtNode::ReturnStmt(return_stmt) => {
             if !should_return_value && return_stmt.value.is_some() {
               return Err(diagnostic::Diagnostic {
                 message: format!(
@@ -57,6 +57,7 @@ impl pass::Pass for TypeCheckPass {
               // }
             }
           }
+          _ => {}
         };
 
         block_queue.append(&mut Self::find_blocks_of(statement));
@@ -118,7 +119,7 @@ mod tests {
     function
       .body
       .statements
-      .push(node::AnyStatementNode::ReturnStmt(node::ReturnStmt {
+      .push(node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
         value: None,
       }));
 
@@ -133,7 +134,7 @@ mod tests {
     function
       .body
       .statements
-      .push(node::AnyStatementNode::ReturnStmt(node::ReturnStmt {
+      .push(node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
         value: Some(node::AnyLiteralNode::BoolLiteral(node::BoolLiteral {
           value: true,
         })),

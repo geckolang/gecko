@@ -120,17 +120,14 @@ impl Parser {
 
     while !self.is(token::Token::SymbolBraceR) && !self.is_eof() {
       statements.push(match self.tokens[self.index] {
-        token::Token::KeywordReturn => {
-          node::AnyStatementNode::ReturnStmt(self.parse_return_stmt()?)
-        }
+        token::Token::KeywordReturn => node::AnyStmtNode::ReturnStmt(self.parse_return_stmt()?),
+        token::Token::KeywordLet => node::AnyStmtNode::LetStmt(self.parse_let_stmt()?),
         _ => {
-          return Err(diagnostic::Diagnostic {
-            message: format!(
-              "unexpected token `{:?}`, expected statements",
-              self.tokens[self.index]
-            ),
-            severity: diagnostic::DiagnosticSeverity::Error,
-          })
+          let expr_wrapper_stmt = node::AnyStmtNode::ExprWrapperStmt(self.parse_expr()?);
+
+          skip_past!(self, token::Token::SymbolSemicolon);
+
+          expr_wrapper_stmt
         }
       });
     }
@@ -299,7 +296,7 @@ impl Parser {
 
     let prototype = self.parse_prototype()?;
 
-    skip_past!(self, token::Token::SymbolSemiColon);
+    skip_past!(self, token::Token::SymbolSemicolon);
 
     Ok(node::External { prototype })
   }
@@ -309,7 +306,7 @@ impl Parser {
 
     let name = self.parse_name()?;
 
-    skip_past!(self, token::Token::SymbolSemiColon);
+    skip_past!(self, token::Token::SymbolSemicolon);
 
     Ok(node::Package::new(name))
   }
@@ -345,13 +342,35 @@ impl Parser {
 
     let mut value = None;
 
-    if !self.is(token::Token::SymbolSemiColon) {
+    if !self.is(token::Token::SymbolSemicolon) {
       value = Some(self.parse_literal()?);
     }
 
-    skip_past!(self, token::Token::SymbolSemiColon);
+    skip_past!(self, token::Token::SymbolSemicolon);
 
     Ok(node::ReturnStmt { value })
+  }
+
+  pub fn parse_let_stmt(&mut self) -> ParserResult<node::LetStmt> {
+    skip_past!(self, token::Token::KeywordLet);
+
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolColon);
+
+    let kind_group = self.parse_kind_group()?;
+
+    skip_past!(self, token::Token::SymbolEqual);
+
+    let value = self.parse_expr()?;
+
+    skip_past!(self, token::Token::SymbolSemicolon);
+
+    Ok(node::LetStmt {
+      name,
+      kind_group,
+      value,
+    })
   }
 
   pub fn parse_bool_literal(&mut self) -> ParserResult<node::BoolLiteral> {
@@ -419,6 +438,44 @@ impl Parser {
           severity: diagnostic::DiagnosticSeverity::Error,
         })
       }
+    })
+  }
+
+  pub fn parse_expr(&mut self) -> ParserResult<node::AnyExprNode> {
+    Ok(match self.tokens[self.index] {
+      token::Token::Identifier(_) => {
+        if self.peek_is(token::Token::SymbolParenthesesL) {
+          node::AnyExprNode::CallExpr(self.parse_call_expr()?)
+        } else {
+          return Err(diagnostic::Diagnostic {
+            // TODO: Show which token.
+            message: String::from("unexpected token, expected expression"),
+            severity: diagnostic::DiagnosticSeverity::Error,
+          });
+        }
+      }
+      _ => node::AnyExprNode::LiteralWrapperExpr(self.parse_literal()?),
+    })
+  }
+
+  pub fn parse_call_expr(&mut self) -> ParserResult<node::CallExpr> {
+    let callee_name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolParenthesesL);
+
+    let arguments = vec![];
+
+    // TODO: Parse arguments.
+
+    skip_past!(self, token::Token::SymbolParenthesesR);
+
+    Ok(node::CallExpr {
+      callee: node::Stub {
+        name: callee_name,
+        kind: node::StubKind::Callable,
+        value: None,
+      },
+      arguments,
     })
   }
 }
@@ -516,7 +573,7 @@ mod tests {
     let mut parser = Parser::new(vec![
       token::Token::KeywordPackage,
       token::Token::Identifier(String::from("test")),
-      token::Token::SymbolSemiColon,
+      token::Token::SymbolSemicolon,
     ]);
 
     let package = parser.parse_package_decl();
@@ -535,7 +592,7 @@ mod tests {
       token::Token::SymbolParenthesesR,
       token::Token::SymbolTilde,
       token::Token::TypeVoid,
-      token::Token::SymbolSemiColon,
+      token::Token::SymbolSemicolon,
     ]);
 
     let external = parser.parse_external();
@@ -596,7 +653,6 @@ mod tests {
   #[test]
   fn parse_kind_group() {
     let mut parser = Parser::new(vec![token::Token::TypeInt32]);
-
     let kind_group_result = parser.parse_kind_group();
 
     assert_eq!(true, kind_group_result.is_ok());
@@ -610,7 +666,6 @@ mod tests {
   #[test]
   fn parse_kind_group_reference() {
     let mut parser = Parser::new(vec![token::Token::SymbolAmpersand, token::Token::TypeInt32]);
-
     let kind_group_result = parser.parse_kind_group();
 
     assert_eq!(true, kind_group_result.is_ok());
@@ -624,7 +679,6 @@ mod tests {
   #[test]
   fn parse_kind_group_mutable() {
     let mut parser = Parser::new(vec![token::Token::KeywordMut, token::Token::TypeInt32]);
-
     let kind_group_result = parser.parse_kind_group();
 
     assert_eq!(true, kind_group_result.is_ok());

@@ -140,11 +140,12 @@ impl Iterator for Lexer {
       '(' => token::Token::SymbolParenthesesL,
       ')' => token::Token::SymbolParenthesesR,
       '~' => token::Token::SymbolTilde,
-      ';' => token::Token::SymbolSemiColon,
+      ';' => token::Token::SymbolSemicolon,
       ':' => token::Token::SymbolColon,
       '&' => token::Token::SymbolAmpersand,
       ',' => token::Token::SymbolComma,
       '+' => token::Token::SymbolPlus,
+      '=' => token::Token::SymbolEqual,
       _ => {
         return if is_letter(self.current_char.unwrap()) {
           let identifier = read_identifier(self);
