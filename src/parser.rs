@@ -87,6 +87,10 @@ impl Parser {
     token == *next_token.unwrap()
   }
 
+  fn is_eof_or(&self, token: token::Token) -> bool {
+    self.is_eof() || self.is(token)
+  }
+
   pub fn is_eof(&self) -> bool {
     self.tokens.len() == 0 || self.index == self.tokens.len() - 1
   }

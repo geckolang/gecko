@@ -434,7 +434,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
 
-    let visit_void_kind_result = llvm_lowering_pass.visit_void_kind(&void_kind::VoidKind {});
+    let visit_void_kind_result = llvm_lowering_pass.visit_void_kind(&void_kind::VoidKind);
 
     assert_eq!(true, visit_void_kind_result.is_ok());
     assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
@@ -466,7 +466,7 @@ mod tests {
       prototype: node::Prototype {
         name: String::from("foo"),
         return_kind_group: node::KindGroup {
-          kind: node::AnyKindNode::VoidKind(void_kind::VoidKind {}),
+          kind: node::AnyKindNode::VoidKind(void_kind::VoidKind),
           is_reference: false,
           is_mutable: false,
         },
