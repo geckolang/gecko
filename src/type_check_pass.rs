@@ -1,6 +1,6 @@
 use crate::{diagnostic, node, pass};
 
-pub struct TypeCheckPass {}
+pub struct TypeCheckPass;
 
 impl TypeCheckPass {
   fn find_blocks_of(statement: &node::AnyStatementNode) -> Vec<&node::Block> {
@@ -74,5 +74,87 @@ impl pass::Pass for TypeCheckPass {
     }
 
     Ok(())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::pass::Pass;
+
+  fn make_dummy_function() -> node::Function {
+    use crate::void_kind;
+
+    node::Function {
+      is_public: false,
+
+      prototype: node::Prototype {
+        name: String::from("test"),
+        parameters: vec![],
+        is_variadic: false,
+        return_kind_group: node::KindGroup {
+          kind: node::AnyKindNode::VoidKind(void_kind::VoidKind),
+          is_reference: false,
+          is_mutable: false,
+        },
+      },
+      body: node::Block { statements: vec![] },
+    }
+  }
+
+  #[test]
+  fn visit_function() {
+    let mut pass = TypeCheckPass;
+    let function = make_dummy_function();
+
+    assert_eq!(true, pass.visit_function(&function).is_ok());
+  }
+
+  #[test]
+  fn visit_function_empty_return_stmt() {
+    let mut pass = TypeCheckPass;
+    let mut function = make_dummy_function();
+
+    function
+      .body
+      .statements
+      .push(node::AnyStatementNode::ReturnStmt(node::ReturnStmt {
+        value: None,
+      }));
+
+    assert_eq!(true, pass.visit_function(&function).is_ok());
+  }
+
+  #[test]
+  fn visit_function_void_return_with_value() {
+    let mut pass = TypeCheckPass;
+    let mut function = make_dummy_function();
+
+    function
+      .body
+      .statements
+      .push(node::AnyStatementNode::ReturnStmt(node::ReturnStmt {
+        value: Some(node::AnyLiteralNode::BoolLiteral(node::BoolLiteral {
+          value: true,
+        })),
+      }));
+
+    assert_eq!(false, pass.visit_function(&function).is_ok());
+
+    // TODO: Need a way to identify diagnostics (code field?).
+  }
+
+  #[test]
+  fn function_function_with_return_no_value() {
+    use crate::int_kind;
+
+    let mut pass = TypeCheckPass;
+    let mut function = make_dummy_function();
+
+    function.prototype.return_kind_group.kind = node::AnyKindNode::BoolKind(int_kind::BoolKind);
+
+    assert_eq!(false, pass.visit_function(&function).is_ok());
+
+    // TODO: Need a way to identify diagnostics (code field?).
   }
 }
