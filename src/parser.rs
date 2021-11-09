@@ -24,21 +24,6 @@ macro_rules! skip_past {
   };
 }
 
-#[macro_export]
-macro_rules! assert {
-  ($condition:expr) => {
-    match $condition {
-      true => true,
-      false => {
-        return Err(diagnostic::Diagnostic {
-          message: format!("assertion failed: `{}`", stringify!($condition)),
-          severity: diagnostic::DiagnosticSeverity::Internal,
-        });
-      }
-    }
-  };
-}
-
 type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 
 pub struct Parser {
@@ -99,7 +84,7 @@ impl Parser {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
 
     // TODO: Wrong error message.
-    assert!(match &self.tokens[self.index] {
+    crate::assert!(match &self.tokens[self.index] {
       token::Token::Identifier(_) => true,
       _ => false,
     });
@@ -111,7 +96,7 @@ impl Parser {
       }
     };
 
-    assert!(name.is_some());
+    crate::assert!(name.is_some());
     self.skip();
 
     Ok(name.unwrap())
@@ -315,7 +300,7 @@ impl Parser {
     Ok(node::Package::new(name))
   }
 
-  pub fn parse_top_level_node(&mut self) -> ParserResult<node::TopLevelNode> {
+  pub fn parse_top_level_node(&mut self) -> ParserResult<node::AnyTopLevelNode> {
     let mut token = self.tokens.get(self.index);
 
     if self.is(token::Token::KeywordPub) {
@@ -327,8 +312,8 @@ impl Parser {
     }
 
     Ok(match token.unwrap() {
-      token::Token::KeywordFn => node::TopLevelNode::Function(self.parse_function()?),
-      token::Token::KeywordExtern => node::TopLevelNode::External(self.parse_external()?),
+      token::Token::KeywordFn => node::AnyTopLevelNode::Function(self.parse_function()?),
+      token::Token::KeywordExtern => node::AnyTopLevelNode::External(self.parse_external()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -474,9 +459,8 @@ impl Parser {
     skip_past!(self, token::Token::SymbolParenthesesR);
 
     Ok(node::CallExpr {
-      callee: node::Stub {
+      callee: node::Stub::Callable {
         name: callee_name,
-        kind: node::StubKind::Callable,
         value: None,
       },
       arguments,

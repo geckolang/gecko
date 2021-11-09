@@ -1,17 +1,6 @@
 use crate::{diagnostic, int_kind, node, pass, pass::Pass, void_kind};
 use inkwell::types::AnyType;
 
-macro_rules! assert {
-  ($condition:expr) => {
-    if !$condition {
-      return Err(diagnostic::Diagnostic {
-        message: String::from("internal assertion failed"),
-        severity: diagnostic::DiagnosticSeverity::Internal,
-      });
-    }
-  };
-}
-
 pub struct LlvmLoweringPass<'a> {
   llvm_context: &'a inkwell::context::Context,
   pub llvm_module: inkwell::module::Module<'a>,
@@ -19,8 +8,7 @@ pub struct LlvmLoweringPass<'a> {
   llvm_value_map:
     std::collections::HashMap<node::AnyLiteralNode, inkwell::values::BasicValueEnum<'a>>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'a>>,
-  llvm_basic_block_buffer: Option<inkwell::basic_block::BasicBlock<'a>>,
-  // TODO: Consider making Option.
+  // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'a>,
 }
 
@@ -36,7 +24,6 @@ impl<'a> LlvmLoweringPass<'a> {
       llvm_type_map: std::collections::HashMap::new(),
       llvm_value_map: std::collections::HashMap::new(),
       llvm_function_buffer: None,
-      llvm_basic_block_buffer: None,
       llvm_builder_buffer: llvm_context.create_builder(),
     }
   }
@@ -148,7 +135,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     for parameter in &function.prototype.parameters {
       let llvm_parameter_result = self.visit_or_retrieve_type(&parameter.1.kind)?;
 
-      assert!(llvm_parameter_result.is_some());
+      crate::assert!(llvm_parameter_result.is_some());
 
       parameters.push(match llvm_parameter_result.unwrap() {
         // TODO: Add other types as they become available.
@@ -173,7 +160,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     let llvm_return_type =
       self.visit_or_retrieve_type(&function.prototype.return_kind_group.kind)?;
 
-    assert!(llvm_return_type.is_some());
+    crate::assert!(llvm_return_type.is_some());
 
     // TODO:
     // match llvm_lowering_pass
@@ -221,13 +208,12 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   fn visit_package(&mut self, package: &node::Package) -> pass::PassResult {
     // Reset all buffers when visiting a new package.
     self.llvm_builder_buffer.clear_insertion_position();
-    self.llvm_basic_block_buffer = None;
     self.llvm_function_buffer = None;
 
     for top_level_node in package.symbol_table.values() {
       match top_level_node {
-        node::TopLevelNode::Function(function) => self.visit_function(function)?,
-        node::TopLevelNode::External(external) => self.visit_external(external)?,
+        node::AnyTopLevelNode::Function(function) => self.visit_function(function)?,
+        node::AnyTopLevelNode::External(external) => self.visit_external(external)?,
       };
     }
 
@@ -255,18 +241,14 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   }
 
   fn visit_block(&mut self, block: &node::Block) -> pass::PassResult {
-    assert!(self.llvm_function_buffer.is_some());
+    crate::assert!(self.llvm_function_buffer.is_some());
 
-    self.llvm_basic_block_buffer = Some(
-      self
-        .llvm_context
-        // TODO: Name basic block?
-        .append_basic_block(self.llvm_function_buffer.unwrap(), ""),
-    );
+    let llvm_block = self
+      .llvm_context
+      // TODO: Name basic block?
+      .append_basic_block(self.llvm_function_buffer.unwrap(), "");
 
-    self
-      .llvm_builder_buffer
-      .position_at_end(self.llvm_basic_block_buffer.unwrap());
+    self.llvm_builder_buffer.position_at_end(llvm_block);
 
     for statement in &block.statements {
       match statement {
@@ -284,7 +266,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   }
 
   fn visit_return_stmt(&mut self, return_stmt: &node::ReturnStmt) -> pass::PassResult {
-    assert!(self.llvm_basic_block_buffer.is_some());
+    crate::assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
     // FIXME: This is a temporary fix.
 
@@ -320,11 +302,11 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   fn visit_let_stmt(&mut self, let_stmt: &node::LetStmt) -> pass::PassResult {
     use inkwell::types::BasicType;
 
-    assert!(self.llvm_basic_block_buffer.is_some());
+    crate::assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
     let llvm_any_type = self.visit_or_retrieve_type(&let_stmt.kind_group.kind)?;
 
-    assert!(llvm_any_type.is_some());
+    crate::assert!(llvm_any_type.is_some());
 
     let llvm_type = match llvm_any_type.unwrap() {
       inkwell::types::AnyTypeEnum::IntType(int_type) => int_type.as_basic_type_enum(),
@@ -343,7 +325,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     // TODO: Finish implementing.
     // let llvm_value = self.visit_or_retrieve_value(&let_stmt.value)?;
 
-    // assert!(llvm_value.is_some());
+    // crate::assert!(llvm_value.is_some());
 
     // self
     //   .llvm_builder_buffer

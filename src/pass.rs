@@ -1,5 +1,20 @@
 use crate::{diagnostic, int_kind, node, pass_manager, void_kind};
 
+#[macro_export]
+macro_rules! assert {
+  ($condition:expr) => {
+    match $condition {
+      true => true,
+      false => {
+        return Err(diagnostic::Diagnostic {
+          message: format!("assertion failed: `{}`", stringify!($condition)),
+          severity: diagnostic::DiagnosticSeverity::Internal,
+        });
+      }
+    }
+  };
+}
+
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
 pub trait Pass {
@@ -25,6 +40,10 @@ pub trait Pass {
       self.visit(child)?;
     }
 
+    Ok(())
+  }
+
+  fn visit_stub(&mut self, _: &mut node::Stub) -> PassResult {
     Ok(())
   }
 

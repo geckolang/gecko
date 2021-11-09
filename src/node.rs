@@ -97,14 +97,14 @@ impl Node for Prototype {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum TopLevelNode {
+pub enum AnyTopLevelNode {
   Function(Function),
   External(External),
 }
 
 pub struct Package {
   pub name: String,
-  pub symbol_table: std::collections::HashMap<String, TopLevelNode>,
+  pub symbol_table: std::collections::HashMap<String, AnyTopLevelNode>,
 }
 
 impl Package {
@@ -171,14 +171,8 @@ pub enum AnyExprNode {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyCalleeNode {
-  Function(Function),
-  External(External),
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct CallExpr {
-  pub callee: Stub<AnyCalleeNode>,
+  pub callee: Stub,
   pub arguments: Vec<AnyLiteralNode>,
 }
 
@@ -194,8 +188,15 @@ pub enum StubKind {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct Stub<T> {
-  pub name: String,
-  pub kind: StubKind,
-  pub value: Option<T>,
+pub enum Stub {
+  Callable {
+    name: String,
+    value: Option<AnyTopLevelNode>,
+  },
+}
+
+impl Node for Stub {
+  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
+    pass.visit_stub(self)
+  }
 }
