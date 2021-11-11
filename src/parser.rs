@@ -417,10 +417,10 @@ impl Parser {
     })
   }
 
-  pub fn parse_literal(&mut self) -> ParserResult<node::AnyLiteralNode> {
+  pub fn parse_literal(&mut self) -> ParserResult<node::AnyValueNode> {
     Ok(match self.tokens[self.index] {
-      token::Token::LiteralBool(_) => node::AnyLiteralNode::BoolLiteral(self.parse_bool_literal()?),
-      token::Token::LiteralInt(_) => node::AnyLiteralNode::IntLiteral(self.parse_int_literal()?),
+      token::Token::LiteralBool(_) => node::AnyValueNode::BoolLiteral(self.parse_bool_literal()?),
+      token::Token::LiteralInt(_) => node::AnyValueNode::IntLiteral(self.parse_int_literal()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: String::from("unexpected token, expected literal"),

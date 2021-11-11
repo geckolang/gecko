@@ -1,15 +1,38 @@
 use crate::{diagnostic, int_kind, node, pass, pass::Pass, void_kind};
 use inkwell::types::AnyType;
 
+/// Visit the node and return its resulting LLVM value, or if it
+/// was already previously visited, simply retrieve and return
+/// the result from the LLVM values map.
+///
+/// Returns [`None`] if visiting the node did not insert a result
+/// into the LLVM values map.
+macro_rules! visit_or_retrieve_value {
+  ($self:expr, $node:expr) => {{
+    if !$self.llvm_value_map.contains_key($node) {
+      match $node {
+        node::AnyValueNode::BoolLiteral(bool_literal) => $self.visit_bool_literal(&bool_literal)?,
+        node::AnyValueNode::IntLiteral(int_literal) => $self.visit_int_literal(&int_literal)?,
+        node::AnyValueNode::CallExpr(call_expr) => $self.visit_call_expr(&call_expr)?,
+      };
+    }
+
+    crate::assert!($self.llvm_value_map.contains_key($node));
+
+    $self.llvm_value_map.get(&$node).unwrap()
+  }};
+}
+
 pub struct LlvmLoweringPass<'a> {
   llvm_context: &'a inkwell::context::Context,
   pub llvm_module: inkwell::module::Module<'a>,
   llvm_type_map: std::collections::HashMap<node::AnyKindNode, inkwell::types::AnyTypeEnum<'a>>,
   llvm_value_map:
-    std::collections::HashMap<node::AnyLiteralNode, inkwell::values::BasicValueEnum<'a>>,
+    std::collections::HashMap<node::AnyValueNode, inkwell::values::BasicValueEnum<'a>>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'a>>,
   // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'a>,
+  package_symbol_table_buffer: Option<&'a std::collections::HashMap<String, node::AnyTopLevelNode>>,
 }
 
 impl<'a> LlvmLoweringPass<'a> {
@@ -25,6 +48,7 @@ impl<'a> LlvmLoweringPass<'a> {
       llvm_value_map: std::collections::HashMap::new(),
       llvm_function_buffer: None,
       llvm_builder_buffer: llvm_context.create_builder(),
+      package_symbol_table_buffer: None,
     }
   }
 
@@ -72,26 +96,6 @@ impl<'a> LlvmLoweringPass<'a> {
 
     Ok(self.llvm_type_map.get(&node))
   }
-
-  /// Visit the node and return its resulting LLVM value, or if it
-  /// was already previously visited, simply retrieve and return
-  /// the result from the LLVM values map.
-  ///
-  /// Returns [`None`] if visiting the node did not insert a result
-  /// into the LLVM values map.
-  fn visit_or_retrieve_value(
-    &mut self,
-    node: &node::AnyLiteralNode,
-  ) -> Result<Option<&inkwell::values::BasicValueEnum<'a>>, diagnostic::Diagnostic> {
-    if !self.llvm_value_map.contains_key(node) {
-      match node {
-        node::AnyLiteralNode::BoolLiteral(value) => self.visit_bool_literal(&value)?,
-        node::AnyLiteralNode::IntLiteral(value) => self.visit_int_literal(&value)?,
-      };
-    }
-
-    Ok(self.llvm_value_map.get(&node))
-  }
 }
 
 impl<'a> pass::Pass for LlvmLoweringPass<'a> {
@@ -130,6 +134,8 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   fn visit_function(&mut self, function: &node::Function) -> pass::PassResult {
     // TODO Simplify process of lowering parameters for externals as well.
     let mut parameters = vec![];
+
+    parameters.reserve(function.prototype.parameters.len());
 
     // TODO: Further on, need to make use of the parameter's name somehow (maybe during lookups?).
     for parameter in &function.prototype.parameters {
@@ -210,6 +216,9 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     self.llvm_builder_buffer.clear_insertion_position();
     self.llvm_function_buffer = None;
 
+    // FIXME: Address error.
+    // self.package_symbol_table_buffer = Some(&package.symbol_table);
+
     for top_level_node in package.symbol_table.values() {
       match top_level_node {
         node::AnyTopLevelNode::Function(function) => self.visit_function(function)?,
@@ -231,11 +240,11 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     );
 
     // TODO: Are externs always 'External' linkage?
-    self.llvm_module.add_function(
+    self.llvm_function_buffer = Some(self.llvm_module.add_function(
       external.prototype.name.as_str(),
       llvm_function_type?,
       Some(inkwell::module::Linkage::External),
-    );
+    ));
 
     Ok(())
   }
@@ -277,10 +286,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     // };
 
     if return_stmt.value.is_some() {
-      match return_stmt.value.unwrap() {
-        node::AnyLiteralNode::BoolLiteral(value) => self.visit_bool_literal(&value)?,
-        node::AnyLiteralNode::IntLiteral(value) => self.visit_int_literal(&value)?,
-      };
+      visit_or_retrieve_value!(self, return_stmt.value.as_ref().unwrap());
     }
 
     self
@@ -289,7 +295,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
         Some(
           self
             .llvm_value_map
-            .get(&return_stmt.value.unwrap())
+            .get(&return_stmt.value.as_ref().unwrap())
             .unwrap(),
         )
       } else {
@@ -336,7 +342,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
 
   fn visit_bool_literal(&mut self, bool_literal: &node::BoolLiteral) -> pass::PassResult {
     self.llvm_value_map.insert(
-      node::AnyLiteralNode::BoolLiteral(*bool_literal),
+      node::AnyValueNode::BoolLiteral(*bool_literal),
       inkwell::values::BasicValueEnum::IntValue(
         self
           .llvm_context
@@ -367,9 +373,65 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     };
 
     self.llvm_value_map.insert(
-      node::AnyLiteralNode::IntLiteral(*int_literal),
+      node::AnyValueNode::IntLiteral(*int_literal),
       inkwell::values::BasicValueEnum::IntValue(llvm_value),
     );
+
+    Ok(())
+  }
+
+  fn visit_call_expr(&mut self, call_expr: &node::CallExpr) -> pass::PassResult {
+    let callee = crate::stub_find_value!(
+      call_expr.callee,
+      self.package_symbol_table_buffer.as_ref().unwrap()
+    );
+
+    crate::assert!(self.llvm_builder_buffer.get_insert_block().is_some());
+
+    // TODO: Need to stop callable from lowering twice or more times.
+
+    match callee {
+      node::AnyTopLevelNode::Function(function) => self.visit_function(function)?,
+      node::AnyTopLevelNode::External(external) => self.visit_external(external)?,
+    };
+
+    let mut arguments = Vec::new();
+
+    arguments.reserve(call_expr.arguments.len());
+
+    for argument in &call_expr.arguments {
+      let llvm_value = visit_or_retrieve_value!(self, argument);
+
+      arguments.push(match llvm_value {
+        inkwell::values::BasicValueEnum::IntValue(int_value) => {
+          inkwell::values::BasicMetadataValueEnum::IntValue(*int_value)
+        }
+        _ => {
+          return Err(diagnostic::Diagnostic {
+            message: format!("unexpected argument type `{:?}`", argument),
+            severity: diagnostic::DiagnosticSeverity::Internal,
+          })
+        }
+      });
+    }
+
+    // TODO: Process & provide call arguments.
+    let llvm_call_result = self
+      .llvm_builder_buffer
+      .build_call(
+        self.llvm_function_buffer.unwrap(),
+        arguments.as_slice(),
+        "call",
+      )
+      .try_as_basic_value();
+
+    crate::assert!(llvm_call_result.is_left());
+
+    // TODO: Address error.
+    // self.llvm_value_map.insert(
+    //   node::AnyValueNode::CallExpr(call_expr),
+    //   llvm_call_result.left().unwrap(),
+    // );
 
     Ok(())
   }

@@ -135,7 +135,7 @@ mod tests {
       .body
       .statements
       .push(node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
-        value: Some(node::AnyLiteralNode::BoolLiteral(node::BoolLiteral {
+        value: Some(node::AnyValueNode::BoolLiteral(node::BoolLiteral {
           value: true,
         })),
       }));

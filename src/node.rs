@@ -1,5 +1,16 @@
 use crate::{int_kind, pass, void_kind};
 
+#[macro_export]
+macro_rules! stub_find_value {
+  ($stub:expr, $symbol_table:expr) => {{
+    let name = $stub.get_name();
+
+    crate::assert!($symbol_table.contains_key(&name));
+
+    $symbol_table.get(&name).unwrap()
+  }};
+}
+
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum AnyKindNode {
   IntKind(int_kind::IntKind),
@@ -7,10 +18,11 @@ pub enum AnyKindNode {
   BoolKind(int_kind::BoolKind),
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
-pub enum AnyLiteralNode {
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub enum AnyValueNode {
   BoolLiteral(BoolLiteral),
   IntLiteral(IntLiteral),
+  CallExpr(CallExpr),
 }
 
 pub trait Node {
@@ -142,7 +154,7 @@ impl Node for Block {
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct ReturnStmt {
-  pub value: Option<AnyLiteralNode>,
+  pub value: Option<AnyValueNode>,
 }
 
 impl Node for ReturnStmt {
@@ -167,13 +179,13 @@ impl Node for LetStmt {
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum AnyExprNode {
   CallExpr(CallExpr),
-  LiteralWrapperExpr(AnyLiteralNode),
+  LiteralWrapperExpr(AnyValueNode),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct CallExpr {
   pub callee: Stub,
-  pub arguments: Vec<AnyLiteralNode>,
+  pub arguments: Vec<AnyValueNode>,
 }
 
 impl Node for CallExpr {
@@ -193,6 +205,14 @@ pub enum Stub {
     name: String,
     value: Option<AnyTopLevelNode>,
   },
+}
+
+impl Stub {
+  pub fn get_name(&self) -> String {
+    match self {
+      Self::Callable { name, .. } => name.clone(),
+    }
+  }
 }
 
 impl Node for Stub {

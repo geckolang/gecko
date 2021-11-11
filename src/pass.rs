@@ -28,7 +28,7 @@ pub trait Pass {
   }
 
   fn visit(&mut self, node: &dyn node::Node) -> PassResult {
-    // TODO:
+    // TODO: Address error.
     // node.accept(&self);
     self.visit_children(node)?;
 
