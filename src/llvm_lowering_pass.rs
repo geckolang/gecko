@@ -277,14 +277,6 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   fn visit_return_stmt(&mut self, return_stmt: &node::ReturnStmt) -> pass::PassResult {
     crate::assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
-    // FIXME: This is a temporary fix.
-
-    // let basic_value_enum_result = match return_stmt.value {
-    //   // TODO: Fix unsafe unwrap (not checking for None).
-    //   Some(value) => self.visit_or_retrieve_value(&value)?.unwrap(),
-    //   _ => panic!("NO!"),
-    // };
-
     if return_stmt.value.is_some() {
       visit_or_retrieve_value!(self, return_stmt.value.as_ref().unwrap());
     }
@@ -403,6 +395,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
       let llvm_value = visit_or_retrieve_value!(self, argument);
 
       arguments.push(match llvm_value {
+        // TODO: Add support for missing basic values.
         inkwell::values::BasicValueEnum::IntValue(int_value) => {
           inkwell::values::BasicMetadataValueEnum::IntValue(*int_value)
         }
