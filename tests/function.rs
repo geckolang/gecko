@@ -1,5 +1,5 @@
+extern crate gecko;
 extern crate inkwell;
-extern crate ionlang;
 
 #[cfg(test)]
 mod tests {

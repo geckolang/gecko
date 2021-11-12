@@ -1,25 +1,34 @@
 <p align="center">
-  <img alt="Ion banner graphic" src="https://repository-images.githubusercontent.com/233767923/b799f780-d9cf-11ea-9d70-2597e4821c9e" />
+  <img alt="Logo" width="200" src="https://i.ibb.co/fFtvn08/Gecko-Logo-Logo-Only-01.png" />
+  <br/>
+  <br/>
+  <i>Gecko is a high-level, general-purpose programming language built on top of the LLVM project.</i>
+  <br/>
+  <strong align="center">Gecko</strong>
+  <br/>
+  <br/>
+  <img alt="GitHub branch checks state" src="https://img.shields.io/github/checks-status/ionlang/grip/master?style=for-the-badge" />
+  <img alt="Discord" src="https://img.shields.io/discord/572951207862206474?label=Discord&style=for-the-badge" />
 </p>
+<br/>
+<hr/>
 
-#### ionlang
-Ion is a general purpose, strongly-typed programming language, with a focus on a powerful type system, and simplicity. It uses `libLLVM` as its backend, and consumes the `libionir` & `libionshared` libraries. This project serves as the main library for consumption of both the compiler's frontend (lexing, parsing) & backend (lowering).
+#### Technology & principles
+Gecko is a general-purpose, strongly-typed programming language, with a focus on a powerful type system, memory safety, and simplicity. It uses `libLLVM` as its backend.
 
-Thanks to `libLLVM`, compiled code is optimized to produce efficient programs.
+Thanks to `libLLVM`, compiled code is highly optimized to produce efficient programs.
 
 [🔗Join our Discord server](https://discord.gg/H3eMUXp)
 
 #### Syntax example
 ```rust
-extern printf(i8* format, ...) -> i32;
-
 struct Human {
-  i8* name;
+  &str name;
 
-  ui8 age;
+  unsigned i8 age;
 }
 
-fn greet(Human human) {
+fn greet(Human human) ~ void {
   printf(
     "Greetings! My name is %s and I am %s years old.",
     human.name,
@@ -27,8 +36,8 @@ fn greet(Human human) {
   )
 }
 
-fn main(i32 argc, i32[] argv) -> i32 {
-  let dwayneJohnson = Human{
+fn main(argc: i32, argv: i32[]) ~ i32 {
+  let dwayneJohnson = Human {
     "Dwayne Johnson",
     49
   };
@@ -57,33 +66,31 @@ The GCC toolchain (through MSYS2) is required in order to build the `llvm-sys` c
 *🔨 &mdash; Work in progress.* *✔️ &mdash; Completed.*
 | Feature            | Note(s)                                                    | Status |
 |--------------------|------------------------------------------------------------|--------|
-| Functions          | -                                                          | ✔️      |
+| Functions          | -                                                          | 🔨      |
 | Externs            | -                                                          | ✔️      |
 | Function calls     | -                                                          | ✔️      |
 | Structs            | Definition, declaration & accessing of structs.            | 🔨      |
-| Global variables   | -                                                          | ✔️      |
-| Namespaces         | -                                                          | ✔️      |
+| Global variables   | -                                                          | 🔨      |
+| Modules            | -                                                          | 🔨      |
 | Generics           | -                                                          | 🔨      |
 | `if` statement     | Includes the `else` statement as well.                     | 🔨      |
 | `return` statement | -                                                          | 🔨      |
 | Variables          | Declaration, assignment, and reference of variables.       | 🔨      |
 | Casting            | -                                                          | 🔨      |
-| Binary expressions | -                                                          | ✔️      |
+| Binary expressions | -                                                          | 🔨      |
 | Literals           | Includes string, integer, character, and boolean literals. | 🔨      |
-| Types              | Intrinsic types such as `bool`, `i32`, `void`, etc.        | ✔️      |
+| Types              | Intrinsic types such as `bool`, `i32`, `void`, etc.        | 🔨      |
 | Arrays             | -                                                          | 🔨      |
 
 ### Directory structure
 | Path             | Description                                                                                           |
 |------------------|-------------------------------------------------------------------------------------------------------|
-| `.github/`       | Contains GitHub configuration files. For example, the GitHub actions workflow file `build_cmake.yml`. |
-| `include/`       | The root directory for the project's header files.                                                    |
-| `libs/`          | Contains GitHub submodules used by the project.                                                       |
+| `.github/`       | Contains GitHub configuration files. For example, the GitHub actions workflow file `rust.yml`.        |
 | `src/`           | The root directory for the project's source files.                                                    |
-| `test/`          | Contains the project's test sub-project. Google tests is used.                                        |
+| `tests/`         | Root directory for integration tests.                                                                 |
 | `.gitignore`     | Configuration file to specify paths ignored by Git.                                                   |
-| `.gitmodules`    | Configuration file to specify the Git submodules used by the project.                                 |
-| `CMakeLists.txt` | The CMake project file.                                                                               |
+| `Cargo.lock `    | Cargo configuration file.                                                                             |
+| `Cargo.toml    ` | Cargo configuration file.                                                                             |
 | `LICENSE`        | The license file.                                                                                     |
 | `README.md`      | Information about the project.                                                                        |
 
@@ -118,22 +125,21 @@ Several intrinsic types are defined by the compiler. It is intended for the intr
 | `i16`      | Integer type with bit-size 16. Equivalent to a `short int` on other languages.                                      |
 | `i32`      | Integer type with bit-size 32. Equivalent to an `int` on other languages. Usually the most common number type used. |
 | `i64`      | Integer type with bit-size 64. Equivalent to a `long int` on other languages. Useful for larger numbers.            |
-| `i128`     | Integer type with bit-size 128. Equivalent to a `long long int` on other languages. Useful for larger numbers.      |
 
-#### 1.4 &mdash; Namespaces
-Namespaces provide a simple way of organizing code within a project. They also have the advantage of preventing global naming collisions (ex. when importing a library).
-
-```cpp
-namespace foo { }
-```
-
-Namespaces can be nested by separating their names with the `::` delimiter as follows:
+#### 1.4 &mdash; Modules
+Modules provide a simple way of organizing code within a project. They also have the advantage of preventing global naming collisions (ex. when importing a library).
 
 ```cpp
-namespace foo::bar { }
+module foo;
 ```
 
-Accessing a namespace is trivial:
+Modules can be nested by separating their names with the `::` delimiter as follows:
+
+```cpp
+module foo::bar;
+```
+
+Accessing a module is trivial:
 
 ```rust
 foo::bar::entity;
@@ -145,7 +151,7 @@ Function definitions & calls follow conventional norms. They are easy to define 
 The return type of functions must always be specified, regardless of whether the function returns `void` or not. Functions with the `void` return type are not required to include a `return` statement.
 
 ```rust
-fn main(argc: i32, argv: i32[]) -> i32 {
+fn main(argc: i32, argv: i32[]) ~ i32 {
   return 0;
 }
 ```
@@ -154,20 +160,20 @@ fn main(argc: i32, argv: i32[]) -> i32 {
 Variable declaration, assignment and reference follow straight-forward rules and adhere to common conventions. This makes creating, and using variables easy and most programmers will be familiar with this style. Variable names adhere to the `name` rule.
 
 ```rust
-fn double(i32 number) -> i32 {
-  let doubledNumber: i32 = number * 2;
+fn double_number(number: i32) ~ i32 {
+  let result: i32 = number * 2;
 
-  return doubledNumber;
+  return result;
 }
 ```
 
 For convenience, variables can also be declared without specifying their types by using the `let` keyword for type inference. When inferring type from a literal integer, the preferred type inferred by the compiler will be `i32`, unless the integer cannot fit into `i32`'s bit-size, in which case it will be either `i64` or `i128` depending on the value's required bit-size. For example, a value larger than `2147483647` will be inferred as `i64` because it cannot fit into `i32`.
 
 ```rust
-fn doWork() -> i32 { ... }
+fn do_work() ~ i32 { return 1; }
 
-fn computeWork() -> i32 {
-  let work = doWork(); # Inferred i32 type from function call.
+fn do_computation() ~ i32 {
+  let work = do_work(); # Inferred i32 type from function call.
   let nextWork = work + 1; # Inferred i32 type from expression (i32 + i32 = i32).
   let workConst = 7; # Inferred i32 type from literal.
 
@@ -179,14 +185,13 @@ fn computeWork() -> i32 {
 The language includes support for conditional statements, variable statements, and loops.
 
 ```rust
-fn doWork() -> void {
-  let numberA = 1;
-  i32 numberB = numberA;
+fn do_work() ~ void {
+  let mut number = 1;
 
-  numberB = 2;
+  number = 2;
 
-  if (true) { }
-  else if (false) { }
+  if true { }
+  else if false { }
   else { }
 
   loop { }
@@ -196,9 +201,9 @@ fn doWork() -> void {
   for i32 i = 0; i < 10; i += 1 { }
 
   match true {
-    true -> doWork(),
-    false -> doWork(),
-    _ -> doWork()
+    true -> do_work(),
+    false -> do_work(),
+    _ -> do_work()
   }
 
   return;

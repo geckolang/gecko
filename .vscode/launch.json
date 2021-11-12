@@ -8,7 +8,7 @@
       "type": "lldb",
       "request": "launch",
       "name": "Debug",
-      "program": "${workspaceFolder}/target/debug/ionir-rs.exe",
+      "program": "${workspaceFolder}/target/debug/grip.exe",
       "args": [],
       "cwd": "${workspaceFolder}"
     }
