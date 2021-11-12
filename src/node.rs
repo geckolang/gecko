@@ -114,23 +114,23 @@ pub enum AnyTopLevelNode {
   External(External),
 }
 
-pub struct Package {
+pub struct Module {
   pub name: String,
   pub symbol_table: std::collections::HashMap<String, AnyTopLevelNode>,
 }
 
-impl Package {
+impl Module {
   pub fn new(name: String) -> Self {
-    Self {
+    Module {
       name,
       symbol_table: std::collections::HashMap::new(),
     }
   }
 }
 
-impl Node for Package {
+impl Node for Module {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_package(self)
+    pass.visit_module(self)
   }
 }
 

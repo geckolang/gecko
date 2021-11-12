@@ -71,7 +71,7 @@ pub trait Pass {
     Ok(())
   }
 
-  fn visit_package(&mut self, _: &node::Package) -> PassResult {
+  fn visit_module(&mut self, _: &node::Module) -> PassResult {
     Ok(())
   }
 

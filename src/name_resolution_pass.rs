@@ -1,7 +1,7 @@
 use crate::{diagnostic, node, pass};
 
 pub struct NameResolutionPass<'a> {
-  package_buffer: Option<&'a node::Package>,
+  module_buffer: Option<&'a node::Module>,
 }
 
 impl<'a> pass::Pass for NameResolutionPass<'a> {
@@ -25,9 +25,9 @@ impl<'a> pass::Pass for NameResolutionPass<'a> {
   //   }
   // }
 
-  fn visit_package(&mut self, package: &node::Package) -> pass::PassResult {
+  fn visit_module(&mut self, module: &node::Module) -> pass::PassResult {
     // FIXME: Address error.
-    // self.package_buffer = Some(package);
+    // self.module_buffer = Some(module);
 
     Ok(())
   }
@@ -39,11 +39,15 @@ impl<'a> pass::Pass for NameResolutionPass<'a> {
           return Ok(());
         }
 
-        crate::assert!(self.package_buffer.is_some());
+        crate::assert!(self.module_buffer.is_some());
 
-        let package_symbol_table = &self.package_buffer.as_ref().unwrap().symbol_table;
-
-        if !package_symbol_table.contains_key(name) {
+        if !&self
+          .module_buffer
+          .as_ref()
+          .unwrap()
+          .symbol_table
+          .contains_key(name)
+        {
           return Err(diagnostic::Diagnostic {
             message: format!("unresolved callee `{}`", name),
             severity: diagnostic::DiagnosticSeverity::Error,

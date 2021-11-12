@@ -290,14 +290,14 @@ impl Parser {
     Ok(node::External { prototype })
   }
 
-  pub fn parse_package_decl(&mut self) -> ParserResult<node::Package> {
-    skip_past!(self, token::Token::KeywordPackage);
+  pub fn parse_module_decl(&mut self) -> ParserResult<node::Module> {
+    skip_past!(self, token::Token::KeywordModule);
 
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolSemicolon);
 
-    Ok(node::Package::new(name))
+    Ok(node::Module::new(name))
   }
 
   pub fn parse_top_level_node(&mut self) -> ParserResult<node::AnyTopLevelNode> {
@@ -557,17 +557,17 @@ mod tests {
   }
 
   #[test]
-  fn parse_package_decl() {
+  fn parse_module_decl() {
     let mut parser = Parser::new(vec![
-      token::Token::KeywordPackage,
+      token::Token::KeywordModule,
       token::Token::Identifier(String::from("test")),
       token::Token::SymbolSemicolon,
     ]);
 
-    let package = parser.parse_package_decl();
+    let module = parser.parse_module_decl();
 
-    assert_eq!(true, package.is_ok());
-    assert_eq!(String::from("test"), package.unwrap().name);
+    assert_eq!(true, module.is_ok());
+    assert_eq!(String::from("test"), module.unwrap().name);
   }
 
   #[test]

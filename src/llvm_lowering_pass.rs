@@ -32,7 +32,7 @@ pub struct LlvmLoweringPass<'a> {
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'a>>,
   // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'a>,
-  package_symbol_table_buffer: Option<&'a std::collections::HashMap<String, node::AnyTopLevelNode>>,
+  module_symbol_table_buffer: Option<&'a std::collections::HashMap<String, node::AnyTopLevelNode>>,
 }
 
 impl<'a> LlvmLoweringPass<'a> {
@@ -48,7 +48,7 @@ impl<'a> LlvmLoweringPass<'a> {
       llvm_value_map: std::collections::HashMap::new(),
       llvm_function_buffer: None,
       llvm_builder_buffer: llvm_context.create_builder(),
-      package_symbol_table_buffer: None,
+      module_symbol_table_buffer: None,
     }
   }
 
@@ -211,15 +211,15 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
     })
   }
 
-  fn visit_package(&mut self, package: &node::Package) -> pass::PassResult {
-    // Reset all buffers when visiting a new package.
+  fn visit_module(&mut self, module: &node::Module) -> pass::PassResult {
+    // Reset all buffers when visiting a new module.
     self.llvm_builder_buffer.clear_insertion_position();
     self.llvm_function_buffer = None;
 
     // FIXME: Address error.
-    // self.package_symbol_table_buffer = Some(&package.symbol_table);
+    // self.module_symbol_table_buffer = Some(&module.symbol_table);
 
-    for top_level_node in package.symbol_table.values() {
+    for top_level_node in module.symbol_table.values() {
       match top_level_node {
         node::AnyTopLevelNode::Function(function) => self.visit_function(function)?,
         node::AnyTopLevelNode::External(external) => self.visit_external(external)?,
@@ -375,7 +375,7 @@ impl<'a> pass::Pass for LlvmLoweringPass<'a> {
   fn visit_call_expr(&mut self, call_expr: &node::CallExpr) -> pass::PassResult {
     let callee = crate::stub_find_value!(
       call_expr.callee,
-      self.package_symbol_table_buffer.as_ref().unwrap()
+      self.module_symbol_table_buffer.as_ref().unwrap()
     );
 
     crate::assert!(self.llvm_builder_buffer.get_insert_block().is_some());
