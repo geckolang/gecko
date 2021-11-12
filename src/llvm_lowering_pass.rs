@@ -23,23 +23,23 @@ macro_rules! visit_or_retrieve_value {
   }};
 }
 
-pub struct LlvmLoweringPass<'a> {
-  llvm_context: &'a inkwell::context::Context,
-  pub llvm_module: inkwell::module::Module<'a>,
-  llvm_type_map: std::collections::HashMap<node::AnyKindNode, inkwell::types::AnyTypeEnum<'a>>,
+pub struct LlvmLoweringPass<'a, 'ctx> {
+  llvm_context: &'ctx inkwell::context::Context,
+  pub llvm_module: &'a inkwell::module::Module<'ctx>,
+  llvm_type_map: std::collections::HashMap<node::AnyKindNode, inkwell::types::AnyTypeEnum<'ctx>>,
   llvm_value_map:
-    std::collections::HashMap<node::AnyValueNode, inkwell::values::BasicValueEnum<'a>>,
-  llvm_function_buffer: Option<inkwell::values::FunctionValue<'a>>,
+    std::collections::HashMap<node::AnyValueNode, inkwell::values::BasicValueEnum<'ctx>>,
+  llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Consider making Option?
-  llvm_builder_buffer: inkwell::builder::Builder<'a>,
+  llvm_builder_buffer: inkwell::builder::Builder<'ctx>,
   module_symbol_table_buffer: Option<&'a std::collections::HashMap<String, node::AnyTopLevelNode>>,
 }
 
-impl<'a> LlvmLoweringPass<'a> {
+impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
   // TODO: `llvm_module` is being moved.
   pub fn new(
-    llvm_context: &'a inkwell::context::Context,
-    llvm_module: inkwell::module::Module<'a>,
+    llvm_context: &'ctx inkwell::context::Context,
+    llvm_module: &'a inkwell::module::Module<'ctx>,
   ) -> Self {
     Self {
       llvm_context,
@@ -53,10 +53,10 @@ impl<'a> LlvmLoweringPass<'a> {
   }
 
   fn get_function_type_from(
-    parameters: &[inkwell::types::BasicMetadataTypeEnum<'a>],
-    llvm_return_type: &inkwell::types::AnyTypeEnum<'a>,
+    parameters: &[inkwell::types::BasicMetadataTypeEnum<'ctx>],
+    llvm_return_type: &inkwell::types::AnyTypeEnum<'ctx>,
     is_variadic: bool,
-  ) -> Result<inkwell::types::FunctionType<'a>, diagnostic::Diagnostic> {
+  ) -> Result<inkwell::types::FunctionType<'ctx>, diagnostic::Diagnostic> {
     Ok(match llvm_return_type {
       inkwell::types::AnyTypeEnum::IntType(int_type) => int_type.fn_type(parameters, is_variadic),
       inkwell::types::AnyTypeEnum::FloatType(float_type) => {
@@ -85,7 +85,7 @@ impl<'a> LlvmLoweringPass<'a> {
   fn visit_or_retrieve_type(
     &mut self,
     node: &node::AnyKindNode,
-  ) -> Result<Option<&inkwell::types::AnyTypeEnum<'a>>, diagnostic::Diagnostic> {
+  ) -> Result<Option<&inkwell::types::AnyTypeEnum<'ctx>>, diagnostic::Diagnostic> {
     if !self.llvm_type_map.contains_key(node) {
       match node {
         node::AnyKindNode::IntKind(value) => self.visit_int_kind(&value)?,
@@ -98,7 +98,7 @@ impl<'a> LlvmLoweringPass<'a> {
   }
 }
 
-impl<'a> pass::Pass for LlvmLoweringPass<'a> {
+impl<'a, 'ctx> pass::Pass for LlvmLoweringPass<'a, 'ctx> {
   fn visit_int_kind(&mut self, int_kind: &int_kind::IntKind) -> pass::PassResult {
     self.llvm_type_map.insert(
       node::AnyKindNode::IntKind(*int_kind),
@@ -441,7 +441,7 @@ mod tests {
 
     assert_eq!(
       true,
-      LlvmLoweringPass::new(&llvm_context, llvm_module)
+      LlvmLoweringPass::new(&llvm_context, &llvm_module)
         .llvm_type_map
         .is_empty()
     );
@@ -451,7 +451,7 @@ mod tests {
   fn llvm_lowering_pass_visit_or_retrieve_type() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
 
     let int_kind_box = node::AnyKindNode::IntKind(int_kind::IntKind {
       size: int_kind::IntSize::Bit32,
@@ -469,7 +469,7 @@ mod tests {
   fn llvm_lowering_pass_visit_void_kind() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
 
     let visit_void_kind_result = llvm_lowering_pass.visit_void_kind(&void_kind::VoidKind);
 
@@ -481,7 +481,7 @@ mod tests {
   fn llvm_lowering_pass_visit_int_kind() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
 
     let visit_int_kind_result = llvm_lowering_pass.visit_int_kind(&int_kind::IntKind {
       size: int_kind::IntSize::Bit32,
@@ -496,7 +496,7 @@ mod tests {
   fn visit_function() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, llvm_module);
+    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
 
     let visit_function_result = llvm_lowering_pass.visit_function(&node::Function {
       is_public: false,
