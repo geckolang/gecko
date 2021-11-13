@@ -1,10 +1,10 @@
 use crate::{diagnostic, node, pass};
 
-pub struct PassManager {
-  passes: Vec<Box<dyn pass::Pass>>,
+pub struct PassManager<'a> {
+  passes: Vec<Box<dyn pass::Pass<'a>>>,
 }
 
-impl PassManager {
+impl<'a> PassManager<'a> {
   pub fn new() -> Self {
     Self { passes: vec![] }
   }
@@ -16,7 +16,8 @@ impl PassManager {
       return false;
     }
 
-    self.passes.push(pass);
+    // FIXME:
+    // self.passes.push(pass);
 
     true
   }
@@ -50,13 +51,13 @@ mod tests {
 
   struct TestPassEmpty;
 
-  impl pass::Pass for TestPassEmpty {
+  impl<'a> pass::Pass<'a> for TestPassEmpty {
     //
   }
 
   struct TestPassNoRegister;
 
-  impl pass::Pass for TestPassNoRegister {
+  impl<'a> pass::Pass<'a> for TestPassNoRegister {
     fn register(&self, _: &PassManager) -> bool {
       return false;
     }

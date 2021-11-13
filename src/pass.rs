@@ -17,7 +17,7 @@ macro_rules! assert {
 
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
-pub trait Pass {
+pub trait Pass<'a> {
   // TODO:
   fn register(&self, _: &pass_manager::PassManager) -> bool {
     return true;
@@ -71,7 +71,7 @@ pub trait Pass {
     Ok(())
   }
 
-  fn visit_module(&mut self, _: &node::Module) -> PassResult {
+  fn visit_module(&mut self, _: &'a node::Module) -> PassResult {
     Ok(())
   }
 

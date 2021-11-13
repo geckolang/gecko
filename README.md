@@ -23,9 +23,8 @@ Thanks to `libLLVM`, compiled code is highly optimized to produce efficient prog
 #### Syntax example
 ```rust
 struct Human {
-  &str name;
-
-  unsigned i8 age;
+  name: &str,
+  age: unsigned i8
 }
 
 fn greet(Human human) ~ void {

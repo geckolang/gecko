@@ -1,4 +1,4 @@
-use crate::{diagnostic, int_kind, node, pass, pass::Pass, void_kind};
+use crate::{diagnostic, entry_point_check_pass, int_kind, node, pass, pass::Pass, void_kind};
 use inkwell::types::AnyType;
 
 /// Visit the node and return its resulting LLVM value, or if it
@@ -32,7 +32,7 @@ pub struct LlvmLoweringPass<'a, 'ctx> {
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'ctx>,
-  module_symbol_table_buffer: Option<&'a std::collections::HashMap<String, node::AnyTopLevelNode>>,
+  module_buffer: Option<&'a node::Module>,
 }
 
 impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
@@ -48,7 +48,7 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
       llvm_value_map: std::collections::HashMap::new(),
       llvm_function_buffer: None,
       llvm_builder_buffer: llvm_context.create_builder(),
-      module_symbol_table_buffer: None,
+      module_buffer: None,
     }
   }
 
@@ -98,7 +98,11 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
   }
 }
 
-impl<'a, 'ctx> pass::Pass for LlvmLoweringPass<'a, 'ctx> {
+fn mangle_name(scope_name: &String, name: &String) -> String {
+  format!(".{}.{}", scope_name, name)
+}
+
+impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   fn visit_int_kind(&mut self, int_kind: &int_kind::IntKind) -> pass::PassResult {
     self.llvm_type_map.insert(
       node::AnyKindNode::IntKind(*int_kind),
@@ -132,6 +136,8 @@ impl<'a, 'ctx> pass::Pass for LlvmLoweringPass<'a, 'ctx> {
   }
 
   fn visit_function(&mut self, function: &node::Function) -> pass::PassResult {
+    crate::assert!(self.module_buffer.is_some());
+
     // TODO Simplify process of lowering parameters for externals as well.
     let mut parameters = vec![];
 
@@ -186,9 +192,18 @@ impl<'a, 'ctx> pass::Pass for LlvmLoweringPass<'a, 'ctx> {
       function.prototype.is_variadic,
     )?;
 
+    let llvm_function_name = if function.is_public
+      && function.prototype.name == entry_point_check_pass::ENTRY_POINT_NAME
+    {
+      function.prototype.name.clone()
+    } else {
+      mangle_name(&self.module_buffer.unwrap().name, &function.prototype.name)
+    };
+
     self.llvm_function_buffer = Some(self.llvm_module.add_function(
-      function.prototype.name.as_str(),
+      llvm_function_name.as_str(),
       llvm_function_type,
+      // TODO: This does not apply. There is currently no method to export a function. Instead, this should be used as a meta flag (wether a function can be accessed, but not affect its name mangling).
       Some(if function.is_public {
         inkwell::module::Linkage::External
       } else {
@@ -211,13 +226,11 @@ impl<'a, 'ctx> pass::Pass for LlvmLoweringPass<'a, 'ctx> {
     })
   }
 
-  fn visit_module(&mut self, module: &node::Module) -> pass::PassResult {
+  fn visit_module(&mut self, module: &'a node::Module) -> pass::PassResult {
     // Reset all buffers when visiting a new module.
     self.llvm_builder_buffer.clear_insertion_position();
     self.llvm_function_buffer = None;
-
-    // FIXME: Address error.
-    // self.module_symbol_table_buffer = Some(&module.symbol_table);
+    self.module_buffer = Some(&module);
 
     for top_level_node in module.symbol_table.values() {
       match top_level_node {
@@ -375,7 +388,7 @@ impl<'a, 'ctx> pass::Pass for LlvmLoweringPass<'a, 'ctx> {
   fn visit_call_expr(&mut self, call_expr: &node::CallExpr) -> pass::PassResult {
     let callee = crate::stub_find_value!(
       call_expr.callee,
-      self.module_symbol_table_buffer.as_ref().unwrap()
+      self.module_buffer.as_ref().unwrap().symbol_table
     );
 
     crate::assert!(self.llvm_builder_buffer.get_insert_block().is_some());

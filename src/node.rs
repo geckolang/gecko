@@ -130,7 +130,10 @@ impl Module {
 
 impl Node for Module {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_module(self)
+    // FIXME:
+    // pass.visit_module(self)
+
+    Ok(())
   }
 }
 

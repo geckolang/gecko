@@ -15,7 +15,7 @@ impl TypeCheckPass {
   }
 }
 
-impl pass::Pass for TypeCheckPass {
+impl<'a> pass::Pass<'a> for TypeCheckPass {
   fn visit_function(&mut self, function: &node::Function) -> pass::PassResult {
     let mut block_queue = vec![&function.body];
 
