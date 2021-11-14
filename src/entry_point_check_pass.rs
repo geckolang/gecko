@@ -5,7 +5,7 @@ pub struct EntryPointCheckPass {}
 pub const ENTRY_POINT_NAME: &str = "main";
 
 impl<'a> pass::Pass<'a> for EntryPointCheckPass {
-  fn visit_function(&mut self, function: &node::Function) -> pass::PassResult {
+  fn visit_function(&mut self, function: node::Function) -> pass::PassResult {
     if function.prototype.name != ENTRY_POINT_NAME || !function.is_public {
       return Ok(());
     }

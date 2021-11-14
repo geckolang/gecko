@@ -11,7 +11,7 @@ macro_rules! stub_find_value {
   }};
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub enum AnyKindNode {
   IntKind(int_kind::IntKind),
   VoidKind(void_kind::VoidKind),
@@ -38,18 +38,21 @@ pub struct Identifier {
   pub name: String,
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct BoolLiteral {
   pub value: bool,
 }
 
 impl Node for BoolLiteral {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_bool_literal(self)
+    // TODO:
+    // pass.visit_bool_literal(self)
+
+    Ok(())
   }
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct IntLiteral {
   pub value: u64,
   pub kind: int_kind::IntKind,
@@ -57,7 +60,10 @@ pub struct IntLiteral {
 
 impl Node for IntLiteral {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_int_literal(self)
+    // TODO:
+    // pass.visit_int_literal(self)
+
+    Ok(())
   }
 }
 
@@ -75,7 +81,10 @@ pub struct External {
 
 impl Node for External {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_external(self)
+    // TODO:
+    // pass.visit_external(self)
+
+    Ok(())
   }
 }
 
@@ -88,7 +97,10 @@ pub struct Function {
 
 impl Node for Function {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_function(self)
+    // TODO:
+    // pass.visit_function(self)
+
+    Ok(())
   }
 }
 
@@ -104,7 +116,10 @@ pub struct Prototype {
 
 impl Node for Prototype {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_prototype(self)
+    // TODO:
+    // pass.visit_prototype(self)
+
+    Ok(())
   }
 }
 
@@ -151,7 +166,10 @@ pub struct Block {
 
 impl Node for Block {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_block(self)
+    // TODO:
+    // pass.visit_block(self)
+
+    Ok(())
   }
 }
 
@@ -162,7 +180,10 @@ pub struct ReturnStmt {
 
 impl Node for ReturnStmt {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_return_stmt(self)
+    // TODO:
+    // pass.visit_return_stmt(self)
+
+    Ok(())
   }
 }
 
@@ -175,7 +196,10 @@ pub struct LetStmt {
 
 impl Node for LetStmt {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_let_stmt(self)
+    // TODO:
+    // pass.visit_let_stmt(self)
+
+    Ok(())
   }
 }
 
@@ -193,7 +217,10 @@ pub struct CallExpr {
 
 impl Node for CallExpr {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_call_expr(self)
+    // TODO:
+    // pass.visit_call_expr(self)
+
+    Ok(())
   }
 }
 

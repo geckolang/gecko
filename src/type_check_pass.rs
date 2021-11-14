@@ -2,8 +2,8 @@ use crate::{diagnostic, node, pass};
 
 pub struct TypeCheckPass;
 
-impl TypeCheckPass {
-  fn find_blocks_of(statement: &node::AnyStmtNode) -> Vec<&node::Block> {
+impl<'a> TypeCheckPass {
+  fn find_blocks_of(statement: &node::AnyStmtNode) -> Vec<node::Block> {
     let mut blocks = vec![];
 
     match statement {
@@ -16,8 +16,8 @@ impl TypeCheckPass {
 }
 
 impl<'a> pass::Pass<'a> for TypeCheckPass {
-  fn visit_function(&mut self, function: &node::Function) -> pass::PassResult {
-    let mut block_queue = vec![&function.body];
+  fn visit_function(&mut self, function: node::Function) -> pass::PassResult {
+    let mut block_queue = vec![function.body];
 
     let should_return_value = match function.prototype.return_kind_group.kind {
       node::AnyKindNode::VoidKind(_) => false,
@@ -108,7 +108,7 @@ mod tests {
     let mut pass = TypeCheckPass;
     let function = make_dummy_function();
 
-    assert_eq!(true, pass.visit_function(&function).is_ok());
+    assert_eq!(true, pass.visit_function(function).is_ok());
   }
 
   #[test]
@@ -123,7 +123,7 @@ mod tests {
         value: None,
       }));
 
-    assert_eq!(true, pass.visit_function(&function).is_ok());
+    assert_eq!(true, pass.visit_function(function).is_ok());
   }
 
   #[test]
@@ -140,7 +140,7 @@ mod tests {
         })),
       }));
 
-    assert_eq!(false, pass.visit_function(&function).is_ok());
+    assert_eq!(false, pass.visit_function(function).is_ok());
 
     // TODO: Need a way to identify diagnostics (code field?).
   }
@@ -153,8 +153,7 @@ mod tests {
     let mut function = make_dummy_function();
 
     function.prototype.return_kind_group.kind = node::AnyKindNode::BoolKind(int_kind::BoolKind);
-
-    assert_eq!(false, pass.visit_function(&function).is_ok());
+    assert_eq!(false, pass.visit_function(function).is_ok());
 
     // TODO: Need a way to identify diagnostics (code field?).
   }
