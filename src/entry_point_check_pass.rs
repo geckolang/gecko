@@ -5,13 +5,13 @@ pub struct EntryPointCheckPass {}
 pub const ENTRY_POINT_NAME: &str = "main";
 
 impl<'a> pass::Pass<'a> for EntryPointCheckPass {
-  fn visit_function(&mut self, function: node::Function) -> pass::PassResult {
+  fn visit_function(&mut self, function: &'a node::Function) -> pass::PassResult {
     if function.prototype.name != ENTRY_POINT_NAME || !function.is_public {
       return Ok(());
     }
 
     match function.prototype.return_kind_group.kind {
-      node::AnyKindNode::IntKind(int_kind) => {
+      node::KindHolder::IntKind(int_kind) => {
         if int_kind.size != int_kind::IntSize::Bit32 {
           return Err(diagnostic::Diagnostic {
             message: format!(
@@ -42,7 +42,7 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
         severity: diagnostic::DiagnosticSeverity::Error,
       });
     } else if function.prototype.parameters[0].1.kind
-      != node::AnyKindNode::IntKind(int_kind::IntKind {
+      != node::KindHolder::IntKind(int_kind::IntKind {
         size: int_kind::IntSize::Bit32,
         is_signed: true,
       })
@@ -55,7 +55,7 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
         severity: diagnostic::DiagnosticSeverity::Error,
       });
     } else if function.prototype.parameters[1].1.kind
-      != node::AnyKindNode::IntKind(int_kind::IntKind {
+      != node::KindHolder::IntKind(int_kind::IntKind {
         size: int_kind::IntSize::Bit32,
         is_signed: true,
       })

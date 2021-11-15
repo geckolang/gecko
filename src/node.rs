@@ -12,17 +12,34 @@ macro_rules! stub_find_value {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyKindNode {
-  IntKind(int_kind::IntKind),
-  VoidKind(void_kind::VoidKind),
-  BoolKind(int_kind::BoolKind),
+pub enum KindTransport<'a> {
+  IntKind(&'a int_kind::IntKind),
+  VoidKind(&'a void_kind::VoidKind),
+  BoolKind(&'a int_kind::BoolKind),
 }
 
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyValueNode {
-  BoolLiteral(BoolLiteral),
-  IntLiteral(IntLiteral),
-  CallExpr(CallExpr),
+pub fn from_kind_holder<'a>(kind_holder: &'a KindHolder) -> KindTransport<'a> {
+  match kind_holder {
+    KindHolder::BoolKind(bool_kind) => KindTransport::BoolKind(&bool_kind),
+    KindHolder::IntKind(int_kind) => KindTransport::IntKind(&int_kind),
+    KindHolder::VoidKind(void_kind) => KindTransport::VoidKind(&void_kind),
+  }
+}
+
+// TODO: Rename to `ExprHolder` or the likes.
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+pub enum ExprTransport<'a> {
+  BoolLiteral(&'a BoolLiteral),
+  IntLiteral(&'a IntLiteral),
+  CallExpr(&'a CallExpr<'a>),
+}
+
+pub fn from_expr_holder<'a>(expr_holder: &'a ExprHolder) -> ExprTransport<'a> {
+  match expr_holder {
+    ExprHolder::BoolLiteral(bool_literal) => ExprTransport::BoolLiteral(&bool_literal),
+    ExprHolder::IntLiteral(int_literal) => ExprTransport::IntLiteral(&int_literal),
+    ExprHolder::CallExpr(call_expr) => ExprTransport::CallExpr(&call_expr),
+  }
 }
 
 pub trait Node {
@@ -69,7 +86,7 @@ impl Node for IntLiteral {
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct KindGroup {
-  pub kind: AnyKindNode,
+  pub kind: KindHolder,
   pub is_reference: bool,
   pub is_mutable: bool,
 }
@@ -89,13 +106,13 @@ impl Node for External {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct Function {
+pub struct Function<'a> {
   pub is_public: bool,
   pub prototype: Prototype,
-  pub body: Block,
+  pub body: Block<'a>,
 }
 
-impl Node for Function {
+impl<'a> Node for Function<'a> {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
     // TODO:
     // pass.visit_function(self)
@@ -124,17 +141,31 @@ impl Node for Prototype {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyTopLevelNode {
-  Function(Function),
+pub enum ExprHolder<'a> {
+  BoolLiteral(BoolLiteral),
+  IntLiteral(IntLiteral),
+  CallExpr(CallExpr<'a>),
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub enum KindHolder {
+  IntKind(int_kind::IntKind),
+  VoidKind(void_kind::VoidKind),
+  BoolKind(int_kind::BoolKind),
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub enum AnyTopLevelNode<'a> {
+  Function(Function<'a>),
   External(External),
 }
 
-pub struct Module {
+pub struct Module<'a> {
   pub name: String,
-  pub symbol_table: std::collections::HashMap<String, AnyTopLevelNode>,
+  pub symbol_table: std::collections::HashMap<String, AnyTopLevelNode<'a>>,
 }
 
-impl Module {
+impl<'a> Module<'a> {
   pub fn new(name: String) -> Self {
     Module {
       name,
@@ -143,7 +174,7 @@ impl Module {
   }
 }
 
-impl Node for Module {
+impl<'a> Node for Module<'a> {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
     // FIXME:
     // pass.visit_module(self)
@@ -153,18 +184,18 @@ impl Node for Module {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyStmtNode {
-  ReturnStmt(ReturnStmt),
-  ExprWrapperStmt(AnyExprNode),
-  LetStmt(LetStmt),
+pub enum AnyStmtNode<'a> {
+  ReturnStmt(ReturnStmt<'a>),
+  ExprWrapperStmt(ExprHolder<'a>),
+  LetStmt(LetStmt<'a>),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct Block {
-  pub statements: Vec<AnyStmtNode>,
+pub struct Block<'a> {
+  pub statements: Vec<AnyStmtNode<'a>>,
 }
 
-impl Node for Block {
+impl<'a> Node for Block<'a> {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
     // TODO:
     // pass.visit_block(self)
@@ -174,11 +205,11 @@ impl Node for Block {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct ReturnStmt {
-  pub value: Option<AnyValueNode>,
+pub struct ReturnStmt<'a> {
+  pub value: Option<ExprHolder<'a>>,
 }
 
-impl Node for ReturnStmt {
+impl<'a> Node for ReturnStmt<'a> {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
     // TODO:
     // pass.visit_return_stmt(self)
@@ -188,13 +219,13 @@ impl Node for ReturnStmt {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct LetStmt {
+pub struct LetStmt<'a> {
   pub name: String,
   pub kind_group: KindGroup,
-  pub value: AnyExprNode,
+  pub value: ExprHolder<'a>,
 }
 
-impl Node for LetStmt {
+impl<'a> Node for LetStmt<'a> {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
     // TODO:
     // pass.visit_let_stmt(self)
@@ -204,18 +235,18 @@ impl Node for LetStmt {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyExprNode {
-  CallExpr(CallExpr),
-  LiteralWrapperExpr(AnyValueNode),
+pub enum AnyExprNode<'a> {
+  CallExpr(&'a CallExpr<'a>),
+  LiteralWrapperExpr(ExprHolder<'a>),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct CallExpr {
-  pub callee: Stub,
-  pub arguments: Vec<AnyValueNode>,
+pub struct CallExpr<'a> {
+  pub callee: Stub<'a>,
+  pub arguments: Vec<ExprTransport<'a>>,
 }
 
-impl Node for CallExpr {
+impl<'a> Node for CallExpr<'a> {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
     // TODO:
     // pass.visit_call_expr(self)
@@ -225,19 +256,14 @@ impl Node for CallExpr {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum StubKind {
-  Callable,
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub enum Stub {
+pub enum Stub<'a> {
   Callable {
     name: String,
-    value: Option<AnyTopLevelNode>,
+    value: Option<AnyTopLevelNode<'a>>,
   },
 }
 
-impl Stub {
+impl<'a> Stub<'a> {
   pub fn get_name(&self) -> String {
     match self {
       Self::Callable { name, .. } => name.clone(),
@@ -245,7 +271,7 @@ impl Stub {
   }
 }
 
-impl Node for Stub {
+impl<'a> Node for Stub<'a> {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
     pass.visit_stub(self)
   }

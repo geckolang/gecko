@@ -31,7 +31,7 @@ pub struct Parser {
   index: usize,
 }
 
-impl Parser {
+impl<'a> Parser {
   pub fn new(tokens: Vec<token::Token>) -> Self {
     Self { tokens, index: 0 }
   }
@@ -102,7 +102,7 @@ impl Parser {
     Ok(name.unwrap())
   }
 
-  pub fn parse_block(&mut self) -> ParserResult<node::Block> {
+  pub fn parse_block(&mut self) -> ParserResult<node::Block<'a>> {
     skip_past!(self, token::Token::SymbolBraceL);
 
     let mut statements = vec![];
@@ -184,9 +184,9 @@ impl Parser {
     // TODO: Check if the index is valid?
     // TODO: Support for more types.
     let kind = match self.tokens[self.index] {
-      token::Token::TypeVoid => node::AnyKindNode::VoidKind(self.parse_void_kind()?),
-      token::Token::TypeInt32 => node::AnyKindNode::IntKind(self.parse_int_kind()?),
-      token::Token::TypeBool => node::AnyKindNode::BoolKind(self.parse_bool_kind()?),
+      token::Token::TypeVoid => node::KindHolder::VoidKind(self.parse_void_kind()?),
+      token::Token::TypeInt32 => node::KindHolder::IntKind(self.parse_int_kind()?),
+      token::Token::TypeBool => node::KindHolder::BoolKind(self.parse_bool_kind()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -255,7 +255,7 @@ impl Parser {
     })
   }
 
-  pub fn parse_function(&mut self) -> ParserResult<node::Function> {
+  pub fn parse_function(&mut self) -> ParserResult<node::Function<'a>> {
     // TODO: Visibility should not be handled here.
 
     let mut is_public = false;
@@ -290,7 +290,7 @@ impl Parser {
     Ok(node::External { prototype })
   }
 
-  pub fn parse_module_decl(&mut self) -> ParserResult<node::Module> {
+  pub fn parse_module_decl(&mut self) -> ParserResult<node::Module<'a>> {
     skip_past!(self, token::Token::KeywordModule);
 
     let name = self.parse_name()?;
@@ -300,7 +300,7 @@ impl Parser {
     Ok(node::Module::new(name))
   }
 
-  pub fn parse_top_level_node(&mut self) -> ParserResult<node::AnyTopLevelNode> {
+  pub fn parse_top_level_node(&mut self) -> ParserResult<node::AnyTopLevelNode<'a>> {
     let mut token = self.tokens.get(self.index);
 
     if self.is(token::Token::KeywordPub) {
@@ -326,7 +326,7 @@ impl Parser {
     })
   }
 
-  pub fn parse_return_stmt(&mut self) -> ParserResult<node::ReturnStmt> {
+  pub fn parse_return_stmt(&mut self) -> ParserResult<node::ReturnStmt<'a>> {
     skip_past!(self, token::Token::KeywordReturn);
 
     let mut value = None;
@@ -340,7 +340,7 @@ impl Parser {
     Ok(node::ReturnStmt { value })
   }
 
-  pub fn parse_let_stmt(&mut self) -> ParserResult<node::LetStmt> {
+  pub fn parse_let_stmt(&mut self) -> ParserResult<node::LetStmt<'a>> {
     skip_past!(self, token::Token::KeywordLet);
 
     let name = self.parse_name()?;
@@ -417,10 +417,10 @@ impl Parser {
     })
   }
 
-  pub fn parse_literal(&mut self) -> ParserResult<node::AnyValueNode> {
+  pub fn parse_literal(&mut self) -> ParserResult<node::ExprHolder<'a>> {
     Ok(match self.tokens[self.index] {
-      token::Token::LiteralBool(_) => node::AnyValueNode::BoolLiteral(self.parse_bool_literal()?),
-      token::Token::LiteralInt(_) => node::AnyValueNode::IntLiteral(self.parse_int_literal()?),
+      token::Token::LiteralBool(_) => node::ExprHolder::BoolLiteral(self.parse_bool_literal()?),
+      token::Token::LiteralInt(_) => node::ExprHolder::IntLiteral(self.parse_int_literal()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: String::from("unexpected token, expected literal"),
@@ -430,11 +430,11 @@ impl Parser {
     })
   }
 
-  pub fn parse_expr(&mut self) -> ParserResult<node::AnyExprNode> {
+  pub fn parse_expr(&mut self) -> ParserResult<node::ExprHolder<'a>> {
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
-          node::AnyExprNode::CallExpr(self.parse_call_expr()?)
+          node::ExprHolder::CallExpr(self.parse_call_expr()?)
         } else {
           return Err(diagnostic::Diagnostic {
             // TODO: Show which token.
@@ -443,11 +443,11 @@ impl Parser {
           });
         }
       }
-      _ => node::AnyExprNode::LiteralWrapperExpr(self.parse_literal()?),
+      _ => self.parse_literal()?,
     })
   }
 
-  pub fn parse_call_expr(&mut self) -> ParserResult<node::CallExpr> {
+  pub fn parse_call_expr(&mut self) -> ParserResult<node::CallExpr<'a>> {
     let callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);

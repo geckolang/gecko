@@ -3,7 +3,7 @@ use crate::{diagnostic, node, pass};
 pub struct TypeCheckPass;
 
 impl<'a> TypeCheckPass {
-  fn find_blocks_of(statement: &node::AnyStmtNode) -> Vec<node::Block> {
+  fn find_blocks_of(statement: &node::AnyStmtNode) -> Vec<&'a node::Block<'a>> {
     let mut blocks = vec![];
 
     match statement {
@@ -16,11 +16,11 @@ impl<'a> TypeCheckPass {
 }
 
 impl<'a> pass::Pass<'a> for TypeCheckPass {
-  fn visit_function(&mut self, function: node::Function) -> pass::PassResult {
-    let mut block_queue = vec![function.body];
+  fn visit_function(&mut self, function: &'a node::Function) -> pass::PassResult {
+    let mut block_queue = vec![&function.body];
 
     let should_return_value = match function.prototype.return_kind_group.kind {
-      node::AnyKindNode::VoidKind(_) => false,
+      node::KindHolder::VoidKind(_) => false,
       _ => true,
     };
 
@@ -83,7 +83,7 @@ mod tests {
   use super::*;
   use crate::pass::Pass;
 
-  fn make_dummy_function() -> node::Function {
+  fn make_dummy_function<'a>() -> node::Function<'a> {
     use crate::void_kind;
 
     node::Function {
@@ -94,7 +94,7 @@ mod tests {
         parameters: vec![],
         is_variadic: false,
         return_kind_group: node::KindGroup {
-          kind: node::AnyKindNode::VoidKind(void_kind::VoidKind),
+          kind: node::KindHolder::VoidKind(void_kind::VoidKind),
           is_reference: false,
           is_mutable: false,
         },
@@ -108,7 +108,7 @@ mod tests {
     let mut pass = TypeCheckPass;
     let function = make_dummy_function();
 
-    assert_eq!(true, pass.visit_function(function).is_ok());
+    assert_eq!(true, pass.visit_function(&function).is_ok());
   }
 
   #[test]
@@ -123,7 +123,7 @@ mod tests {
         value: None,
       }));
 
-    assert_eq!(true, pass.visit_function(function).is_ok());
+    assert_eq!(true, pass.visit_function(&function).is_ok());
   }
 
   #[test]
@@ -135,12 +135,12 @@ mod tests {
       .body
       .statements
       .push(node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
-        value: Some(node::AnyValueNode::BoolLiteral(node::BoolLiteral {
+        value: Some(node::ExprHolder::BoolLiteral(node::BoolLiteral {
           value: true,
         })),
       }));
 
-    assert_eq!(false, pass.visit_function(function).is_ok());
+    assert_eq!(false, pass.visit_function(&function).is_ok());
 
     // TODO: Need a way to identify diagnostics (code field?).
   }
@@ -152,8 +152,8 @@ mod tests {
     let mut pass = TypeCheckPass;
     let mut function = make_dummy_function();
 
-    function.prototype.return_kind_group.kind = node::AnyKindNode::BoolKind(int_kind::BoolKind);
-    assert_eq!(false, pass.visit_function(function).is_ok());
+    function.prototype.return_kind_group.kind = node::KindHolder::BoolKind(int_kind::BoolKind);
+    assert_eq!(false, pass.visit_function(&function).is_ok());
 
     // TODO: Need a way to identify diagnostics (code field?).
   }
