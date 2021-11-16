@@ -31,29 +31,30 @@ impl<'a> pass::Pass<'a> for NameResolutionPass<'a> {
     Ok(())
   }
 
-  fn visit_stub(&mut self, stub: &mut node::Stub) -> pass::PassResult {
+  fn visit_stub(&mut self, stub: &mut node::Stub<'a>) -> pass::PassResult {
     match stub {
       node::Stub::Callable { name, value } => {
         if value.is_some() {
           return Ok(());
         }
 
-        crate::assert!(self.module_buffer.is_some());
+        crate::pass_assert!(self.module_buffer.is_some());
 
-        if !&self
-          .module_buffer
-          .as_ref()
-          .unwrap()
-          .symbol_table
-          .contains_key(name)
-        {
+        if let Some(target) = self.module_buffer.unwrap().symbol_table.get(name) {
+          *value = Some(match target {
+            node::TopLevelNodeHolder::Function(function) => {
+              node::StubValueTransport::Function(function)
+            }
+            node::TopLevelNodeHolder::External(external) => {
+              node::StubValueTransport::External(external)
+            }
+          });
+        } else {
           return Err(diagnostic::Diagnostic {
             message: format!("unresolved callee `{}`", name),
             severity: diagnostic::DiagnosticSeverity::Error,
           });
         }
-
-        // TODO: Resolve stubs here.
       }
     };
 

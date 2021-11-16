@@ -1,7 +1,7 @@
 use crate::{diagnostic, node, pass};
 
 pub struct PassManager<'a> {
-  passes: Vec<Box<dyn pass::Pass<'a>>>,
+  passes: Vec<&'a mut dyn pass::Pass<'a>>,
 }
 
 impl<'a> PassManager<'a> {
@@ -11,13 +11,13 @@ impl<'a> PassManager<'a> {
 
   /// Register a pass to be run. Returns `true` if the pass'
   /// restrictions are met.
-  pub fn add_pass(&mut self, pass: Box<dyn pass::Pass>) -> bool {
+  pub fn add_pass(&mut self, pass: &'a mut dyn pass::Pass<'a>) -> bool {
     if !pass.register(self) {
       return false;
     }
 
     // FIXME:
-    // self.passes.push(pass);
+    self.passes.push(pass);
 
     true
   }
@@ -80,16 +80,18 @@ mod tests {
   #[test]
   fn pass_manager_add_pass() {
     let mut pass_manager = PassManager::new();
+    let mut test_pass = TestPassEmpty;
 
-    pass_manager.add_pass(Box::new(TestPassEmpty {}));
+    pass_manager.add_pass(&mut test_pass);
     assert_eq!(1, pass_manager.passes.len());
   }
 
   #[test]
   fn pass_manager_add_pass_no_register() {
     let mut pass_manager = PassManager::new();
+    let mut test_pass_no_register = TestPassNoRegister;
 
-    pass_manager.add_pass(Box::new(TestPassNoRegister {}));
+    pass_manager.add_pass(&mut test_pass_no_register);
     assert_eq!(true, pass_manager.passes.is_empty());
   }
 }

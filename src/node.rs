@@ -1,16 +1,5 @@
 use crate::{int_kind, pass, void_kind};
 
-#[macro_export]
-macro_rules! stub_find_value {
-  ($stub:expr, $symbol_table:expr) => {{
-    let name = $stub.get_name();
-
-    crate::assert!($symbol_table.contains_key(&name));
-
-    $symbol_table.get(&name).unwrap()
-  }};
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum KindTransport<'a> {
   IntKind(&'a int_kind::IntKind),
@@ -155,14 +144,14 @@ pub enum KindHolder {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyTopLevelNode<'a> {
+pub enum TopLevelNodeHolder<'a> {
   Function(Function<'a>),
   External(External),
 }
 
 pub struct Module<'a> {
   pub name: String,
-  pub symbol_table: std::collections::HashMap<String, AnyTopLevelNode<'a>>,
+  pub symbol_table: std::collections::HashMap<String, TopLevelNodeHolder<'a>>,
 }
 
 impl<'a> Module<'a> {
@@ -256,10 +245,16 @@ impl<'a> Node for CallExpr<'a> {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
+pub enum StubValueTransport<'a> {
+  Function(&'a Function<'a>),
+  External(&'a External),
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub enum Stub<'a> {
   Callable {
     name: String,
-    value: Option<AnyTopLevelNode<'a>>,
+    value: Option<StubValueTransport<'a>>,
   },
 }
 
@@ -273,6 +268,8 @@ impl<'a> Stub<'a> {
 
 impl<'a> Node for Stub<'a> {
   fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    pass.visit_stub(self)
+    // TODO:
+    // pass.visit_stub(self)
+    Ok(())
   }
 }

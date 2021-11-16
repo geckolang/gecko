@@ -84,7 +84,7 @@ impl<'a> Parser {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
 
     // TODO: Wrong error message.
-    crate::assert!(match &self.tokens[self.index] {
+    crate::pass_assert!(match &self.tokens[self.index] {
       token::Token::Identifier(_) => true,
       _ => false,
     });
@@ -96,7 +96,7 @@ impl<'a> Parser {
       }
     };
 
-    crate::assert!(name.is_some());
+    crate::pass_assert!(name.is_some());
     self.skip();
 
     Ok(name.unwrap())
@@ -300,7 +300,7 @@ impl<'a> Parser {
     Ok(node::Module::new(name))
   }
 
-  pub fn parse_top_level_node(&mut self) -> ParserResult<node::AnyTopLevelNode<'a>> {
+  pub fn parse_top_level_node(&mut self) -> ParserResult<node::TopLevelNodeHolder<'a>> {
     let mut token = self.tokens.get(self.index);
 
     if self.is(token::Token::KeywordPub) {
@@ -312,8 +312,8 @@ impl<'a> Parser {
     }
 
     Ok(match token.unwrap() {
-      token::Token::KeywordFn => node::AnyTopLevelNode::Function(self.parse_function()?),
-      token::Token::KeywordExtern => node::AnyTopLevelNode::External(self.parse_external()?),
+      token::Token::KeywordFn => node::TopLevelNodeHolder::Function(self.parse_function()?),
+      token::Token::KeywordExtern => node::TopLevelNodeHolder::External(self.parse_external()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(

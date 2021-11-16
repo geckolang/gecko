@@ -1,7 +1,7 @@
 use crate::{diagnostic, int_kind, node, pass_manager, void_kind};
 
 #[macro_export]
-macro_rules! assert {
+macro_rules! pass_assert {
   ($condition:expr) => {
     match $condition {
       true => true,
@@ -43,7 +43,7 @@ pub trait Pass<'a> {
     Ok(())
   }
 
-  fn visit_stub(&mut self, _: &mut node::Stub) -> PassResult {
+  fn visit_stub(&mut self, _: &mut node::Stub<'a>) -> PassResult {
     Ok(())
   }
 
