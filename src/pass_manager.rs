@@ -61,8 +61,6 @@ mod tests {
     }
   }
 
-  struct TestNode;
-
   #[test]
   fn pass_manager_proper_initial_values() {
     assert_eq!(true, PassManager::new().passes.is_empty());

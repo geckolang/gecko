@@ -4,7 +4,7 @@ pub struct TypeCheckPass;
 
 impl<'a> TypeCheckPass {
   fn find_blocks_of(statement: &node::AnyStmtNode<'a>) -> Vec<&'a node::Block<'a>> {
-    let mut blocks = vec![];
+    let blocks = vec![];
 
     match statement {
       // TODO: Awaiting addition of statements such as `if` and `while`.

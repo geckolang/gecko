@@ -1,4 +1,4 @@
-use crate::{node, pass};
+use crate::node;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct VoidKind;

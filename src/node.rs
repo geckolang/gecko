@@ -106,7 +106,8 @@ pub struct Prototype {
 
 impl<'a> Node<'a> for Prototype {
   fn get_children(&mut self) -> Vec<&mut dyn Node<'a>> {
-    let mut children = vec![&mut self.return_kind_group.kind];
+    // TODO:
+    // let mut children = vec![&mut self.return_kind_group.kind];
 
     // children
     vec![]

@@ -1,4 +1,4 @@
-use crate::{diagnostic, node, pass, void_kind};
+use crate::{diagnostic, node, pass};
 
 pub struct NameResolutionPass<'a> {
   module_buffer: Option<&'a node::Module<'a>>,
@@ -73,7 +73,7 @@ impl<'a> pass::Pass<'a> for NameResolutionPass<'a> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::pass::Pass;
+  use crate::{pass::Pass, void_kind};
 
   #[test]
   fn visit_module() {

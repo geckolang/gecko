@@ -55,11 +55,13 @@ enum NodeKey<'a> {
   CallExpr(&'a node::CallExpr<'a>),
 }
 
-fn make_node_key<'a>(node: node::ExprTransport<'a>) -> NodeKey<'a> {
-  match node {
-    node::ExprTransport::BoolLiteral(bool_literal) => NodeKey::BoolLiteral(&bool_literal),
-    node::ExprTransport::IntLiteral(int_literal) => NodeKey::IntLiteral(&int_literal),
-    node::ExprTransport::CallExpr(call_expr) => NodeKey::CallExpr(&call_expr),
+impl<'a> From<node::ExprTransport<'a>> for NodeKey<'a> {
+  fn from(expr_transport: node::ExprTransport<'a>) -> Self {
+    match expr_transport {
+      node::ExprTransport::BoolLiteral(bool_literal) => NodeKey::BoolLiteral(bool_literal),
+      node::ExprTransport::IntLiteral(int_literal) => NodeKey::IntLiteral(int_literal),
+      node::ExprTransport::CallExpr(call_expr) => NodeKey::CallExpr(call_expr),
+    }
   }
 }
 
@@ -287,7 +289,9 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     if return_stmt.value.is_some() {
       visit_or_retrieve_value!(
         self,
-        &make_node_key(return_stmt.value.as_ref().unwrap().into())
+        &NodeKey::from(node::ExprTransport::from(
+          return_stmt.value.as_ref().unwrap()
+        ))
       );
     }
 
@@ -297,7 +301,9 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         Some(
           self
             .llvm_value_map
-            .get(&make_node_key(return_stmt.value.as_ref().unwrap().into()))
+            .get(&NodeKey::from(node::ExprTransport::from(
+              return_stmt.value.as_ref().unwrap(),
+            )))
             .unwrap(),
         )
       } else {
@@ -325,11 +331,11 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
       }
     };
 
-    let llvm_alloca_inst_ptr = self
+    // TODO: Finish implementing.
+    let _llvm_alloca_inst_ptr = self
       .llvm_builder_buffer
       .build_alloca(llvm_type, let_stmt.name.as_str());
 
-    // TODO: Finish implementing.
     // let llvm_value = self.visit_or_retrieve_value(&let_stmt.value)?;
 
     // crate::pass_assert!(llvm_value.is_some());
@@ -343,7 +349,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
   fn visit_bool_literal(&mut self, bool_literal: &'a node::BoolLiteral) -> pass::PassResult {
     self.llvm_value_map.insert(
-      make_node_key(node::ExprTransport::BoolLiteral(bool_literal)),
+      node::ExprTransport::BoolLiteral(bool_literal).into(),
       inkwell::values::BasicValueEnum::IntValue(
         self
           .llvm_context
@@ -372,7 +378,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     };
 
     self.llvm_value_map.insert(
-      make_node_key(node::ExprTransport::IntLiteral(&int_literal)),
+      node::ExprTransport::IntLiteral(&int_literal).into(),
       inkwell::values::BasicValueEnum::IntValue(llvm_value),
     );
 
@@ -401,7 +407,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
     for argument in &call_expr.arguments {
       // TODO: Cloning argument.
-      let llvm_value = visit_or_retrieve_value!(self, &make_node_key(argument.clone()));
+      let llvm_value = visit_or_retrieve_value!(self, &NodeKey::from(argument.clone()));
 
       arguments.push(match llvm_value {
         // TODO: Add support for missing basic values.
