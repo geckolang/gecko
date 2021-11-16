@@ -1,6 +1,6 @@
 use crate::{diagnostic, int_kind, node, pass};
 
-pub struct EntryPointCheckPass {}
+pub struct EntryPointCheckPass;
 
 pub const ENTRY_POINT_NAME: &str = "main";
 

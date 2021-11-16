@@ -31,8 +31,8 @@ pub fn from_expr_holder<'a>(expr_holder: &'a ExprHolder) -> ExprTransport<'a> {
   }
 }
 
-pub trait Node {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult;
+pub trait Node<'a> {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult;
 
   fn get_children(&self) -> Vec<&dyn Node> {
     vec![]
@@ -49,12 +49,9 @@ pub struct BoolLiteral {
   pub value: bool,
 }
 
-impl Node for BoolLiteral {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_bool_literal(self)
-
-    Ok(())
+impl<'a> Node<'a> for BoolLiteral {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_bool_literal(self)
   }
 }
 
@@ -64,12 +61,9 @@ pub struct IntLiteral {
   pub kind: int_kind::IntKind,
 }
 
-impl Node for IntLiteral {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_int_literal(self)
-
-    Ok(())
+impl<'a> Node<'a> for IntLiteral {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_int_literal(self)
   }
 }
 
@@ -85,12 +79,9 @@ pub struct External {
   pub prototype: Prototype,
 }
 
-impl Node for External {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_external(self)
-
-    Ok(())
+impl<'a> Node<'a> for External {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_external(self)
   }
 }
 
@@ -101,12 +92,9 @@ pub struct Function<'a> {
   pub body: Block<'a>,
 }
 
-impl<'a> Node for Function<'a> {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_function(self)
-
-    Ok(())
+impl<'a> Node<'a> for Function<'a> {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_function(self)
   }
 }
 
@@ -120,12 +108,9 @@ pub struct Prototype {
   pub return_kind_group: KindGroup,
 }
 
-impl Node for Prototype {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_prototype(self)
-
-    Ok(())
+impl<'a> Node<'a> for Prototype {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_prototype(self)
   }
 }
 
@@ -163,12 +148,9 @@ impl<'a> Module<'a> {
   }
 }
 
-impl<'a> Node for Module<'a> {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // FIXME:
-    // pass.visit_module(self)
-
-    Ok(())
+impl<'a> Node<'a> for Module<'a> {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_module(self)
   }
 }
 
@@ -184,12 +166,9 @@ pub struct Block<'a> {
   pub statements: Vec<AnyStmtNode<'a>>,
 }
 
-impl<'a> Node for Block<'a> {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_block(self)
-
-    Ok(())
+impl<'a> Node<'a> for Block<'a> {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_block(self)
   }
 }
 
@@ -198,12 +177,9 @@ pub struct ReturnStmt<'a> {
   pub value: Option<ExprHolder<'a>>,
 }
 
-impl<'a> Node for ReturnStmt<'a> {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_return_stmt(self)
-
-    Ok(())
+impl<'a> Node<'a> for ReturnStmt<'a> {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_return_stmt(self)
   }
 }
 
@@ -214,12 +190,9 @@ pub struct LetStmt<'a> {
   pub value: ExprHolder<'a>,
 }
 
-impl<'a> Node for LetStmt<'a> {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_let_stmt(self)
-
-    Ok(())
+impl<'a> Node<'a> for LetStmt<'a> {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_let_stmt(self)
   }
 }
 
@@ -235,12 +208,9 @@ pub struct CallExpr<'a> {
   pub arguments: Vec<ExprTransport<'a>>,
 }
 
-impl<'a> Node for CallExpr<'a> {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_call_expr(self)
-
-    Ok(())
+impl<'a> Node<'a> for CallExpr<'a> {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_call_expr(self)
   }
 }
 
@@ -266,10 +236,8 @@ impl<'a> Stub<'a> {
   }
 }
 
-impl<'a> Node for Stub<'a> {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_stub(self)
-    Ok(())
+impl<'a> Node<'a> for Stub<'a> {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_stub(self)
   }
 }

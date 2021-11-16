@@ -33,23 +33,17 @@ pub struct IntKind {
   pub is_signed: bool,
 }
 
-impl node::Node for IntKind {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_int_kind(self)
-
-    Ok(())
+impl<'a> node::Node<'a> for IntKind {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_int_kind(self)
   }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct BoolKind;
 
-impl node::Node for BoolKind {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_bool_kind(self)
-
-    Ok(())
+impl<'a> node::Node<'a> for BoolKind {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_bool_kind(self)
   }
 }

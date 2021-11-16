@@ -16,7 +16,6 @@ impl<'a> PassManager<'a> {
       return false;
     }
 
-    // FIXME:
     self.passes.push(pass);
 
     true
@@ -32,12 +31,10 @@ impl<'a> PassManager<'a> {
     for pass in &mut self.passes {
       let visitation_result = pass.visit(root_node);
 
-      for diagnostic in pass.get_diagnostics().iter() {
-        diagnostics.push(diagnostic.clone());
-      }
+      diagnostics.extend(pass.get_diagnostics());
 
-      if visitation_result.is_err() {
-        diagnostics.push(visitation_result.err().unwrap());
+      if let Err(diagnostic) = visitation_result {
+        diagnostics.push(diagnostic);
       }
     }
 
@@ -65,7 +62,7 @@ mod tests {
 
   struct TestNode;
 
-  impl node::Node for TestNode {
+  impl<'a> node::Node<'a> for TestNode {
     // TODO: Isn't this redundant?
     fn accept(&mut self, _: &mut dyn pass::Pass) -> pass::PassResult {
       Ok(())

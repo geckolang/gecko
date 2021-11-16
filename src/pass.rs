@@ -15,6 +15,12 @@ macro_rules! pass_assert {
   };
 }
 
+macro_rules! pass_add_diagnostic {
+  ($diagnostics_vector:expr, $diagnostic:expr) => {
+    $diagnostics_vector.push($diagnostic);
+  };
+}
+
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
 pub trait Pass<'a> {

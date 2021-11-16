@@ -4,11 +4,8 @@ use crate::pass;
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct VoidKind;
 
-impl node::Node for VoidKind {
-  fn accept(&mut self, pass: &mut dyn pass::Pass) -> pass::PassResult {
-    // TODO:
-    // pass.visit_void_kind(self)?;
-
-    Ok(())
+impl<'a> node::Node<'a> for VoidKind {
+  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_void_kind(self)
   }
 }
