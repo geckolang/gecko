@@ -53,7 +53,7 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnost
     _ => {
       return Err(diagnostic::Diagnostic {
         message: format!("identifier `{}` is not a keyword", identifier_str),
-        severity: diagnostic::DiagnosticSeverity::Error,
+        severity: diagnostic::Severity::Internal,
       })
     }
   })

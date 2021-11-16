@@ -5,7 +5,7 @@ pub struct EntryPointCheckPass;
 pub const ENTRY_POINT_NAME: &str = "main";
 
 impl<'a> pass::Pass<'a> for EntryPointCheckPass {
-  fn visit_function(&mut self, function: &'a node::Function) -> pass::PassResult {
+  fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
     if function.prototype.name != ENTRY_POINT_NAME || !function.is_public {
       return Ok(());
     }
@@ -18,7 +18,7 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
               "main function must return `i32`, but found integer size `{:?}`",
               int_kind.size
             ),
-            severity: diagnostic::DiagnosticSeverity::Error,
+            severity: diagnostic::Severity::Error,
           });
         }
       }
@@ -28,7 +28,7 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
             "main function must return `i32`, but returns `{:?}`",
             function.prototype.return_kind_group.kind
           ),
-          severity: diagnostic::DiagnosticSeverity::Error,
+          severity: diagnostic::Severity::Error,
         });
       }
     };
@@ -39,7 +39,7 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
           "main function must have 2 parameters, but found `{}`",
           function.prototype.parameters.len()
         ),
-        severity: diagnostic::DiagnosticSeverity::Error,
+        severity: diagnostic::Severity::Error,
       });
     } else if function.prototype.parameters[0].1.kind
       != node::KindHolder::IntKind(int_kind::IntKind {
@@ -52,7 +52,7 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
           "main function's first parameter must be `i32`, but found `{:?}`",
           function.prototype.parameters[0].1.kind
         ),
-        severity: diagnostic::DiagnosticSeverity::Error,
+        severity: diagnostic::Severity::Error,
       });
     } else if function.prototype.parameters[1].1.kind
       != node::KindHolder::IntKind(int_kind::IntKind {
@@ -60,13 +60,13 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
         is_signed: true,
       })
     {
+      // TODO: Should be an array of i32 instead of i32.
       return Err(diagnostic::Diagnostic {
         message: format!(
-          // TODO: Should be an array of i32 instead of i32.
           "main function's second parameter must be `i32`, but found `{:?}`",
           function.prototype.parameters[1].1.kind
         ),
-        severity: diagnostic::DiagnosticSeverity::Error,
+        severity: diagnostic::Severity::Error,
       });
     }
 

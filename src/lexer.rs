@@ -209,10 +209,7 @@ mod tests {
 
     lexer.read_char();
 
-    assert_eq!(
-      Some(token::Token::Identifier(String::from("a"))),
-      lexer.next()
-    );
+    assert_eq!(Some(token::Token::Identifier("a".into())), lexer.next());
   }
 
   #[test]
@@ -270,7 +267,7 @@ mod tests {
   #[test]
   fn lex_types() {
     // TODO: Add all types.
-    let mut lexer = Lexer::new(String::from("void i32").chars().collect());
+    let mut lexer = Lexer::new("void i32".chars().collect());
 
     assert_eq!(Some(token::Token::TypeVoid), lexer.next());
     assert_eq!(Some(token::Token::TypeInt32), lexer.next());
@@ -279,7 +276,7 @@ mod tests {
   // TODO:
   // #[test]
   // fn lexer_lex_keywords() {
-  //   let mut lexer = Lexer::new(String::from("extern pub fn namespace").chars().collect());
+  //   let mut lexer = Lexer::new("extern pub fn namespace".chars().collect());
   //   let tokens: Vec<token::Token> = lexer.collect();
 
   //   assert_eq!(Some(token::Token::KeywordExtern), tokens.get(0));

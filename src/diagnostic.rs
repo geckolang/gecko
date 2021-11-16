@@ -1,5 +1,5 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DiagnosticSeverity {
+pub enum Severity {
   Warning,
   Error,
   Internal,
@@ -8,12 +8,12 @@ pub enum DiagnosticSeverity {
 #[derive(Clone, Debug)]
 pub struct Diagnostic {
   pub message: String,
-  pub severity: DiagnosticSeverity,
+  pub severity: Severity,
 }
 
-pub fn error_unexpected_eof(expected: &str) -> Diagnostic {
+pub fn unreachable() -> Diagnostic {
   Diagnostic {
-    message: format!("unexpected end of file, expected {}", expected),
-    severity: DiagnosticSeverity::Error,
+    message: "unreachable point reached".into(),
+    severity: Severity::Internal,
   }
 }

@@ -6,7 +6,7 @@ macro_rules! skip_past {
     // if $self.is_eof() {
     //   return Err(diagnostic::Diagnostic {
     //     message: format!("expected token `{}` but reached eof", $token),
-    //     severity: diagnostic::DiagnosticSeverity::Error,
+    //     severity: diagnostic::Severity::Error,
     //   });
     // }
 
@@ -16,7 +16,7 @@ macro_rules! skip_past {
           "expected token `{}` but got `{}`",
           $token, $self.tokens[$self.index]
         ),
-        severity: diagnostic::DiagnosticSeverity::Error,
+        severity: diagnostic::Severity::Error,
       });
     }
 
@@ -147,7 +147,7 @@ impl<'a> Parser {
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!("unexpected token `{}`, expected integer type", token),
-          severity: diagnostic::DiagnosticSeverity::Error,
+          severity: diagnostic::Severity::Error,
         })
       }
     };
@@ -194,7 +194,7 @@ impl<'a> Parser {
             // TODO: Check if the index is valid?
             self.tokens[self.index]
           ),
-          severity: diagnostic::DiagnosticSeverity::Error,
+          severity: diagnostic::Severity::Error,
         });
       }
     };
@@ -268,7 +268,16 @@ impl<'a> Parser {
     skip_past!(self, token::Token::KeywordFn);
 
     let prototype = self.parse_prototype()?;
-    let body = self.parse_block()?;
+    let mut body = self.parse_block()?;
+
+    // Insert a return void instruction if the function body is empty.
+    if body.statements.is_empty() {
+      body
+        .statements
+        .push(node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
+          value: None,
+        }));
+    }
 
     Ok(node::Function {
       is_public,
@@ -297,7 +306,7 @@ impl<'a> Parser {
 
     skip_past!(self, token::Token::SymbolSemicolon);
 
-    Ok(node::Module::new(name))
+    Ok(node::Module::new(name.as_str()))
   }
 
   pub fn parse_top_level_node(&mut self) -> ParserResult<node::TopLevelNodeHolder<'a>> {
@@ -308,7 +317,10 @@ impl<'a> Parser {
     }
 
     if token.is_none() {
-      return Err(diagnostic::error_unexpected_eof("top-level construct"));
+      return Err(diagnostic::Diagnostic {
+        message: "expected top-level construct but got end of file".into(),
+        severity: diagnostic::Severity::Error,
+      });
     }
 
     Ok(match token.unwrap() {
@@ -316,11 +328,8 @@ impl<'a> Parser {
       token::Token::KeywordExtern => node::TopLevelNodeHolder::External(self.parse_external()?),
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: format!(
-            "unexpected token: {:?}, expected top-level construct",
-            self.tokens[self.index]
-          ),
-          severity: diagnostic::DiagnosticSeverity::Error,
+          message: format!("unexpected token ``, expected top-level construct"),
+          severity: diagnostic::Severity::Error,
         })
       }
     })
@@ -372,8 +381,8 @@ impl<'a> Parser {
       // TODO: Better error.
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: String::from("unexpected token, expected boolean literal"),
-          severity: diagnostic::DiagnosticSeverity::Error,
+          message: "unexpected token, expected boolean literal".into(),
+          severity: diagnostic::Severity::Error,
         })
       }
     })
@@ -413,7 +422,12 @@ impl<'a> Parser {
           },
         }
       }
-      _ => return Err(diagnostic::error_unexpected_eof("integer literal")),
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: "expected integer literal but got end of file".into(),
+          severity: diagnostic::Severity::Error,
+        })
+      }
     })
   }
 
@@ -423,9 +437,10 @@ impl<'a> Parser {
       token::Token::LiteralInt(_) => node::ExprHolder::IntLiteral(self.parse_int_literal()?),
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: String::from("unexpected token, expected literal"),
-          severity: diagnostic::DiagnosticSeverity::Error,
-        })
+          // TODO: Show the actual token.
+          message: "unexpected token, expected literal".into(),
+          severity: diagnostic::Severity::Error,
+        });
       }
     })
   }
@@ -437,9 +452,9 @@ impl<'a> Parser {
           node::ExprHolder::CallExpr(self.parse_call_expr()?)
         } else {
           return Err(diagnostic::Diagnostic {
-            // TODO: Show which token.
-            message: String::from("unexpected token, expected expression"),
-            severity: diagnostic::DiagnosticSeverity::Error,
+            // TODO: Show the actual token.
+            message: "unexpected token, expected expression".into(),
+            severity: diagnostic::Severity::Error,
           });
         }
       }
@@ -524,7 +539,7 @@ mod tests {
 
   #[test]
   fn parser_parse_name() {
-    let mut parser = Parser::new(vec![token::Token::Identifier(String::from("foo"))]);
+    let mut parser = Parser::new(vec![token::Token::Identifier("foo".into())]);
     let name = parser.parse_name();
 
     assert_eq!(true, name.is_ok());
@@ -560,7 +575,7 @@ mod tests {
   fn parse_module_decl() {
     let mut parser = Parser::new(vec![
       token::Token::KeywordModule,
-      token::Token::Identifier(String::from("test")),
+      token::Token::Identifier("test".into()),
       token::Token::SymbolSemicolon,
     ]);
 
@@ -575,7 +590,7 @@ mod tests {
     let mut parser = Parser::new(vec![
       token::Token::KeywordExtern,
       token::Token::KeywordFn,
-      token::Token::Identifier(String::from("test")),
+      token::Token::Identifier("test".into()),
       token::Token::SymbolParenthesesL,
       token::Token::SymbolParenthesesR,
       token::Token::SymbolTilde,
@@ -627,7 +642,7 @@ mod tests {
   #[test]
   fn parse_parameter() {
     let mut parser = Parser::new(vec![
-      token::Token::Identifier(String::from("foo")),
+      token::Token::Identifier("foo".into()),
       token::Token::SymbolColon,
       token::Token::TypeInt32,
     ]);

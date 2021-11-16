@@ -3,7 +3,7 @@ use crate::{diagnostic, node, pass};
 pub struct TypeCheckPass;
 
 impl<'a> TypeCheckPass {
-  fn find_blocks_of(statement: &node::AnyStmtNode) -> Vec<&'a node::Block<'a>> {
+  fn find_blocks_of(statement: &node::AnyStmtNode<'a>) -> Vec<&'a node::Block<'a>> {
     let mut blocks = vec![];
 
     match statement {
@@ -16,7 +16,7 @@ impl<'a> TypeCheckPass {
 }
 
 impl<'a> pass::Pass<'a> for TypeCheckPass {
-  fn visit_function(&mut self, function: &'a node::Function) -> pass::PassResult {
+  fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
     let mut block_queue = vec![&function.body];
 
     let should_return_value = match function.prototype.return_kind_group.kind {
@@ -36,7 +36,7 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
                   "function `{}` should return `void` but returns a value",
                   function.prototype.name
                 ),
-                severity: diagnostic::DiagnosticSeverity::Error,
+                severity: diagnostic::Severity::Error,
               });
             } else if return_stmt.value.is_some() {
               is_value_returned = true;
@@ -52,7 +52,7 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
               //       function.prototype.return_kind_group.kind,
               //       return_value
               //     ),
-              //     severity: diagnostic::DiagnosticSeverity::Error,
+              //     severity: diagnostic::Severity::Error,
               //   });
               // }
             }
@@ -70,7 +70,7 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
           "function `{}` should return a value but does not",
           function.prototype.name
         ),
-        severity: diagnostic::DiagnosticSeverity::Error,
+        severity: diagnostic::Severity::Error,
       });
     }
 
@@ -88,9 +88,8 @@ mod tests {
 
     node::Function {
       is_public: false,
-
       prototype: node::Prototype {
-        name: String::from("test"),
+        name: "test".into(),
         parameters: vec![],
         is_variadic: false,
         return_kind_group: node::KindGroup {

@@ -1,5 +1,4 @@
 use crate::node;
-use crate::pass;
 
 // TODO: Write documentation.
 pub fn calculate_int_size_of(number: &u64) -> IntSize {
@@ -34,16 +33,12 @@ pub struct IntKind {
 }
 
 impl<'a> node::Node<'a> for IntKind {
-  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
-    pass.visit_int_kind(self)
-  }
+  //
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct BoolKind;
 
 impl<'a> node::Node<'a> for BoolKind {
-  fn accept(&'a mut self, pass: &'a mut dyn pass::Pass<'a>) -> pass::PassResult {
-    pass.visit_bool_kind(self)
-  }
+  //
 }

@@ -1,4 +1,4 @@
-use crate::{diagnostic, entry_point_check_pass, int_kind, node, pass, pass::Pass, void_kind};
+use crate::{diagnostic, entry_point_check_pass, int_kind, node, pass, void_kind};
 use inkwell::types::AnyType;
 
 /// Visit the node and return its resulting LLVM value, or if it
@@ -69,7 +69,7 @@ pub struct LlvmLoweringPass<'a, 'ctx> {
   llvm_type_map:
     std::collections::HashMap<node::KindTransport<'a>, inkwell::types::AnyTypeEnum<'ctx>>,
   llvm_value_map: std::collections::HashMap<NodeKey<'a>, inkwell::values::BasicValueEnum<'ctx>>,
-  llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
+  llvm_function_like_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'ctx>,
   module_buffer: Option<&'a node::Module<'a>>,
@@ -86,7 +86,7 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
       llvm_module,
       llvm_type_map: std::collections::HashMap::new(),
       llvm_value_map: std::collections::HashMap::new(),
-      llvm_function_buffer: None,
+      llvm_function_like_buffer: None,
       llvm_builder_buffer: llvm_context.create_builder(),
       module_buffer: None,
     }
@@ -105,13 +105,7 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
       inkwell::types::AnyTypeEnum::VoidType(void_type) => {
         void_type.fn_type(parameters, is_variadic)
       }
-      _ => {
-        // TODO: Better implementation.
-        return Err(diagnostic::Diagnostic {
-          message: String::from("unexpected point reached"),
-          severity: diagnostic::DiagnosticSeverity::Internal,
-        });
-      }
+      _ => return Err(diagnostic::unreachable()),
     })
   }
 }
@@ -153,7 +147,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     Ok(())
   }
 
-  fn visit_function(&mut self, function: &'a node::Function) -> pass::PassResult {
+  fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
     // TODO Simplify process of lowering parameters for externals as well.
     let mut parameters = vec![];
 
@@ -162,7 +156,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     // TODO: Further on, need to make use of the parameter's name somehow (maybe during lookups?).
     for parameter in &function.prototype.parameters {
       let llvm_parameter =
-        visit_or_retrieve_type!(self, &node::from_kind_holder(&parameter.1.kind));
+        visit_or_retrieve_type!(self, &node::KindTransport::from(&parameter.1.kind));
 
       parameters.push(match llvm_parameter {
         // TODO: Add other types as they become available.
@@ -172,13 +166,13 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         inkwell::types::AnyTypeEnum::VoidType(_) => {
           return Err(diagnostic::Diagnostic {
             message: format!("type of parameter `{}` cannot be void", parameter.0),
-            severity: diagnostic::DiagnosticSeverity::Internal,
+            severity: diagnostic::Severity::Internal,
           })
         }
         _ => {
           return Err(diagnostic::Diagnostic {
             message: format!("unsupported parameter type for `{}`", parameter.0),
-            severity: diagnostic::DiagnosticSeverity::Internal,
+            severity: diagnostic::Severity::Internal,
           })
         }
       });
@@ -186,20 +180,8 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
     let llvm_return_type = visit_or_retrieve_type!(
       self,
-      &node::from_kind_holder(&function.prototype.return_kind_group.kind)
+      &node::KindTransport::from(&function.prototype.return_kind_group.kind)
     );
-
-    // TODO:
-    // match llvm_lowering_pass
-    //   .visit_or_retrieve_type(&parameter.1.kind)
-    //   .unwrap()
-    //   .unwrap()
-    // {
-    //   inkwell::types::AnyTypeEnum::IntType(int_type) => {
-    //     inkwell::types::BasicMetadataTypeEnum::IntType(*int_type)
-    //   }
-    //   _ => panic!("test"),
-    // }
 
     let llvm_function_type = Self::get_function_type_from(
       parameters.as_slice(),
@@ -217,7 +199,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
       mangle_name(&self.module_buffer.unwrap().name, &function.prototype.name)
     };
 
-    self.llvm_function_buffer = Some(self.llvm_module.add_function(
+    self.llvm_function_like_buffer = Some(self.llvm_module.add_function(
       llvm_function_name.as_str(),
       llvm_function_type,
       // TODO: This does not apply. There is currently no method to export a function. Instead, this should be used as a meta flag (wether a function can be accessed, but not affect its name mangling).
@@ -228,31 +210,19 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
       }),
     ));
 
-    let empty_body_block = node::Block {
-      statements: vec![node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
-        value: None,
-      })],
-    };
+    self.visit_block(&function.body)?;
+    crate::pass_assert!(self.llvm_function_like_buffer.unwrap().verify(false));
 
-    // FIXME:
-    // If the body block contains no instructions, force
-    // a return void instruction.
-    // self.visit_block(if function.body.statements.is_empty() {
-    //   &empty_body_block
-    // } else {
-    //   &function.body
-    // })
     Ok(())
   }
 
-  fn visit_module(&mut self, module: &'a node::Module) -> pass::PassResult {
+  fn visit_module(&mut self, module: &'a node::Module<'a>) -> pass::PassResult {
     // Reset all buffers when visiting a new module.
     self.llvm_builder_buffer.clear_insertion_position();
-    self.llvm_function_buffer = None;
+    self.llvm_function_like_buffer = None;
     self.module_buffer = Some(module);
 
     for top_level_node in module.symbol_table.values() {
-      // TODO: Can't move top-level nodes out of symbol table.
       match top_level_node {
         node::TopLevelNodeHolder::Function(function) => self.visit_function(function)?,
         node::TopLevelNodeHolder::External(external) => self.visit_external(external)?,
@@ -268,28 +238,30 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
       &[],
       visit_or_retrieve_type!(
         self,
-        &node::from_kind_holder(&external.prototype.return_kind_group.kind)
+        &node::KindTransport::from(&external.prototype.return_kind_group.kind)
       ),
       external.prototype.is_variadic,
     );
 
     // TODO: Are externs always 'External' linkage?
-    self.llvm_function_buffer = Some(self.llvm_module.add_function(
+    self.llvm_function_like_buffer = Some(self.llvm_module.add_function(
       external.prototype.name.as_str(),
       llvm_function_type?,
       Some(inkwell::module::Linkage::External),
     ));
 
+    crate::pass_assert!(self.llvm_function_like_buffer.unwrap().verify(false));
+
     Ok(())
   }
 
-  fn visit_block(&mut self, block: &'a node::Block) -> pass::PassResult {
-    crate::pass_assert!(self.llvm_function_buffer.is_some());
+  fn visit_block(&mut self, block: &'a node::Block<'a>) -> pass::PassResult {
+    crate::pass_assert!(self.llvm_function_like_buffer.is_some());
 
     let llvm_block = self
       .llvm_context
       // TODO: Name basic block?
-      .append_basic_block(self.llvm_function_buffer.unwrap(), "");
+      .append_basic_block(self.llvm_function_like_buffer.unwrap(), "");
 
     self.llvm_builder_buffer.position_at_end(llvm_block);
 
@@ -309,13 +281,13 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     Ok(())
   }
 
-  fn visit_return_stmt(&mut self, return_stmt: &'a node::ReturnStmt) -> pass::PassResult {
+  fn visit_return_stmt(&mut self, return_stmt: &'a node::ReturnStmt<'a>) -> pass::PassResult {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
     if return_stmt.value.is_some() {
       visit_or_retrieve_value!(
         self,
-        &make_node_key(node::from_expr_holder(return_stmt.value.as_ref().unwrap()))
+        &make_node_key(return_stmt.value.as_ref().unwrap().into())
       );
     }
 
@@ -325,9 +297,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         Some(
           self
             .llvm_value_map
-            .get(&make_node_key(node::from_expr_holder(
-              return_stmt.value.as_ref().unwrap(),
-            )))
+            .get(&make_node_key(return_stmt.value.as_ref().unwrap().into()))
             .unwrap(),
         )
       } else {
@@ -337,20 +307,20 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     Ok(())
   }
 
-  fn visit_let_stmt(&mut self, let_stmt: &'a node::LetStmt) -> pass::PassResult {
+  fn visit_let_stmt(&mut self, let_stmt: &'a node::LetStmt<'a>) -> pass::PassResult {
     use inkwell::types::BasicType;
 
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
     let llvm_any_type =
-      visit_or_retrieve_type!(self, &node::from_kind_holder(&let_stmt.kind_group.kind));
+      visit_or_retrieve_type!(self, &node::KindTransport::from(&let_stmt.kind_group.kind));
 
     let llvm_type = match llvm_any_type {
       inkwell::types::AnyTypeEnum::IntType(int_type) => int_type.as_basic_type_enum(),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!("illegal declaration type: `{:?}`", llvm_any_type),
-          severity: diagnostic::DiagnosticSeverity::Error,
+          severity: diagnostic::Severity::Error,
         })
       }
     };
@@ -372,16 +342,15 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   }
 
   fn visit_bool_literal(&mut self, bool_literal: &'a node::BoolLiteral) -> pass::PassResult {
-    // FIXME:
-    // self.llvm_value_map.insert(
-    //   make_node_key(&node::ExprTransport::BoolLiteral(bool_literal)),
-    //   inkwell::values::BasicValueEnum::IntValue(
-    //     self
-    //       .llvm_context
-    //       .bool_type()
-    //       .const_int(bool_literal.value as u64, false),
-    //   ),
-    // );
+    self.llvm_value_map.insert(
+      make_node_key(node::ExprTransport::BoolLiteral(bool_literal)),
+      inkwell::values::BasicValueEnum::IntValue(
+        self
+          .llvm_context
+          .bool_type()
+          .const_int(bool_literal.value as u64, false),
+      ),
+    );
 
     Ok(())
   }
@@ -396,22 +365,21 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
       _ => {
         return Err(diagnostic::Diagnostic {
           // TODO: Better error message?
-          message: String::from("expected integer type"),
-          severity: diagnostic::DiagnosticSeverity::Internal,
+          message: "expected integer type".into(),
+          severity: diagnostic::Severity::Internal,
         });
       }
     };
 
-    // FIXME:
-    // self.llvm_value_map.insert(
-    //   make_node_key(&node::ExprTransport::IntLiteral(int_literal)),
-    //   inkwell::values::BasicValueEnum::IntValue(llvm_value),
-    // );
+    self.llvm_value_map.insert(
+      make_node_key(node::ExprTransport::IntLiteral(&int_literal)),
+      inkwell::values::BasicValueEnum::IntValue(llvm_value),
+    );
 
     Ok(())
   }
 
-  fn visit_call_expr(&mut self, call_expr: &'a node::CallExpr) -> pass::PassResult {
+  fn visit_call_expr(&mut self, call_expr: &'a node::CallExpr<'a>) -> pass::PassResult {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
     // TODO: Need to stop callable from lowering twice or more times.
@@ -443,7 +411,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         _ => {
           return Err(diagnostic::Diagnostic {
             message: format!("unexpected argument type `{:?}`", argument),
-            severity: diagnostic::DiagnosticSeverity::Internal,
+            severity: diagnostic::Severity::Internal,
           })
         }
       });
@@ -453,7 +421,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     let llvm_call_result = self
       .llvm_builder_buffer
       .build_call(
-        self.llvm_function_buffer.unwrap(),
+        self.llvm_function_like_buffer.unwrap(),
         arguments.as_slice(),
         "call",
       )
@@ -461,11 +429,10 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
     crate::pass_assert!(llvm_call_result.is_left());
 
-    // TODO: Address error.
-    // self.llvm_value_map.insert(
-    //   node::ExprTransport::CallExpr(call_expr),
-    //   llvm_call_result.left().unwrap(),
-    // );
+    self.llvm_value_map.insert(
+      NodeKey::CallExpr(call_expr),
+      llvm_call_result.left().unwrap(),
+    );
 
     Ok(())
   }
@@ -474,11 +441,12 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use pass::Pass;
 
   #[test]
-  fn llvm_lowering_pass_proper_initial_values() {
+  fn llvm_lowering_pass_proper_initial_values<'a>() {
     let llvm_context = inkwell::context::Context::create();
-    let llvm_module: inkwell::module::Module = llvm_context.create_module("test");
+    let llvm_module: inkwell::module::Module<'_> = llvm_context.create_module("test");
 
     assert_eq!(
       true,
@@ -488,7 +456,7 @@ mod tests {
     );
   }
 
-  // FIXME:
+  // TODO:
   // #[test]
   // fn llvm_lowering_pass_visit_or_retrieve_type() {
   //   let llvm_context = inkwell::context::Context::create();
@@ -539,14 +507,14 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
-    let module = node::Module::new(String::from("test"));
+    let module = node::Module::new("test");
 
     llvm_lowering_pass.module_buffer = Some(&module);
 
     let function = node::Function {
       is_public: false,
       prototype: node::Prototype {
-        name: String::from("foo"),
+        name: "foo".into(),
         return_kind_group: node::KindGroup {
           kind: node::KindHolder::VoidKind(void_kind::VoidKind),
           is_reference: false,
@@ -561,6 +529,6 @@ mod tests {
     let visit_function_result = llvm_lowering_pass.visit_function(&function);
 
     assert_eq!(true, visit_function_result.is_ok());
-    assert_eq!(true, llvm_lowering_pass.llvm_function_buffer.is_some());
+    assert_eq!(true, llvm_lowering_pass.llvm_function_like_buffer.is_some());
   }
 }

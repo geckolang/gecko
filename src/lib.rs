@@ -1,3 +1,5 @@
+#![deny(rust_2018_idioms)]
+
 pub mod diagnostic;
 pub mod entry_point_check_pass;
 pub mod int_kind;
