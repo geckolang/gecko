@@ -80,7 +80,7 @@ mod tests {
   #[test]
   fn pass_manager_add_pass_no_register() {
     let mut pass_manager = PassManager::new();
-    let mut test_pass_no_register = TestPassNoRegister;
+    let test_pass_no_register = TestPassNoRegister;
 
     pass_manager.add_pass(Box::new(test_pass_no_register));
     assert_eq!(true, pass_manager.passes.is_empty());
