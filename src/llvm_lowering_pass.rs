@@ -207,8 +207,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
     crate::pass_assert!(self.module_buffer.is_some());
 
-    let llvm_function_name = if function.is_public
-      && function.prototype.name == entry_point_check_pass::ENTRY_POINT_NAME
+    let llvm_function_name = if function.prototype.name == entry_point_check_pass::ENTRY_POINT_NAME
     {
       function.prototype.name.clone()
     } else {

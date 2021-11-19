@@ -12,6 +12,12 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
   fn visit_function<'b>(&mut self, function: &node::Function<'a>) -> pass::PassResult {
     if function.prototype.name != ENTRY_POINT_NAME {
       return Ok(());
+    } else if function.is_public {
+      // TODO: Collect diagnostics instead (use a warning instead on this case).
+      return Err(diagnostic::Diagnostic {
+        message: "main function should not be annotated with `pub`, it is implied".to_string(),
+        severity: diagnostic::Severity::Error,
+      });
     }
 
     match function.prototype.return_kind_group.kind {
