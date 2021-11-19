@@ -108,4 +108,8 @@ pub trait Pass<'a> {
   fn visit_let_stmt(&mut self, _: &'a node::LetStmt<'a>) -> PassResult {
     Ok(())
   }
+
+  fn visit_if_stmt(&mut self, _: &'a node::IfStmt<'a>) -> PassResult {
+    Ok(())
+  }
 }

@@ -198,6 +198,7 @@ pub enum AnyStmtNode<'a> {
   ReturnStmt(ReturnStmt<'a>),
   ExprWrapperStmt(ExprHolder<'a>),
   LetStmt(LetStmt<'a>),
+  IfStmt(IfStmt<'a>),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -225,6 +226,13 @@ pub struct LetStmt<'a> {
   pub name: String,
   pub kind_group: KindGroup,
   pub value: ExprHolder<'a>,
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct IfStmt<'a> {
+  pub condition: ExprHolder<'a>,
+  pub then_block: Block<'a>,
+  pub else_block: Option<Block<'a>>,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]

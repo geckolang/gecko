@@ -1,5 +1,6 @@
 use crate::{diagnostic, entry_point_check_pass, int_kind, node, pass, void_kind};
 use inkwell::types::AnyType;
+use inkwell::values::BasicValue;
 
 /// Visit the node and return its resulting LLVM value, or if it
 /// was already previously visited, simply retrieve and return
@@ -170,9 +171,9 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     parameters.reserve(function.prototype.parameters.len());
 
     // TODO: Further on, need to make use of the parameter's name somehow (maybe during lookups?).
-    for parameter in &function.prototype.parameters {
+    for (parameter_name, parameter_kind_group) in &function.prototype.parameters {
       let llvm_parameter =
-        visit_or_retrieve_type!(self, &node::KindTransport::from(&parameter.1.kind));
+        visit_or_retrieve_type!(self, &node::KindTransport::from(&parameter_kind_group.kind));
 
       parameters.push(match llvm_parameter {
         // TODO: Add other types as they become available.
@@ -181,13 +182,13 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         }
         inkwell::types::AnyTypeEnum::VoidType(_) => {
           return Err(diagnostic::Diagnostic {
-            message: format!("type of parameter `{}` cannot be void", parameter.0),
+            message: format!("type of parameter `{}` cannot be void", parameter_name),
             severity: diagnostic::Severity::Internal,
           })
         }
         _ => {
           return Err(diagnostic::Diagnostic {
-            message: format!("unsupported parameter type for `{}`", parameter.0),
+            message: format!("unsupported parameter type for `{}`", parameter_name),
             severity: diagnostic::Severity::Internal,
           })
         }
@@ -214,7 +215,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
       mangle_name(&self.module_buffer.unwrap().name, &function.prototype.name)
     };
 
-    self.llvm_function_like_buffer = Some(self.llvm_module.add_function(
+    let llvm_function = self.llvm_module.add_function(
       llvm_function_name.as_str(),
       llvm_function_type,
       Some(
@@ -224,8 +225,16 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
           inkwell::module::Linkage::Private
         },
       ),
-    ));
+    );
 
+    // TODO: Find a way to use only one loop to process both local parameters and LLVM's names.
+    for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
+      let (parameter_name, _) = &function.prototype.parameters[i];
+
+      llvm_parameter.set_name(parameter_name.as_str());
+    }
+
+    self.llvm_function_like_buffer = Some(llvm_function);
     self.visit_block(&function.body)?;
     crate::pass_assert!(self.llvm_function_like_buffer.unwrap().verify(false));
 
@@ -291,6 +300,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
           _ => todo!(),
         },
         node::AnyStmtNode::LetStmt(let_stmt) => self.visit_let_stmt(&let_stmt)?,
+        node::AnyStmtNode::IfStmt(if_stmt) => self.visit_if_stmt(&if_stmt)?,
       };
     }
 

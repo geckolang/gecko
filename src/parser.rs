@@ -367,6 +367,25 @@ impl<'a> Parser {
     })
   }
 
+  pub fn parse_if_stmt(&mut self) -> ParserResult<node::IfStmt<'a>> {
+    skip_past!(self, token::Token::KeywordIf);
+
+    let condition = self.parse_expr()?;
+    let then_block = self.parse_block()?;
+    let mut else_block = None;
+
+    if self.is(token::Token::KeywordElse) {
+      self.skip();
+      else_block = Some(self.parse_block()?);
+    }
+
+    Ok(node::IfStmt {
+      condition,
+      then_block,
+      else_block,
+    })
+  }
+
   pub fn parse_bool_literal(&mut self) -> ParserResult<node::BoolLiteral> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(value) => {

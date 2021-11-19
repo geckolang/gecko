@@ -1,22 +1,36 @@
 use crate::{diagnostic, int_kind, node, pass};
 
-pub struct EntryPointCheckPass;
-
 pub const ENTRY_POINT_NAME: &str = "main";
+
+pub struct EntryPointCheckPass {
+  diagnostics: Vec<diagnostic::Diagnostic>,
+}
+
+impl EntryPointCheckPass {
+  pub fn new() -> Self {
+    Self {
+      diagnostics: Vec::new(),
+    }
+  }
+}
 
 impl<'a> pass::Pass<'a> for EntryPointCheckPass {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
     node.accept(self)
   }
 
-  fn visit_function<'b>(&mut self, function: &node::Function<'a>) -> pass::PassResult {
+  fn get_diagnostics(&self) -> Vec<diagnostic::Diagnostic> {
+    // TODO: Cloning.
+    self.diagnostics.clone()
+  }
+
+  fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
     if function.prototype.name != ENTRY_POINT_NAME {
       return Ok(());
     } else if function.is_public {
-      // TODO: Collect diagnostics instead (use a warning instead on this case).
-      return Err(diagnostic::Diagnostic {
+      self.diagnostics.push(diagnostic::Diagnostic {
         message: "main function should not be annotated with `pub`, it is implied".to_string(),
-        severity: diagnostic::Severity::Error,
+        severity: diagnostic::Severity::Warning,
       });
     }
 
