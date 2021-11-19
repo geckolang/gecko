@@ -4,6 +4,12 @@ pub struct PassManager<'a> {
   passes: Vec<&'a mut dyn pass::Pass<'a>>,
 }
 
+pub enum TopLevelNodeTransport<'a> {
+  Function(node::Function<'a>),
+  External(node::External),
+  Module(node::Module<'a>),
+}
+
 impl<'a> PassManager<'a> {
   pub fn new() -> Self {
     Self { passes: Vec::new() }
@@ -23,18 +29,27 @@ impl<'a> PassManager<'a> {
 
   // TODO: Improve documentation.
   /// Execute all registered passes in a sequential order.
-  pub fn run(&'a mut self, node: &'a mut dyn node::Node) -> Vec<diagnostic::Diagnostic> {
+  pub fn run(
+    &'a mut self,
+    top_level_nodes: &'a Vec<TopLevelNodeTransport<'a>>,
+  ) -> Vec<diagnostic::Diagnostic> {
     // TODO: Improve structure/organization of diagnostics?
 
     let mut diagnostics = Vec::new();
 
     for pass in &mut self.passes {
-      let visitation_result = pass.visit(node);
+      for top_level_node in top_level_nodes {
+        let visitation_result = match top_level_node {
+          TopLevelNodeTransport::External(external) => pass.visit(external),
+          TopLevelNodeTransport::Function(function) => pass.visit(function),
+          TopLevelNodeTransport::Module(module) => pass.visit(module),
+        };
 
-      diagnostics.extend(pass.get_diagnostics());
+        diagnostics.extend(pass.get_diagnostics());
 
-      if let Err(diagnostic) = visitation_result {
-        diagnostics.push(diagnostic);
+        if let Err(diagnostic) = visitation_result {
+          diagnostics.push(diagnostic);
+        }
       }
     }
 
@@ -88,4 +103,6 @@ mod tests {
     pass_manager.add_pass(&mut test_pass_no_register);
     assert_eq!(true, pass_manager.passes.is_empty());
   }
+
+  // TODO: Run test.
 }

@@ -42,6 +42,10 @@ pub trait Node {
   fn get_children(&self) -> Vec<&dyn Node> {
     vec![]
   }
+
+  fn is_top_level(&self) -> bool {
+    false
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -96,6 +100,10 @@ impl Node for External {
   fn get_children(&self) -> Vec<&dyn Node> {
     vec![&self.prototype]
   }
+
+  fn is_top_level(&self) -> bool {
+    true
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -108,6 +116,14 @@ pub struct Function<'a> {
 impl<'a> Node for Function<'a> {
   fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
     pass.visit_function(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
+    vec![&self.prototype, &self.body]
+  }
+
+  fn is_top_level(&self) -> bool {
+    true
   }
 }
 
@@ -127,10 +143,8 @@ impl<'a> Node for Prototype {
   }
 
   fn get_children(&self) -> Vec<&dyn Node> {
-    // TODO:
-    // let mut children = vec![&mut self.return_kind_group.kind];
-
-    // children
+    // TODO: Figure this out.
+    // vec![&self.return_kind_group.kind]
     vec![]
   }
 }
@@ -173,6 +187,10 @@ impl<'a> Node for Module<'a> {
   fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
     pass.visit_module(self)
   }
+
+  fn is_top_level(&self) -> bool {
+    true
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -187,10 +205,20 @@ pub struct Block<'a> {
   pub statements: Vec<AnyStmtNode<'a>>,
 }
 
+impl Node for Block<'_> {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_block(self)
+  }
+
+  // TODO: Missing `get_children()` implementation.
+}
+
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct ReturnStmt<'a> {
   pub value: Option<ExprHolder<'a>>,
 }
+
+// TODO: Missing `Node` implementation for `ReturnStmt`.
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct LetStmt<'a> {
@@ -237,4 +265,6 @@ impl Node for Stub<'_> {
   fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
     pass.visit_stub(self)
   }
+
+  // TODO: Missing `get_children()` implementation.
 }
