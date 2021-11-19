@@ -1,7 +1,7 @@
 use crate::{diagnostic, node, pass};
 
 pub struct PassManager<'a> {
-  passes: Vec<Box<dyn pass::Pass<'a>>>,
+  passes: Vec<&'a mut dyn pass::Pass<'a>>,
 }
 
 impl<'a> PassManager<'a> {
@@ -11,7 +11,7 @@ impl<'a> PassManager<'a> {
 
   /// Register a pass to be run. Returns `true` if the pass'
   /// restrictions are met.
-  pub fn add_pass(&mut self, pass: Box<dyn pass::Pass<'a>>) -> bool {
+  pub fn add_pass(&mut self, pass: &'a mut dyn pass::Pass<'a>) -> bool {
     if !pass.register(self) {
       return false;
     }
@@ -21,16 +21,15 @@ impl<'a> PassManager<'a> {
     true
   }
 
-  /// Execute all registered passes in a sequential order, over
-  /// the provided root node.
-  pub fn run(&'a mut self, root_node: &'a mut dyn node::Node<'a>) -> Vec<diagnostic::Diagnostic> {
-    // TODO: Better structure/organization of diagnostics.
+  // TODO: Improve documentation.
+  /// Execute all registered passes in a sequential order.
+  pub fn run(&'a mut self, node: &'a mut dyn node::Node) -> Vec<diagnostic::Diagnostic> {
+    // TODO: Improve structure/organization of diagnostics?
 
-    let mut diagnostics = vec![];
+    let mut diagnostics = Vec::new();
 
     for pass in &mut self.passes {
-      // root_node.accept(pass);
-      let visitation_result = pass.visit(root_node);
+      let visitation_result = pass.visit(node);
 
       diagnostics.extend(pass.get_diagnostics());
 
@@ -50,13 +49,19 @@ mod tests {
   struct TestPassEmpty;
 
   impl<'a> pass::Pass<'a> for TestPassEmpty {
-    //
+    fn visit(&mut self, _: &'a dyn node::Node) -> pass::PassResult {
+      Ok(())
+    }
   }
 
   struct TestPassNoRegister;
 
   impl<'a> pass::Pass<'a> for TestPassNoRegister {
-    fn register(&self, _: &PassManager<'a>) -> bool {
+    fn visit(&mut self, _: &'a dyn node::Node) -> pass::PassResult {
+      Ok(())
+    }
+
+    fn register(&self, _: &PassManager<'_>) -> bool {
       return false;
     }
   }
@@ -69,18 +74,18 @@ mod tests {
   #[test]
   fn pass_manager_add_pass() {
     let mut pass_manager = PassManager::new();
-    let test_pass = TestPassEmpty;
+    let mut test_pass = TestPassEmpty;
 
-    pass_manager.add_pass(Box::new(test_pass));
+    pass_manager.add_pass(&mut test_pass);
     assert_eq!(1, pass_manager.passes.len());
   }
 
   #[test]
   fn pass_manager_add_pass_no_register() {
     let mut pass_manager = PassManager::new();
-    let test_pass_no_register = TestPassNoRegister;
+    let mut test_pass_no_register = TestPassNoRegister;
 
-    pass_manager.add_pass(Box::new(test_pass_no_register));
+    pass_manager.add_pass(&mut test_pass_no_register);
     assert_eq!(true, pass_manager.passes.is_empty());
   }
 }

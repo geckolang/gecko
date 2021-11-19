@@ -65,6 +65,10 @@ impl<'a> From<node::ExprTransport<'a>> for NodeKey<'a> {
   }
 }
 
+fn mangle_name(scope_name: &String, name: &String) -> String {
+  format!(".{}.{}", scope_name, name)
+}
+
 pub struct LlvmLoweringPass<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   pub llvm_module: &'a inkwell::module::Module<'ctx>,
@@ -78,7 +82,6 @@ pub struct LlvmLoweringPass<'a, 'ctx> {
 }
 
 impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
-  // TODO: `llvm_module` is being moved.
   pub fn new(
     llvm_context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
@@ -112,11 +115,11 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
   }
 }
 
-fn mangle_name(scope_name: &String, name: &String) -> String {
-  format!(".{}.{}", scope_name, name)
-}
-
 impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
+  fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
+    node.accept(self)
+  }
+
   fn visit_int_kind(&mut self, int_kind: &'a int_kind::IntKind) -> pass::PassResult {
     self.llvm_type_map.insert(
       node::KindTransport::IntKind(&int_kind),
@@ -150,7 +153,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   }
 
   fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
-    // TODO Simplify process of lowering parameters for externals as well.
+    // TODO: Simplify process of lowering parameters for externals as well.
     let mut parameters = vec![];
 
     parameters.reserve(function.prototype.parameters.len());
@@ -204,12 +207,13 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     self.llvm_function_like_buffer = Some(self.llvm_module.add_function(
       llvm_function_name.as_str(),
       llvm_function_type,
-      // TODO: This does not apply. There is currently no method to export a function. Instead, this should be used as a meta flag (wether a function can be accessed, but not affect its name mangling).
-      Some(if function.is_public {
-        inkwell::module::Linkage::External
-      } else {
-        inkwell::module::Linkage::Private
-      }),
+      Some(
+        if function.prototype.name == entry_point_check_pass::ENTRY_POINT_NAME {
+          inkwell::module::Linkage::External
+        } else {
+          inkwell::module::Linkage::Private
+        },
+      ),
     ));
 
     self.visit_block(&function.body)?;
@@ -388,13 +392,12 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   fn visit_call_expr(&mut self, call_expr: &'a node::CallExpr<'a>) -> pass::PassResult {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
-    // TODO: Need to stop callable from lowering twice or more times.
-
     match &call_expr.callee {
       node::Stub::Callable { name: _, value } => {
         crate::pass_assert!(value.is_some());
 
         match value.as_ref().unwrap() {
+          // TODO: Need to stop callable from lowering twice or more times.
           node::StubValueTransport::Function(function) => self.visit_function(function)?,
           node::StubValueTransport::External(external) => self.visit_external(external)?,
         }
@@ -529,7 +532,11 @@ mod tests {
         parameters: vec![],
         is_variadic: false,
       },
-      body: node::Block { statements: vec![] },
+      body: node::Block {
+        statements: vec![node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
+          value: None,
+        })],
+      },
     };
 
     let visit_function_result = llvm_lowering_pass.visit_function(&function);

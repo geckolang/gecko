@@ -16,7 +16,11 @@ impl<'a> TypeCheckPass {
 }
 
 impl<'a> pass::Pass<'a> for TypeCheckPass {
-  fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
+  fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
+    node.accept(self)
+  }
+
+  fn visit_function<'x>(&mut self, function: &node::Function<'x>) -> pass::PassResult {
     let mut block_queue = vec![&function.body];
 
     let should_return_value = match function.prototype.return_kind_group.kind {

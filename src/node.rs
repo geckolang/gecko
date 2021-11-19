@@ -1,4 +1,4 @@
-use crate::{int_kind, void_kind};
+use crate::{int_kind, pass, void_kind};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum KindTransport<'a> {
@@ -35,12 +35,11 @@ impl<'a> From<&'a ExprHolder<'a>> for ExprTransport<'a> {
   }
 }
 
-pub trait Node<'a> {
-  // FIXME:
-  // fn accept<'b>(&'b mut self, _: &mut dyn pass::Pass<'b>) -> pass::PassResult;
+pub trait Node {
+  fn accept<'a>(&'a self, _: &mut dyn pass::Pass<'a>) -> pass::PassResult;
 
-  // TODO: Consider switching to `visit_children()` because of limitations.
-  fn get_children(&mut self) -> Vec<&mut dyn Node<'a>> {
+  // TODO: Consider switching to just invoking `visit_children()` because of limitations.
+  fn get_children(&self) -> Vec<&dyn Node> {
     vec![]
   }
 }
@@ -55,7 +54,11 @@ pub struct BoolLiteral {
   pub value: bool,
 }
 
-impl Node<'_> for BoolLiteral {}
+impl Node for BoolLiteral {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_bool_literal(self)
+  }
+}
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct IntLiteral {
@@ -63,9 +66,13 @@ pub struct IntLiteral {
   pub kind: int_kind::IntKind,
 }
 
-impl<'a> Node<'a> for IntLiteral {
-  fn get_children(&mut self) -> Vec<&mut dyn Node<'a>> {
-    vec![&mut self.kind]
+impl Node for IntLiteral {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_int_literal(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
+    vec![&self.kind]
   }
 }
 
@@ -81,9 +88,13 @@ pub struct External {
   pub prototype: Prototype,
 }
 
-impl<'a> Node<'a> for External {
-  fn get_children(&mut self) -> Vec<&mut dyn Node<'a>> {
-    vec![&mut self.prototype]
+impl Node for External {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_external(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
+    vec![&self.prototype]
   }
 }
 
@@ -92,6 +103,12 @@ pub struct Function<'a> {
   pub is_public: bool,
   pub prototype: Prototype,
   pub body: Block<'a>,
+}
+
+impl<'a> Node for Function<'a> {
+  fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
+    pass.visit_function(self)
+  }
 }
 
 pub type Parameter = (String, KindGroup);
@@ -104,8 +121,12 @@ pub struct Prototype {
   pub return_kind_group: KindGroup,
 }
 
-impl<'a> Node<'a> for Prototype {
-  fn get_children(&mut self) -> Vec<&mut dyn Node<'a>> {
+impl<'a> Node for Prototype {
+  fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
+    pass.visit_prototype(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
     // TODO:
     // let mut children = vec![&mut self.return_kind_group.kind];
 
@@ -145,6 +166,12 @@ impl<'a> Module<'a> {
       name: name.into(),
       symbol_table: std::collections::HashMap::new(),
     }
+  }
+}
+
+impl<'a> Node for Module<'a> {
+  fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
+    pass.visit_module(self)
   }
 }
 
@@ -203,5 +230,11 @@ impl<'a> Stub<'a> {
     match self {
       Self::Callable { name, .. } => name.clone(),
     }
+  }
+}
+
+impl Node for Stub<'_> {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_stub(self)
   }
 }

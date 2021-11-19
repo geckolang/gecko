@@ -27,13 +27,9 @@ pub trait Pass<'a> {
     vec![]
   }
 
-  fn visit(&mut self, node: &mut dyn node::Node<'a>) -> PassResult {
-    // FIXME:
-    // node.accept(&mut self);
-    self.visit_children(node)
-  }
+  fn visit(&mut self, node: &'a dyn node::Node) -> PassResult;
 
-  fn visit_children(&mut self, node: &mut dyn node::Node<'a>) -> PassResult {
+  fn visit_children(&mut self, node: &'a dyn node::Node) -> PassResult {
     for child in node.get_children() {
       self.visit(child)?;
     }
@@ -41,7 +37,7 @@ pub trait Pass<'a> {
     Ok(())
   }
 
-  fn visit_stub(&mut self, _: &mut node::Stub<'a>) -> PassResult {
+  fn visit_stub(&mut self, _: &'a node::Stub<'a>) -> PassResult {
     Ok(())
   }
 
