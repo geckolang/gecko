@@ -35,9 +35,29 @@ impl<'a> PassManager<'a> {
   ) -> Vec<diagnostic::Diagnostic> {
     // TODO: Improve structure/organization of diagnostics?
 
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = Vec::<diagnostic::Diagnostic>::new();
+    let mut is_there_previous_error = false;
 
     for pass in &mut self.passes {
+      let requirements = pass.get_requirements();
+
+      // TODO: Ensure logic is correct.
+      if !requirements.ignore_previous_errors && !diagnostics.is_empty() {
+        if is_there_previous_error {
+          continue;
+        }
+
+        for diagnostic in &diagnostics {
+          if diagnostic.severity == diagnostic::Severity::Error
+            || diagnostic.severity == diagnostic::Severity::Internal
+          {
+            is_there_previous_error = true;
+
+            continue;
+          }
+        }
+      }
+
       for top_level_node in top_level_nodes {
         let visitation_result = match top_level_node {
           TopLevelNodeTransport::External(external) => pass.visit(external),

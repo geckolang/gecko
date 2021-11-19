@@ -15,12 +15,28 @@ macro_rules! pass_assert {
   };
 }
 
+pub struct PassRequirements {
+  pub ignore_previous_errors: bool,
+}
+
+impl PassRequirements {
+  pub fn default() -> Self {
+    Self {
+      ignore_previous_errors: false,
+    }
+  }
+}
+
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
 pub trait Pass<'a> {
   // TODO:
   fn register(&self, _: &pass_manager::PassManager<'a>) -> bool {
     return true;
+  }
+
+  fn get_requirements(&self) -> PassRequirements {
+    PassRequirements::default()
   }
 
   fn get_diagnostics(&self) -> Vec<diagnostic::Diagnostic> {

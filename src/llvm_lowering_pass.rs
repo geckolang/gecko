@@ -116,6 +116,13 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
 }
 
 impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
+  fn get_requirements(&self) -> pass::PassRequirements {
+    pass::PassRequirements {
+      ignore_previous_errors: false,
+      ..pass::PassRequirements::default()
+    }
+  }
+
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
     if !node.is_top_level() {
       return Ok(());
