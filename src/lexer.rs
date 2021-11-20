@@ -214,7 +214,6 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
-
     assert_eq!(Some(token::Token::Identifier("a".into())), lexer.next());
   }
 

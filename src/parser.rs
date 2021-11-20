@@ -45,7 +45,7 @@ impl<'a> Parser {
   }
 
   fn skip(&mut self) -> bool {
-    // FIXME: Address out of bounds problem.
+    // FIXME: Address out of bounds problem (if any at this state).
     if self.index + 1 >= self.tokens.len() {
       return false;
     }
@@ -324,7 +324,10 @@ impl<'a> Parser {
       token::Token::KeywordExtern => node::TopLevelNodeHolder::External(self.parse_external()?),
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: format!("unexpected token ``, expected top-level construct"),
+          message: format!(
+            "unexpected token `{}`, expected top-level construct",
+            token.unwrap()
+          ),
           severity: diagnostic::Severity::Error,
         })
       }
