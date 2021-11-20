@@ -11,6 +11,12 @@ pub struct Diagnostic {
   pub severity: Severity,
 }
 
+impl Diagnostic {
+  pub fn is_error_like(&self) -> bool {
+    self.severity == Severity::Error || self.severity == Severity::Internal
+  }
+}
+
 pub fn unreachable() -> Diagnostic {
   Diagnostic {
     message: "unreachable point reached".into(),

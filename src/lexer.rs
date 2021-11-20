@@ -76,58 +76,60 @@ impl Lexer {
   fn is_eof(&self) -> bool {
     self.input.is_empty() || self.index == self.input.len() - 1
   }
+
+  fn read_identifier(&mut self) -> String {
+    let index = self.index;
+    let mut current_char = self.current_char.unwrap();
+
+    // NOTE: At this point, we know that the first character
+    // of the identifier was a letter, because this closure is
+    // only invoked when that is the case.
+    while self.index < self.input.len() && (is_letter(current_char) || is_digit(current_char)) {
+      self.read_char();
+
+      // TODO: Simplify.
+      if self.index < self.input.len() {
+        current_char = self.current_char.unwrap();
+      }
+    }
+
+    self.input[index..self.index]
+      .to_vec()
+      .iter()
+      .cloned()
+      .collect::<String>()
+  }
+
+  fn read_number(&mut self) -> u64 {
+    let index = self.index;
+
+    while self.index < self.input.len() && is_digit(self.current_char.unwrap()) {
+      self.read_char();
+    }
+
+    self.input[index..self.index]
+      .to_vec()
+      .iter()
+      .cloned()
+      .collect::<String>()
+      .parse::<u64>()
+      .unwrap()
+  }
 }
 
 impl Iterator for Lexer {
   type Item = token::Token;
 
   // TODO: Apparently returns None when dealing with illegal character. Fix this.
-  /// Attempt to retrieve the next token. If the end of
-  /// the input string has been reached, [`None`] will be
+  /// Attempt to retrieve the next token. If the end of the input
+  /// string has been reached, [`None`] will be returned. If the
+  /// current character is neither an identifier nor a digit, an
+  /// [`Illegal`] token with the character as its value will be
   /// returned.
   fn next(&mut self) -> Option<Self::Item> {
     if self.current_char.is_none() {
       return None;
     }
-
-    let read_identifier = |lexer: &mut Lexer| -> String {
-      let index = lexer.index;
-      let mut current_char = lexer.current_char.unwrap();
-
-      // NOTE: At this point, we know that the first character
-      // of the identifier was a letter, because this closure is
-      // only invoked when that is the case.
-      while lexer.index < lexer.input.len() && (is_letter(current_char) || is_digit(current_char)) {
-        lexer.read_char();
-
-        // TODO: Simplify.
-        if lexer.index < lexer.input.len() {
-          current_char = lexer.current_char.unwrap();
-        }
-      }
-
-      lexer.input[index..lexer.index]
-        .to_vec()
-        .iter()
-        .cloned()
-        .collect::<String>()
-    };
-
-    let read_number = |lexer: &mut Lexer| -> u64 {
-      let index = lexer.index;
-
-      while lexer.index < lexer.input.len() && is_digit(lexer.current_char.unwrap()) {
-        lexer.read_char();
-      }
-
-      lexer.input[index..lexer.index]
-        .to_vec()
-        .iter()
-        .cloned()
-        .collect::<String>()
-        .parse::<u64>()
-        .unwrap()
-    };
 
     // TODO: What if it's EOF + whitespace?
     while self.is_whitespace() && !self.is_eof() {
@@ -148,16 +150,20 @@ impl Iterator for Lexer {
       '=' => token::Token::SymbolEqual,
       _ => {
         return if is_letter(self.current_char.unwrap()) {
-          let identifier = read_identifier(self);
+          let identifier = self.read_identifier();
 
           match token::get_keyword_or_type_token(identifier.as_str()) {
             Ok(keyword_token) => Some(keyword_token),
             Err(_) => Some(token::Token::Identifier(identifier)),
           }
         } else if is_digit(self.current_char.unwrap()) {
-          Some(token::Token::LiteralInt(read_number(self)))
+          Some(token::Token::LiteralInt(self.read_number()))
         } else {
-          None
+          let illegal_char = self.current_char.unwrap();
+
+          self.read_char();
+
+          Some(token::Token::Illegal(illegal_char))
         }
       }
     };
@@ -223,10 +229,18 @@ mod tests {
 
   #[test]
   fn lexer_next_none() {
-    let mut lexer = Lexer::new(vec!['?']);
+    let mut lexer = Lexer::new(vec![]);
 
     lexer.read_char();
     assert_eq!(None, lexer.next());
+  }
+
+  #[test]
+  fn lexer_next_illegal() {
+    let mut lexer = Lexer::new(vec!['?']);
+
+    lexer.read_char();
+    assert_eq!(Some(token::Token::Illegal('?')), lexer.next());
   }
 
   #[test]

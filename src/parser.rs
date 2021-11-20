@@ -73,7 +73,7 @@ impl<'a> Parser {
   }
 
   pub fn is_eof(&self) -> bool {
-    self.tokens.len() == 0 || self.index == self.tokens.len() - 1
+    self.tokens.is_empty() || self.index == self.tokens.len() - 1
   }
 
   pub fn parse_name(&mut self) -> ParserResult<String> {

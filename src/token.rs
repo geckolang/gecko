@@ -2,6 +2,7 @@ use crate::diagnostic;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Token {
+  Illegal(char),
   Identifier(String),
   LiteralInt(u64),
   LiteralBool(bool),
