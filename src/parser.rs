@@ -72,10 +72,15 @@ impl<'a> Parser {
     token == *next_token.unwrap()
   }
 
+  /// Whether the parser has reached the end of the input.
+  ///
+  /// Will return true if the tokens vector provided is empty,
+  /// or if the index is at the end of the tokens vector.
   pub fn is_eof(&self) -> bool {
     self.tokens.is_empty() || self.index == self.tokens.len() - 1
   }
 
+  /// %name
   pub fn parse_name(&mut self) -> ParserResult<String> {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
 
@@ -98,6 +103,7 @@ impl<'a> Parser {
     Ok(name.unwrap())
   }
 
+  /// { %statement* }
   pub fn parse_block(&mut self) -> ParserResult<node::Block<'a>> {
     skip_past!(self, token::Token::SymbolBraceL);
 
@@ -122,6 +128,7 @@ impl<'a> Parser {
     Ok(node::Block { statements })
   }
 
+  /// (unsigned) {i8 | i16 | i32 | i64}
   pub fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
     // TODO: Simplify weird, unreadable logic?
     let token = if self.skip() {
@@ -151,18 +158,21 @@ impl<'a> Parser {
     Ok(int_kind::IntKind { size, is_signed })
   }
 
+  /// void
   pub fn parse_void_kind(&mut self) -> ParserResult<void_kind::VoidKind> {
     skip_past!(self, token::Token::TypeVoid);
 
     Ok(void_kind::VoidKind)
   }
 
+  /// bool
   pub fn parse_bool_kind(&mut self) -> ParserResult<int_kind::BoolKind> {
     skip_past!(self, token::Token::TypeBool);
 
     Ok(int_kind::BoolKind)
   }
 
+  /// ('&') (mut) %kind
   pub fn parse_kind_group(&mut self) -> ParserResult<node::KindGroup> {
     let mut is_reference = false;
     let mut is_mutable = false;
@@ -202,6 +212,7 @@ impl<'a> Parser {
     })
   }
 
+  /// %name ':' %kind_group
   pub fn parse_parameter(&mut self) -> ParserResult<node::Parameter> {
     let name = self.parse_name()?;
 
@@ -212,6 +223,7 @@ impl<'a> Parser {
     Ok((name, kind_group))
   }
 
+  /// %name '(' {%parameter* (,)} (+) ')' '~' %kind_group
   pub fn parse_prototype(&mut self) -> ParserResult<node::Prototype> {
     let name = self.parse_name()?;
 
@@ -251,6 +263,7 @@ impl<'a> Parser {
     })
   }
 
+  /// (pub) fn %prototype %block
   pub fn parse_function(&mut self) -> ParserResult<node::Function<'a>> {
     // TODO: Visibility should not be handled here.
 
@@ -282,6 +295,7 @@ impl<'a> Parser {
     })
   }
 
+  /// (pub) extern fn %prototype ';'
   pub fn parse_external(&mut self) -> ParserResult<node::External> {
     // TODO: Support for visibility.
 
@@ -295,6 +309,7 @@ impl<'a> Parser {
     Ok(node::External { prototype })
   }
 
+  /// module %name ';'
   pub fn parse_module_decl(&mut self) -> ParserResult<node::Module<'a>> {
     skip_past!(self, token::Token::KeywordModule);
 
@@ -334,6 +349,7 @@ impl<'a> Parser {
     })
   }
 
+  /// return (%expr) ';'
   pub fn parse_return_stmt(&mut self) -> ParserResult<node::ReturnStmt<'a>> {
     skip_past!(self, token::Token::KeywordReturn);
 
@@ -348,6 +364,7 @@ impl<'a> Parser {
     Ok(node::ReturnStmt { value })
   }
 
+  /// let %name ':' %kind_group '=' %expr ';'
   pub fn parse_let_stmt(&mut self) -> ParserResult<node::LetStmt<'a>> {
     skip_past!(self, token::Token::KeywordLet);
 
@@ -370,6 +387,7 @@ impl<'a> Parser {
     })
   }
 
+  /// if %expr %block (else %block)
   pub fn parse_if_stmt(&mut self) -> ParserResult<node::IfStmt<'a>> {
     skip_past!(self, token::Token::KeywordIf);
 
@@ -389,6 +407,7 @@ impl<'a> Parser {
     })
   }
 
+  /// {true | false}
   pub fn parse_bool_literal(&mut self) -> ParserResult<node::BoolLiteral> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(value) => {
@@ -480,6 +499,7 @@ impl<'a> Parser {
     })
   }
 
+  /// %name '(' (%expr (,))* ')'
   pub fn parse_call_expr(&mut self) -> ParserResult<node::CallExpr<'a>> {
     let callee_name = self.parse_name()?;
 
@@ -506,28 +526,28 @@ mod tests {
   use super::*;
 
   #[test]
-  fn parser_proper_initial_values() {
+  fn proper_initial_values() {
     let parser = Parser::new(vec![]);
 
     assert_eq!(0, parser.index);
   }
 
   #[test]
-  fn parser_is() {
+  fn is() {
     let parser = Parser::new(vec![token::Token::KeywordFn]);
 
     assert_eq!(true, parser.is(token::Token::KeywordFn));
   }
 
   #[test]
-  fn parser_is_empty() {
+  fn is_empty() {
     let parser = Parser::new(vec![]);
 
     assert_eq!(false, parser.is(token::Token::KeywordFn));
   }
 
   #[test]
-  fn parser_skip() {
+  fn skip() {
     let mut parser = Parser::new(vec![token::Token::KeywordFn, token::Token::KeywordFn]);
 
     parser.skip();
@@ -535,7 +555,7 @@ mod tests {
   }
 
   #[test]
-  fn parser_skip_out_of_bounds() {
+  fn skip_out_of_bounds() {
     let mut parser = Parser::new(vec![token::Token::KeywordFn]);
 
     parser.skip();
@@ -543,7 +563,7 @@ mod tests {
   }
 
   #[test]
-  fn parser_is_eof() {
+  fn is_eof() {
     let mut parser = Parser::new(vec![]);
 
     assert_eq!(true, parser.is_eof());
@@ -556,7 +576,7 @@ mod tests {
   }
 
   #[test]
-  fn parser_parse_name() {
+  fn parse_name() {
     let mut parser = Parser::new(vec![token::Token::Identifier("foo".into())]);
     let name = parser.parse_name();
 
@@ -565,7 +585,7 @@ mod tests {
   }
 
   #[test]
-  fn parser_parse_block() {
+  fn parse_block() {
     let mut parser = Parser::new(vec![token::Token::SymbolBraceL, token::Token::SymbolBraceR]);
     let block = parser.parse_block();
 
@@ -573,7 +593,7 @@ mod tests {
   }
 
   #[test]
-  fn parser_parse_int_kind() {
+  fn parse_int_kind() {
     let mut parser = Parser::new(vec![token::Token::TypeInt32]);
     let int_kind = parser.parse_int_kind();
 
@@ -658,6 +678,17 @@ mod tests {
   }
 
   #[test]
+  fn parse_literal() {
+    let mut parser = Parser::new(vec![
+      token::Token::LiteralInt(123),
+      token::Token::LiteralBool(true),
+    ]);
+
+    assert_eq!(true, parser.parse_literal().is_ok());
+    assert_eq!(true, parser.parse_literal().is_ok());
+  }
+
+  #[test]
   fn parse_parameter() {
     let mut parser = Parser::new(vec![
       token::Token::Identifier("foo".into()),
@@ -728,5 +759,58 @@ mod tests {
     assert_eq!(true, kind_group_value.is_mutable);
   }
 
-  // TODO: Add missing tests (is_eof, etc.).
+  #[test]
+  fn parse_return_stmt() {
+    let mut parser = Parser::new(vec![
+      token::Token::KeywordReturn,
+      token::Token::LiteralInt(123),
+      token::Token::SymbolSemicolon,
+    ]);
+
+    let return_stmt_result = parser.parse_return_stmt();
+
+    assert_eq!(true, return_stmt_result.is_ok());
+
+    let return_stmt = return_stmt_result.unwrap();
+
+    assert_eq!(true, return_stmt.value.is_some());
+  }
+
+  #[test]
+  fn parse_return_stmt_void() {
+    let mut parser = Parser::new(vec![
+      token::Token::KeywordReturn,
+      token::Token::SymbolSemicolon,
+    ]);
+
+    let return_stmt_result = parser.parse_return_stmt();
+
+    assert_eq!(true, return_stmt_result.is_ok());
+
+    let return_stmt = return_stmt_result.unwrap();
+
+    assert_eq!(true, return_stmt.value.is_none());
+  }
+
+  #[test]
+  fn parse_prototype_no_params() {
+    let mut parser = Parser::new(vec![
+      token::Token::Identifier("foo".to_string()),
+      token::Token::SymbolParenthesesL,
+      token::Token::SymbolParenthesesR,
+      token::Token::SymbolSemicolon,
+    ]);
+
+    let prototype_result = parser.parse_prototype();
+
+    assert_eq!(true, prototype_result.is_ok());
+
+    let prototype = prototype_result.unwrap();
+
+    assert_eq!(String::from("foo"), prototype.name);
+    assert_eq!(false, prototype.is_variadic);
+    assert_eq!(true, prototype.parameters.is_empty());
+  }
+
+  // TODO: Add more tests.
 }

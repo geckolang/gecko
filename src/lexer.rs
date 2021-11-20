@@ -7,7 +7,7 @@ pub struct Lexer {
 
   /// Represents the current character. If the input
   /// string was empty, or if the read index is out of
-  /// bounds, it will be [`None`].
+  /// bounds, it will be `None`.
   current_char: Option<char>,
 }
 
@@ -121,11 +121,12 @@ impl Iterator for Lexer {
   type Item = token::Token;
 
   // TODO: Apparently returns None when dealing with illegal character. Fix this.
-  /// Attempt to retrieve the next token. If the end of the input
-  /// string has been reached, [`None`] will be returned. If the
-  /// current character is neither an identifier nor a digit, an
-  /// [`Illegal`] token with the character as its value will be
-  /// returned.
+  /// Attempt to retrieve the next token.
+  ///
+  /// If the end of the input string has been reached, `None` will be
+  /// returned. If the current character is neither an identifier nor a
+  /// digit, an [`Illegal`] token with the encountered character as its
+  /// value will be returned.
   fn next(&mut self) -> Option<Self::Item> {
     if self.current_char.is_none() {
       return None;
@@ -179,27 +180,27 @@ mod tests {
   use super::*;
 
   #[test]
-  fn lexer_is_letter() {
-    assert_eq!(true, is_letter('a'));
-    assert_eq!(true, is_letter('z'));
-    assert_eq!(true, is_letter('_'));
-    assert_eq!(false, is_letter('0'));
-    assert_eq!(false, is_letter('1'));
-    assert_eq!(false, is_letter('!'));
+  fn is_letter() {
+    assert_eq!(true, super::is_letter('a'));
+    assert_eq!(true, super::is_letter('z'));
+    assert_eq!(true, super::is_letter('_'));
+    assert_eq!(false, super::is_letter('0'));
+    assert_eq!(false, super::is_letter('1'));
+    assert_eq!(false, super::is_letter('!'));
   }
 
   #[test]
-  fn lexer_is_digit() {
-    assert_eq!(false, is_digit('a'));
-    assert_eq!(false, is_digit('z'));
-    assert_eq!(false, is_digit('_'));
-    assert_eq!(true, is_digit('0'));
-    assert_eq!(true, is_digit('1'));
-    assert_eq!(false, is_digit('!'));
+  fn is_digit() {
+    assert_eq!(false, super::is_digit('a'));
+    assert_eq!(false, super::is_digit('z'));
+    assert_eq!(false, super::is_digit('_'));
+    assert_eq!(true, super::is_digit('0'));
+    assert_eq!(true, super::is_digit('1'));
+    assert_eq!(false, super::is_digit('!'));
   }
 
   #[test]
-  fn lexer_proper_initial_values() {
+  fn proper_initial_values() {
     let lexer = Lexer::new(vec!['a']);
 
     assert_eq!(lexer.input.len(), 1);
@@ -210,7 +211,7 @@ mod tests {
   }
 
   #[test]
-  fn lexer_next_identifier() {
+  fn next_identifier() {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
@@ -218,7 +219,7 @@ mod tests {
   }
 
   #[test]
-  fn lexer_next_eof() {
+  fn next_eof() {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
@@ -227,7 +228,7 @@ mod tests {
   }
 
   #[test]
-  fn lexer_next_none() {
+  fn next_none() {
     let mut lexer = Lexer::new(vec![]);
 
     lexer.read_char();
@@ -235,7 +236,7 @@ mod tests {
   }
 
   #[test]
-  fn lexer_next_illegal() {
+  fn next_illegal() {
     let mut lexer = Lexer::new(vec!['?']);
 
     lexer.read_char();
@@ -243,7 +244,7 @@ mod tests {
   }
 
   #[test]
-  fn lexer_read_char_single() {
+  fn read_char_single() {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
@@ -253,7 +254,7 @@ mod tests {
   }
 
   #[test]
-  fn lexer_read_char_overflow() {
+  fn read_char_overflow() {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
@@ -264,14 +265,14 @@ mod tests {
   }
 
   #[test]
-  fn lexer_is_whitespace() {
+  fn is_whitespace() {
     let mut lexer = Lexer::new(vec![' ']);
 
     assert_eq!(true, lexer.is_whitespace());
   }
 
   #[test]
-  fn lexer_is_whitespace_not() {
+  fn is_whitespace_not() {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(false, lexer.is_whitespace());
@@ -286,15 +287,23 @@ mod tests {
     assert_eq!(Some(token::Token::TypeInt32), lexer.next());
   }
 
-  // TODO:
-  // #[test]
-  // fn lexer_lex_keywords() {
-  //   let mut lexer = Lexer::new("extern pub fn namespace".chars().collect());
-  //   let tokens: Vec<token::Token> = lexer.collect();
+  #[test]
+  fn lex_keywords() {
+    let mut lexer = Lexer::new(
+      "extern pub fn module return mut unsigned let if else"
+        .chars()
+        .collect(),
+    );
 
-  //   assert_eq!(Some(token::Token::KeywordExtern), tokens.get(0));
-  //   assert_eq!(Some(token::Token::KeywordPub), tokens.get(1));
-  //   assert_eq!(Some(token::Token::KeywordFn), tokens.get(2));
-  //   assert_eq!(Some(token::Token::KeywordNamespace), tokens.get(3));
-  // }
+    assert_eq!(Some(token::Token::KeywordExtern), lexer.next());
+    assert_eq!(Some(token::Token::KeywordPub), lexer.next());
+    assert_eq!(Some(token::Token::KeywordFn), lexer.next());
+    assert_eq!(Some(token::Token::KeywordModule), lexer.next());
+    assert_eq!(Some(token::Token::KeywordReturn), lexer.next());
+    assert_eq!(Some(token::Token::KeywordMut), lexer.next());
+    assert_eq!(Some(token::Token::KeywordUnsigned), lexer.next());
+    assert_eq!(Some(token::Token::KeywordLet), lexer.next());
+    assert_eq!(Some(token::Token::KeywordIf), lexer.next());
+    assert_eq!(Some(token::Token::KeywordElse), lexer.next());
+  }
 }

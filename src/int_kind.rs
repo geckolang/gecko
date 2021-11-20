@@ -1,6 +1,9 @@
 use crate::{node, pass};
 
-// TODO: Write documentation.
+/// Determine the minimum bit-size in which a number can fit.
+///
+/// # Panics
+/// Panics if the calculated minimum bit-size exceeds 64.
 pub fn calculate_int_size_of(number: &u64) -> IntSize {
   let log2_result = f64::log2(*number as f64 + 1_f64);
   let minimum_bit_size = f64::floor(log2_result) as u64;
@@ -14,7 +17,7 @@ pub fn calculate_int_size_of(number: &u64) -> IntSize {
   } else if minimum_bit_size <= 64 {
     IntSize::Bit64
   } else {
-    panic!("unexpected minimum bit size to be larger than 64");
+    panic!("expected calculated minimum bit-size to be smaller than 64");
   }
 }
 

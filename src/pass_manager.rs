@@ -15,8 +15,11 @@ impl<'a> PassManager<'a> {
     Self { passes: Vec::new() }
   }
 
-  /// Register a pass to be run. Returns `true` if the pass'
-  /// restrictions are met.
+  /// Register a pass to be run in sequential order.
+  ///
+  /// Returns `true` if the pass'
+  /// restrictions are met (which are checked by invoking the `register`
+  /// method on the pass).
   pub fn add_pass(&mut self, pass: &'a mut dyn pass::Pass<'a>) -> bool {
     if !pass.register(self) {
       return false;
@@ -27,8 +30,13 @@ impl<'a> PassManager<'a> {
     true
   }
 
-  // TODO: Improve documentation.
   /// Execute all registered passes in a sequential order.
+  ///
+  /// Before a pass is executed, its requirements will be gathered
+  /// and checked. All top-level nodes will be run over pass-by-pass.
+  /// If there are any diagnostics generated, they will be gathered
+  /// and returned as a vector, otherwise an empty vector will be
+  /// returned.
   pub fn run(
     &'a mut self,
     top_level_nodes: &'a Vec<TopLevelNodeTransport<'a>>,
