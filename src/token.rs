@@ -16,8 +16,9 @@ pub enum Token {
   KeywordLet,
   KeywordIf,
   KeywordElse,
-  TypeVoid,
+  TypeInt16,
   TypeInt32,
+  TypeInt64,
   TypeBool,
   SymbolBraceL,
   SymbolBraceR,
@@ -50,14 +51,18 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnost
     "return" => Token::KeywordReturn,
     "if" => Token::KeywordIf,
     "else" => Token::KeywordElse,
-    "void" => Token::TypeVoid,
+    "i16" => Token::TypeInt16,
     "i32" => Token::TypeInt32,
+    "i64" => Token::TypeInt64,
     "bool" => Token::TypeBool,
     "true" => Token::LiteralBool(true),
     "false" => Token::LiteralBool(false),
     _ => {
       return Err(diagnostic::Diagnostic {
-        message: format!("identifier `{}` is not a keyword", identifier_str),
+        message: format!(
+          "identifier `{}` is not a keyword or built-in type",
+          identifier_str
+        ),
         severity: diagnostic::Severity::Internal,
       })
     }

@@ -21,7 +21,7 @@ impl Diagnostic {
 
 pub fn unreachable() -> Diagnostic {
   Diagnostic {
-    message: "unreachable point reached".into(),
+    message: "unreachable point reached".to_string(),
     severity: Severity::Internal,
   }
 }

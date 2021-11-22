@@ -34,28 +34,35 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
       });
     }
 
-    match function.prototype.return_kind_group.kind {
-      node::KindHolder::IntKind(int_kind) => {
-        if int_kind.size != int_kind::IntSize::Bit32 {
+    if let Some(return_kind_group) = &function.prototype.return_kind_group {
+      match return_kind_group.kind {
+        node::KindHolder::IntKind(int_kind) => {
+          if int_kind.size != int_kind::IntSize::Bit32 {
+            return Err(diagnostic::Diagnostic {
+              message: format!(
+                "main function must return `i32`, but found integer size `{:?}`",
+                int_kind.size
+              ),
+              severity: diagnostic::Severity::Error,
+            });
+          }
+        }
+        _ => {
           return Err(diagnostic::Diagnostic {
             message: format!(
-              "main function must return `i32`, but found integer size `{:?}`",
-              int_kind.size
+              "main function must return `i32`, but returns `{:?}`",
+              return_kind_group.kind
             ),
             severity: diagnostic::Severity::Error,
           });
         }
-      }
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          message: format!(
-            "main function must return `i32`, but returns `{:?}`",
-            function.prototype.return_kind_group.kind
-          ),
-          severity: diagnostic::Severity::Error,
-        });
-      }
-    };
+      };
+    } else {
+      self.diagnostics.push(diagnostic::Diagnostic {
+        message: "main function must return `i32`".to_string(),
+        severity: diagnostic::Severity::Error,
+      });
+    }
 
     if function.prototype.parameters.len() != 2 {
       return Err(diagnostic::Diagnostic {

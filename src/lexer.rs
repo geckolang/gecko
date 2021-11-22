@@ -120,7 +120,6 @@ impl Lexer {
 impl Iterator for Lexer {
   type Item = token::Token;
 
-  // TODO: Apparently returns None when dealing with illegal character. Fix this.
   /// Attempt to retrieve the next token.
   ///
   /// If the end of the input string has been reached, `None` will be
@@ -215,7 +214,10 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
-    assert_eq!(Some(token::Token::Identifier("a".into())), lexer.next());
+    assert_eq!(
+      Some(token::Token::Identifier("a".to_string())),
+      lexer.next()
+    );
   }
 
   #[test]
@@ -281,10 +283,11 @@ mod tests {
   #[test]
   fn lex_types() {
     // TODO: Add all types.
-    let mut lexer = Lexer::new("void i32".chars().collect());
+    let mut lexer = Lexer::new("i16 i32 i64".chars().collect());
 
-    assert_eq!(Some(token::Token::TypeVoid), lexer.next());
+    assert_eq!(Some(token::Token::TypeInt16), lexer.next());
     assert_eq!(Some(token::Token::TypeInt32), lexer.next());
+    assert_eq!(Some(token::Token::TypeInt64), lexer.next());
   }
 
   #[test]

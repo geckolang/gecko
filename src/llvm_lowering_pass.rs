@@ -1,4 +1,4 @@
-use crate::{diagnostic, entry_point_check_pass, int_kind, node, pass, void_kind};
+use crate::{diagnostic, entry_point_check_pass, int_kind, node, pass};
 use inkwell::types::AnyType;
 use inkwell::values::BasicValue;
 
@@ -13,9 +13,9 @@ macro_rules! visit_or_retrieve_value {
     // TODO: Use `if let` syntax.
     if !$self.llvm_value_map.contains_key($node) {
       match $node {
-        NodeKey::BoolLiteral(bool_literal) => $self.visit_bool_literal(bool_literal)?,
-        NodeKey::IntLiteral(int_literal) => $self.visit_int_literal(int_literal)?,
-        NodeKey::CallExpr(call_expr) => $self.visit_call_expr(call_expr)?,
+        NodeValueKey::BoolLiteral(bool_literal) => $self.visit_bool_literal(bool_literal)?,
+        NodeValueKey::IntLiteral(int_literal) => $self.visit_int_literal(int_literal)?,
+        NodeValueKey::CallExpr(call_expr) => $self.visit_call_expr(call_expr)?,
       };
     }
 
@@ -37,9 +37,9 @@ macro_rules! visit_or_retrieve_type {
     // TODO: Use `if let` syntax.
     if !$self.llvm_type_map.contains_key($node) {
       match $node {
-        node::KindTransport::IntKind(int_kind) => $self.visit_int_kind(&int_kind)?,
-        node::KindTransport::VoidKind(void_kind) => $self.visit_void_kind(&void_kind)?,
-        node::KindTransport::BoolKind(bool_kind) => $self.visit_bool_kind(&bool_kind)?,
+        NodeKindKey::IntKind(int_kind) => $self.visit_int_kind(&int_kind)?,
+        NodeKindKey::BoolKind(bool_kind) => $self.visit_bool_kind(&bool_kind)?,
+        NodeKindKey::Prototype(prototype) => $self.visit_prototype(&prototype)?,
       };
     }
 
@@ -50,18 +50,44 @@ macro_rules! visit_or_retrieve_type {
 }
 
 #[derive(Hash, Eq, PartialEq)]
-enum NodeKey<'a> {
+enum NodeValueKey<'a> {
   BoolLiteral(&'a node::BoolLiteral),
   IntLiteral(&'a node::IntLiteral),
   CallExpr(&'a node::CallExpr<'a>),
 }
 
-impl<'a> From<node::ExprTransport<'a>> for NodeKey<'a> {
+#[derive(Hash, Eq, PartialEq)]
+enum NodeKindKey<'a> {
+  Prototype(&'a node::Prototype),
+  IntKind(&'a int_kind::IntKind),
+  BoolKind(&'a int_kind::BoolKind),
+}
+
+impl<'a> From<&'a node::KindHolder> for NodeKindKey<'a> {
+  fn from(kind: &'a node::KindHolder) -> Self {
+    match kind {
+      node::KindHolder::IntKind(kind) => NodeKindKey::IntKind(kind),
+      node::KindHolder::BoolKind(kind) => NodeKindKey::BoolKind(kind),
+    }
+  }
+}
+
+impl<'a> From<node::ExprTransport<'a>> for NodeValueKey<'a> {
   fn from(expr_transport: node::ExprTransport<'a>) -> Self {
     match expr_transport {
-      node::ExprTransport::BoolLiteral(bool_literal) => NodeKey::BoolLiteral(bool_literal),
-      node::ExprTransport::IntLiteral(int_literal) => NodeKey::IntLiteral(int_literal),
-      node::ExprTransport::CallExpr(call_expr) => NodeKey::CallExpr(call_expr),
+      node::ExprTransport::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
+      node::ExprTransport::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
+      node::ExprTransport::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
+    }
+  }
+}
+
+impl<'a> From<&'a node::ExprHolder<'a>> for NodeValueKey<'a> {
+  fn from(expr_holder: &'a node::ExprHolder<'a>) -> Self {
+    match expr_holder {
+      node::ExprHolder::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
+      node::ExprHolder::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
+      node::ExprHolder::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
     }
   }
 }
@@ -73,9 +99,9 @@ fn mangle_name(scope_name: &String, name: &String) -> String {
 pub struct LlvmLoweringPass<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   pub llvm_module: &'a inkwell::module::Module<'ctx>,
-  llvm_type_map:
-    std::collections::HashMap<node::KindTransport<'a>, inkwell::types::AnyTypeEnum<'ctx>>,
-  llvm_value_map: std::collections::HashMap<NodeKey<'a>, inkwell::values::BasicValueEnum<'ctx>>,
+  llvm_type_map: std::collections::HashMap<NodeKindKey<'a>, inkwell::types::AnyTypeEnum<'ctx>>,
+  llvm_value_map:
+    std::collections::HashMap<NodeValueKey<'a>, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_function_like_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'ctx>,
@@ -116,6 +142,8 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
   }
 }
 
+// impl From<&inkwell::values::BasicValueEnum> for
+
 impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   fn get_requirements(&self) -> pass::PassRequirements {
     pass::PassRequirements {
@@ -134,7 +162,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
   fn visit_int_kind(&mut self, int_kind: &'a int_kind::IntKind) -> pass::PassResult {
     self.llvm_type_map.insert(
-      node::KindTransport::IntKind(&int_kind),
+      NodeKindKey::IntKind(&int_kind),
       match int_kind.size {
         int_kind::IntSize::Bit8 => self.llvm_context.i8_type().as_any_type_enum(),
         int_kind::IntSize::Bit16 => self.llvm_context.i16_type().as_any_type_enum(),
@@ -146,18 +174,9 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     Ok(())
   }
 
-  fn visit_void_kind(&mut self, void_kind: &'a void_kind::VoidKind) -> pass::PassResult {
-    self.llvm_type_map.insert(
-      node::KindTransport::VoidKind(&void_kind),
-      self.llvm_context.void_type().as_any_type_enum(),
-    );
-
-    Ok(())
-  }
-
   fn visit_bool_kind(&mut self, bool_kind: &'a int_kind::BoolKind) -> pass::PassResult {
     self.llvm_type_map.insert(
-      node::KindTransport::BoolKind(&bool_kind),
+      NodeKindKey::BoolKind(&bool_kind),
       self.llvm_context.bool_type().as_any_type_enum(),
     );
 
@@ -165,47 +184,10 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   }
 
   fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
-    // TODO: Simplify process of lowering parameters for externals as well.
-    let mut parameters = vec![];
+    let llvm_function_type =
+      visit_or_retrieve_type!(self, &NodeKindKey::Prototype(&function.prototype));
 
-    parameters.reserve(function.prototype.parameters.len());
-
-    // TODO: Further on, need to make use of the parameter's name somehow (maybe during lookups?).
-    for (parameter_name, parameter_kind_group) in &function.prototype.parameters {
-      let llvm_parameter =
-        visit_or_retrieve_type!(self, &node::KindTransport::from(&parameter_kind_group.kind));
-
-      parameters.push(match llvm_parameter {
-        // TODO: Add other types as they become available.
-        inkwell::types::AnyTypeEnum::IntType(int_type) => {
-          inkwell::types::BasicMetadataTypeEnum::IntType(*int_type)
-        }
-        inkwell::types::AnyTypeEnum::VoidType(_) => {
-          return Err(diagnostic::Diagnostic {
-            message: format!("type of parameter `{}` cannot be void", parameter_name),
-            severity: diagnostic::Severity::Internal,
-          })
-        }
-        _ => {
-          return Err(diagnostic::Diagnostic {
-            message: format!("unsupported parameter type for `{}`", parameter_name),
-            severity: diagnostic::Severity::Internal,
-          })
-        }
-      });
-    }
-
-    let llvm_return_type = visit_or_retrieve_type!(
-      self,
-      &node::KindTransport::from(&function.prototype.return_kind_group.kind)
-    );
-
-    let llvm_function_type = Self::get_function_type_from(
-      parameters.as_slice(),
-      &llvm_return_type,
-      function.prototype.is_variadic,
-    )?;
-
+    crate::pass_assert!(llvm_function_type.is_function_type());
     crate::pass_assert!(self.module_buffer.is_some());
 
     let llvm_function_name = if function.prototype.name == entry_point_check_pass::ENTRY_POINT_NAME
@@ -217,7 +199,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
     let llvm_function = self.llvm_module.add_function(
       llvm_function_name.as_str(),
-      llvm_function_type,
+      llvm_function_type.into_function_type(),
       Some(
         if function.prototype.name == entry_point_check_pass::ENTRY_POINT_NAME {
           inkwell::module::Linkage::External
@@ -258,20 +240,15 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   }
 
   fn visit_external(&mut self, external: &'a node::External) -> pass::PassResult {
-    // TODO: Support for parameters.
-    let llvm_function_type = Self::get_function_type_from(
-      &[],
-      visit_or_retrieve_type!(
-        self,
-        &node::KindTransport::from(&external.prototype.return_kind_group.kind)
-      ),
-      external.prototype.is_variadic,
-    );
+    let llvm_function_type =
+      visit_or_retrieve_type!(self, &NodeKindKey::Prototype(&external.prototype));
+
+    crate::pass_assert!(llvm_function_type.is_function_type());
 
     // TODO: Are externs always 'External' linkage?
     self.llvm_function_like_buffer = Some(self.llvm_module.add_function(
       external.prototype.name.as_str(),
-      llvm_function_type?,
+      llvm_function_type.into_function_type(),
       Some(inkwell::module::Linkage::External),
     ));
 
@@ -313,7 +290,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     if return_stmt.value.is_some() {
       visit_or_retrieve_value!(
         self,
-        &NodeKey::from(node::ExprTransport::from(
+        &NodeValueKey::from(node::ExprTransport::from(
           return_stmt.value.as_ref().unwrap()
         ))
       );
@@ -325,7 +302,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         Some(
           self
             .llvm_value_map
-            .get(&NodeKey::from(node::ExprTransport::from(
+            .get(&NodeValueKey::from(node::ExprTransport::from(
               return_stmt.value.as_ref().unwrap(),
             )))
             .unwrap(),
@@ -343,9 +320,11 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
     let llvm_any_type =
-      visit_or_retrieve_type!(self, &node::KindTransport::from(&let_stmt.kind_group.kind));
+      visit_or_retrieve_type!(self, &NodeKindKey::from(&let_stmt.kind_group.kind));
 
     let llvm_type = match llvm_any_type {
+      // TODO: Support other LLVM types.
+      // NOTE: This covers boolean types as well (`i1`).
       inkwell::types::AnyTypeEnum::IntType(int_type) => int_type.as_basic_type_enum(),
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -356,17 +335,20 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     };
 
     // TODO: Finish implementing.
-    let _llvm_alloca_inst_ptr = self
+    let llvm_alloca_inst_ptr = self
       .llvm_builder_buffer
       .build_alloca(llvm_type, let_stmt.name.as_str());
 
-    // let llvm_value = self.visit_or_retrieve_value(&let_stmt.value)?;
+    let llvm_value = visit_or_retrieve_value!(self, &NodeValueKey::from(&let_stmt.value));
 
-    // crate::pass_assert!(llvm_value.is_some());
+    // FIXME: Consider adding a method to TAKE the values from `llvm_value_map` and `llvm_type_map`, as errors occur when dealing with reference values and types instead of OWNED ones.
 
-    // self
-    //   .llvm_builder_buffer
-    //   .build_store(llvm_alloca_inst_ptr, llvm_value);
+    self
+      .llvm_builder_buffer
+      // TODO: Calling `to_owned()` clones the value. This is not ideal, and could cause problems? Or, SHOULD we be cloning values?
+      .build_store(llvm_alloca_inst_ptr, llvm_value.to_owned());
+
+    // TODO: No insertion into the value map?
 
     Ok(())
   }
@@ -386,7 +368,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   }
 
   fn visit_int_literal(&mut self, int_literal: &'a node::IntLiteral) -> pass::PassResult {
-    let llvm_type = visit_or_retrieve_type!(self, &node::KindTransport::IntKind(&int_literal.kind));
+    let llvm_type = visit_or_retrieve_type!(self, &NodeKindKey::IntKind(&int_literal.kind));
 
     let llvm_value = match llvm_type {
       inkwell::types::AnyTypeEnum::IntType(int_type) => {
@@ -395,7 +377,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
       _ => {
         return Err(diagnostic::Diagnostic {
           // TODO: Better error message?
-          message: "expected integer type".into(),
+          message: "expected integer type".to_string(),
           severity: diagnostic::Severity::Internal,
         });
       }
@@ -430,7 +412,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
     for argument in &call_expr.arguments {
       // TODO: Cloning argument.
-      let llvm_value = visit_or_retrieve_value!(self, &NodeKey::from(argument.clone()));
+      let llvm_value = visit_or_retrieve_value!(self, &NodeValueKey::from(argument.clone()));
 
       arguments.push(match llvm_value {
         // TODO: Add support for missing basic values.
@@ -459,8 +441,65 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     crate::pass_assert!(llvm_call_result.is_left());
 
     self.llvm_value_map.insert(
-      NodeKey::CallExpr(call_expr),
+      NodeValueKey::CallExpr(call_expr),
       llvm_call_result.left().unwrap(),
+    );
+
+    Ok(())
+  }
+
+  fn visit_if_stmt(&mut self, _if_stmt: &'a node::IfStmt<'a>) -> pass::PassResult {
+    // TODO:
+    todo!();
+  }
+
+  fn visit_prototype(&mut self, prototype: &'a node::Prototype) -> pass::PassResult {
+    // TODO: Creating regardless.
+    let llvm_void_type = self.llvm_context.void_type().as_any_type_enum();
+
+    // TODO: Simplify process of lowering parameters for externals as well.
+    let mut parameters = vec![];
+
+    parameters.reserve(prototype.parameters.len());
+
+    // TODO: Further on, need to make use of the parameter's name somehow (maybe during lookups?).
+    for (parameter_name, parameter_kind_group) in &prototype.parameters {
+      let llvm_parameter =
+        visit_or_retrieve_type!(self, &NodeKindKey::from(&parameter_kind_group.kind));
+
+      parameters.push(match llvm_parameter {
+        // TODO: Add other types as they become available.
+        inkwell::types::AnyTypeEnum::IntType(int_type) => {
+          inkwell::types::BasicMetadataTypeEnum::IntType(*int_type)
+        }
+        inkwell::types::AnyTypeEnum::VoidType(_) => {
+          return Err(diagnostic::Diagnostic {
+            message: format!("type of parameter `{}` cannot be void", parameter_name),
+            severity: diagnostic::Severity::Internal,
+          })
+        }
+        _ => {
+          return Err(diagnostic::Diagnostic {
+            message: format!("unsupported parameter type for `{}`", parameter_name),
+            severity: diagnostic::Severity::Internal,
+          })
+        }
+      });
+    }
+
+    let llvm_function_type = Self::get_function_type_from(
+      parameters.as_slice(),
+      if let Some(return_kind_group) = &prototype.return_kind_group {
+        visit_or_retrieve_type!(self, &NodeKindKey::from(&return_kind_group.kind))
+      } else {
+        &llvm_void_type
+      },
+      prototype.is_variadic,
+    )?;
+
+    self.llvm_type_map.insert(
+      NodeKindKey::Prototype(&prototype),
+      llvm_function_type.as_any_type_enum(),
     );
 
     Ok(())
@@ -473,7 +512,7 @@ mod tests {
   use pass::Pass;
 
   #[test]
-  fn llvm_lowering_pass_proper_initial_values<'a>() {
+  fn proper_initial_values<'a>() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module: inkwell::module::Module<'_> = llvm_context.create_module("test");
 
@@ -487,7 +526,7 @@ mod tests {
 
   // TODO:
   // #[test]
-  // fn llvm_lowering_pass_visit_or_retrieve_type() {
+  // fn visit_or_retrieve_type() {
   //   let llvm_context = inkwell::context::Context::create();
   //   let llvm_module = llvm_context.create_module("test");
   //   let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
@@ -505,19 +544,7 @@ mod tests {
   // }
 
   #[test]
-  fn llvm_lowering_pass_visit_void_kind() {
-    let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
-
-    let visit_void_kind_result = llvm_lowering_pass.visit_void_kind(&void_kind::VoidKind);
-
-    assert_eq!(true, visit_void_kind_result.is_ok());
-    assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
-  }
-
-  #[test]
-  fn llvm_lowering_pass_visit_int_kind() {
+  fn visit_int_kind() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
@@ -543,12 +570,8 @@ mod tests {
     let function = node::Function {
       is_public: false,
       prototype: node::Prototype {
-        name: "foo".into(),
-        return_kind_group: node::KindGroup {
-          kind: node::KindHolder::VoidKind(void_kind::VoidKind),
-          is_reference: false,
-          is_mutable: false,
-        },
+        name: "foo".to_string(),
+        return_kind_group: None,
         parameters: vec![],
         is_variadic: false,
       },
@@ -564,4 +587,6 @@ mod tests {
     assert_eq!(true, visit_function_result.is_ok());
     assert_eq!(true, llvm_lowering_pass.llvm_function_like_buffer.is_some());
   }
+
+  // TODO: Add more tests: `visit_prototype()`, etc.
 }

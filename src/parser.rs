@@ -1,4 +1,4 @@
-use crate::{diagnostic, int_kind, node, token, void_kind};
+use crate::{diagnostic, int_kind, node, token};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -103,7 +103,8 @@ impl<'a> Parser {
     Ok(name.unwrap())
   }
 
-  /// { %statement* }
+  /// TODO: Be specific, which statements? Also include lonely expression.
+  /// '{' (%statement+ ';') '}'
   pub fn parse_block(&mut self) -> ParserResult<node::Block<'a>> {
     skip_past!(self, token::Token::SymbolBraceL);
 
@@ -113,6 +114,7 @@ impl<'a> Parser {
       statements.push(match self.tokens[self.index] {
         token::Token::KeywordReturn => node::AnyStmtNode::ReturnStmt(self.parse_return_stmt()?),
         token::Token::KeywordLet => node::AnyStmtNode::LetStmt(self.parse_let_stmt()?),
+        token::Token::KeywordIf => node::AnyStmtNode::IfStmt(self.parse_if_stmt()?),
         _ => {
           let expr_wrapper_stmt = node::AnyStmtNode::ExprWrapperStmt(self.parse_expr()?);
 
@@ -130,39 +132,32 @@ impl<'a> Parser {
 
   /// (unsigned) {i8 | i16 | i32 | i64}
   pub fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
-    // TODO: Simplify weird, unreadable logic?
-    let token = if self.skip() {
-      self.tokens[self.index - 1].clone()
-    } else {
-      self.tokens[self.index].clone()
-    };
+    let mut is_signed = true;
 
-    let is_signed = if token == token::Token::KeywordUnsigned {
+    if self.is(token::Token::KeywordUnsigned) {
       self.skip();
+      is_signed = false;
+    }
 
-      false
-    } else {
-      true
-    };
+    // TODO: Accessing index unsafely.
+    let current_token = &self.tokens[self.index];
 
-    let size = match token {
+    let size = match current_token {
+      token::Token::TypeInt16 => int_kind::IntSize::Bit16,
       token::Token::TypeInt32 => int_kind::IntSize::Bit32,
+      token::Token::TypeInt64 => int_kind::IntSize::Bit64,
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: format!("unexpected token `{}`, expected integer type", token),
+          message: format!(
+            "unexpected token `{}`, expected integer type",
+            current_token
+          ),
           severity: diagnostic::Severity::Error,
         })
       }
     };
 
     Ok(int_kind::IntKind { size, is_signed })
-  }
-
-  /// void
-  pub fn parse_void_kind(&mut self) -> ParserResult<void_kind::VoidKind> {
-    skip_past!(self, token::Token::TypeVoid);
-
-    Ok(void_kind::VoidKind)
   }
 
   /// bool
@@ -190,8 +185,10 @@ impl<'a> Parser {
     // TODO: Check if the index is valid?
     // TODO: Support for more types.
     let kind = match self.tokens[self.index] {
-      token::Token::TypeVoid => node::KindHolder::VoidKind(self.parse_void_kind()?),
-      token::Token::TypeInt32 => node::KindHolder::IntKind(self.parse_int_kind()?),
+      token::Token::KeywordUnsigned
+      | token::Token::TypeInt16
+      | token::Token::TypeInt32
+      | token::Token::TypeInt64 => node::KindHolder::IntKind(self.parse_int_kind()?),
       token::Token::TypeBool => node::KindHolder::BoolKind(self.parse_bool_kind()?),
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -251,9 +248,13 @@ impl<'a> Parser {
     }
 
     skip_past!(self, token::Token::SymbolParenthesesR);
-    skip_past!(self, token::Token::SymbolTilde);
 
-    let return_kind_group = self.parse_kind_group()?;
+    let mut return_kind_group = None;
+
+    if self.is(token::Token::SymbolTilde) {
+      self.skip();
+      return_kind_group = Some(self.parse_kind_group()?);
+    }
 
     Ok(node::Prototype {
       name,
@@ -329,7 +330,7 @@ impl<'a> Parser {
 
     if token.is_none() {
       return Err(diagnostic::Diagnostic {
-        message: "expected top-level construct but got end of file".into(),
+        message: "expected top-level construct but got end of file".to_string(),
         severity: diagnostic::Severity::Error,
       });
     }
@@ -418,7 +419,7 @@ impl<'a> Parser {
       // TODO: Better error.
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: "unexpected token, expected boolean literal".into(),
+          message: "unexpected token, expected boolean literal".to_string(),
           severity: diagnostic::Severity::Error,
         })
       }
@@ -461,7 +462,7 @@ impl<'a> Parser {
       }
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: "expected integer literal but got end of file".into(),
+          message: "expected integer literal but got end of file".to_string(),
           severity: diagnostic::Severity::Error,
         })
       }
@@ -475,7 +476,7 @@ impl<'a> Parser {
       _ => {
         return Err(diagnostic::Diagnostic {
           // TODO: Show the actual token.
-          message: "unexpected token, expected literal".into(),
+          message: "unexpected token, expected literal".to_string(),
           severity: diagnostic::Severity::Error,
         });
       }
@@ -490,7 +491,7 @@ impl<'a> Parser {
         } else {
           return Err(diagnostic::Diagnostic {
             // TODO: Show the actual token.
-            message: "unexpected token, expected expression".into(),
+            message: "unexpected token, expected expression".to_string(),
             severity: diagnostic::Severity::Error,
           });
         }
@@ -577,7 +578,7 @@ mod tests {
 
   #[test]
   fn parse_name() {
-    let mut parser = Parser::new(vec![token::Token::Identifier("foo".into())]);
+    let mut parser = Parser::new(vec![token::Token::Identifier("foo".to_string())]);
     let name = parser.parse_name();
 
     assert_eq!(true, name.is_ok());
@@ -602,18 +603,10 @@ mod tests {
   }
 
   #[test]
-  fn parse_void_kind() {
-    let mut parser = Parser::new(vec![token::Token::TypeVoid]);
-    let void_kind = parser.parse_void_kind();
-
-    assert_eq!(true, void_kind.is_ok());
-  }
-
-  #[test]
   fn parse_module_decl() {
     let mut parser = Parser::new(vec![
       token::Token::KeywordModule,
-      token::Token::Identifier("test".into()),
+      token::Token::Identifier("test".to_string()),
       token::Token::SymbolSemicolon,
     ]);
 
@@ -628,11 +621,9 @@ mod tests {
     let mut parser = Parser::new(vec![
       token::Token::KeywordExtern,
       token::Token::KeywordFn,
-      token::Token::Identifier("test".into()),
+      token::Token::Identifier("test".to_string()),
       token::Token::SymbolParenthesesL,
       token::Token::SymbolParenthesesR,
-      token::Token::SymbolTilde,
-      token::Token::TypeVoid,
       token::Token::SymbolSemicolon,
     ]);
 
@@ -691,7 +682,7 @@ mod tests {
   #[test]
   fn parse_parameter() {
     let mut parser = Parser::new(vec![
-      token::Token::Identifier("foo".into()),
+      token::Token::Identifier("foo".to_string()),
       token::Token::SymbolColon,
       token::Token::TypeInt32,
     ]);
@@ -798,7 +789,6 @@ mod tests {
       token::Token::Identifier("foo".to_string()),
       token::Token::SymbolParenthesesL,
       token::Token::SymbolParenthesesR,
-      token::Token::SymbolSemicolon,
     ]);
 
     let prototype_result = parser.parse_prototype();
@@ -810,6 +800,24 @@ mod tests {
     assert_eq!(String::from("foo"), prototype.name);
     assert_eq!(false, prototype.is_variadic);
     assert_eq!(true, prototype.parameters.is_empty());
+  }
+
+  #[test]
+  fn parse_if_stmt() {
+    let mut parser = Parser::new(vec![
+      token::Token::KeywordIf,
+      token::Token::LiteralBool(true),
+      token::Token::SymbolBraceL,
+      token::Token::SymbolBraceR,
+    ]);
+
+    let if_stmt_result = parser.parse_if_stmt();
+
+    assert_eq!(true, if_stmt_result.is_ok());
+
+    let if_stmt = if_stmt_result.unwrap();
+
+    assert_eq!(true, if_stmt.else_block.is_none());
   }
 
   // TODO: Add more tests.

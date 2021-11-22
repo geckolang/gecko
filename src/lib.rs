@@ -12,4 +12,3 @@ pub mod pass;
 pub mod pass_manager;
 pub mod token;
 pub mod type_check_pass;
-pub mod void_kind;

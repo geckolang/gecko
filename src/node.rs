@@ -1,9 +1,8 @@
-use crate::{int_kind, pass, void_kind};
+use crate::{int_kind, pass};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum KindTransport<'a> {
   IntKind(&'a int_kind::IntKind),
-  VoidKind(&'a void_kind::VoidKind),
   BoolKind(&'a int_kind::BoolKind),
 }
 
@@ -11,7 +10,6 @@ impl<'a> From<&'a KindHolder> for KindTransport<'a> {
   fn from(kind: &'a KindHolder) -> Self {
     match kind {
       KindHolder::IntKind(kind) => KindTransport::IntKind(kind),
-      KindHolder::VoidKind(kind) => KindTransport::VoidKind(kind),
       KindHolder::BoolKind(kind) => KindTransport::BoolKind(kind),
     }
   }
@@ -134,7 +132,7 @@ pub struct Prototype {
   pub name: String,
   pub parameters: Vec<Parameter>,
   pub is_variadic: bool,
-  pub return_kind_group: KindGroup,
+  pub return_kind_group: Option<KindGroup>,
 }
 
 impl<'a> Node for Prototype {
@@ -159,7 +157,6 @@ pub enum ExprHolder<'a> {
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum KindHolder {
   IntKind(int_kind::IntKind),
-  VoidKind(void_kind::VoidKind),
   BoolKind(int_kind::BoolKind),
 }
 
@@ -177,12 +174,13 @@ pub struct Module<'a> {
 impl<'a> Module<'a> {
   pub fn new(name: &str) -> Self {
     Module {
-      name: name.into(),
+      name: name.to_string(),
       symbol_table: std::collections::HashMap::new(),
     }
   }
 }
 
+// TODO: Document methods (for developers).
 impl<'a> Node for Module<'a> {
   fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
     pass.visit_module(self)
@@ -211,7 +209,25 @@ impl Node for Block<'_> {
     pass.visit_block(self)
   }
 
-  // TODO: Missing `get_children()` implementation.
+  fn get_children(&self) -> Vec<&dyn Node> {
+    let mut children = Vec::new();
+
+    for statement in &self.statements {
+      // TODO: Implement `From<&...>`, if possible.
+      match statement {
+        AnyStmtNode::ReturnStmt(stmt) => children.push(stmt as &dyn Node),
+        AnyStmtNode::ExprWrapperStmt(expr) => children.push(match expr {
+          ExprHolder::BoolLiteral(expr) => expr as &dyn Node,
+          ExprHolder::IntLiteral(expr) => expr as &dyn Node,
+          ExprHolder::CallExpr(expr) => expr as &dyn Node,
+        }),
+        AnyStmtNode::LetStmt(stmt) => children.push(stmt as &dyn Node),
+        AnyStmtNode::IfStmt(stmt) => children.push(stmt as &dyn Node),
+      };
+    }
+
+    children
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -219,7 +235,23 @@ pub struct ReturnStmt<'a> {
   pub value: Option<ExprHolder<'a>>,
 }
 
-// TODO: Missing `Node` implementation for `ReturnStmt`.
+impl<'a> Node for ReturnStmt<'a> {
+  fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
+    pass.visit_return_stmt(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
+    match &self.value {
+      // TODO: Implement `From<&...>`, if possible.
+      Some(value) => vec![match value {
+        ExprHolder::BoolLiteral(expr) => expr as &dyn Node,
+        ExprHolder::IntLiteral(expr) => expr as &dyn Node,
+        ExprHolder::CallExpr(expr) => expr as &dyn Node,
+      }],
+      None => vec![],
+    }
+  }
+}
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct LetStmt<'a> {
@@ -228,11 +260,44 @@ pub struct LetStmt<'a> {
   pub value: ExprHolder<'a>,
 }
 
+impl Node for LetStmt<'_> {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_let_stmt(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
+    // TODO: Implement `From<&...>`, if possible.
+    vec![
+      match &self.kind_group.kind {
+        KindHolder::IntKind(kind) => kind as &dyn Node,
+        KindHolder::BoolKind(kind) => kind as &dyn Node,
+      },
+      match &self.value {
+        ExprHolder::BoolLiteral(expr) => expr as &dyn Node,
+        ExprHolder::IntLiteral(expr) => expr as &dyn Node,
+        ExprHolder::CallExpr(expr) => expr as &dyn Node,
+      },
+    ]
+  }
+}
+
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct IfStmt<'a> {
   pub condition: ExprHolder<'a>,
   pub then_block: Block<'a>,
   pub else_block: Option<Block<'a>>,
+}
+
+impl Node for IfStmt<'_> {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_if_stmt(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
+    // TODO:
+    vec![]
+    // vec![&self.condition, &self.then_block]
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -245,6 +310,12 @@ pub enum AnyExprNode<'a> {
 pub struct CallExpr<'a> {
   pub callee: Stub<'a>,
   pub arguments: Vec<ExprTransport<'a>>,
+}
+
+impl Node for CallExpr<'_> {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_call_expr(self)
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -274,5 +345,14 @@ impl Node for Stub<'_> {
     pass.visit_stub(self)
   }
 
-  // TODO: Missing `get_children()` implementation.
+  fn get_children(&self) -> Vec<&dyn Node> {
+    // TODO: Verify this is correct (references).
+    match self {
+      Self::Callable { value, .. } => match &value {
+        Some(StubValueTransport::Function(function)) => vec![*function as &dyn Node],
+        Some(StubValueTransport::External(external)) => vec![*external as &dyn Node],
+        None => vec![],
+      },
+    }
+  }
 }
