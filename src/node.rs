@@ -201,6 +201,7 @@ pub enum AnyStmtNode<'a> {
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Block<'a> {
+  pub llvm_name: String,
   pub statements: Vec<AnyStmtNode<'a>>,
 }
 

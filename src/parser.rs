@@ -105,7 +105,7 @@ impl<'a> Parser {
 
   /// TODO: Be specific, which statements? Also include lonely expression.
   /// '{' (%statement+ ';') '}'
-  pub fn parse_block(&mut self) -> ParserResult<node::Block<'a>> {
+  pub fn parse_block(&mut self, llvm_name: &str) -> ParserResult<node::Block<'a>> {
     skip_past!(self, token::Token::SymbolBraceL);
 
     let mut statements = vec![];
@@ -127,7 +127,10 @@ impl<'a> Parser {
 
     skip_past!(self, token::Token::SymbolBraceR);
 
-    Ok(node::Block { statements })
+    Ok(node::Block {
+      llvm_name: llvm_name.to_string(),
+      statements,
+    })
   }
 
   /// (unsigned) {i8 | i16 | i32 | i64}
@@ -278,7 +281,7 @@ impl<'a> Parser {
     skip_past!(self, token::Token::KeywordFn);
 
     let prototype = self.parse_prototype()?;
-    let mut body = self.parse_block()?;
+    let mut body = self.parse_block("entry")?;
 
     // Insert a return void instruction if the function body is empty.
     if body.statements.is_empty() {
@@ -393,12 +396,12 @@ impl<'a> Parser {
     skip_past!(self, token::Token::KeywordIf);
 
     let condition = self.parse_expr()?;
-    let then_block = self.parse_block()?;
+    let then_block = self.parse_block("if_start")?;
     let mut else_block = None;
 
     if self.is(token::Token::KeywordElse) {
       self.skip();
-      else_block = Some(self.parse_block()?);
+      else_block = Some(self.parse_block("if_else")?);
     }
 
     Ok(node::IfStmt {
@@ -588,7 +591,7 @@ mod tests {
   #[test]
   fn parse_block() {
     let mut parser = Parser::new(vec![token::Token::SymbolBraceL, token::Token::SymbolBraceR]);
-    let block = parser.parse_block();
+    let block = parser.parse_block("test");
 
     assert_eq!(true, block.is_ok());
   }

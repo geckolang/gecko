@@ -133,7 +133,10 @@ mod tests {
         is_variadic: false,
         return_kind_group: None,
       },
-      body: node::Block { statements: vec![] },
+      body: node::Block {
+        llvm_name: "entry".to_string(),
+        statements: vec![],
+      },
     }
   }
 

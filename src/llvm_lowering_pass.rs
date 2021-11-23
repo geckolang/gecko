@@ -1,6 +1,5 @@
 use crate::{diagnostic, entry_point_check_pass, int_kind, node, pass};
-use inkwell::types::AnyType;
-use inkwell::values::BasicValue;
+use inkwell::{types::AnyType, values::BasicValue};
 
 /// Visit the node and return its resulting LLVM value, or if it
 /// was already previously visited, simply retrieve and return
@@ -260,10 +259,10 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   fn visit_block(&mut self, block: &'a node::Block<'a>) -> pass::PassResult {
     crate::pass_assert!(self.llvm_function_like_buffer.is_some());
 
-    let llvm_block = self
-      .llvm_context
-      // TODO: Name basic block?
-      .append_basic_block(self.llvm_function_like_buffer.unwrap(), "");
+    let llvm_block = self.llvm_context.append_basic_block(
+      self.llvm_function_like_buffer.unwrap(),
+      block.llvm_name.as_str(),
+    );
 
     self.llvm_builder_buffer.position_at_end(llvm_block);
 
@@ -448,8 +447,26 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     Ok(())
   }
 
-  fn visit_if_stmt(&mut self, _if_stmt: &'a node::IfStmt<'a>) -> pass::PassResult {
-    // TODO:
+  fn visit_if_stmt(&mut self, if_stmt: &'a node::IfStmt<'a>) -> pass::PassResult {
+    crate::pass_assert!(self.llvm_function_like_buffer.is_some());
+
+    let llvm_function = self.llvm_function_like_buffer.unwrap();
+
+    // TODO: What if the buffer was intended to be for an external?
+    // FIXME: How to retrieve the emitted blocks?
+
+    self.visit_block(&if_stmt.then_block)?;
+
+    if let Some(else_block) = &if_stmt.else_block {
+      self.visit_block(&else_block)?;
+    }
+
+    let if_after_llvm_block = self
+      .llvm_context
+      .append_basic_block(llvm_function, "if_after");
+
+    // FIXME: Complete implementation.
+
     todo!();
   }
 
@@ -576,6 +593,8 @@ mod tests {
         is_variadic: false,
       },
       body: node::Block {
+        llvm_name: "entry".to_string(),
+
         statements: vec![node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
           value: None,
         })],
