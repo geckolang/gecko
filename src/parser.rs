@@ -13,7 +13,7 @@ macro_rules! skip_past {
     if !$self.is($token) {
       return Err(diagnostic::Diagnostic {
         message: format!(
-          "expected token `{}` but got `{}`",
+          "expected token `{}`, but got `{}`",
           $token, $self.tokens[$self.index]
         ),
         severity: diagnostic::Severity::Error,
@@ -159,6 +159,8 @@ impl<'a> Parser {
         })
       }
     };
+
+    self.skip();
 
     Ok(int_kind::IntKind { size, is_signed })
   }
@@ -396,7 +398,7 @@ impl<'a> Parser {
     skip_past!(self, token::Token::KeywordIf);
 
     let condition = self.parse_expr()?;
-    let then_block = self.parse_block("if_start")?;
+    let then_block = self.parse_block("if_then")?;
     let mut else_block = None;
 
     if self.is(token::Token::KeywordElse) {

@@ -201,6 +201,7 @@ pub enum AnyStmtNode<'a> {
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Block<'a> {
+  // TODO: Consider using an enum then assigning a name based on its value.
   pub llvm_name: String,
   pub statements: Vec<AnyStmtNode<'a>>,
 }
@@ -214,7 +215,6 @@ impl Node for Block<'_> {
     let mut children = Vec::new();
 
     for statement in &self.statements {
-      // TODO: Implement `From<&...>`, if possible.
       match statement {
         AnyStmtNode::ReturnStmt(stmt) => children.push(stmt as &dyn Node),
         AnyStmtNode::ExprWrapperStmt(expr) => children.push(match expr {
@@ -243,7 +243,6 @@ impl<'a> Node for ReturnStmt<'a> {
 
   fn get_children(&self) -> Vec<&dyn Node> {
     match &self.value {
-      // TODO: Implement `From<&...>`, if possible.
       Some(value) => vec![match value {
         ExprHolder::BoolLiteral(expr) => expr as &dyn Node,
         ExprHolder::IntLiteral(expr) => expr as &dyn Node,
@@ -267,7 +266,6 @@ impl Node for LetStmt<'_> {
   }
 
   fn get_children(&self) -> Vec<&dyn Node> {
-    // TODO: Implement `From<&...>`, if possible.
     vec![
       match &self.kind_group.kind {
         KindHolder::IntKind(kind) => kind as &dyn Node,

@@ -20,7 +20,11 @@ impl<'a> TypeCheckPass {
 
     blocks
   }
+
+  // TODO: Consider adding checks as independent functions.
 }
+
+// TODO: Consider writing a method/function to compare two types by a simpler way.
 
 impl<'a> pass::Pass<'a> for TypeCheckPass {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
@@ -73,6 +77,7 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
     }
 
     if should_return_value && !is_value_returned {
+      // TODO: Missing the case if an `if` statement returns a value but its continuation block does not. Make sure to add this as a test once fixed.
       return Err(diagnostic::Diagnostic {
         message: format!(
           "function `{}` should return a value but does not",
@@ -115,6 +120,53 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
           })
         }
       }
+    }
+  }
+
+  fn visit_if_stmt(&mut self, if_stmt: &'a node::IfStmt<'a>) -> pass::PassResult {
+    match &if_stmt.condition {
+      node::ExprHolder::BoolLiteral(_) => Ok(()),
+      node::ExprHolder::CallExpr(call_expr) => {
+        match &call_expr.callee {
+          node::Stub::Callable { name: _, value } => {
+            crate::pass_assert!(value.is_some());
+
+            let callee_prototype = match value.as_ref().unwrap() {
+              node::StubValueTransport::External(external) => &external.prototype,
+              node::StubValueTransport::Function(function) => &function.prototype,
+            };
+
+            if callee_prototype.return_kind_group.is_none() {
+              return Err(diagnostic::Diagnostic {
+                message: format!(
+                  "if-statement condition is invalid because callee `{}` returns `void`",
+                  callee_prototype.name
+                ),
+                severity: diagnostic::Severity::Error,
+              });
+            }
+
+            // TODO: What if it's a reference or defined as mutable? Must disallow `mut` (and its parsing) for return types.
+            let return_kind = &callee_prototype.return_kind_group.as_ref().unwrap().kind;
+
+            match &return_kind {
+              node::KindHolder::BoolKind(_) => Ok(()),
+              _ => Err(diagnostic::Diagnostic {
+                // TODO: Show actual return type?
+                message: format!(
+                  "if-statement condition is invalid because callee `{}` does not return a boolean",
+                  callee_prototype.name
+                ),
+                severity: diagnostic::Severity::Error,
+              }),
+            }
+          }
+        }
+      }
+      _ => Err(diagnostic::Diagnostic {
+        message: "condition must either evaluate to a boolean or be a boolean literal".to_string(),
+        severity: diagnostic::Severity::Error,
+      }),
     }
   }
 }

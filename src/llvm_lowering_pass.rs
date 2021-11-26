@@ -1,4 +1,8 @@
-use crate::{diagnostic, entry_point_check_pass, int_kind, node, pass};
+use crate::{
+  diagnostic, entry_point_check_pass, int_kind,
+  node::{self, Node},
+  pass,
+};
 use inkwell::{types::AnyType, values::BasicValue};
 
 /// Visit the node and return its resulting LLVM value, or if it
@@ -45,6 +49,19 @@ macro_rules! visit_or_retrieve_type {
     crate::pass_assert!($self.llvm_type_map.contains_key($node));
 
     $self.llvm_type_map.get(&$node).unwrap()
+  }};
+}
+
+// TODO: Visiting a basic block will remove it from the map. Is this okay?
+macro_rules! visit_or_retrieve_block {
+  ($self:expr, $block:expr) => {{
+    if !$self.llvm_basic_block_map.contains_key($block) {
+      $self.visit_block($block)?;
+    }
+
+    crate::pass_assert!($self.llvm_basic_block_map.contains_key($block));
+
+    $self.llvm_basic_block_map.remove($block).unwrap()
   }};
 }
 
@@ -101,6 +118,8 @@ pub struct LlvmLoweringPass<'a, 'ctx> {
   llvm_type_map: std::collections::HashMap<NodeKindKey<'a>, inkwell::types::AnyTypeEnum<'ctx>>,
   llvm_value_map:
     std::collections::HashMap<NodeValueKey<'a>, inkwell::values::BasicValueEnum<'ctx>>,
+  llvm_basic_block_map:
+    std::collections::HashMap<&'a node::Block<'a>, inkwell::basic_block::BasicBlock<'ctx>>,
   llvm_function_like_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'ctx>,
@@ -117,6 +136,7 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
       llvm_module,
       llvm_type_map: std::collections::HashMap::new(),
       llvm_value_map: std::collections::HashMap::new(),
+      llvm_basic_block_map: std::collections::HashMap::new(),
       llvm_function_like_buffer: None,
       llvm_builder_buffer: llvm_context.create_builder(),
       module_buffer: None,
@@ -138,6 +158,18 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
       }
       _ => return Err(diagnostic::unreachable()),
     })
+  }
+
+  fn conditional_visit_kind(&mut self, kind: &'a NodeKindKey<'a>) -> pass::PassResult {
+    if !self.llvm_type_map.contains_key(&kind) {
+      match kind {
+        NodeKindKey::Prototype(prototype) => prototype.accept(self),
+        NodeKindKey::IntKind(int_kind) => int_kind.accept(self),
+        NodeKindKey::BoolKind(bool_kind) => bool_kind.accept(self),
+      }?;
+    }
+
+    Ok(())
   }
 }
 
@@ -269,7 +301,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     for statement in &block.statements {
       match statement {
         node::AnyStmtNode::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt)?,
-        // TODO: Consider relocating as an associated function for Pass?
+        // TODO: Consider relocating as an associated function for `Pass`? Does this occur more than once?
         node::AnyStmtNode::ExprWrapperStmt(expr) => match expr {
           // TODO: Implement missing cases.
           node::ExprHolder::CallExpr(call_expr) => self.visit_call_expr(call_expr)?,
@@ -279,6 +311,8 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         node::AnyStmtNode::IfStmt(if_stmt) => self.visit_if_stmt(&if_stmt)?,
       };
     }
+
+    self.llvm_basic_block_map.insert(block, llvm_block);
 
     Ok(())
   }
@@ -449,25 +483,53 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
   fn visit_if_stmt(&mut self, if_stmt: &'a node::IfStmt<'a>) -> pass::PassResult {
     crate::pass_assert!(self.llvm_function_like_buffer.is_some());
+    crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
     let llvm_function = self.llvm_function_like_buffer.unwrap();
 
+    // TODO: Verify builder is in the correct/expected block.
     // TODO: What if the buffer was intended to be for an external?
     // FIXME: How to retrieve the emitted blocks?
 
-    self.visit_block(&if_stmt.then_block)?;
+    let current_llvm_block = self.llvm_builder_buffer.get_insert_block().unwrap();
+    let llvm_then_block = visit_or_retrieve_block!(self, &if_stmt.then_block);
+    let llvm_temporary_builder = self.llvm_context.create_builder();
 
-    if let Some(else_block) = &if_stmt.else_block {
-      self.visit_block(&else_block)?;
-    }
+    llvm_temporary_builder.position_at_end(current_llvm_block);
 
-    let if_after_llvm_block = self
+    let llvm_condition = visit_or_retrieve_value!(self, &NodeValueKey::from(&if_stmt.condition));
+
+    // TODO: Must ensure that the condition is an integer type during type-checking.
+    crate::pass_assert!(llvm_condition.is_int_value());
+
+    // let mut llvm_else_block = if let Some(else_block) = &if_stmt.else_block {
+    //   Some(visit_or_retrieve_block!(self, &else_block))
+    // } else {
+    //   None
+    // };
+
+    let llvm_after_block = self
       .llvm_context
       .append_basic_block(llvm_function, "if_after");
 
+    self.llvm_builder_buffer.position_at_end(llvm_after_block);
+
+    llvm_temporary_builder.build_conditional_branch(
+      llvm_condition.into_int_value(),
+      llvm_then_block,
+      llvm_after_block,
+    );
+
+    // If there is no terminator instruction on the `then` LLVM basic block,
+    // build a link to continue the code after the if statement.
+    if llvm_then_block.get_terminator().is_none() {
+      llvm_temporary_builder.position_at_end(llvm_then_block);
+      llvm_temporary_builder.build_unconditional_branch(llvm_after_block);
+    }
+
     // FIXME: Complete implementation.
 
-    todo!();
+    Ok(())
   }
 
   fn visit_prototype(&mut self, prototype: &'a node::Prototype) -> pass::PassResult {
