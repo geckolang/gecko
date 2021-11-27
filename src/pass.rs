@@ -131,4 +131,8 @@ pub trait Pass<'a> {
   fn visit_if_stmt(&mut self, _: &'a node::IfStmt<'a>) -> PassResult {
     Ok(())
   }
+
+  fn visit_while_stmt(&mut self, _: &'a node::WhileStmt<'a>) -> PassResult {
+    Ok(())
+  }
 }

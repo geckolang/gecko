@@ -197,6 +197,7 @@ pub enum AnyStmtNode<'a> {
   ExprWrapperStmt(ExprHolder<'a>),
   LetStmt(LetStmt<'a>),
   IfStmt(IfStmt<'a>),
+  WhileStmt(WhileStmt<'a>),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -241,6 +242,7 @@ impl Node for Block<'_> {
         }),
         AnyStmtNode::LetStmt(stmt) => children.push(stmt as &dyn Node),
         AnyStmtNode::IfStmt(stmt) => children.push(stmt as &dyn Node),
+        AnyStmtNode::WhileStmt(stmt) => children.push(stmt as &dyn Node),
       };
     }
 
@@ -313,6 +315,23 @@ impl Node for IfStmt<'_> {
     // TODO:
     vec![]
     // vec![&self.condition, &self.then_block]
+  }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct WhileStmt<'a> {
+  pub condition: ExprHolder<'a>,
+  pub body: Block<'a>,
+}
+
+impl Node for WhileStmt<'_> {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_while_stmt(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
+    // TODO: Missing condition.
+    vec![&self.body]
   }
 }
 

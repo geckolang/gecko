@@ -3,6 +3,7 @@ use crate::{
   node::{self, Node},
   pass,
 };
+
 use inkwell::{types::AnyType, values::BasicValue};
 
 /// Visit the node and return its resulting LLVM value, or if it
@@ -121,7 +122,7 @@ pub struct LlvmLoweringPass<'a, 'ctx> {
   llvm_basic_block_map:
     std::collections::HashMap<&'a node::Block<'a>, inkwell::basic_block::BasicBlock<'ctx>>,
   /// A mapping of `then` block nodes to their corresponding `after` LLVM basic blocks.
-  llvm_basic_block_fallthrough_map:
+  _llvm_basic_block_fallthrough_map:
     std::collections::HashMap<&'a node::Block<'a>, inkwell::basic_block::BasicBlock<'ctx>>,
   llvm_function_like_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Consider making Option?
@@ -140,7 +141,7 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
       llvm_type_map: std::collections::HashMap::new(),
       llvm_value_map: std::collections::HashMap::new(),
       llvm_basic_block_map: std::collections::HashMap::new(),
-      llvm_basic_block_fallthrough_map: std::collections::HashMap::new(),
+      _llvm_basic_block_fallthrough_map: std::collections::HashMap::new(),
       llvm_function_like_buffer: None,
       llvm_builder_buffer: llvm_context.create_builder(),
       module_buffer: None,
@@ -306,6 +307,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     self.llvm_builder_buffer.position_at_end(llvm_block);
 
     for statement in &block.statements {
+      // TODO: Get `&dyn Node` then call `accept()` on it. Only if this occurs more than once (would need to implement `From<>`).
       match statement {
         node::AnyStmtNode::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt)?,
         // TODO: Consider relocating as an associated function for `Pass`? Does this occur more than once?
@@ -316,6 +318,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         },
         node::AnyStmtNode::LetStmt(let_stmt) => self.visit_let_stmt(&let_stmt)?,
         node::AnyStmtNode::IfStmt(if_stmt) => self.visit_if_stmt(&if_stmt)?,
+        node::AnyStmtNode::WhileStmt(while_stmt) => self.visit_while_stmt(&while_stmt)?,
       };
     }
 
@@ -490,60 +493,135 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
     crate::pass_assert!(self.llvm_function_like_buffer.is_some());
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
-    let llvm_function = self.llvm_function_like_buffer.unwrap();
+    // let llvm_function = self.llvm_function_like_buffer.unwrap();
 
     // TODO: Verify builder is in the correct/expected block.
     // TODO: What if the buffer was intended to be for an external?
 
-    let llvm_parent_block = self.llvm_builder_buffer.get_insert_block().unwrap();
+    // let llvm_parent_block = self.llvm_builder_buffer.get_insert_block().unwrap();
+
+    // let llvm_after_block = self
+    //   .llvm_context
+    //   .append_basic_block(llvm_function, "if_after");
+
+    // self
+    //   .llvm_basic_block_fallthrough_map
+    //   .insert(&if_stmt.then_block, llvm_after_block);
+
+    // let llvm_then_block = visit_or_retrieve_block!(self, &if_stmt.then_block);
+
+    // // Position the builder on the `after` block, for the next statement(s) (if any).
+    // // It is important to do this after visiting the `then` block.
+    // self.llvm_builder_buffer.position_at_end(llvm_after_block);
+
+    // // TODO: Does it matter if the condition is visited before the `then` block? (Remember that the code is not being executed).
+    // let llvm_condition_basic_value =
+    //   visit_or_retrieve_value!(self, &NodeValueKey::from(&if_stmt.condition));
+
+    // crate::pass_assert!(llvm_condition_basic_value.is_int_value());
+
+    // let llvm_condition_int_value = llvm_condition_basic_value.into_int_value();
+
+    // crate::pass_assert!(llvm_condition_int_value.get_type().get_bit_width() == 1);
+
+    // let llvm_temporary_builder = self.llvm_context.create_builder();
+
+    // llvm_temporary_builder.position_at_end(llvm_parent_block);
+
+    // llvm_temporary_builder.build_conditional_branch(
+    //   llvm_condition_int_value,
+    //   llvm_then_block,
+    //   llvm_after_block,
+    // );
+
+    // // If there is no terminator instruction on the `then` LLVM basic block,
+    // // build a link to continue the code after the if statement.
+    // if llvm_then_block.get_terminator().is_none() {
+    //   llvm_temporary_builder.position_at_end(llvm_then_block);
+    //   llvm_temporary_builder.build_unconditional_branch(llvm_after_block);
+    // }
+
+    // // TODO: At this point not all instructions have been lowered (only up to the `if` statement itself), which means that a terminator can exist afterwards, but that case is being ignored here.
+    // // If the `after` block has no terminator instruction, there might be a
+    // // possibility for fallthrough. If after visiting the `then` block, the
+    // // length of the LLVM basic block stack is larger than the cached length,
+    // // then there is a fallthrough.
+    // if llvm_after_block.get_terminator().is_none() {
+    //   llvm_temporary_builder.position_at_end(llvm_after_block);
+    // }
+
+    // // FIXME: Complete implementation.
+    // todo!();
+
+    // -----------------------------------------
+    // FIXME: The problem is that fallthrough only occurs once, it does not propagate. (Along with the possible empty block problem).
+
+    let llvm_function = self.llvm_function_like_buffer.unwrap();
+
+    let llvm_then_block = visit_or_retrieve_block!(self, &if_stmt.then_block);
 
     let llvm_after_block = self
       .llvm_context
       .append_basic_block(llvm_function, "if_after");
 
-    self
-      .llvm_basic_block_fallthrough_map
-      .insert(&if_stmt.then_block, llvm_after_block);
+    let llvm_condition_basic_value =
+      visit_or_retrieve_value!(self, &NodeValueKey::from(&if_stmt.condition));
 
-    let llvm_then_block = visit_or_retrieve_block!(self, &if_stmt.then_block);
-
-    // Position the builder on the `after` block, for the next statement(s) (if any).
-    // It is important to do this after visiting the `then` block.
-    self.llvm_builder_buffer.position_at_end(llvm_after_block);
-
-    // TODO: Does it matter if the condition is visited before the `then` block? (Remember that the code is not being executed).
-    let llvm_condition = visit_or_retrieve_value!(self, &NodeValueKey::from(&if_stmt.condition));
-
-    // TODO: Assert the condition is also an integer with bit-size 1 (boolean).
-    crate::pass_assert!(llvm_condition.is_int_value());
-
-    let llvm_temporary_builder = self.llvm_context.create_builder();
-
-    llvm_temporary_builder.position_at_end(llvm_parent_block);
-
-    llvm_temporary_builder.build_conditional_branch(
-      llvm_condition.into_int_value(),
+    self.llvm_builder_buffer.build_conditional_branch(
+      llvm_condition_basic_value.into_int_value(),
       llvm_then_block,
       llvm_after_block,
     );
 
-    // If there is no terminator instruction on the `then` LLVM basic block,
-    // build a link to continue the code after the if statement.
+    self.llvm_builder_buffer.position_at_end(llvm_after_block);
+
+    // TODO:
+    todo!();
+  }
+
+  fn visit_while_stmt(&mut self, while_stmt: &'a node::WhileStmt<'a>) -> pass::PassResult {
+    // FIXME: The problem is that fallthrough only occurs once, it does not propagate. (Along with the possible empty block problem).
+
+    crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
+
+    let llvm_current_block = self.llvm_builder_buffer.get_insert_block().unwrap();
+    let llvm_current_builder = self.llvm_context.create_builder();
+
+    llvm_current_builder.position_at_end(llvm_current_block);
+
+    let llvm_then_block = visit_or_retrieve_block!(self, &while_stmt.body);
+
+    let llvm_condition_basic_value =
+      visit_or_retrieve_value!(self, &NodeValueKey::from(&while_stmt.condition));
+
+    let llvm_condition_int_value = llvm_condition_basic_value.into_int_value();
+
+    // TODO: What if even tho we set the buffer to the after block, there isn't any instructions lowered? This would leave the block without even a `ret void` (which is required).
+    let llvm_after_block = self
+      .llvm_context
+      .append_basic_block(self.llvm_function_like_buffer.unwrap(), "while_after");
+
+    llvm_current_builder.build_conditional_branch(
+      llvm_condition_int_value,
+      llvm_then_block,
+      llvm_after_block,
+    );
+
+    // TODO: Assert condition is both an int value and that it has 1 bit width.
+
+    self.llvm_builder_buffer.position_at_end(llvm_after_block);
+
     if llvm_then_block.get_terminator().is_none() {
+      let llvm_temporary_builder = self.llvm_context.create_builder();
+
       llvm_temporary_builder.position_at_end(llvm_then_block);
-      llvm_temporary_builder.build_unconditional_branch(llvm_after_block);
-    }
 
-    // TODO: At this point not all instructions have been lowered (only up to the `if` statement itself), which means that a terminator can exist afterwards, but that case is being ignored here.
-    // If the `after` block has no terminator instruction, there might be a
-    // possibility for fallthrough. If after visiting the `then` block, the
-    // length of the LLVM basic block stack is larger than the cached length,
-    // then there is a fallthrough.
-    if llvm_after_block.get_terminator().is_none() {
-      llvm_temporary_builder.position_at_end(llvm_after_block);
+      llvm_temporary_builder.build_conditional_branch(
+        llvm_condition_int_value,
+        llvm_then_block,
+        llvm_after_block,
+      );
     }
-
-    // FIXME: Complete implementation.
 
     Ok(())
   }

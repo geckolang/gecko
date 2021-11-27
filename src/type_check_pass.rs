@@ -1,8 +1,18 @@
 use crate::{diagnostic, node, pass};
 
-pub struct TypeCheckPass;
+pub struct TypeCheckPass<'a> {
+  scope_stack: Vec<&'a node::Block<'a>>,
+  variable_names: Vec<String>,
+}
 
-impl<'a> TypeCheckPass {
+impl<'a> TypeCheckPass<'a> {
+  pub fn new() -> Self {
+    Self {
+      scope_stack: Vec::new(),
+      variable_names: Vec::new(),
+    }
+  }
+
   fn find_blocks_of(statement: &'a node::AnyStmtNode<'a>) -> Vec<&'a node::Block<'a>> {
     let mut blocks = Vec::new();
 
@@ -26,14 +36,14 @@ impl<'a> TypeCheckPass {
 
 // TODO: Consider writing a method/function to compare two types by a simpler way.
 
-impl<'a> pass::Pass<'a> for TypeCheckPass {
+impl<'a> pass::Pass<'a> for TypeCheckPass<'a> {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
     node.accept(self)?;
 
     self.visit_tree_of(node)
   }
 
-  fn visit_function<'x>(&mut self, function: &node::Function<'x>) -> pass::PassResult {
+  fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
     let mut block_queue = vec![&function.body];
     let should_return_value = function.prototype.return_kind_group.is_some();
     let mut is_value_returned = false;
@@ -170,6 +180,26 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
       }),
     }
   }
+
+  fn visit_block(&mut self, block: &'a node::Block<'a>) -> pass::PassResult {
+    self.scope_stack.push(block);
+
+    for statement in &block.statements {
+      if let node::AnyStmtNode::LetStmt(let_stmt) = statement {
+        if self.variable_names.contains(&let_stmt.name) {
+          // TODO: Collect error instead.
+          return Err(diagnostic::Diagnostic {
+            message: format!("variable `{}` is already defined", let_stmt.name),
+            severity: diagnostic::Severity::Error,
+          });
+        }
+
+        self.variable_names.push(let_stmt.name.clone());
+      }
+    }
+
+    Ok(())
+  }
 }
 
 #[cfg(test)]
@@ -195,7 +225,7 @@ mod tests {
 
   #[test]
   fn visit_function() {
-    let mut pass = TypeCheckPass;
+    let mut pass = TypeCheckPass::new();
     let function = make_dummy_function();
 
     assert_eq!(true, pass.visit_function(&function).is_ok());
@@ -203,7 +233,7 @@ mod tests {
 
   #[test]
   fn visit_function_empty_return_stmt() {
-    let mut pass = TypeCheckPass;
+    let mut pass = TypeCheckPass::new();
     let mut function = make_dummy_function();
 
     function
@@ -218,7 +248,7 @@ mod tests {
 
   #[test]
   fn visit_function_void_return_with_value() {
-    let mut pass = TypeCheckPass;
+    let mut pass = TypeCheckPass::new();
     let mut function = make_dummy_function();
 
     function
@@ -237,7 +267,7 @@ mod tests {
 
   #[test]
   fn function_function_with_return_no_value() {
-    let mut pass = TypeCheckPass;
+    let mut pass = TypeCheckPass::new();
     let mut function = make_dummy_function();
 
     function.prototype.return_kind_group = Some(node::KindGroup {
