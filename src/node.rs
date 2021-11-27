@@ -206,6 +206,23 @@ pub struct Block<'a> {
   pub statements: Vec<AnyStmtNode<'a>>,
 }
 
+impl<'a> Block<'a> {
+  /// Attempt to find a return statement in the block.
+  ///
+  /// Only the first return statement is returned (if any). There may be multiple return
+  /// statements in a block.
+  pub fn find_terminator(&self) -> Option<&ReturnStmt<'a>> {
+    for statement in &self.statements {
+      match statement {
+        AnyStmtNode::ReturnStmt(return_stmt) => return Some(return_stmt),
+        _ => continue,
+      };
+    }
+
+    None
+  }
+}
+
 impl Node for Block<'_> {
   fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
     pass.visit_block(self)

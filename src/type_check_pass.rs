@@ -39,6 +39,7 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
     let mut is_value_returned = false;
 
     while let Some(block) = block_queue.pop() {
+      // TODO: There may be more than one return statement in a block (unreachable code).
       for statement in &block.statements {
         match statement {
           node::AnyStmtNode::ReturnStmt(return_stmt) => {
