@@ -135,4 +135,8 @@ pub trait Pass<'a> {
   fn visit_while_stmt(&mut self, _: &'a node::WhileStmt<'a>) -> PassResult {
     Ok(())
   }
+
+  fn visit_block_stmt(&mut self, _: &'a node::BlockStmt<'a>) -> PassResult {
+    Ok(())
+  }
 }

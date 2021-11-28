@@ -198,6 +198,7 @@ pub enum AnyStmtNode<'a> {
   LetStmt(LetStmt<'a>),
   IfStmt(IfStmt<'a>),
   WhileStmt(WhileStmt<'a>),
+  BlockStmt(BlockStmt<'a>),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -243,10 +244,26 @@ impl Node for Block<'_> {
         AnyStmtNode::LetStmt(stmt) => children.push(stmt as &dyn Node),
         AnyStmtNode::IfStmt(stmt) => children.push(stmt as &dyn Node),
         AnyStmtNode::WhileStmt(stmt) => children.push(stmt as &dyn Node),
+        AnyStmtNode::BlockStmt(stmt) => children.push(stmt as &dyn Node),
       };
     }
 
     children
+  }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct BlockStmt<'a> {
+  pub block: Block<'a>,
+}
+
+impl Node for BlockStmt<'_> {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_block_stmt(self)
+  }
+
+  fn get_children(&self) -> Vec<&dyn Node> {
+    vec![&self.block]
   }
 }
 

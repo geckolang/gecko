@@ -1,14 +1,12 @@
 use crate::{diagnostic, node, pass};
 
-pub struct TypeCheckPass<'a> {
-  scope_stack: Vec<&'a node::Block<'a>>,
+pub struct TypeCheckPass {
   variable_names: Vec<String>,
 }
 
-impl<'a> TypeCheckPass<'a> {
+impl<'a> TypeCheckPass {
   pub fn new() -> Self {
     Self {
-      scope_stack: Vec::new(),
       variable_names: Vec::new(),
     }
   }
@@ -36,7 +34,7 @@ impl<'a> TypeCheckPass<'a> {
 
 // TODO: Consider writing a method/function to compare two types by a simpler way.
 
-impl<'a> pass::Pass<'a> for TypeCheckPass<'a> {
+impl<'a> pass::Pass<'a> for TypeCheckPass {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
     node.accept(self)?;
 
@@ -44,6 +42,8 @@ impl<'a> pass::Pass<'a> for TypeCheckPass<'a> {
   }
 
   fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
+    self.variable_names.clear();
+
     let mut block_queue = vec![&function.body];
     let should_return_value = function.prototype.return_kind_group.is_some();
     let mut is_value_returned = false;
@@ -102,6 +102,19 @@ impl<'a> pass::Pass<'a> for TypeCheckPass<'a> {
   }
 
   fn visit_let_stmt(&mut self, let_stmt: &'a node::LetStmt<'a>) -> pass::PassResult {
+    // FIXME: Things getting visited twice.
+    println!("visit let_stmt");
+
+    if self.variable_names.contains(&let_stmt.name) {
+      // TODO: Collect error instead.
+      return Err(diagnostic::Diagnostic {
+        message: format!("variable `{}` is already defined", let_stmt.name),
+        severity: diagnostic::Severity::Error,
+      });
+    }
+
+    self.variable_names.push(let_stmt.name.clone());
+
     match let_stmt.kind_group.kind {
       node::KindHolder::IntKind(_) => {
         if let node::ExprHolder::IntLiteral(_) = &let_stmt.value {
@@ -179,26 +192,6 @@ impl<'a> pass::Pass<'a> for TypeCheckPass<'a> {
         severity: diagnostic::Severity::Error,
       }),
     }
-  }
-
-  fn visit_block(&mut self, block: &'a node::Block<'a>) -> pass::PassResult {
-    self.scope_stack.push(block);
-
-    for statement in &block.statements {
-      if let node::AnyStmtNode::LetStmt(let_stmt) = statement {
-        if self.variable_names.contains(&let_stmt.name) {
-          // TODO: Collect error instead.
-          return Err(diagnostic::Diagnostic {
-            message: format!("variable `{}` is already defined", let_stmt.name),
-            severity: diagnostic::Severity::Error,
-          });
-        }
-
-        self.variable_names.push(let_stmt.name.clone());
-      }
-    }
-
-    Ok(())
   }
 }
 

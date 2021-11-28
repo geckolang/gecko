@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use crate::{
   diagnostic, entry_point_check_pass, int_kind,
   node::{self, Node},
@@ -6,6 +8,7 @@ use crate::{
 
 use inkwell::{types::AnyType, values::BasicValue};
 
+// TODO: Might need to save buffers? (It will cause conflict).
 /// Visit the node and return its resulting LLVM value, or if it
 /// was already previously visited, simply retrieve and return
 /// the result from the LLVM values map.
@@ -29,6 +32,7 @@ macro_rules! visit_or_retrieve_value {
   }};
 }
 
+// TODO: Might need to save buffers? (It will cause conflict).
 // TODO: Consider generalizing into a single function.
 /// Visit the node and return its resulting LLVM type, or if it
 /// was already previously visited, simply retrieve and return
@@ -53,6 +57,7 @@ macro_rules! visit_or_retrieve_type {
   }};
 }
 
+// TODO: Might need to save buffers? (It will cause conflict).
 // TODO: Visiting a basic block will remove it from the map. Is this okay?
 macro_rules! visit_or_retrieve_block {
   ($self:expr, $block:expr) => {{
@@ -121,9 +126,7 @@ pub struct LlvmLoweringPass<'a, 'ctx> {
     std::collections::HashMap<NodeValueKey<'a>, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_basic_block_map:
     std::collections::HashMap<&'a node::Block<'a>, inkwell::basic_block::BasicBlock<'ctx>>,
-  /// A mapping of `then` block nodes to their corresponding `after` LLVM basic blocks.
-  _llvm_basic_block_fallthrough_map:
-    std::collections::HashMap<&'a node::Block<'a>, inkwell::basic_block::BasicBlock<'ctx>>,
+  llvm_basic_block_fallthrough_stack: Vec<inkwell::basic_block::BasicBlock<'ctx>>,
   llvm_function_like_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'ctx>,
@@ -141,7 +144,7 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
       llvm_type_map: std::collections::HashMap::new(),
       llvm_value_map: std::collections::HashMap::new(),
       llvm_basic_block_map: std::collections::HashMap::new(),
-      _llvm_basic_block_fallthrough_map: std::collections::HashMap::new(),
+      llvm_basic_block_fallthrough_stack: Vec::new(),
       llvm_function_like_buffer: None,
       llvm_builder_buffer: llvm_context.create_builder(),
       module_buffer: None,
@@ -221,11 +224,17 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   }
 
   fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
+    println!("visit_func: {}", function.prototype.name);
+
+    // TODO: At this point is should be clear by default (unless specific methods where called). Maybe put note about this.
+    self.llvm_basic_block_fallthrough_stack.clear();
+
+    crate::pass_assert!(self.module_buffer.is_some());
+
     let llvm_function_type =
       visit_or_retrieve_type!(self, &NodeKindKey::Prototype(&function.prototype));
 
     crate::pass_assert!(llvm_function_type.is_function_type());
-    crate::pass_assert!(self.module_buffer.is_some());
 
     let llvm_function_name = if function.prototype.name == entry_point_check_pass::ENTRY_POINT_NAME
     {
@@ -255,6 +264,44 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
     self.llvm_function_like_buffer = Some(llvm_function);
     self.visit_block(&function.body)?;
+
+    println!("FEB len: {}", self.llvm_basic_block_fallthrough_stack.len());
+
+    // TODO: Cloning of `get_basic_blocks()` may occur twice.
+    // TODO: Add handling in the case of being out-of-sync.
+    // Handle fallthrough-eligible blocks.
+    for (index, llvm_block) in self.llvm_basic_block_fallthrough_stack.iter().enumerate() {
+      println!(
+        "llvm_block: {} | index: {}",
+        llvm_block.get_name().to_str().unwrap_or("<unwrap error>"),
+        index
+      );
+
+      // Ignore basic blocks that already have terminator, as they don't require fallthrough.
+      if llvm_block.get_terminator().is_some() {
+        continue;
+      }
+
+      println!(
+        "handling FEB (via no-terminator): {}",
+        llvm_block.get_name().to_str().unwrap_or("<unwrap error>")
+      );
+
+      println!("  .. with idx: {}", index);
+
+      // Check if there is more than one fallthrough-eligible block, and this isn't the root block.
+      if index > 0 {
+        let llvm_temporary_builder = self.llvm_context.create_builder();
+
+        // NOTE: It's okay to dereference, as the real LLVM basic block value is behind a reference (not owned by this value).
+        llvm_temporary_builder.position_at_end(*llvm_block);
+
+        llvm_temporary_builder
+          .build_unconditional_branch(self.llvm_basic_block_fallthrough_stack[index - 1]);
+      }
+    }
+
+    self.llvm_basic_block_fallthrough_stack.clear();
     // FIXME: Commented out for debugging.
     // crate::pass_assert!(self.llvm_function_like_buffer.unwrap().verify(false));
 
@@ -319,6 +366,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         node::AnyStmtNode::LetStmt(let_stmt) => self.visit_let_stmt(&let_stmt)?,
         node::AnyStmtNode::IfStmt(if_stmt) => self.visit_if_stmt(&if_stmt)?,
         node::AnyStmtNode::WhileStmt(while_stmt) => self.visit_while_stmt(&while_stmt)?,
+        node::AnyStmtNode::BlockStmt(block_stmt) => self.visit_block_stmt(&block_stmt)?,
       };
     }
 
@@ -589,17 +637,21 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
     llvm_current_builder.position_at_end(llvm_current_block);
 
-    let llvm_then_block = visit_or_retrieve_block!(self, &while_stmt.body);
-
     let llvm_condition_basic_value =
       visit_or_retrieve_value!(self, &NodeValueKey::from(&while_stmt.condition));
 
     let llvm_condition_int_value = llvm_condition_basic_value.into_int_value();
 
-    // TODO: What if even tho we set the buffer to the after block, there isn't any instructions lowered? This would leave the block without even a `ret void` (which is required).
+    // TODO: What if even tho. we set the buffer to the after block, there isn't any instructions lowered? This would leave the block without even a `ret void` (which is required).
     let llvm_after_block = self
       .llvm_context
       .append_basic_block(self.llvm_function_like_buffer.unwrap(), "while_after");
+
+    self
+      .llvm_basic_block_fallthrough_stack
+      .push(llvm_after_block);
+
+    let llvm_then_block = visit_or_retrieve_block!(self, &while_stmt.body);
 
     llvm_current_builder.build_conditional_branch(
       llvm_condition_int_value,
@@ -622,6 +674,41 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
         llvm_after_block,
       );
     }
+
+    Ok(())
+  }
+
+  fn visit_block_stmt(&mut self, block_stmt: &'a node::BlockStmt<'a>) -> pass::PassResult {
+    crate::pass_assert!(self.llvm_function_like_buffer.is_some());
+    crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
+
+    let llvm_current_block = self.llvm_builder_buffer.get_insert_block().unwrap();
+    let llvm_temporary_builder = self.llvm_context.create_builder();
+
+    llvm_temporary_builder.position_at_end(llvm_current_block);
+
+    let llvm_after_block = self
+      .llvm_context
+      .append_basic_block(self.llvm_function_like_buffer.unwrap(), "block_stmt_after");
+
+    // Push the `after` block before visiting the statement's body.
+    self
+      .llvm_basic_block_fallthrough_stack
+      .push(llvm_after_block);
+
+    let llvm_new_block = visit_or_retrieve_block!(self, &block_stmt.block);
+
+    if llvm_current_block.get_terminator().is_none() {
+      llvm_temporary_builder.build_unconditional_branch(llvm_new_block);
+    }
+
+    llvm_temporary_builder.position_at_end(llvm_new_block);
+
+    if llvm_new_block.get_terminator().is_none() {
+      llvm_temporary_builder.build_unconditional_branch(llvm_after_block);
+    }
+
+    self.llvm_builder_buffer.position_at_end(llvm_after_block);
 
     Ok(())
   }

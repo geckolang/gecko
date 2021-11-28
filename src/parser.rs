@@ -116,6 +116,7 @@ impl<'a> Parser {
         token::Token::KeywordLet => node::AnyStmtNode::LetStmt(self.parse_let_stmt()?),
         token::Token::KeywordIf => node::AnyStmtNode::IfStmt(self.parse_if_stmt()?),
         token::Token::KeywordWhile => node::AnyStmtNode::WhileStmt(self.parse_while_stmt()?),
+        token::Token::SymbolBraceL => node::AnyStmtNode::BlockStmt(self.parse_block_stmt()?),
         _ => {
           let expr_wrapper_stmt = node::AnyStmtNode::ExprWrapperStmt(self.parse_expr()?);
 
@@ -421,6 +422,12 @@ impl<'a> Parser {
     let body = self.parse_block("while_then")?;
 
     Ok(node::WhileStmt { condition, body })
+  }
+
+  pub fn parse_block_stmt(&mut self) -> ParserResult<node::BlockStmt<'a>> {
+    Ok(node::BlockStmt {
+      block: self.parse_block("block_stmt")?,
+    })
   }
 
   /// {true | false}
