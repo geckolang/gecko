@@ -27,7 +27,6 @@ pub enum Token {
   SymbolParenthesesL,
   SymbolParenthesesR,
   SymbolTilde,
-  SymbolSemicolon,
   SymbolColon,
   SymbolAmpersand,
   SymbolComma,

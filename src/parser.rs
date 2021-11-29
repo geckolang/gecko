@@ -121,8 +121,6 @@ impl<'a> Parser {
         _ => {
           let expr_wrapper_stmt = node::AnyStmtNode::ExprWrapperStmt(self.parse_expr()?);
 
-          skip_past!(self, token::Token::SymbolSemicolon);
-
           expr_wrapper_stmt
         }
       });
@@ -313,8 +311,6 @@ impl<'a> Parser {
 
     let prototype = self.parse_prototype()?;
 
-    skip_past!(self, token::Token::SymbolSemicolon);
-
     Ok(node::External { prototype })
   }
 
@@ -323,8 +319,6 @@ impl<'a> Parser {
     skip_past!(self, token::Token::KeywordModule);
 
     let name = self.parse_name()?;
-
-    skip_past!(self, token::Token::SymbolSemicolon);
 
     Ok(node::Module::new(name.as_str()))
   }
@@ -364,11 +358,10 @@ impl<'a> Parser {
 
     let mut value = None;
 
-    if !self.is(token::Token::SymbolSemicolon) {
+    // TODO: Does this cover all cases?
+    if !self.is(token::Token::SymbolBraceR) {
       value = Some(self.parse_literal()?);
     }
-
-    skip_past!(self, token::Token::SymbolSemicolon);
 
     Ok(node::ReturnStmt { value })
   }
@@ -388,8 +381,6 @@ impl<'a> Parser {
     skip_past!(self, token::Token::SymbolEqual);
 
     let value = self.parse_expr()?;
-
-    skip_past!(self, token::Token::SymbolSemicolon);
 
     // Infer the kind of the variable, based on its value.
     if kind_group.is_none() {
@@ -453,7 +444,6 @@ impl<'a> Parser {
 
   pub fn parse_break_stmt(&mut self) -> ParserResult<node::BreakStmt> {
     skip_past!(self, token::Token::KeywordBreak);
-    skip_past!(self, token::Token::SymbolSemicolon);
 
     Ok(node::BreakStmt {})
   }
@@ -657,7 +647,6 @@ mod tests {
     let mut parser = Parser::new(vec![
       token::Token::KeywordModule,
       token::Token::Identifier("test".to_string()),
-      token::Token::SymbolSemicolon,
     ]);
 
     let module = parser.parse_module_decl();
@@ -674,7 +663,6 @@ mod tests {
       token::Token::Identifier("test".to_string()),
       token::Token::SymbolParenthesesL,
       token::Token::SymbolParenthesesR,
-      token::Token::SymbolSemicolon,
     ]);
 
     let external = parser.parse_external();
@@ -805,7 +793,6 @@ mod tests {
     let mut parser = Parser::new(vec![
       token::Token::KeywordReturn,
       token::Token::LiteralInt(123),
-      token::Token::SymbolSemicolon,
     ]);
 
     let return_stmt_result = parser.parse_return_stmt();
@@ -821,7 +808,7 @@ mod tests {
   fn parse_return_stmt_void() {
     let mut parser = Parser::new(vec![
       token::Token::KeywordReturn,
-      token::Token::SymbolSemicolon,
+      token::Token::SymbolBraceR,
     ]);
 
     let return_stmt_result = parser.parse_return_stmt();

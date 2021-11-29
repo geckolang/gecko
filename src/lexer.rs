@@ -148,7 +148,6 @@ impl Lexer {
       '(' => token::Token::SymbolParenthesesL,
       ')' => token::Token::SymbolParenthesesR,
       '~' => token::Token::SymbolTilde,
-      ';' => token::Token::SymbolSemicolon,
       ':' => token::Token::SymbolColon,
       '&' => token::Token::SymbolAmpersand,
       ',' => token::Token::SymbolComma,
