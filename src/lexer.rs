@@ -78,7 +78,7 @@ impl Lexer {
   }
 
   fn read_identifier(&mut self) -> String {
-    let index = self.index;
+    let start_index = self.index;
     let mut current_char = self.current_char.unwrap();
 
     // NOTE: At this point, we know that the first character
@@ -93,24 +93,20 @@ impl Lexer {
       }
     }
 
-    self.input[index..self.index]
-      .to_vec()
+    self.input[start_index..self.index]
       .iter()
-      .cloned()
       .collect::<String>()
   }
 
   fn read_number(&mut self) -> Result<u64, diagnostic::Diagnostic> {
-    let index = self.index;
+    let start_index = self.index;
 
     while self.index < self.input.len() && is_digit(self.current_char.unwrap()) {
       self.read_char();
     }
 
-    let number_result = self.input[index..self.index]
-      .to_vec()
+    let number_result = self.input[start_index..self.index]
       .iter()
-      .cloned()
       .collect::<String>()
       .parse::<u64>();
 
@@ -122,6 +118,28 @@ impl Lexer {
     }
 
     Ok(number_result.unwrap())
+  }
+
+  fn read_comment(&mut self) -> String {
+    // Skip the hash symbol.
+    self.read_char();
+    self.read_char();
+
+    let start_index = self.index;
+
+    loop {
+      self.read_char();
+
+      if self.current_char.is_none() || self.current_char.unwrap() == '\n' {
+        break;
+      }
+    }
+
+    // TODO: Is there a need to check for EOF here?
+
+    self.input[start_index..self.index]
+      .iter()
+      .collect::<String>()
   }
 
   /// Attempt to retrieve the next token.
@@ -143,6 +161,7 @@ impl Lexer {
     let current_char = self.current_char.unwrap();
 
     let token: token::Token = match current_char {
+      '#' => token::Token::Comment(self.read_comment()),
       '{' => token::Token::SymbolBraceL,
       '}' => token::Token::SymbolBraceR,
       '(' => token::Token::SymbolParenthesesL,
@@ -243,7 +262,7 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
-    lexer.next();
+    assert_eq!(true, lexer.next().is_ok());
     assert_eq!(Ok(None), lexer.next());
   }
 
@@ -326,5 +345,35 @@ mod tests {
     assert_eq!(Ok(Some(token::Token::KeywordLet)), lexer.next());
     assert_eq!(Ok(Some(token::Token::KeywordIf)), lexer.next());
     assert_eq!(Ok(Some(token::Token::KeywordElse)), lexer.next());
+  }
+
+  #[test]
+  fn lex_comment() {
+    let mut lexer = Lexer::new("#test".chars().collect());
+
+    assert_eq!(
+      Ok(Some(token::Token::Comment("test".to_string()))),
+      lexer.next()
+    );
+  }
+
+  #[test]
+  fn lex_comment_space() {
+    let mut lexer = Lexer::new("#hello world".chars().collect());
+
+    assert_eq!(
+      Ok(Some(token::Token::Comment("hello world".to_string()))),
+      lexer.next()
+    );
+  }
+
+  #[test]
+  fn lex_comment_new_line() {
+    let mut lexer = Lexer::new("#hello\n world".chars().collect());
+
+    assert_eq!(
+      Ok(Some(token::Token::Comment("hello".to_string()))),
+      lexer.next()
+    );
   }
 }
