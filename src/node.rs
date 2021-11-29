@@ -199,6 +199,7 @@ pub enum AnyStmtNode<'a> {
   IfStmt(IfStmt<'a>),
   WhileStmt(WhileStmt<'a>),
   BlockStmt(BlockStmt<'a>),
+  BreakStmt(BreakStmt),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -245,6 +246,7 @@ impl Node for Block<'_> {
         AnyStmtNode::IfStmt(stmt) => children.push(stmt as &dyn Node),
         AnyStmtNode::WhileStmt(stmt) => children.push(stmt as &dyn Node),
         AnyStmtNode::BlockStmt(stmt) => children.push(stmt as &dyn Node),
+        AnyStmtNode::BreakStmt(stmt) => children.push(stmt as &dyn Node),
       };
     }
 
@@ -264,6 +266,17 @@ impl Node for BlockStmt<'_> {
 
   fn get_children(&self) -> Vec<&dyn Node> {
     vec![&self.block]
+  }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub struct BreakStmt {
+  //
+}
+
+impl Node for BreakStmt {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_break_stmt(self)
   }
 }
 

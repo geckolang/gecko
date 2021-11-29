@@ -117,6 +117,7 @@ impl<'a> Parser {
         token::Token::KeywordIf => node::AnyStmtNode::IfStmt(self.parse_if_stmt()?),
         token::Token::KeywordWhile => node::AnyStmtNode::WhileStmt(self.parse_while_stmt()?),
         token::Token::SymbolBraceL => node::AnyStmtNode::BlockStmt(self.parse_block_stmt()?),
+        token::Token::KeywordBreak => node::AnyStmtNode::BreakStmt(self.parse_break_stmt()?),
         _ => {
           let expr_wrapper_stmt = node::AnyStmtNode::ExprWrapperStmt(self.parse_expr()?);
 
@@ -372,15 +373,17 @@ impl<'a> Parser {
     Ok(node::ReturnStmt { value })
   }
 
-  /// let %name ':' %kind_group '=' %expr ';'
+  /// let %name (':' %kind_group) '=' %expr ';'
   pub fn parse_let_stmt(&mut self) -> ParserResult<node::LetStmt<'a>> {
     skip_past!(self, token::Token::KeywordLet);
 
     let name = self.parse_name()?;
+    let mut kind_group = None;
 
-    skip_past!(self, token::Token::SymbolColon);
-
-    let kind_group = self.parse_kind_group()?;
+    if self.is(token::Token::SymbolColon) {
+      self.skip();
+      kind_group = Some(self.parse_kind_group()?);
+    }
 
     skip_past!(self, token::Token::SymbolEqual);
 
@@ -388,9 +391,27 @@ impl<'a> Parser {
 
     skip_past!(self, token::Token::SymbolSemicolon);
 
+    // Infer the kind of the variable, based on its value.
+    if kind_group.is_none() {
+      let kind = match &value {
+        node::ExprHolder::BoolLiteral(_) => node::KindHolder::BoolKind(int_kind::BoolKind),
+        node::ExprHolder::IntLiteral(int_literal) => {
+          node::KindHolder::IntKind(int_literal.kind.clone())
+        }
+        // TODO: Implement.
+        node::ExprHolder::CallExpr(_) => todo!(),
+      };
+
+      kind_group = Some(node::KindGroup {
+        kind,
+        is_mutable: false,
+        is_reference: false,
+      });
+    }
+
     Ok(node::LetStmt {
       name,
-      kind_group,
+      kind_group: kind_group.unwrap(),
       value,
     })
   }
@@ -428,6 +449,13 @@ impl<'a> Parser {
     Ok(node::BlockStmt {
       block: self.parse_block("block_stmt")?,
     })
+  }
+
+  pub fn parse_break_stmt(&mut self) -> ParserResult<node::BreakStmt> {
+    skip_past!(self, token::Token::KeywordBreak);
+    skip_past!(self, token::Token::SymbolSemicolon);
+
+    Ok(node::BreakStmt {})
   }
 
   /// {true | false}

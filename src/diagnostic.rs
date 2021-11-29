@@ -5,7 +5,7 @@ pub enum Severity {
   Internal,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Diagnostic {
   pub message: String,
   pub severity: Severity,
@@ -15,7 +15,10 @@ impl Diagnostic {
   /// Determine whether the error is non-informational, and instead
   /// denotes a problem in either the program or the compiler itself.
   pub fn is_error_like(&self) -> bool {
-    self.severity == Severity::Error || self.severity == Severity::Internal
+    match self.severity {
+      Severity::Error | Severity::Internal => true,
+      _ => false,
+    }
   }
 }
 

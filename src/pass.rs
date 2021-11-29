@@ -15,6 +15,7 @@ macro_rules! pass_assert {
   };
 }
 
+// TODO: Use flags instead?
 pub struct PassRequirements {
   pub ignore_previous_errors: bool,
 }
@@ -57,20 +58,6 @@ pub trait Pass<'a> {
   fn visit_children(&mut self, node: &'a dyn node::Node) -> PassResult {
     for child in node.get_children() {
       self.visit(child)?;
-    }
-
-    Ok(())
-  }
-
-  /// Visit the node's children and all of its subsequent siblings.
-  ///
-  /// This will walk the tree of children in a depth-first manner.
-  fn visit_tree_of(&mut self, node: &'a dyn node::Node) -> PassResult {
-    let mut child_queue = node.get_children();
-
-    while let Some(child) = child_queue.pop() {
-      self.visit(child)?;
-      child_queue.append(&mut child.get_children());
     }
 
     Ok(())
@@ -137,6 +124,10 @@ pub trait Pass<'a> {
   }
 
   fn visit_block_stmt(&mut self, _: &'a node::BlockStmt<'a>) -> PassResult {
+    Ok(())
+  }
+
+  fn visit_break_stmt(&mut self, _: &'a node::BreakStmt) -> PassResult {
     Ok(())
   }
 }

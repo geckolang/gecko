@@ -1,4 +1,4 @@
-use crate::token;
+use crate::{diagnostic, token};
 
 pub struct Lexer {
   input: Vec<char>,
@@ -100,25 +100,29 @@ impl Lexer {
       .collect::<String>()
   }
 
-  fn read_number(&mut self) -> u64 {
+  fn read_number(&mut self) -> Result<u64, diagnostic::Diagnostic> {
     let index = self.index;
 
     while self.index < self.input.len() && is_digit(self.current_char.unwrap()) {
       self.read_char();
     }
 
-    self.input[index..self.index]
+    let number_result = self.input[index..self.index]
       .to_vec()
       .iter()
       .cloned()
       .collect::<String>()
-      .parse::<u64>()
-      .unwrap()
-  }
-}
+      .parse::<u64>();
 
-impl Iterator for Lexer {
-  type Item = token::Token;
+    if let Err(_) = number_result {
+      return Err(diagnostic::Diagnostic {
+        message: "number might be too large or invalid".to_string(),
+        severity: diagnostic::Severity::Error,
+      });
+    }
+
+    Ok(number_result.unwrap())
+  }
 
   /// Attempt to retrieve the next token.
   ///
@@ -126,17 +130,19 @@ impl Iterator for Lexer {
   /// returned. If the current character is neither an identifier nor a
   /// digit, an [`Illegal`] token with the encountered character as its
   /// value will be returned.
-  fn next(&mut self) -> Option<Self::Item> {
-    if self.current_char.is_none() {
-      return None;
-    }
-
+  fn next(&mut self) -> Result<Option<token::Token>, diagnostic::Diagnostic> {
     // TODO: What if it's EOF + whitespace?
     while self.is_whitespace() && !self.is_eof() {
       self.read_char();
     }
 
-    let token: token::Token = match self.current_char? {
+    if self.current_char.is_none() {
+      return Ok(None);
+    }
+
+    let current_char = self.current_char.unwrap();
+
+    let token: token::Token = match current_char {
       '{' => token::Token::SymbolBraceL,
       '}' => token::Token::SymbolBraceR,
       '(' => token::Token::SymbolParenthesesL,
@@ -149,28 +155,41 @@ impl Iterator for Lexer {
       '+' => token::Token::SymbolPlus,
       '=' => token::Token::SymbolEqual,
       _ => {
-        return if is_letter(self.current_char.unwrap()) {
+        return if is_letter(current_char) {
           let identifier = self.read_identifier();
 
           match token::get_keyword_or_type_token(identifier.as_str()) {
-            Ok(keyword_token) => Some(keyword_token),
-            Err(_) => Some(token::Token::Identifier(identifier)),
+            Ok(keyword_token) => Ok(Some(keyword_token)),
+            Err(_) => Ok(Some(token::Token::Identifier(identifier))),
           }
-        } else if is_digit(self.current_char.unwrap()) {
-          Some(token::Token::LiteralInt(self.read_number()))
+        } else if is_digit(current_char) {
+          Ok(Some(token::Token::LiteralInt(self.read_number()?)))
         } else {
-          let illegal_char = self.current_char.unwrap();
+          let illegal_char = current_char;
 
           self.read_char();
 
-          Some(token::Token::Illegal(illegal_char))
+          Ok(Some(token::Token::Illegal(illegal_char)))
         }
       }
     };
 
     self.read_char();
 
-    Some(token)
+    Ok(Some(token))
+  }
+
+  pub fn collect(&mut self) -> Result<Vec<token::Token>, diagnostic::Diagnostic> {
+    let mut tokens = Vec::new();
+
+    loop {
+      match self.next()? {
+        Some(token) => tokens.push(token),
+        None => break,
+      }
+    }
+
+    Ok(tokens)
   }
 }
 
@@ -215,7 +234,7 @@ mod tests {
 
     lexer.read_char();
     assert_eq!(
-      Some(token::Token::Identifier("a".to_string())),
+      Ok(Some(token::Token::Identifier("a".to_string()))),
       lexer.next()
     );
   }
@@ -226,7 +245,7 @@ mod tests {
 
     lexer.read_char();
     lexer.next();
-    assert_eq!(None, lexer.next());
+    assert_eq!(Ok(None), lexer.next());
   }
 
   #[test]
@@ -234,7 +253,7 @@ mod tests {
     let mut lexer = Lexer::new(vec![]);
 
     lexer.read_char();
-    assert_eq!(None, lexer.next());
+    assert_eq!(Ok(None), lexer.next());
   }
 
   #[test]
@@ -242,7 +261,7 @@ mod tests {
     let mut lexer = Lexer::new(vec!['?']);
 
     lexer.read_char();
-    assert_eq!(Some(token::Token::Illegal('?')), lexer.next());
+    assert_eq!(Ok(Some(token::Token::Illegal('?'))), lexer.next());
   }
 
   #[test]
@@ -285,9 +304,9 @@ mod tests {
     // TODO: Add all types.
     let mut lexer = Lexer::new("i16 i32 i64".chars().collect());
 
-    assert_eq!(Some(token::Token::TypeInt16), lexer.next());
-    assert_eq!(Some(token::Token::TypeInt32), lexer.next());
-    assert_eq!(Some(token::Token::TypeInt64), lexer.next());
+    assert_eq!(Ok(Some(token::Token::TypeInt16)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::TypeInt32)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::TypeInt64)), lexer.next());
   }
 
   #[test]
@@ -298,15 +317,15 @@ mod tests {
         .collect(),
     );
 
-    assert_eq!(Some(token::Token::KeywordExtern), lexer.next());
-    assert_eq!(Some(token::Token::KeywordPub), lexer.next());
-    assert_eq!(Some(token::Token::KeywordFn), lexer.next());
-    assert_eq!(Some(token::Token::KeywordModule), lexer.next());
-    assert_eq!(Some(token::Token::KeywordReturn), lexer.next());
-    assert_eq!(Some(token::Token::KeywordMut), lexer.next());
-    assert_eq!(Some(token::Token::KeywordUnsigned), lexer.next());
-    assert_eq!(Some(token::Token::KeywordLet), lexer.next());
-    assert_eq!(Some(token::Token::KeywordIf), lexer.next());
-    assert_eq!(Some(token::Token::KeywordElse), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordExtern)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordPub)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordFn)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordModule)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordReturn)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordMut)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordUnsigned)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordLet)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordIf)), lexer.next());
+    assert_eq!(Ok(Some(token::Token::KeywordElse)), lexer.next());
   }
 }

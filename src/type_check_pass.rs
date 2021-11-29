@@ -15,13 +15,19 @@ impl<'a> TypeCheckPass {
     let mut blocks = Vec::new();
 
     match &statement {
-      // TODO: Awaiting addition of more statements such as `while` and `for`.
+      // TODO: Awaiting addition of more statements such as `for`.
       node::AnyStmtNode::IfStmt(ref if_stmt) => {
         blocks.push(&if_stmt.then_block);
 
         if let Some(else_block) = &if_stmt.else_block {
           blocks.push(&else_block);
         }
+      }
+      node::AnyStmtNode::BlockStmt(ref block_stmt) => {
+        blocks.push(&block_stmt.block);
+      }
+      node::AnyStmtNode::WhileStmt(ref while_stmt) => {
+        blocks.push(&while_stmt.body);
       }
       _ => {}
     };
@@ -38,7 +44,7 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
     node.accept(self)?;
 
-    self.visit_tree_of(node)
+    self.visit_children(node)
   }
 
   fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
@@ -102,9 +108,6 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
   }
 
   fn visit_let_stmt(&mut self, let_stmt: &'a node::LetStmt<'a>) -> pass::PassResult {
-    // FIXME: Things getting visited twice.
-    println!("visit let_stmt");
-
     if self.variable_names.contains(&let_stmt.name) {
       // TODO: Collect error instead.
       return Err(diagnostic::Diagnostic {

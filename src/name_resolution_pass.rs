@@ -16,7 +16,7 @@ impl<'a> pass::Pass<'a> for NameResolutionPass<'a> {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
     node.accept(self)?;
 
-    self.visit_tree_of(node)
+    self.visit_children(node)
   }
 
   fn visit_module(&mut self, module: &'a node::Module<'a>) -> pass::PassResult {
