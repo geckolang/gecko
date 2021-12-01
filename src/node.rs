@@ -46,6 +46,10 @@ pub trait Node {
   }
 }
 
+pub trait MutableNode {
+  fn accept<'a>(&'a mut self, _: &mut dyn pass::Pass<'a>) -> pass::PassResult;
+}
+
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Identifier {
   pub name: String,
@@ -384,8 +388,14 @@ pub enum AnyExprNode<'a> {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
+pub enum CallableTransport<'a> {
+  Function(&'a Function<'a>),
+  External(&'a External),
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct CallExpr<'a> {
-  pub callee: Stub<'a>,
+  pub callee: CallableTransport<'a>,
   pub arguments: Vec<ExprTransport<'a>>,
 }
 
@@ -396,40 +406,6 @@ impl Node for CallExpr<'_> {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum CallableTransport<'a> {
-  Function(&'a Function<'a>),
-  External(&'a External),
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub enum Stub<'a> {
-  Callable {
-    name: String,
-    value: Option<CallableTransport<'a>>,
-  },
-}
-
-impl<'a> Stub<'a> {
-  pub fn get_name(&self) -> String {
-    match self {
-      Self::Callable { name, .. } => name.clone(),
-    }
-  }
-}
-
-impl Node for Stub<'_> {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
-    pass.visit_stub(self)
-  }
-
-  fn get_children(&self) -> Vec<&dyn Node> {
-    // TODO: Verify this is correct (references).
-    match self {
-      Self::Callable { value, .. } => match &value {
-        Some(CallableTransport::Function(function)) => vec![*function as &dyn Node],
-        Some(CallableTransport::External(external)) => vec![*external as &dyn Node],
-        None => vec![],
-      },
-    }
-  }
+pub enum Stub {
+  Callable(String),
 }

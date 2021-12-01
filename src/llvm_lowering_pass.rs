@@ -464,16 +464,10 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
   fn visit_call_expr(&mut self, call_expr: &'a node::CallExpr<'a>) -> pass::PassResult {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
-    match &call_expr.callee {
-      node::Stub::Callable { name: _, value } => {
-        crate::pass_assert!(value.is_some());
-
-        match value.as_ref().unwrap() {
-          // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
-          node::CallableTransport::Function(function) => self.visit_function(function)?,
-          node::CallableTransport::External(external) => self.visit_external(external)?,
-        }
-      } // TODO: Prevent other types of stubs.
+    match call_expr.callee {
+      // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
+      node::CallableTransport::Function(function) => self.visit_function(function)?,
+      node::CallableTransport::External(external) => self.visit_external(external)?,
     };
 
     let mut arguments = Vec::new();

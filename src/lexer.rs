@@ -50,7 +50,9 @@ impl Lexer {
   }
 
   /// Set the current character buffer to the character on
-  /// the next index. If there are no more characters, the
+  /// the next index.
+  ///
+  /// If there are no more characters, the
   /// current character buffer will be set to `None` to
   /// indicate the end of the input string.
   pub fn read_char(&mut self) -> Option<char> {
@@ -97,14 +99,14 @@ impl Lexer {
 
       let current_char = current_char_result.unwrap();
 
-      if is_letter(current_char) || is_digit(current_char) {
+      if !is_letter(current_char) && !is_digit(current_char) && current_char != '_' {
         break;
       }
 
       current_char_result = self.read_char();
     }
 
-    self.input[start_index..self.index]
+    self.input[start_index..self.index + 1]
       .iter()
       .collect::<String>()
   }
@@ -138,14 +140,12 @@ impl Lexer {
     let start_index = self.index;
 
     loop {
-      self.read_char();
-
       if self.is_eof() || self.current_char.unwrap() == '\n' {
         break;
       }
-    }
 
-    // TODO: Is there a need to check for EOF here?
+      self.read_char();
+    }
 
     self.input[start_index..self.index]
       .iter()
@@ -220,7 +220,8 @@ impl Lexer {
         '+' => token::Token::SymbolPlus,
         '=' => token::Token::SymbolEqual,
         _ => {
-          return if is_letter(current_char) {
+          // NOTE: Identifiers will never start with a digit.
+          return if current_char == '_' || is_letter(current_char) {
             let identifier = self.read_identifier();
 
             match token::get_keyword_or_type_token(identifier.as_str()) {
@@ -235,7 +236,7 @@ impl Lexer {
             self.read_char();
 
             Ok(Some(token::Token::Illegal(illegal_char)))
-          }
+          };
         }
       }
     };
@@ -243,8 +244,6 @@ impl Lexer {
     Ok(Some(token))
   }
 }
-
-// FIXME: These tests are wrong? They are all missing `read_char()` calls?
 
 #[cfg(test)]
 mod tests {
@@ -281,7 +280,7 @@ mod tests {
   }
 
   #[test]
-  fn next_identifier() {
+  fn lex_identifier_single_char() {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(
@@ -291,7 +290,17 @@ mod tests {
   }
 
   #[test]
-  fn next_eof() {
+  fn lex_identifier() {
+    let mut lexer = Lexer::new(vec!['a', 'b', 'c']);
+
+    assert_eq!(
+      Ok(Some(token::Token::Identifier("abc".to_string()))),
+      lexer.lex_token()
+    );
+  }
+
+  #[test]
+  fn lex_eof() {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(true, lexer.lex_token().is_ok());
@@ -299,26 +308,31 @@ mod tests {
   }
 
   #[test]
-  fn next_none() {
+  fn lex_empty() {
     let mut lexer = Lexer::new(vec![]);
 
     assert_eq!(Ok(None), lexer.lex_token());
   }
 
   #[test]
-  fn next_illegal() {
+  fn lex_illegal() {
     let mut lexer = Lexer::new(vec!['?']);
 
     assert_eq!(Ok(Some(token::Token::Illegal('?'))), lexer.lex_token());
   }
 
   #[test]
-  fn read_char_single() {
-    let mut lexer = Lexer::new(vec!['a']);
+  fn read_char_empty() {
+    let mut lexer = Lexer::new(vec![]);
 
-    lexer.read_char();
-    assert_eq!(lexer.index, 0);
-    assert_eq!(lexer.current_char, Some('a'));
+    assert_eq!(None, lexer.read_char());
+  }
+
+  #[test]
+  fn read_char_single() {
+    let lexer = Lexer::new(vec!['a']);
+
+    assert_eq!(Some('a'), lexer.current_char);
   }
 
   #[test]
@@ -326,9 +340,8 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     lexer.read_char();
-    lexer.read_char();
-    assert_eq!(lexer.index, 1);
-    assert_eq!(lexer.current_char, None);
+    assert_eq!(0, lexer.index);
+    assert_eq!(None, lexer.current_char);
   }
 
   #[test]

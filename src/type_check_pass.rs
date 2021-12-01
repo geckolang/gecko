@@ -130,36 +130,38 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
         is_mutable: false,
         is_reference: false,
       },
-      node::ExprHolder::CallExpr(call_expr) => match &call_expr.callee {
-        node::Stub::Callable { name, value } => {
-          crate::pass_assert!(value.is_some());
+      // TODO:
+      _ => todo!(),
+      // node::ExprHolder::CallExpr(call_expr) => match &call_expr.callee {
+      //   node::Stub::Callable(name) => {
+      //     crate::pass_assert!(value.is_some());
 
-          let callee_return_kind_group_result = match value.as_ref().unwrap() {
-            node::CallableTransport::Function(function) => &function.prototype.return_kind_group,
-            node::CallableTransport::External(external) => &external.prototype.return_kind_group,
-          };
+      //     let callee_return_kind_group_result = match value.as_ref().unwrap() {
+      //       node::CallableTransport::Function(function) => &function.prototype.return_kind_group,
+      //       node::CallableTransport::External(external) => &external.prototype.return_kind_group,
+      //     };
 
-          if callee_return_kind_group_result.is_none() {
-            return Err(diagnostic::Diagnostic {
-              message: format!(
-                "attempted to assign variable `{}` to a function `{}` that returns `void`",
-                let_stmt.name, name
-              ),
-              severity: diagnostic::Severity::Error,
-            });
-          }
+      //     if callee_return_kind_group_result.is_none() {
+      //       return Err(diagnostic::Diagnostic {
+      //         message: format!(
+      //           "attempted to assign variable `{}` to a function `{}` that returns `void`",
+      //           let_stmt.name, name
+      //         ),
+      //         severity: diagnostic::Severity::Error,
+      //       });
+      //     }
 
-          node::KindGroup {
-            kind: callee_return_kind_group_result
-              .as_ref()
-              .unwrap()
-              .kind
-              .clone(),
-            is_mutable: false,
-            is_reference: false,
-          }
-        }
-      },
+      //     node::KindGroup {
+      //       kind: callee_return_kind_group_result
+      //         .as_ref()
+      //         .unwrap()
+      //         .kind
+      //         .clone(),
+      //       is_mutable: false,
+      //       is_reference: false,
+      //     }
+      //   }
+      // },
     };
 
     if let_stmt.kind_group != value_kind {
@@ -178,43 +180,44 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
   fn visit_if_stmt(&mut self, if_stmt: &'a node::IfStmt<'a>) -> pass::PassResult {
     match &if_stmt.condition {
       node::ExprHolder::BoolLiteral(_) => Ok(()),
-      node::ExprHolder::CallExpr(call_expr) => {
-        match &call_expr.callee {
-          node::Stub::Callable { name: _, value } => {
-            crate::pass_assert!(value.is_some());
+      // TODO:
+      node::ExprHolder::CallExpr(call_expr) => todo!(),
+      //   match &call_expr.callee {
+      //     node::Stub::Callable { name: _, value } => {
+      //       crate::pass_assert!(value.is_some());
 
-            let callee_prototype = match value.as_ref().unwrap() {
-              node::CallableTransport::External(external) => &external.prototype,
-              node::CallableTransport::Function(function) => &function.prototype,
-            };
+      //       let callee_prototype = match value.as_ref().unwrap() {
+      //         node::CallableTransport::External(external) => &external.prototype,
+      //         node::CallableTransport::Function(function) => &function.prototype,
+      //       };
 
-            if callee_prototype.return_kind_group.is_none() {
-              return Err(diagnostic::Diagnostic {
-                message: format!(
-                  "if-statement condition is invalid because callee `{}` returns `void`",
-                  callee_prototype.name
-                ),
-                severity: diagnostic::Severity::Error,
-              });
-            }
+      //       if callee_prototype.return_kind_group.is_none() {
+      //         return Err(diagnostic::Diagnostic {
+      //           message: format!(
+      //             "if-statement condition is invalid because callee `{}` returns `void`",
+      //             callee_prototype.name
+      //           ),
+      //           severity: diagnostic::Severity::Error,
+      //         });
+      //       }
 
-            // TODO: What if it's a reference or defined as mutable? Must disallow `mut` (and its parsing) for return types.
-            let return_kind = &callee_prototype.return_kind_group.as_ref().unwrap().kind;
+      //       // TODO: What if it's a reference or defined as mutable? Must disallow `mut` (and its parsing) for return types.
+      //       let return_kind = &callee_prototype.return_kind_group.as_ref().unwrap().kind;
 
-            match &return_kind {
-              node::KindHolder::BoolKind(_) => Ok(()),
-              _ => Err(diagnostic::Diagnostic {
-                // TODO: Show actual return type?
-                message: format!(
-                  "if-statement condition is invalid because callee `{}` does not return a boolean",
-                  callee_prototype.name
-                ),
-                severity: diagnostic::Severity::Error,
-              }),
-            }
-          }
-        }
-      }
+      //       match &return_kind {
+      //         node::KindHolder::BoolKind(_) => Ok(()),
+      //         _ => Err(diagnostic::Diagnostic {
+      //           // TODO: Show actual return type?
+      //           message: format!(
+      //             "if-statement condition is invalid because callee `{}` does not return a boolean",
+      //             callee_prototype.name
+      //           ),
+      //           severity: diagnostic::Severity::Error,
+      //         }),
+      //       }
+      //     }
+      //   }
+      // }
       _ => Err(diagnostic::Diagnostic {
         message: "condition must either evaluate to a boolean or be a boolean literal".to_string(),
         severity: diagnostic::Severity::Error,

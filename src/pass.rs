@@ -63,10 +63,6 @@ pub trait Pass<'a> {
     Ok(())
   }
 
-  fn visit_stub(&mut self, _: &'a node::Stub<'a>) -> PassResult {
-    Ok(())
-  }
-
   fn visit_block(&mut self, _: &'a node::Block<'a>) -> PassResult {
     Ok(())
   }

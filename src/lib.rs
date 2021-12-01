@@ -5,7 +5,7 @@ pub mod entry_point_check_pass;
 pub mod int_kind;
 pub mod lexer;
 pub mod llvm_lowering_pass;
-pub mod name_resolution_pass;
+pub mod name_resolution;
 pub mod node;
 pub mod parser;
 pub mod pass;

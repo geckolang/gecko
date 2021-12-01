@@ -553,10 +553,7 @@ impl<'a> Parser {
     skip_past!(self, token::Token::SymbolParenthesesR);
 
     Ok(node::CallExpr {
-      callee: node::Stub::Callable {
-        name: callee_name,
-        value: None,
-      },
+      callee: node::Stub::Callable(callee_name),
       arguments,
     })
   }
