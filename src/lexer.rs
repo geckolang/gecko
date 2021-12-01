@@ -4,11 +4,9 @@ use crate::{diagnostic, token};
 pub struct Lexer {
   input: Vec<char>,
   index: usize,
-  read_index: usize,
   /// Represents the current character.
   ///
-  /// If the input
-  /// string was empty, or if the read index is out of
+  /// If the input string was empty, or if the index is out of
   /// bounds, it will be `None`.
   current_char: Option<char>,
 }
@@ -47,7 +45,6 @@ impl Lexer {
     Self {
       input,
       index: 0,
-      read_index: 0,
       current_char,
     }
   }
@@ -56,18 +53,17 @@ impl Lexer {
   /// the next index. If there are no more characters, the
   /// current character buffer will be set to `None` to
   /// indicate the end of the input string.
-  pub fn read_char(&mut self) {
-    if self.read_index >= self.input.len() {
+  pub fn read_char(&mut self) -> Option<char> {
+    if self.index + 1 >= self.input.len() {
       self.current_char = None;
-    } else {
-      self.current_char = match self.input.get(self.read_index) {
-        Some(value) => Some(value.clone()),
-        None => None,
-      };
+
+      return None;
     }
 
-    self.index = self.read_index;
-    self.read_index += 1;
+    self.index += 1;
+    self.current_char = Some(self.input[self.index]);
+
+    self.current_char
   }
 
   pub fn collect(&mut self) -> Result<Vec<token::Token>, diagnostic::Diagnostic> {
@@ -83,26 +79,29 @@ impl Lexer {
     Ok(tokens)
   }
 
+  // TODO: Is this function needed?
   /// Determine if the current character is unset, and therefore
   /// signifies the end of the input string.
   fn is_eof(&self) -> bool {
-    self.input.is_empty() || self.index == self.input.len() - 1
+    self.current_char.is_none()
   }
 
   fn read_identifier(&mut self) -> String {
     let start_index = self.index;
-    let mut current_char = self.current_char.unwrap();
+    let mut current_char_result = self.current_char;
 
-    // NOTE: At this point, we know that the first character
-    // of the identifier was a letter, because this closure is
-    // only invoked when that is the case.
-    while self.index < self.input.len() && (is_letter(current_char) || is_digit(current_char)) {
-      self.read_char();
-
-      // TODO: Simplify.
-      if self.index < self.input.len() {
-        current_char = self.current_char.unwrap();
+    loop {
+      if self.is_eof() {
+        break;
       }
+
+      let current_char = current_char_result.unwrap();
+
+      if is_letter(current_char) || is_digit(current_char) {
+        break;
+      }
+
+      current_char_result = self.read_char();
     }
 
     self.input[start_index..self.index]
@@ -136,12 +135,12 @@ impl Lexer {
     // Skip the hash symbol.
     self.read_char();
 
-    let start_index = self.read_index;
+    let start_index = self.index;
 
     loop {
       self.read_char();
 
-      if self.current_char.is_none() || self.current_char.unwrap() == '\n' {
+      if self.is_eof() || self.current_char.unwrap() == '\n' {
         break;
       }
     }
@@ -158,14 +157,33 @@ impl Lexer {
     let start_index = self.index;
 
     loop {
-      self.read_char();
-
-      if self.current_char.is_none() || !is_whitespace(self.current_char.unwrap()) {
+      if self.is_eof() || !is_whitespace(self.current_char.unwrap()) {
         break;
       }
+
+      self.read_char();
     }
 
     // TODO: Is there a need to check for EOF here?
+
+    self.input[start_index..self.index]
+      .iter()
+      .collect::<String>()
+  }
+
+  fn read_string(&mut self) -> String {
+    // Skip the opening quote.
+    self.read_char();
+
+    let start_index = self.index;
+
+    loop {
+      self.read_char();
+
+      if self.is_eof() || self.current_char.unwrap() == '"' {
+        break;
+      }
+    }
 
     self.input[start_index..self.index]
       .iter()
@@ -179,7 +197,7 @@ impl Lexer {
   /// digit, an [`Illegal`] token with the encountered character as its
   /// value will be returned.
   fn lex_token(&mut self) -> Result<Option<token::Token>, diagnostic::Diagnostic> {
-    if self.current_char.is_none() {
+    if self.is_eof() {
       return Ok(None);
     }
 
@@ -190,6 +208,7 @@ impl Lexer {
     } else {
       match current_char {
         '#' => token::Token::Comment(self.read_comment()),
+        '"' => token::Token::String(self.read_string()),
         '{' => token::Token::SymbolBraceL,
         '}' => token::Token::SymbolBraceR,
         '(' => token::Token::SymbolParenthesesL,
@@ -205,8 +224,8 @@ impl Lexer {
             let identifier = self.read_identifier();
 
             match token::get_keyword_or_type_token(identifier.as_str()) {
-              Ok(keyword_token) => Ok(Some(keyword_token)),
-              Err(_) => Ok(Some(token::Token::Identifier(identifier))),
+              Some(keyword_token) => Ok(Some(keyword_token)),
+              None => Ok(Some(token::Token::Identifier(identifier))),
             }
           } else if is_digit(current_char) {
             Ok(Some(token::Token::LiteralInt(self.read_number()?)))
@@ -220,8 +239,6 @@ impl Lexer {
         }
       }
     };
-
-    self.read_char();
 
     Ok(Some(token))
   }
@@ -260,7 +277,6 @@ mod tests {
     assert_eq!(lexer.input.len(), 1);
     assert_eq!(lexer.input[0], 'a');
     assert_eq!(lexer.index, 0);
-    assert_eq!(lexer.read_index, 0);
     assert_eq!(lexer.current_char, Some('a'));
   }
 
@@ -302,7 +318,6 @@ mod tests {
 
     lexer.read_char();
     assert_eq!(lexer.index, 0);
-    assert_eq!(lexer.read_index, 1);
     assert_eq!(lexer.current_char, Some('a'));
   }
 
@@ -313,7 +328,6 @@ mod tests {
     lexer.read_char();
     lexer.read_char();
     assert_eq!(lexer.index, 1);
-    assert_eq!(lexer.read_index, 2);
     assert_eq!(lexer.current_char, None);
   }
 
@@ -321,40 +335,6 @@ mod tests {
   fn is_whitespace() {
     assert_eq!(true, super::is_whitespace(' '));
     assert_eq!(false, super::is_whitespace('a'));
-  }
-
-  #[test]
-  fn lex_types() {
-    // TODO: Add all types.
-    let mut lexer = Lexer::new(vec!["bool", "i16", "i32", "i64"].concat().chars().collect());
-
-    assert_eq!(Ok(Some(token::Token::TypeBool)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::TypeInt16)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::TypeInt32)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::TypeInt64)), lexer.lex_token());
-  }
-
-  #[test]
-  fn lex_keywords() {
-    let mut lexer = Lexer::new(
-      vec![
-        "extern", "pub", "fn", "module", "return", "mut", "unsigned", "let", "if", "else",
-      ]
-      .concat()
-      .chars()
-      .collect(),
-    );
-
-    assert_eq!(Ok(Some(token::Token::KeywordExtern)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordPub)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordFn)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordModule)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordReturn)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordMut)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordUnsigned)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordLet)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordIf)), lexer.lex_token());
-    assert_eq!(Ok(Some(token::Token::KeywordElse)), lexer.lex_token());
   }
 
   #[test]
@@ -389,12 +369,22 @@ mod tests {
 
   #[test]
   fn lex_comment_before() {
-    let mut lexer = Lexer::new("a #hello\n world".chars().collect());
+    let mut lexer = Lexer::new("a#hello\n world".chars().collect());
 
     assert_eq!(true, lexer.lex_token().is_ok());
 
     assert_eq!(
       Ok(Some(token::Token::Comment("hello".to_string()))),
+      lexer.lex_token()
+    );
+  }
+
+  #[test]
+  fn lex_string() {
+    let mut lexer = Lexer::new("\"hello\"".chars().collect());
+
+    assert_eq!(
+      Ok(Some(token::Token::String("hello".to_string()))),
       lexer.lex_token()
     );
   }

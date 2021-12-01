@@ -1,11 +1,10 @@
-use crate::diagnostic;
-
 #[derive(PartialEq, Debug, Clone)]
 pub enum Token {
   Illegal(char),
   Identifier(String),
   Whitespace(String),
   Comment(String),
+  String(String),
   LiteralInt(u64),
   LiteralBool(bool),
   KeywordPub,
@@ -42,8 +41,8 @@ impl std::fmt::Display for Token {
   }
 }
 
-pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnostic::Diagnostic> {
-  Ok(match identifier_str {
+pub fn get_keyword_or_type_token(identifier_str: &str) -> Option<Token> {
+  Some(match identifier_str {
     "pub" => Token::KeywordPub,
     "fn" => Token::KeywordFn,
     "extern" => Token::KeywordExtern,
@@ -62,14 +61,6 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Result<Token, diagnost
     "bool" => Token::TypeBool,
     "true" => Token::LiteralBool(true),
     "false" => Token::LiteralBool(false),
-    _ => {
-      return Err(diagnostic::Diagnostic {
-        message: format!(
-          "identifier `{}` is not a keyword or built-in type",
-          identifier_str
-        ),
-        severity: diagnostic::Severity::Internal,
-      })
-    }
+    _ => return None,
   })
 }
