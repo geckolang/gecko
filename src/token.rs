@@ -4,6 +4,7 @@ use crate::diagnostic;
 pub enum Token {
   Illegal(char),
   Identifier(String),
+  Whitespace(String),
   Comment(String),
   LiteralInt(u64),
   LiteralBool(bool),

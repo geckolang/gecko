@@ -470,8 +470,8 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
         match value.as_ref().unwrap() {
           // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
-          node::StubValueTransport::Function(function) => self.visit_function(function)?,
-          node::StubValueTransport::External(external) => self.visit_external(external)?,
+          node::CallableTransport::Function(function) => self.visit_function(function)?,
+          node::CallableTransport::External(external) => self.visit_external(external)?,
         }
       } // TODO: Prevent other types of stubs.
     };

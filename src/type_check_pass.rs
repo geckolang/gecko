@@ -1,4 +1,4 @@
-use crate::{diagnostic, node, pass};
+use crate::{diagnostic, int_kind, node, pass};
 
 pub struct TypeCheckPass {
   variable_names: Vec<String>,
@@ -118,36 +118,61 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
 
     self.variable_names.push(let_stmt.name.clone());
 
-    match let_stmt.kind_group.kind {
-      node::KindHolder::IntKind(_) => {
-        if let node::ExprHolder::IntLiteral(_) = &let_stmt.value {
-          Ok(())
-        } else {
-          Err(diagnostic::Diagnostic {
-            message: format!(
-              // TODO: Displaying object in error message.
-              "expected value of `{}` to be an integer, but got `{:?}`",
-              let_stmt.name, let_stmt.value
-            ),
-            severity: diagnostic::Severity::Error,
-          })
+    // TODO: Simplify this to be used recursively (ex. when processing binary expressions).
+    let value_kind = match &let_stmt.value {
+      node::ExprHolder::BoolLiteral(_) => node::KindGroup {
+        kind: node::KindHolder::BoolKind(int_kind::BoolKind),
+        is_mutable: false,
+        is_reference: false,
+      },
+      node::ExprHolder::IntLiteral(int_literal) => node::KindGroup {
+        kind: node::KindHolder::IntKind(int_literal.kind),
+        is_mutable: false,
+        is_reference: false,
+      },
+      node::ExprHolder::CallExpr(call_expr) => match &call_expr.callee {
+        node::Stub::Callable { name, value } => {
+          crate::pass_assert!(value.is_some());
+
+          let callee_return_kind_group_result = match value.as_ref().unwrap() {
+            node::CallableTransport::Function(function) => &function.prototype.return_kind_group,
+            node::CallableTransport::External(external) => &external.prototype.return_kind_group,
+          };
+
+          if callee_return_kind_group_result.is_none() {
+            return Err(diagnostic::Diagnostic {
+              message: format!(
+                "attempted to assign variable `{}` to a function `{}` that returns `void`",
+                let_stmt.name, name
+              ),
+              severity: diagnostic::Severity::Error,
+            });
+          }
+
+          node::KindGroup {
+            kind: callee_return_kind_group_result
+              .as_ref()
+              .unwrap()
+              .kind
+              .clone(),
+            is_mutable: false,
+            is_reference: false,
+          }
         }
-      }
-      node::KindHolder::BoolKind(_) => {
-        if let node::ExprHolder::BoolLiteral(_) = &let_stmt.value {
-          Ok(())
-        } else {
-          Err(diagnostic::Diagnostic {
-            message: format!(
-              // TODO: Displaying object in error message.
-              "expected value of `{}` to be a boolean, but got `{:?}`",
-              let_stmt.name, let_stmt.value
-            ),
-            severity: diagnostic::Severity::Error,
-          })
-        }
-      }
+      },
+    };
+
+    if let_stmt.kind_group != value_kind {
+      return Err(diagnostic::Diagnostic {
+        message: format!(
+          "type mismatch; expected `{:?}` for variable `{}` but got `{:?}`",
+          let_stmt.kind_group, let_stmt.name, value_kind
+        ),
+        severity: diagnostic::Severity::Error,
+      });
     }
+
+    Ok(())
   }
 
   fn visit_if_stmt(&mut self, if_stmt: &'a node::IfStmt<'a>) -> pass::PassResult {
@@ -159,8 +184,8 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
             crate::pass_assert!(value.is_some());
 
             let callee_prototype = match value.as_ref().unwrap() {
-              node::StubValueTransport::External(external) => &external.prototype,
-              node::StubValueTransport::Function(function) => &function.prototype,
+              node::CallableTransport::External(external) => &external.prototype,
+              node::CallableTransport::Function(function) => &function.prototype,
             };
 
             if callee_prototype.return_kind_group.is_none() {

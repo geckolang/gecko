@@ -79,6 +79,18 @@ impl Node for IntLiteral {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
+pub struct StringLiteral {
+  pub value: String,
+  // TODO: In the future, add support for prefixes (as well as parsing of them).
+}
+
+impl Node for StringLiteral {
+  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+    pass.visit_string_literal(self)
+  }
+}
+
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct KindGroup {
   pub kind: KindHolder,
   pub is_reference: bool,
@@ -154,7 +166,7 @@ pub enum ExprHolder<'a> {
   CallExpr(CallExpr<'a>),
 }
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub enum KindHolder {
   IntKind(int_kind::IntKind),
   BoolKind(int_kind::BoolKind),
@@ -384,7 +396,7 @@ impl Node for CallExpr<'_> {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum StubValueTransport<'a> {
+pub enum CallableTransport<'a> {
   Function(&'a Function<'a>),
   External(&'a External),
 }
@@ -393,7 +405,7 @@ pub enum StubValueTransport<'a> {
 pub enum Stub<'a> {
   Callable {
     name: String,
-    value: Option<StubValueTransport<'a>>,
+    value: Option<CallableTransport<'a>>,
   },
 }
 
@@ -414,8 +426,8 @@ impl Node for Stub<'_> {
     // TODO: Verify this is correct (references).
     match self {
       Self::Callable { value, .. } => match &value {
-        Some(StubValueTransport::Function(function)) => vec![*function as &dyn Node],
-        Some(StubValueTransport::External(external)) => vec![*external as &dyn Node],
+        Some(CallableTransport::Function(function)) => vec![*function as &dyn Node],
+        Some(CallableTransport::External(external)) => vec![*external as &dyn Node],
         None => vec![],
       },
     }

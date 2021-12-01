@@ -107,6 +107,10 @@ pub trait Pass<'a> {
     Ok(())
   }
 
+  fn visit_string_literal(&mut self, _: &'a node::StringLiteral) -> PassResult {
+    Ok(())
+  }
+
   fn visit_call_expr(&mut self, _: &'a node::CallExpr<'a>) -> PassResult {
     Ok(())
   }
