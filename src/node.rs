@@ -35,7 +35,7 @@ impl<'a> From<&'a ExprHolder<'a>> for ExprTransport<'a> {
 
 pub trait Node {
   // TODO: Consider switching to just invoking `visit_children()` because of limitations.
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![]
   }
 }
@@ -50,6 +50,10 @@ pub struct BoolLiteral {
   pub value: bool,
 }
 
+impl Node for BoolLiteral {
+  //
+}
+
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct IntLiteral {
   pub value: u64,
@@ -57,7 +61,7 @@ pub struct IntLiteral {
 }
 
 impl Node for IntLiteral {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![&mut self.kind]
   }
 }
@@ -85,7 +89,7 @@ pub struct External {
 }
 
 impl Node for External {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![&mut self.prototype]
   }
 }
@@ -98,7 +102,7 @@ pub struct Function<'a> {
 }
 
 impl<'a> Node for Function<'a> {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![&mut self.prototype, &mut self.body]
   }
 }
@@ -114,7 +118,7 @@ pub struct Prototype {
 }
 
 impl<'a> Node for Prototype {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     // TODO: Figure this out.
     // vec![&self.return_kind_group.kind]
     vec![]
@@ -195,7 +199,7 @@ impl<'a> Block<'a> {
 }
 
 impl Node for Block<'_> {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     let mut children = Vec::new();
 
     for statement in &mut self.statements {
@@ -224,7 +228,7 @@ pub struct BlockStmt<'a> {
 }
 
 impl Node for BlockStmt<'_> {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![&mut self.block]
   }
 }
@@ -244,7 +248,7 @@ pub struct ReturnStmt<'a> {
 }
 
 impl<'a> Node for ReturnStmt<'a> {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     match &mut self.value {
       Some(value) => vec![match value {
         ExprHolder::BoolLiteral(expr) => expr as &mut dyn Node,
@@ -264,7 +268,7 @@ pub struct LetStmt<'a> {
 }
 
 impl Node for LetStmt<'_> {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![
       match &mut self.kind_group.kind {
         KindHolder::IntKind(kind) => kind as &mut dyn Node,
@@ -287,7 +291,7 @@ pub struct IfStmt<'a> {
 }
 
 impl Node for IfStmt<'_> {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     // TODO:
     vec![]
     // vec![&self.condition, &self.then_block]
@@ -301,7 +305,7 @@ pub struct WhileStmt<'a> {
 }
 
 impl Node for WhileStmt<'_> {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     // TODO: Missing condition.
     vec![&mut self.body]
   }
@@ -326,7 +330,7 @@ pub struct CalleeStub<'a> {
 }
 
 impl<'a> Node for CalleeStub<'_> {
-  fn get_children(&self) -> Vec<&mut dyn Node> {
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
     // match self.value.as_mut() {
     //   // TODO: Dereferencing value.
     //   Some(value) => vec![match value.deref_mut() {

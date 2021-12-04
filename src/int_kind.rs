@@ -1,4 +1,4 @@
-use crate::{node, pass};
+use crate::node;
 
 /// Determine the minimum bit-size in which a number can fit.
 ///
@@ -36,16 +36,12 @@ pub struct IntKind {
 }
 
 impl<'a> node::Node for IntKind {
-  fn accept_pass<'b>(&'b self, pass: &mut dyn pass::AnalysisPass<'b>) -> pass::PassResult {
-    pass.visit_int_kind(self)
-  }
+  //
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct BoolKind;
 
 impl<'a> node::Node for BoolKind {
-  fn accept_pass<'b>(&'b self, pass: &mut dyn pass::AnalysisPass<'b>) -> pass::PassResult {
-    pass.visit_bool_kind(self)
-  }
+  //
 }

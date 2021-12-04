@@ -24,6 +24,21 @@ macro_rules! skip_past {
   };
 }
 
+#[macro_export]
+macro_rules! pass_assert {
+  ($condition:expr) => {
+    match $condition {
+      true => true,
+      false => {
+        return Err(diagnostic::Diagnostic {
+          message: format!("assertion failed: `{}`", stringify!($condition)),
+          severity: diagnostic::Severity::Internal,
+        });
+      }
+    }
+  };
+}
+
 type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 
 pub struct Parser {
