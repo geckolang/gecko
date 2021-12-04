@@ -546,14 +546,18 @@ impl<'a> Parser {
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
-    let arguments = vec![];
+    // TODO: Shouldn't it be a `Vec<node::ExprTransport<'a>>`?
+    let arguments: Vec<node::ExprTransport<'a>> = vec![];
 
     // TODO: Parse arguments.
 
     skip_past!(self, token::Token::SymbolParenthesesR);
 
     Ok(node::CallExpr {
-      callee: node::Stub::Callable(callee_name),
+      callee_stub: node::CalleeStub {
+        name: callee_name,
+        value: None,
+      },
       arguments,
     })
   }

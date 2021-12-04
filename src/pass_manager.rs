@@ -1,54 +1,47 @@
-use crate::{diagnostic, node, pass};
+use crate::{diagnostic, node, pass, pass::Pass};
 
 pub struct PassManager<'a> {
-  passes: Vec<&'a mut dyn pass::Pass<'a>>,
-}
-
-pub enum TopLevelNodeTransport<'a> {
-  Function(node::Function<'a>),
-  External(node::External),
-  Module(node::Module<'a>),
+  analysis_passes: Vec<Box<dyn pass::AnalysisPass<'a>>>,
+  transform_passes: Vec<Box<dyn pass::TransformPass<'a>>>,
 }
 
 impl<'a> PassManager<'a> {
   pub fn new() -> Self {
-    Self { passes: Vec::new() }
-  }
-
-  /// Register a pass to be run in sequential order.
-  ///
-  /// Returns `true` if the pass'
-  /// restrictions are met (which are checked by invoking the `register`
-  /// method on the pass).
-  pub fn add_pass(&mut self, pass: &'a mut dyn pass::Pass<'a>) -> bool {
-    if !pass.register(self) {
-      return false;
+    Self {
+      analysis_passes: Vec::new(),
+      transform_passes: Vec::new(),
     }
-
-    self.passes.push(pass);
-
-    true
   }
 
-  /// Execute all registered passes in a sequential order.
+  /// Register an analysis pass to be run in sequential order.
+  pub fn add_analysis_pass(&mut self, analysis_pass: Box<dyn pass::AnalysisPass<'a>>) {
+    self.analysis_passes.push(analysis_pass);
+  }
+
+  /// Register a transform pass to be run in sequential order.
+  pub fn add_transform_pass(&mut self, transform_pass: Box<dyn pass::TransformPass<'a>>) {
+    self.transform_passes.push(transform_pass);
+  }
+
+  /// Execute all registered analysis passes in a sequential order.
   ///
   /// Before a pass is executed, its requirements will be gathered
   /// and checked. All top-level nodes will be run over pass-by-pass.
   /// If there are any diagnostics generated, they will be gathered
   /// and returned as a vector, otherwise an empty vector will be
   /// returned.
-  pub fn run(
-    &'a mut self,
-    top_level_nodes: &'a Vec<TopLevelNodeTransport<'a>>,
-  ) -> Vec<diagnostic::Diagnostic> {
+  pub fn run(&mut self, nodes: &'a Vec<&'a mut dyn node::Node>) -> Vec<diagnostic::Diagnostic> {
     // TODO: Improve structure/organization of diagnostics?
 
     let mut diagnostics = Vec::<diagnostic::Diagnostic>::new();
     let mut error_found = false;
 
-    for pass in &mut self.passes {
-      let requirements = pass.get_requirements();
+    // FIXME: Run in order between both analysis and transform passes.
 
+    for analysis_pass in &mut self.analysis_passes {
+      let requirements = analysis_pass.get_requirements();
+
+      // TODO: Abstract logic to a function.
       // TODO: Ensure logic is correct.
       if !requirements.ignore_previous_errors && !diagnostics.is_empty() {
         if error_found {
@@ -64,19 +57,16 @@ impl<'a> PassManager<'a> {
         }
       }
 
-      for top_level_node in top_level_nodes {
-        let visitation_result = match top_level_node {
-          TopLevelNodeTransport::External(external) => pass.visit(external),
-          TopLevelNodeTransport::Function(function) => pass.visit(function),
-          TopLevelNodeTransport::Module(module) => pass.visit(module),
-        };
+      for node in nodes {
+        // TODO: Dereferencing node. Is this copying something, or is it correct?
+        let visitation_result = analysis_pass.visit(*node);
 
         if let Err(diagnostic) = visitation_result {
           diagnostics.push(diagnostic);
         }
       }
 
-      diagnostics.extend(pass.get_diagnostics());
+      diagnostics.extend(analysis_pass.get_diagnostics());
     }
 
     diagnostics
@@ -89,7 +79,7 @@ mod tests {
 
   struct TestPassEmpty;
 
-  impl<'a> pass::Pass<'a> for TestPassEmpty {
+  impl<'a> pass::AnalysisPass<'a> for TestPassEmpty {
     fn visit(&mut self, _: &'a dyn node::Node) -> pass::PassResult {
       Ok(())
     }
@@ -97,37 +87,33 @@ mod tests {
 
   struct TestPassNoRegister;
 
-  impl<'a> pass::Pass<'a> for TestPassNoRegister {
+  impl<'a> pass::AnalysisPass<'a> for TestPassNoRegister {
     fn visit(&mut self, _: &'a dyn node::Node) -> pass::PassResult {
       Ok(())
-    }
-
-    fn register(&self, _: &PassManager<'_>) -> bool {
-      return false;
     }
   }
 
   #[test]
   fn pass_manager_proper_initial_values() {
-    assert_eq!(true, PassManager::new().passes.is_empty());
+    assert_eq!(true, PassManager::new().analysis_passes.is_empty());
   }
 
   #[test]
   fn pass_manager_add_pass() {
     let mut pass_manager = PassManager::new();
-    let mut test_pass = TestPassEmpty;
+    let test_pass = TestPassEmpty;
 
-    pass_manager.add_pass(&mut test_pass);
-    assert_eq!(1, pass_manager.passes.len());
+    pass_manager.add_analysis_pass(Box::new(test_pass));
+    assert_eq!(1, pass_manager.analysis_passes.len());
   }
 
   #[test]
   fn pass_manager_add_pass_no_register() {
     let mut pass_manager = PassManager::new();
-    let mut test_pass_no_register = TestPassNoRegister;
+    let test_pass_no_register = TestPassNoRegister;
 
-    pass_manager.add_pass(&mut test_pass_no_register);
-    assert_eq!(true, pass_manager.passes.is_empty());
+    pass_manager.add_analysis_pass(Box::new(test_pass_no_register));
+    assert_eq!(true, pass_manager.analysis_passes.is_empty());
   }
 
   // TODO: Run test.

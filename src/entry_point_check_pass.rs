@@ -14,14 +14,9 @@ impl EntryPointCheckPass {
   }
 }
 
-impl<'a> pass::Pass<'a> for EntryPointCheckPass {
+impl<'a> pass::AnalysisPass<'a> for EntryPointCheckPass {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
-    node.accept(self)
-  }
-
-  fn get_diagnostics(&self) -> Vec<diagnostic::Diagnostic> {
-    // TODO: Cloning.
-    self.diagnostics.clone()
+    node.accept_pass(self)
   }
 
   fn visit_function(&mut self, function: &'a node::Function<'a>) -> pass::PassResult {
@@ -102,5 +97,12 @@ impl<'a> pass::Pass<'a> for EntryPointCheckPass {
     }
 
     Ok(())
+  }
+}
+
+impl pass::Pass for EntryPointCheckPass {
+  fn get_diagnostics(&self) -> Vec<diagnostic::Diagnostic> {
+    // TODO: Cloning.
+    self.diagnostics.clone()
   }
 }

@@ -1,4 +1,4 @@
-use crate::{diagnostic, int_kind, node, pass_manager};
+use crate::{diagnostic, int_kind, node};
 
 #[macro_export]
 macro_rules! pass_assert {
@@ -30,12 +30,7 @@ impl PassRequirements {
 
 pub type PassResult = Result<(), diagnostic::Diagnostic>;
 
-pub trait Pass<'a> {
-  // TODO:
-  fn register(&self, _: &pass_manager::PassManager<'a>) -> bool {
-    true
-  }
-
+pub trait Pass {
   /// Retrieve the list of flags and options denoting the pass's
   /// requirements which must be satisfied before the pass is run.
   fn get_requirements(&self) -> PassRequirements {
@@ -47,7 +42,12 @@ pub trait Pass<'a> {
   fn get_diagnostics(&self) -> Vec<diagnostic::Diagnostic> {
     vec![]
   }
+}
 
+/// An analysis pass which does not transform nodes.
+///
+/// Visited nodes cannot be modified.
+pub trait AnalysisPass<'a> {
   /// Visit a node. Implementation varies depending on the pass.
   ///
   /// The appropriate visitation of the node method may or may not
@@ -130,4 +130,42 @@ pub trait Pass<'a> {
   fn visit_break_stmt(&mut self, _: &'a node::BreakStmt) -> PassResult {
     Ok(())
   }
+
+  fn visit_callee_stub(&mut self, _: &'a node::CalleeStub<'a>) -> PassResult {
+    Ok(())
+  }
+}
+
+impl Pass for dyn AnalysisPass<'_> {
+  //
+}
+
+pub struct Test {}
+
+/// A pass which may transform nodes.
+///
+/// Because nodes may be modified, other passes may be invalidated.
+pub trait TransformPass<'a> {
+  fn visit(&mut self, node: &'a mut dyn node::Node) -> PassResult;
+
+  /// Visit the node's children by invoking its [`get_children`] method.
+  fn visit_children(&mut self, node: &'a mut dyn node::Node) -> PassResult {
+    for child in node.get_children() {
+      self.visit(child)?;
+    }
+
+    Ok(())
+  }
+
+  fn visit_callee_stub(&mut self, _: &'a mut node::CalleeStub<'_>) -> PassResult {
+    Ok(())
+  }
+
+  fn visit_module(&mut self, _: &'a mut node::Module<'a>) -> PassResult {
+    Ok(())
+  }
+}
+
+impl Pass for dyn TransformPass<'_> {
+  //
 }

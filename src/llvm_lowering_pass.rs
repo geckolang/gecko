@@ -170,9 +170,9 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
   fn _conditional_visit_kind(&mut self, kind: &'a NodeKindKey<'a>) -> pass::PassResult {
     if !self.llvm_type_map.contains_key(&kind) {
       match kind {
-        NodeKindKey::Prototype(prototype) => prototype.accept(self),
-        NodeKindKey::IntKind(int_kind) => int_kind.accept(self),
-        NodeKindKey::BoolKind(bool_kind) => bool_kind.accept(self),
+        NodeKindKey::Prototype(prototype) => prototype.accept_pass(self),
+        NodeKindKey::IntKind(int_kind) => int_kind.accept_pass(self),
+        NodeKindKey::BoolKind(bool_kind) => bool_kind.accept_pass(self),
       }?;
     }
 
@@ -180,20 +180,13 @@ impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
   }
 }
 
-impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
-  fn get_requirements(&self) -> pass::PassRequirements {
-    pass::PassRequirements {
-      ignore_previous_errors: false,
-      ..pass::PassRequirements::default()
-    }
-  }
-
+impl<'a, 'ctx> pass::AnalysisPass<'a> for LlvmLoweringPass<'a, 'ctx> {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
     if !node.is_top_level() {
       return Ok(());
     }
 
-    node.accept(self)
+    node.accept_pass(self)
   }
 
   fn visit_int_kind(&mut self, int_kind: &'a int_kind::IntKind) -> pass::PassResult {
@@ -463,11 +456,12 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 
   fn visit_call_expr(&mut self, call_expr: &'a node::CallExpr<'a>) -> pass::PassResult {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
+    crate::pass_assert!(call_expr.callee_stub.value.is_some());
 
-    match call_expr.callee {
+    match call_expr.callee_stub.value.as_ref().unwrap() {
       // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
-      node::CallableTransport::Function(function) => self.visit_function(function)?,
-      node::CallableTransport::External(external) => self.visit_external(external)?,
+      node::CalleeTransport::Function(function) => self.visit_function(function)?,
+      node::CalleeTransport::External(external) => self.visit_external(external)?,
     };
 
     let mut arguments = Vec::new();
@@ -724,7 +718,7 @@ impl<'a, 'ctx> pass::Pass<'a> for LlvmLoweringPass<'a, 'ctx> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use pass::Pass;
+  use pass::AnalysisPass;
 
   #[test]
   fn proper_initial_values<'a>() {

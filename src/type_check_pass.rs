@@ -40,9 +40,9 @@ impl<'a> TypeCheckPass {
 
 // TODO: Consider writing a method/function to compare two types by a simpler way.
 
-impl<'a> pass::Pass<'a> for TypeCheckPass {
+impl<'a> pass::AnalysisPass<'a> for TypeCheckPass {
   fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
-    node.accept(self)?;
+    node.accept_pass(self)?;
 
     self.visit_children(node)
   }
@@ -229,7 +229,7 @@ impl<'a> pass::Pass<'a> for TypeCheckPass {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{int_kind, pass::Pass};
+  use crate::{int_kind, pass::AnalysisPass};
 
   fn make_dummy_function<'a>() -> node::Function<'a> {
     node::Function {

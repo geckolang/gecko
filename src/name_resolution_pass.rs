@@ -12,14 +12,14 @@ impl<'a> NameResolutionPass<'a> {
   }
 }
 
-impl<'a> pass::Pass<'a> for NameResolutionPass<'a> {
-  fn visit(&mut self, node: &'a dyn node::Node) -> pass::PassResult {
-    node.accept(self)?;
+impl<'a> pass::TransformPass<'a> for NameResolutionPass<'a> {
+  fn visit(&mut self, node: &'a mut dyn node::Node) -> pass::PassResult {
+    node.accept_transform_pass(self)?;
 
     self.visit_children(node)
   }
 
-  fn visit_module(&mut self, module: &'a node::Module<'a>) -> pass::PassResult {
+  fn visit_module(&mut self, module: &'a mut node::Module<'a>) -> pass::PassResult {
     self.module_buffer = Some(module);
 
     Ok(())
@@ -47,14 +47,14 @@ impl<'a> pass::Pass<'a> for NameResolutionPass<'a> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::pass::Pass;
+  use crate::pass::TransformPass;
 
   #[test]
   fn visit_module() {
     let mut name_resolution_pass = NameResolutionPass::new();
-    let module = node::Module::new("test");
+    let mut module = node::Module::new("test");
 
-    assert_eq!(true, name_resolution_pass.visit_module(&module).is_ok());
+    assert_eq!(true, name_resolution_pass.visit_module(&mut module).is_ok());
     assert_eq!(true, name_resolution_pass.module_buffer.is_some());
   }
 

@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use crate::{int_kind, pass};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -34,10 +36,17 @@ impl<'a> From<&'a ExprHolder<'a>> for ExprTransport<'a> {
 }
 
 pub trait Node {
-  fn accept<'a>(&'a self, _: &mut dyn pass::Pass<'a>) -> pass::PassResult;
+  fn accept_pass<'a>(&'a self, _: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult;
+
+  fn accept_transform_pass<'a>(
+    &'a mut self,
+    _: &mut dyn pass::TransformPass<'a>,
+  ) -> pass::PassResult {
+    Ok(())
+  }
 
   // TODO: Consider switching to just invoking `visit_children()` because of limitations.
-  fn get_children(&self) -> Vec<&dyn Node> {
+  fn get_children(&self) -> Vec<&mut dyn Node> {
     vec![]
   }
 
@@ -47,7 +56,7 @@ pub trait Node {
 }
 
 pub trait MutableNode {
-  fn accept<'a>(&'a mut self, _: &mut dyn pass::Pass<'a>) -> pass::PassResult;
+  fn accept<'a>(&'a mut self, _: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult;
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -61,7 +70,7 @@ pub struct BoolLiteral {
 }
 
 impl Node for BoolLiteral {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_bool_literal(self)
   }
 }
@@ -73,12 +82,12 @@ pub struct IntLiteral {
 }
 
 impl Node for IntLiteral {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_int_literal(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
-    vec![&self.kind]
+  fn get_children(&self) -> Vec<&mut dyn Node> {
+    vec![&mut self.kind]
   }
 }
 
@@ -89,7 +98,7 @@ pub struct StringLiteral {
 }
 
 impl Node for StringLiteral {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_string_literal(self)
   }
 }
@@ -107,12 +116,12 @@ pub struct External {
 }
 
 impl Node for External {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_external(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
-    vec![&self.prototype]
+  fn get_children(&self) -> Vec<&mut dyn Node> {
+    vec![&mut self.prototype]
   }
 
   fn is_top_level(&self) -> bool {
@@ -128,12 +137,12 @@ pub struct Function<'a> {
 }
 
 impl<'a> Node for Function<'a> {
-  fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
+  fn accept_pass<'b>(&'b self, pass: &mut dyn pass::AnalysisPass<'b>) -> pass::PassResult {
     pass.visit_function(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
-    vec![&self.prototype, &self.body]
+  fn get_children(&self) -> Vec<&mut dyn Node> {
+    vec![&mut self.prototype, &mut self.body]
   }
 
   fn is_top_level(&self) -> bool {
@@ -152,11 +161,11 @@ pub struct Prototype {
 }
 
 impl<'a> Node for Prototype {
-  fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
+  fn accept_pass<'b>(&'b self, pass: &mut dyn pass::AnalysisPass<'b>) -> pass::PassResult {
     pass.visit_prototype(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
+  fn get_children(&self) -> Vec<&mut dyn Node> {
     // TODO: Figure this out.
     // vec![&self.return_kind_group.kind]
     vec![]
@@ -198,7 +207,7 @@ impl<'a> Module<'a> {
 
 // TODO: Document methods (for developers).
 impl<'a> Node for Module<'a> {
-  fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
+  fn accept_pass<'b>(&'b self, pass: &mut dyn pass::AnalysisPass<'b>) -> pass::PassResult {
     pass.visit_module(self)
   }
 
@@ -243,26 +252,26 @@ impl<'a> Block<'a> {
 }
 
 impl Node for Block<'_> {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_block(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
+  fn get_children(&self) -> Vec<&mut dyn Node> {
     let mut children = Vec::new();
 
-    for statement in &self.statements {
+    for statement in &mut self.statements {
       match statement {
-        AnyStmtNode::ReturnStmt(stmt) => children.push(stmt as &dyn Node),
+        AnyStmtNode::ReturnStmt(stmt) => children.push(stmt as &mut dyn Node),
         AnyStmtNode::ExprWrapperStmt(expr) => children.push(match expr {
-          ExprHolder::BoolLiteral(expr) => expr as &dyn Node,
-          ExprHolder::IntLiteral(expr) => expr as &dyn Node,
-          ExprHolder::CallExpr(expr) => expr as &dyn Node,
+          ExprHolder::BoolLiteral(expr) => expr as &mut dyn Node,
+          ExprHolder::IntLiteral(expr) => expr as &mut dyn Node,
+          ExprHolder::CallExpr(expr) => expr as &mut dyn Node,
         }),
-        AnyStmtNode::LetStmt(stmt) => children.push(stmt as &dyn Node),
-        AnyStmtNode::IfStmt(stmt) => children.push(stmt as &dyn Node),
-        AnyStmtNode::WhileStmt(stmt) => children.push(stmt as &dyn Node),
-        AnyStmtNode::BlockStmt(stmt) => children.push(stmt as &dyn Node),
-        AnyStmtNode::BreakStmt(stmt) => children.push(stmt as &dyn Node),
+        AnyStmtNode::LetStmt(stmt) => children.push(stmt as &mut dyn Node),
+        AnyStmtNode::IfStmt(stmt) => children.push(stmt as &mut dyn Node),
+        AnyStmtNode::WhileStmt(stmt) => children.push(stmt as &mut dyn Node),
+        AnyStmtNode::BlockStmt(stmt) => children.push(stmt as &mut dyn Node),
+        AnyStmtNode::BreakStmt(stmt) => children.push(stmt as &mut dyn Node),
       };
     }
 
@@ -276,12 +285,12 @@ pub struct BlockStmt<'a> {
 }
 
 impl Node for BlockStmt<'_> {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_block_stmt(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
-    vec![&self.block]
+  fn get_children(&self) -> Vec<&mut dyn Node> {
+    vec![&mut self.block]
   }
 }
 
@@ -291,7 +300,7 @@ pub struct BreakStmt {
 }
 
 impl Node for BreakStmt {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_break_stmt(self)
   }
 }
@@ -302,16 +311,16 @@ pub struct ReturnStmt<'a> {
 }
 
 impl<'a> Node for ReturnStmt<'a> {
-  fn accept<'b>(&'b self, pass: &mut dyn pass::Pass<'b>) -> pass::PassResult {
+  fn accept_pass<'b>(&'b self, pass: &mut dyn pass::AnalysisPass<'b>) -> pass::PassResult {
     pass.visit_return_stmt(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
-    match &self.value {
+  fn get_children(&self) -> Vec<&mut dyn Node> {
+    match &mut self.value {
       Some(value) => vec![match value {
-        ExprHolder::BoolLiteral(expr) => expr as &dyn Node,
-        ExprHolder::IntLiteral(expr) => expr as &dyn Node,
-        ExprHolder::CallExpr(expr) => expr as &dyn Node,
+        ExprHolder::BoolLiteral(expr) => expr as &mut dyn Node,
+        ExprHolder::IntLiteral(expr) => expr as &mut dyn Node,
+        ExprHolder::CallExpr(expr) => expr as &mut dyn Node,
       }],
       None => vec![],
     }
@@ -326,20 +335,20 @@ pub struct LetStmt<'a> {
 }
 
 impl Node for LetStmt<'_> {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_let_stmt(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
+  fn get_children(&self) -> Vec<&mut dyn Node> {
     vec![
-      match &self.kind_group.kind {
-        KindHolder::IntKind(kind) => kind as &dyn Node,
-        KindHolder::BoolKind(kind) => kind as &dyn Node,
+      match &mut self.kind_group.kind {
+        KindHolder::IntKind(kind) => kind as &mut dyn Node,
+        KindHolder::BoolKind(kind) => kind as &mut dyn Node,
       },
-      match &self.value {
-        ExprHolder::BoolLiteral(expr) => expr as &dyn Node,
-        ExprHolder::IntLiteral(expr) => expr as &dyn Node,
-        ExprHolder::CallExpr(expr) => expr as &dyn Node,
+      match &mut self.value {
+        ExprHolder::BoolLiteral(expr) => expr as &mut dyn Node,
+        ExprHolder::IntLiteral(expr) => expr as &mut dyn Node,
+        ExprHolder::CallExpr(expr) => expr as &mut dyn Node,
       },
     ]
   }
@@ -353,11 +362,11 @@ pub struct IfStmt<'a> {
 }
 
 impl Node for IfStmt<'_> {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_if_stmt(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
+  fn get_children(&self) -> Vec<&mut dyn Node> {
     // TODO:
     vec![]
     // vec![&self.condition, &self.then_block]
@@ -371,13 +380,13 @@ pub struct WhileStmt<'a> {
 }
 
 impl Node for WhileStmt<'_> {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
     pass.visit_while_stmt(self)
   }
 
-  fn get_children(&self) -> Vec<&dyn Node> {
+  fn get_children(&self) -> Vec<&mut dyn Node> {
     // TODO: Missing condition.
-    vec![&self.body]
+    vec![&mut self.body]
   }
 }
 
@@ -388,24 +397,51 @@ pub enum AnyExprNode<'a> {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum CallableTransport<'a> {
+pub enum CalleeTransport<'a> {
   Function(&'a Function<'a>),
   External(&'a External),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub struct CallExpr<'a> {
-  pub callee: CallableTransport<'a>,
-  pub arguments: Vec<ExprTransport<'a>>,
+pub struct CalleeStub<'a> {
+  pub name: String,
+  pub value: Option<CalleeTransport<'a>>,
 }
 
-impl Node for CallExpr<'_> {
-  fn accept<'a>(&'a self, pass: &mut dyn pass::Pass<'a>) -> pass::PassResult {
-    pass.visit_call_expr(self)
+impl<'a> Node for CalleeStub<'_> {
+  fn accept_pass<'b>(&'b self, pass: &mut dyn pass::AnalysisPass<'b>) -> pass::PassResult {
+    pass.visit_callee_stub(self)
+  }
+
+  fn accept_transform_pass<'c>(
+    &'c mut self,
+    pass: &mut dyn pass::TransformPass<'c>,
+  ) -> pass::PassResult {
+    pass.visit_callee_stub(self)
+  }
+
+  fn get_children(&self) -> Vec<&mut dyn Node> {
+    // match self.value.as_mut() {
+    //   // TODO: Dereferencing value.
+    //   Some(value) => vec![match value.deref_mut() {
+    //     CalleeTransport::Function(func) => func as &mut dyn Node,
+    //     CalleeTransport::External(external) => external as &mut dyn Node,
+    //   }],
+    //   None => vec![],
+    // }
+    // FIXME:
+    vec![]
   }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum Stub {
-  Callable(String),
+pub struct CallExpr<'a> {
+  pub callee_stub: CalleeStub<'a>,
+  pub arguments: Vec<ExprTransport<'a>>,
+}
+
+impl Node for CallExpr<'_> {
+  fn accept_pass<'a>(&'a self, pass: &mut dyn pass::AnalysisPass<'a>) -> pass::PassResult {
+    pass.visit_call_expr(self)
+  }
 }
