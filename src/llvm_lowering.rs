@@ -50,7 +50,7 @@ fn mangle_name(scope_name: &String, name: &String) -> String {
   format!(".{}.{}", scope_name, name)
 }
 
-pub struct LlvmLoweringPass<'a, 'ctx> {
+pub struct LlvmLowering<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   pub llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_type_map: std::collections::HashMap<NodeKindKey<'a>, inkwell::types::AnyTypeEnum<'ctx>>,
@@ -67,7 +67,7 @@ pub struct LlvmLoweringPass<'a, 'ctx> {
 
 type PResult<T> = Result<T, diagnostic::Diagnostic>;
 
-impl<'a, 'ctx> LlvmLoweringPass<'a, 'ctx> {
+impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
   pub fn new(
     llvm_context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
@@ -769,7 +769,7 @@ mod tests {
 
     assert_eq!(
       true,
-      LlvmLoweringPass::new(&llvm_context, &llvm_module)
+      LlvmLowering::new(&llvm_context, &llvm_module)
         .llvm_type_map
         .is_empty()
     );
@@ -798,7 +798,7 @@ mod tests {
   fn visit_int_kind() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
+    let mut llvm_lowering_pass = LlvmLowering::new(&llvm_context, &llvm_module);
 
     let visit_int_kind_result = llvm_lowering_pass.lower_int_kind(&int_kind::IntKind {
       size: int_kind::IntSize::Bit32,
@@ -813,7 +813,7 @@ mod tests {
   fn visit_function() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
+    let mut llvm_lowering_pass = LlvmLowering::new(&llvm_context, &llvm_module);
     let module = node::Module::new("test");
 
     llvm_lowering_pass.module_buffer = Some(&module);

@@ -38,6 +38,12 @@ pub trait Node {
   fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![]
   }
+
+  fn walk_children(&mut self, callback: &mut dyn FnMut(&mut dyn Node)) {
+    for child in self.get_children() {
+      callback(child);
+    }
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
