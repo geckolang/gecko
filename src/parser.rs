@@ -96,7 +96,7 @@ impl<'a> Parser {
   }
 
   /// %name
-  pub fn parse_name(&mut self) -> ParserResult<String> {
+  fn parse_name(&mut self) -> ParserResult<String> {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
 
     // TODO: Wrong error message.
@@ -119,8 +119,8 @@ impl<'a> Parser {
   }
 
   /// TODO: Be specific, which statements? Also include lonely expression.
-  /// '{' (%statement+ ';') '}'
-  pub fn parse_block(&mut self, llvm_name: &str) -> ParserResult<node::Block<'a>> {
+  /// '{' (%statement+) '}'
+  fn parse_block(&mut self, llvm_name: &str) -> ParserResult<node::Block<'a>> {
     skip_past!(self, token::Token::SymbolBraceL);
 
     let mut statements = vec![];
@@ -150,7 +150,7 @@ impl<'a> Parser {
   }
 
   /// (unsigned) {i8 | i16 | i32 | i64}
-  pub fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
+  fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
     let mut is_signed = true;
 
     if self.is(token::Token::KeywordUnsigned) {
@@ -162,9 +162,9 @@ impl<'a> Parser {
     let current_token = &self.tokens[self.index];
 
     let size = match current_token {
-      token::Token::TypeInt16 => int_kind::IntSize::Bit16,
-      token::Token::TypeInt32 => int_kind::IntSize::Bit32,
-      token::Token::TypeInt64 => int_kind::IntSize::Bit64,
+      token::Token::TypeInt16 => int_kind::IntSize::Size16,
+      token::Token::TypeInt32 => int_kind::IntSize::Size32,
+      token::Token::TypeInt64 => int_kind::IntSize::Size64,
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -182,14 +182,14 @@ impl<'a> Parser {
   }
 
   /// bool
-  pub fn parse_bool_kind(&mut self) -> ParserResult<int_kind::BoolKind> {
+  fn parse_bool_kind(&mut self) -> ParserResult<int_kind::BoolKind> {
     skip_past!(self, token::Token::TypeBool);
 
     Ok(int_kind::BoolKind)
   }
 
   /// ('&') (mut) %kind
-  pub fn parse_kind_group(&mut self) -> ParserResult<node::KindGroup> {
+  fn parse_kind_group(&mut self) -> ParserResult<node::KindGroup> {
     let mut is_reference = false;
     let mut is_mutable = false;
 
@@ -231,7 +231,7 @@ impl<'a> Parser {
   }
 
   /// %name ':' %kind_group
-  pub fn parse_parameter(&mut self) -> ParserResult<node::Parameter> {
+  fn parse_parameter(&mut self) -> ParserResult<node::Parameter> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolColon);
@@ -242,7 +242,7 @@ impl<'a> Parser {
   }
 
   /// %name '(' {%parameter* (,)} (+) ')' '~' %kind_group
-  pub fn parse_prototype(&mut self) -> ParserResult<node::Prototype> {
+  fn parse_prototype(&mut self) -> ParserResult<node::Prototype> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
@@ -286,7 +286,7 @@ impl<'a> Parser {
   }
 
   /// (pub) fn %prototype %block
-  pub fn parse_function(&mut self) -> ParserResult<node::Function<'a>> {
+  fn parse_function(&mut self) -> ParserResult<node::Function<'a>> {
     // TODO: Visibility should not be handled here.
 
     let mut is_public = false;
@@ -317,8 +317,8 @@ impl<'a> Parser {
     })
   }
 
-  /// (pub) extern fn %prototype ';'
-  pub fn parse_external(&mut self) -> ParserResult<node::External> {
+  /// (pub) extern fn %prototype
+  fn parse_external(&mut self) -> ParserResult<node::External> {
     // TODO: Support for visibility.
 
     skip_past!(self, token::Token::KeywordExtern);
@@ -329,16 +329,7 @@ impl<'a> Parser {
     Ok(node::External { prototype })
   }
 
-  /// module %name ';'
-  pub fn parse_module_decl(&mut self) -> ParserResult<node::Module<'a>> {
-    skip_past!(self, token::Token::KeywordModule);
-
-    let name = self.parse_name()?;
-
-    Ok(node::Module::new(name.as_str()))
-  }
-
-  pub fn parse_top_level_node(&mut self) -> ParserResult<node::TopLevelNodeHolder<'a>> {
+  fn parse_top_level_node(&mut self) -> ParserResult<node::TopLevelNodeHolder<'a>> {
     let mut token = self.tokens.get(self.index);
 
     if self.is(token::Token::KeywordPub) {
@@ -367,8 +358,8 @@ impl<'a> Parser {
     })
   }
 
-  /// return (%expr) ';'
-  pub fn parse_return_stmt(&mut self) -> ParserResult<node::ReturnStmt<'a>> {
+  /// return (%expr)
+  fn parse_return_stmt(&mut self) -> ParserResult<node::ReturnStmt<'a>> {
     skip_past!(self, token::Token::KeywordReturn);
 
     let mut value = None;
@@ -381,8 +372,8 @@ impl<'a> Parser {
     Ok(node::ReturnStmt { value })
   }
 
-  /// let %name (':' %kind_group) '=' %expr ';'
-  pub fn parse_let_stmt(&mut self) -> ParserResult<node::LetStmt<'a>> {
+  /// let %name (':' %kind_group) '=' %expr
+  fn parse_let_stmt(&mut self) -> ParserResult<node::LetStmt<'a>> {
     skip_past!(self, token::Token::KeywordLet);
 
     let name = self.parse_name()?;
@@ -423,7 +414,7 @@ impl<'a> Parser {
   }
 
   /// if %expr %block (else %block)
-  pub fn parse_if_stmt(&mut self) -> ParserResult<node::IfStmt<'a>> {
+  fn parse_if_stmt(&mut self) -> ParserResult<node::IfStmt<'a>> {
     skip_past!(self, token::Token::KeywordIf);
 
     let condition = self.parse_expr()?;
@@ -442,7 +433,7 @@ impl<'a> Parser {
     })
   }
 
-  pub fn parse_while_stmt(&mut self) -> ParserResult<node::WhileStmt<'a>> {
+  fn parse_while_stmt(&mut self) -> ParserResult<node::WhileStmt<'a>> {
     skip_past!(self, token::Token::KeywordWhile);
 
     let condition = self.parse_expr()?;
@@ -451,20 +442,20 @@ impl<'a> Parser {
     Ok(node::WhileStmt { condition, body })
   }
 
-  pub fn parse_block_stmt(&mut self) -> ParserResult<node::BlockStmt<'a>> {
+  fn parse_block_stmt(&mut self) -> ParserResult<node::BlockStmt<'a>> {
     Ok(node::BlockStmt {
       block: self.parse_block("block_stmt")?,
     })
   }
 
-  pub fn parse_break_stmt(&mut self) -> ParserResult<node::BreakStmt> {
+  fn parse_break_stmt(&mut self) -> ParserResult<node::BreakStmt> {
     skip_past!(self, token::Token::KeywordBreak);
 
     Ok(node::BreakStmt {})
   }
 
   /// {true | false}
-  pub fn parse_bool_literal(&mut self) -> ParserResult<node::BoolLiteral> {
+  fn parse_bool_literal(&mut self) -> ParserResult<node::BoolLiteral> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(value) => {
         self.skip();
@@ -481,7 +472,7 @@ impl<'a> Parser {
     })
   }
 
-  pub fn parse_int_literal(&mut self) -> ParserResult<node::IntLiteral> {
+  fn parse_int_literal(&mut self) -> ParserResult<node::IntLiteral> {
     // TODO:
     // Ok(match self.tokens.get(self.index) {
     //   Some(token::Token::LiteralInt(value)) => {
@@ -500,10 +491,10 @@ impl<'a> Parser {
       token::Token::LiteralInt(value) => {
         self.skip();
 
-        let mut size = int_kind::calculate_int_size_of(&value);
+        let mut size = int_kind::minimum_int_size_of(&value);
 
-        if size < int_kind::IntSize::Bit32 {
-          size = int_kind::IntSize::Bit32;
+        if size < int_kind::IntSize::Size32 {
+          size = int_kind::IntSize::Size32;
         }
 
         node::IntLiteral {
@@ -524,7 +515,7 @@ impl<'a> Parser {
     })
   }
 
-  pub fn parse_literal(&mut self) -> ParserResult<node::ExprHolder<'a>> {
+  fn parse_literal(&mut self) -> ParserResult<node::ExprHolder<'a>> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(_) => node::ExprHolder::BoolLiteral(self.parse_bool_literal()?),
       token::Token::LiteralInt(_) => node::ExprHolder::IntLiteral(self.parse_int_literal()?),
@@ -538,7 +529,7 @@ impl<'a> Parser {
     })
   }
 
-  pub fn parse_expr(&mut self) -> ParserResult<node::ExprHolder<'a>> {
+  fn parse_expr(&mut self) -> ParserResult<node::ExprHolder<'a>> {
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
@@ -556,7 +547,7 @@ impl<'a> Parser {
   }
 
   /// %name '(' (%expr (,))* ')'
-  pub fn parse_call_expr(&mut self) -> ParserResult<node::CallExpr<'a>> {
+  fn parse_call_expr(&mut self) -> ParserResult<node::CallExpr<'a>> {
     let callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
@@ -575,6 +566,33 @@ impl<'a> Parser {
       },
       arguments,
     })
+  }
+
+  // TODO: Must add tests for this.
+  /// module %name
+  pub fn parse_module(&mut self) -> ParserResult<node::Module<'a>> {
+    skip_past!(self, token::Token::KeywordModule);
+
+    let name = self.parse_name()?;
+    let mut module = node::Module::new(name.as_str());
+
+    while !self.is_eof() && !self.is(token::Token::KeywordModule) {
+      let top_level_node = self.parse_top_level_node()?;
+
+      let top_level_node_name = match &top_level_node {
+        node::TopLevelNodeHolder::Function(function) => &function.prototype.name,
+        node::TopLevelNodeHolder::External(external) => &external.prototype.name,
+      };
+
+      // TODO: Handle re-definitions (via diagnostic).
+
+      // TODO: Cloning name.
+      module
+        .symbol_table
+        .insert(top_level_node_name.to_string(), top_level_node);
+    }
+
+    Ok(module)
   }
 }
 
@@ -655,7 +673,7 @@ mod tests {
     let int_kind = parser.parse_int_kind();
 
     assert_eq!(true, int_kind.is_ok());
-    assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Bit32);
+    assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Size32);
   }
 
   #[test]
@@ -665,7 +683,7 @@ mod tests {
       token::Token::Identifier("test".to_string()),
     ]);
 
-    let module = parser.parse_module_decl();
+    let module = parser.parse_module();
 
     assert_eq!(true, module.is_ok());
     assert_eq!(String::from("test"), module.unwrap().name);
@@ -718,7 +736,7 @@ mod tests {
     let int_literal = int_literal_result.unwrap();
 
     assert_eq!(123, int_literal.value);
-    assert_eq!(int_kind::IntSize::Bit32, int_literal.kind.size);
+    assert_eq!(int_kind::IntSize::Size32, int_literal.kind.size);
     assert_eq!(true, int_literal.kind.is_signed);
   }
 
