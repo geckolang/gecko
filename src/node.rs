@@ -1,4 +1,4 @@
-use crate::int_kind;
+use crate::{diagnostic, int_kind, type_check};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum KindTransport<'a> {
@@ -15,7 +15,6 @@ impl<'a> From<&'a KindHolder> for KindTransport<'a> {
   }
 }
 
-// TODO: Rename to `ExprHolder` or the likes.
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum ExprTransport<'a> {
   BoolLiteral(&'a BoolLiteral),
@@ -34,6 +33,10 @@ impl<'a> From<&'a ExprHolder<'a>> for ExprTransport<'a> {
 }
 
 pub trait Node {
+  fn type_check(&self) -> type_check::TypeCheckResult {
+    None
+  }
+
   // TODO: Consider switching to just invoking `visit_children()` because of limitations.
   fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![]
@@ -111,6 +114,10 @@ impl<'a> Node for Function<'a> {
   fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![&mut self.prototype, &mut self.body]
   }
+
+  fn type_check(&self) -> Option<Vec<diagnostic::Diagnostic>> {
+    type_check::type_check_function(self)
+  }
 }
 
 pub type Parameter = (String, KindGroup);
@@ -164,9 +171,19 @@ impl<'a> Module<'a> {
   }
 }
 
-// TODO: Document methods (for developers).
 impl<'a> Node for Module<'a> {
-  //
+  fn get_children(&mut self) -> Vec<&mut dyn Node> {
+    let mut children = vec![];
+
+    for (_, value) in &mut self.symbol_table {
+      children.push(match value {
+        TopLevelNodeHolder::Function(function) => function as &mut dyn Node,
+        TopLevelNodeHolder::External(external) => external as &mut dyn Node,
+      });
+    }
+
+    children
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -327,6 +344,15 @@ pub enum AnyExprNode<'a> {
 pub enum CalleeTransport<'a> {
   Function(&'a Function<'a>),
   External(&'a External),
+}
+
+impl<'a> CalleeTransport<'a> {
+  pub fn get_prototype(&self) -> &Prototype {
+    match self {
+      CalleeTransport::Function(function) => &function.prototype,
+      CalleeTransport::External(external) => &external.prototype,
+    }
+  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]

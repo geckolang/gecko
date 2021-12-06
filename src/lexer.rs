@@ -72,23 +72,6 @@ impl Lexer {
     self.current_char
   }
 
-  // TODO: What about non-erroneous diagnostics?
-  /// Collect all possible tokens into a vector.
-  ///
-  /// # Examples
-  ///
-  /// ```
-  /// use gecko::lexer::Lexer;
-  ///
-  /// let input = "let one = 1";
-  /// let mut lexer = Lexer::new(input.chars().collect());
-  /// let tokens_result = lexer.collect_tokens();
-  ///
-  /// println!("{:?}", tokens_result);
-  ///
-  /// assert_eq!(true, tokens_result.is_ok());
-  /// assert_eq!(7, tokens_result.unwrap().len());
-  /// ```
   pub fn collect_tokens(&mut self) -> Result<Vec<token::Token>, diagnostic::Diagnostic> {
     let mut tokens = Vec::new();
 
@@ -105,11 +88,6 @@ impl Lexer {
     }
 
     Ok(tokens)
-  }
-
-  fn peek_char(&self) -> Option<char> {
-    // TODO: Cloning.
-    self.input.get(self.index + 1).cloned()
   }
 
   // TODO: Is this function needed? Why not just expand its contents for readability?
@@ -420,6 +398,15 @@ mod tests {
     let mut lexer = Lexer::from_str("123");
 
     assert_eq!(Ok(Some(token::Token::LiteralInt(123))), lexer.lex_token());
+  }
+
+  #[test]
+  fn collect_tokens() {
+    let mut lexer = Lexer::from_str("let one = 1");
+    let tokens_result = lexer.collect_tokens();
+
+    assert_eq!(true, tokens_result.is_ok());
+    assert_eq!(7, tokens_result.unwrap().len());
   }
 
   // TODO: Add tests for number-overflow cases.
