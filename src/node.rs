@@ -37,14 +37,20 @@ pub trait Node {
     None
   }
 
+  // TODO: Consider returning `&dyn Node` instead of a mutable one. There is no need for it to be mutable.
   // TODO: Consider switching to just invoking `visit_children()` because of limitations.
   fn get_children(&mut self) -> Vec<&mut dyn Node> {
     vec![]
   }
 
+  /// Walk the node's children in a depth-first manner.
   fn walk_children(&mut self, callback: &mut dyn FnMut(&mut dyn Node)) {
-    for child in self.get_children() {
+    let mut children_queue = self.get_children();
+
+    while let Some(child) = children_queue.pop() {
+      // TODO: Does callback order matter?
       callback(child);
+      children_queue.append(&mut child.get_children());
     }
   }
 }

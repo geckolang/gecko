@@ -1,6 +1,9 @@
-use crate::node;
+use crate::{diagnostic, node};
 
 // TODO:
-pub fn resolve_callee_stub<'a>(callee_stub: &mut node::CalleeStub<'a>) {
-  callee_stub.value = None;
+pub fn resolve_callee_stub<'a>(
+  _callee_stub: &mut node::CalleeStub<'a>,
+) -> Option<diagnostic::Diagnostic> {
+  // FIXME: Implement.
+  unimplemented!();
 }

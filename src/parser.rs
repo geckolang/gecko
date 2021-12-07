@@ -121,6 +121,8 @@ impl<'a> Parser {
   /// TODO: Be specific, which statements? Also include lonely expression.
   /// '{' (%statement+) '}'
   fn parse_block(&mut self, llvm_name: &str) -> ParserResult<node::Block<'a>> {
+    // TODO: Have a symbol table for blocks, and check for re-declarations here.
+
     skip_past!(self, token::Token::SymbolBraceL);
 
     let mut statements = vec![];
@@ -584,7 +586,15 @@ impl<'a> Parser {
         node::TopLevelNodeHolder::External(external) => &external.prototype.name,
       };
 
-      // TODO: Handle re-definitions (via diagnostic).
+      if module.symbol_table.contains_key(top_level_node_name) {
+        return Err(diagnostic::Diagnostic {
+          message: format!(
+            "definition of function `{}` already exists",
+            top_level_node_name
+          ),
+          severity: diagnostic::Severity::Error,
+        });
+      }
 
       // TODO: Cloning name.
       module

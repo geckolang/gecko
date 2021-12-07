@@ -51,20 +51,21 @@ pub fn type_check_module(module: &mut node::Module<'_>) -> TypeCheckResult {
 }
 
 pub fn type_check_function<'a>(function: &node::Function<'a>) -> TypeCheckResult {
-  // FIXME: Use block queue.
-  let _block_queue = vec![&function.body];
+  // FIXME: Need proper implementation of walking the tree for return values.
+  let mut block_queue = vec![&function.body];
   let mut values_returned = Vec::new();
 
-  for statement in &function.body.statements {
-    let blocks_result = find_blocks_of(statement);
+  while let Some(block) = block_queue.pop() {
+    if let Some(return_stmt) = block.find_terminator() {
+      if let Some(return_value) = &return_stmt.value {
+        values_returned.push(return_value);
+      }
+    }
 
-    if let Some(blocks) = blocks_result {
-      for block in blocks {
-        if let Some(return_stmt) = block.find_terminator() {
-          if let Some(return_value) = &return_stmt.value {
-            values_returned.push(return_value);
-          }
-        }
+    for statement in &block.statements {
+      // TODO: What about recursive/child statements? Is this handled already?
+      if let Some(child_blocks) = find_blocks_of(&statement) {
+        block_queue.extend(child_blocks);
       }
     }
   }
