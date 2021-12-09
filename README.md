@@ -15,11 +15,17 @@
 
 #### Technology & principles
 
-Gecko is a general-purpose, strongly-typed programming language, with a focus on a powerful type system, memory safety, and simplicity. Built on Rust. It uses `libLLVM` as its backend.
-
-Thanks to `libLLVM`, compiled code is highly optimized to produce efficient programs.
+Gecko is a general-purpose, strongly-typed programming language, with a focus on a powerful type system, memory safety, and simplicity. Built using Rust. It uses [🔗LLVM](https://llvm.org/) as its backend.
 
 [🔗Join our Discord server](https://discord.gg/H3eMUXp)
+
+Overview:
+
+- [Syntax example](#syntax-example)
+- [Project roadmap](#project-roadmap)
+- [Directory structure](#directory-structure)
+- [Language specification](#language-specification)
+- [Building](#building)
 
 #### Syntax example
 
@@ -29,7 +35,7 @@ struct Human {
   age: unsigned i8
 }
 
-fn greet(Human human) ~ void {
+fn greet(Human human) {
   printf(
     "Greetings! My name is %s and I am %s years old.",
     human.name,
@@ -41,43 +47,12 @@ fn main(argc: i32, argv: i32[]) ~ i32 {
   let dwayneJohnson = Human {
     "Dwayne Johnson",
     49
-  };
+  }
 
-  greet(dwayneJohnson);
+  greet(dwayneJohnson)
 
-  return 0;
+  return 0
 }
-```
-
-### Building
-
-#### 1.1 &mdash; Environment variables
-
-Set the `LLVM_SYS_120_PREFIX` environment variable to the `build` directory inside the LLVM source files. It is expected that LLVM was built from source at this point. Additionally, set the `LLVM_CONFIG` to point to the `build/bin/llvm-config` (or `build/bin/llvm-config.exe` on Windows) executable file. Do not wrap the path with quotes, as it might lead to `Access denied` errors when attempting to build `llvm-sys`. If you're using Visual Studio Code, ensure it is seeing the `LLVM_SYS_120_PREFIX` environment variable.
-
-#### 1.2 &mdash; Windows
-
-On the Windows platform, it is recommended to use MSYS2 to install the GCC toolchain. After installing MSYS2, open the `MSYS2 MinGW (64-bit)` console (or the `32-bit` if you're on 32-bit arch.), then install the GCC toolchain using:
-
-```bash
-$ pacman -S mingw-w64-x86_64-gcc
-```
-
-This project uses the `inkwell` crate to interface with LLVM. Thus, the GCC toolchain (through MSYS2) is required in order to build the `llvm-sys` Cargo package (which is a dependency of `inkwell`).
-
-#### 1.3 &mdash; Building Cargo crate
-
-You will need to have [🔗Rust](https://www.rust-lang.org/tools/install) installed in order to build the project using Cargo. Once (or
-if you already have it) installed, you can simply build the project by issuing the following command:
-
-```bash
-$ cargo build
-```
-
-Running tests is also straight-forward:
-
-```bash
-$ cargo test
 ```
 
 ### Project roadmap
@@ -155,19 +130,19 @@ Several intrinsic types are defined by the compiler. It is intended for the intr
 Modules provide a simple way of organizing code within a project. They also have the advantage of preventing global naming collisions (ex. when importing a library).
 
 ```cpp
-module foo;
+module foo
 ```
 
 Modules can be nested by separating their names with the `::` delimiter as follows:
 
 ```cpp
-module foo::bar;
+module foo::bar
 ```
 
 Accessing a module is trivial:
 
 ```rust
-foo::bar::entity;
+foo::bar::entity
 ```
 
 #### 1.5 &mdash; Functions
@@ -178,7 +153,7 @@ Omitting the return type will imply that such function does not return a value (
 
 ```rust
 fn main(argc: i32, argv: i32[]) ~ i32 {
-  return 0;
+  return 0
 }
 
 fn do_nothing() { }
@@ -190,16 +165,16 @@ Variable declaration, assignment and reference follow straight-forward rules and
 
 ```rust
 fn double_number(number: i32) ~ i32 {
-  let result: i32 = number * 2;
+  let result: i32 = number * 2
 
-  return result;
+  return result
 }
 ```
 
 For convenience, variables can also be declared without specifying their types by using the `let` keyword for type inference. When inferring type from a literal integer, the preferred type inferred by the compiler will be `i32`, unless the integer cannot fit into `i32`'s bit-size, in which case it will be either `i64` or `i128` depending on the value's required bit-size. For example, a value larger than `2147483647` will be inferred as `i64` because it cannot fit into `i32`.
 
 ```rust
-fn do_work() ~ i32 { return 1; }
+fn do_work() ~ i32 { return 1 }
 
 fn do_computation() ~ i32 {
   let work = do_work(); # Inferred i32 type from function call.
@@ -216,9 +191,9 @@ The language includes support for conditional statements, variable statements, a
 
 ```rust
 fn do_work() {
-  let mut number = 1;
+  let mut number = 1
 
-  number = 2;
+  number = 2
 
   if true { }
   else if false { }
@@ -226,7 +201,7 @@ fn do_work() {
 
   loop { }
 
-  while true { break; }
+  while true { break }
 
   for i32 i = 0; i < 10; i += 1 { }
 
@@ -236,7 +211,7 @@ fn do_work() {
     _ -> do_work()
   }
 
-  return;
+  return
 }
 ```
 
@@ -247,3 +222,46 @@ fn do_work() {
 #### 1.9 &mdash; Generics
 
 ...
+
+### Building
+
+#### 1.1 &mdash; Environment variables
+
+Set the `LLVM_SYS_120_PREFIX` environment variable to the `build` directory inside the LLVM source files. It is expected that LLVM was built from source at this point. Additionally, set the `LLVM_CONFIG` to point to the `build/bin/llvm-config` (or `build/bin/llvm-config.exe` on Windows) executable file. Do not wrap the path with quotes, as it might lead to `Access denied` errors when attempting to build `llvm-sys`. If you're using Visual Studio Code, ensure it is seeing the `LLVM_SYS_120_PREFIX` environment variable.
+
+#### 1.2 &mdash; Linux
+
+On Linux, you simply need to install the `llvm` and `llvm-devel` packages. Make sure they're both `v13.0.0`.
+
+If you're using Fedora:
+
+```bash
+$ sudo dnf -y install llvm llvm-devel
+```
+
+You won't need to set any environment variables. Additionally, avoid using the `llvmenv` crate, since it's barely maintained and may lead you to issues.
+
+#### 1.3 &mdash; Windows
+
+On the Windows platform, it is recommended to use MSYS2 to install the GCC toolchain. After installing MSYS2, open the `MSYS2 MinGW (64-bit)` console (or the `32-bit` if you're on 32-bit arch.), then install the GCC toolchain using:
+
+```bash
+$ pacman -S mingw-w64-x86_64-gcc
+```
+
+This project uses the `inkwell` crate to interface with LLVM. Thus, the GCC toolchain (through MSYS2) is required in order to build the `llvm-sys` Cargo package (which is a dependency of `inkwell`).
+
+#### 1.4 &mdash; Building Cargo crate
+
+You will need to have [🔗Rust](https://www.rust-lang.org/tools/install) installed in order to build the project using Cargo. Once (or
+if you already have it) installed, you can simply build the project by issuing the following command:
+
+```bash
+$ cargo build
+```
+
+Running tests is also straight-forward:
+
+```bash
+$ cargo test
+```

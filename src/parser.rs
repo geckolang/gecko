@@ -546,16 +546,18 @@ impl<'a> Parser {
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
-    let arguments = vec![];
+    // let arguments = vec![];
 
     // TODO: Parse arguments.
 
     skip_past!(self, token::Token::SymbolParenthesesR);
 
-    Ok(node::CallExpr {
-      callee: node::Stub::Callable(callee_name),
-      arguments,
-    })
+    // FIXME:
+    todo!();
+    // Ok(node::CallExpr {
+    //   callee: node::Stub::Callable(callee_name),
+    //   arguments,
+    // })
   }
 }
 
