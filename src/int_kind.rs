@@ -1,5 +1,3 @@
-use crate::ast;
-
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, std::cmp::PartialOrd)]
 pub enum IntSize {
   Size8,
@@ -14,16 +12,8 @@ pub struct IntKind {
   pub is_signed: bool,
 }
 
-impl<'a> ast::Node for IntKind {
-  //
-}
-
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct BoolKind;
-
-impl<'a> ast::Node for BoolKind {
-  //
-}
 
 // TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
 /// Determine the minimum bit-size in which a number can fit.

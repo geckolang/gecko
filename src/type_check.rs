@@ -1,7 +1,4 @@
-use crate::{
-  ast::{self, Node},
-  diagnostic, int_kind,
-};
+use crate::{ast, diagnostic, int_kind};
 
 pub type TypeCheckResult = Option<Vec<diagnostic::Diagnostic>>;
 
@@ -33,21 +30,25 @@ fn find_kind_of(expr: &ast::ExprHolder<'_>) -> Option<ast::KindHolder> {
   })
 }
 
-pub fn type_check_module(module: &mut ast::Module<'_>) -> TypeCheckResult {
-  let mut diagnostics = Vec::new();
+pub fn type_check_module(_module: &mut ast::Module<'_>) -> TypeCheckResult {
+  // let mut _diagnostics = Vec::new();
 
-  module.walk_children(&mut |child: &mut dyn Node| {
-    if let Some(child_diagnostics) = child.type_check() {
-      diagnostics.extend(child_diagnostics);
-    }
-  });
+  todo!();
+
+  // FIXME:
+  // module.walk_children(&mut |child: &mut dyn Node| {
+  //   if let Some(child_diagnostics) = child.type_check() {
+  //     diagnostics.extend(child_diagnostics);
+  //   }
+  // });
 
   // TODO: Consider just returning a vector (or better yet, a Result<(), Vec<Diagnostic>>).
-  if diagnostics.is_empty() {
-    None
-  } else {
-    Some(diagnostics)
-  }
+  // FIXME:
+  // if diagnostics.is_empty() {
+  //   None
+  // } else {
+  //   Some(diagnostics)
+  // }
 }
 
 pub fn type_check_function<'a>(function: &ast::Function<'a>) -> TypeCheckResult {
@@ -105,7 +106,7 @@ pub fn type_check_function<'a>(function: &ast::Function<'a>) -> TypeCheckResult 
   }
 }
 
-pub fn type_check_let_stmt(let_stmt: &ast::LetStmt<'_>) -> TypeCheckResult {
+pub fn type_check_let_stmt(_let_stmt: &ast::LetStmt<'_>) -> TypeCheckResult {
   // let mut diagnostics = Vec::new();
 
   // if let Some(kind) = &let_stmt.kind {

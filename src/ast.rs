@@ -1,4 +1,6 @@
-use crate::{diagnostic, int_kind, type_check};
+use crate::int_kind;
+
+pub type Parameter = (String, KindGroup);
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum KindTransport<'a> {
@@ -32,29 +34,6 @@ impl<'a> From<&'a ExprHolder<'a>> for ExprTransport<'a> {
   }
 }
 
-pub trait Node {
-  fn type_check(&self) -> type_check::TypeCheckResult {
-    None
-  }
-
-  // TODO: Consider returning `&dyn Node` instead of a mutable one. There is no need for it to be mutable.
-  // TODO: Consider switching to just invoking `visit_children()` because of limitations.
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    vec![]
-  }
-
-  /// Walk the node's children in a depth-first manner.
-  fn walk_children(&mut self, callback: &mut dyn FnMut(&mut dyn Node)) {
-    let mut children_queue = self.get_children();
-
-    while let Some(child) = children_queue.pop() {
-      // TODO: Does callback order matter?
-      callback(child);
-      children_queue.append(&mut child.get_children());
-    }
-  }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Identifier {
   pub name: String,
@@ -65,30 +44,16 @@ pub struct BoolLiteral {
   pub value: bool,
 }
 
-impl Node for BoolLiteral {
-  //
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct IntLiteral {
   pub value: u64,
   pub kind: int_kind::IntKind,
 }
 
-impl Node for IntLiteral {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    vec![&mut self.kind]
-  }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct StringLiteral {
   pub value: String,
   // TODO: In the future, add support for prefixes (as well as parsing of them).
-}
-
-impl Node for StringLiteral {
-  //
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -103,12 +68,6 @@ pub struct External {
   pub prototype: Prototype,
 }
 
-impl Node for External {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    vec![&mut self.prototype]
-  }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Function<'a> {
   pub is_public: bool,
@@ -116,32 +75,12 @@ pub struct Function<'a> {
   pub body: Block<'a>,
 }
 
-impl<'a> Node for Function<'a> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    vec![&mut self.prototype, &mut self.body]
-  }
-
-  fn type_check(&self) -> Option<Vec<diagnostic::Diagnostic>> {
-    type_check::type_check_function(self)
-  }
-}
-
-pub type Parameter = (String, KindGroup);
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Prototype {
   pub name: String,
   pub parameters: Vec<Parameter>,
   pub is_variadic: bool,
   pub return_kind_group: Option<KindGroup>,
-}
-
-impl<'a> Node for Prototype {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    // TODO: Figure this out.
-    // vec![&self.return_kind_group.kind]
-    vec![]
-  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -177,21 +116,6 @@ impl<'a> Module<'a> {
   }
 }
 
-impl<'a> Node for Module<'a> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    let mut children = vec![];
-
-    for (_, value) in &mut self.symbol_table {
-      children.push(match value {
-        TopLevelNodeHolder::Function(function) => function as &mut dyn Node,
-        TopLevelNodeHolder::External(external) => external as &mut dyn Node,
-      });
-    }
-
-    children
-  }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum AnyStmtNode<'a> {
   ReturnStmt(ReturnStmt<'a>),
@@ -210,6 +134,7 @@ pub struct Block<'a> {
   pub statements: Vec<AnyStmtNode<'a>>,
 }
 
+// TODO: Consider having nodes with no implementations, strictly.
 impl<'a> Block<'a> {
   /// Attempt to find a return statement in the block.
   ///
@@ -227,39 +152,9 @@ impl<'a> Block<'a> {
   }
 }
 
-impl Node for Block<'_> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    let mut children = Vec::new();
-
-    for statement in &mut self.statements {
-      match statement {
-        AnyStmtNode::ReturnStmt(stmt) => children.push(stmt as &mut dyn Node),
-        AnyStmtNode::ExprWrapperStmt(expr) => children.push(match expr {
-          ExprHolder::BoolLiteral(expr) => expr as &mut dyn Node,
-          ExprHolder::IntLiteral(expr) => expr as &mut dyn Node,
-          ExprHolder::CallExpr(expr) => expr as &mut dyn Node,
-        }),
-        AnyStmtNode::LetStmt(stmt) => children.push(stmt as &mut dyn Node),
-        AnyStmtNode::IfStmt(stmt) => children.push(stmt as &mut dyn Node),
-        AnyStmtNode::WhileStmt(stmt) => children.push(stmt as &mut dyn Node),
-        AnyStmtNode::BlockStmt(stmt) => children.push(stmt as &mut dyn Node),
-        AnyStmtNode::BreakStmt(stmt) => children.push(stmt as &mut dyn Node),
-      };
-    }
-
-    children
-  }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct BlockStmt<'a> {
   pub block: Block<'a>,
-}
-
-impl Node for BlockStmt<'_> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    vec![&mut self.block]
-  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -267,26 +162,9 @@ pub struct BreakStmt {
   //
 }
 
-impl Node for BreakStmt {
-  //
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct ReturnStmt<'a> {
   pub value: Option<ExprHolder<'a>>,
-}
-
-impl<'a> Node for ReturnStmt<'a> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    match &mut self.value {
-      Some(value) => vec![match value {
-        ExprHolder::BoolLiteral(expr) => expr as &mut dyn Node,
-        ExprHolder::IntLiteral(expr) => expr as &mut dyn Node,
-        ExprHolder::CallExpr(expr) => expr as &mut dyn Node,
-      }],
-      None => vec![],
-    }
-  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -296,22 +174,6 @@ pub struct LetStmt<'a> {
   pub value: ExprHolder<'a>,
 }
 
-impl Node for LetStmt<'_> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    vec![
-      match &mut self.kind_group.kind {
-        KindHolder::IntKind(kind) => kind as &mut dyn Node,
-        KindHolder::BoolKind(kind) => kind as &mut dyn Node,
-      },
-      match &mut self.value {
-        ExprHolder::BoolLiteral(expr) => expr as &mut dyn Node,
-        ExprHolder::IntLiteral(expr) => expr as &mut dyn Node,
-        ExprHolder::CallExpr(expr) => expr as &mut dyn Node,
-      },
-    ]
-  }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct IfStmt<'a> {
   pub condition: ExprHolder<'a>,
@@ -319,25 +181,10 @@ pub struct IfStmt<'a> {
   pub else_block: Option<Block<'a>>,
 }
 
-impl Node for IfStmt<'_> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    // TODO:
-    vec![]
-    // vec![&self.condition, &self.then_block]
-  }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct WhileStmt<'a> {
   pub condition: ExprHolder<'a>,
   pub body: Block<'a>,
-}
-
-impl Node for WhileStmt<'_> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    // TODO: Missing condition.
-    vec![&mut self.body]
-  }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -367,27 +214,8 @@ pub struct CalleeStub<'a> {
   pub value: Option<CalleeTransport<'a>>,
 }
 
-impl<'a> Node for CalleeStub<'_> {
-  fn get_children(&mut self) -> Vec<&mut dyn Node> {
-    // match self.value.as_mut() {
-    //   // TODO: Dereferencing value.
-    //   Some(value) => vec![match value.deref_mut() {
-    //     CalleeTransport::Function(func) => func as &mut dyn Node,
-    //     CalleeTransport::External(external) => external as &mut dyn Node,
-    //   }],
-    //   None => vec![],
-    // }
-    // FIXME:
-    vec![]
-  }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct CallExpr<'a> {
   pub callee_stub: CalleeStub<'a>,
   pub arguments: Vec<ExprTransport<'a>>,
-}
-
-impl Node for CallExpr<'_> {
-  //
 }
