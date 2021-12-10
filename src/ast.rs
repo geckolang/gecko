@@ -1,59 +1,53 @@
 use crate::int_kind;
 
+#[macro_export]
+macro_rules! dispatch {
+  ($node:expr, $target_fn:expr $(, $($args:expr),* )? ) => {
+    match $node {
+      $crate::ast::Node::Function(inner) => $target_fn(inner $(, $($args),* )?),
+      _ => todo!(),
+    }
+  };
+}
+
 pub type Parameter = (String, KindGroup);
 
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub enum KindTransport<'a> {
-  IntKind(&'a int_kind::IntKind),
-  BoolKind(&'a int_kind::BoolKind),
+pub enum Node<'a> {
+  BoolLiteral(BoolLiteral),
+  IntLiteral(IntLiteral),
+  StringLiteral(StringLiteral),
+  External(External),
+  Function(Function<'a>),
+  Prototype(Prototype),
+  Module(Module<'a>),
+  Block(Block<'a>),
+  BlockStmt(BlockStmt<'a>),
+  ReturnStmt(ReturnStmt<'a>),
+  LetStmt(LetStmt<'a>),
+  IfStmt(IfStmt<'a>),
+  WhileStmt(WhileStmt<'a>),
+  CallExpr(CallExpr<'a>),
+  Literal(Literal),
 }
 
-impl<'a> From<&'a KindHolder> for KindTransport<'a> {
-  fn from(kind: &'a KindHolder) -> Self {
-    match kind {
-      KindHolder::IntKind(kind) => KindTransport::IntKind(kind),
-      KindHolder::BoolKind(kind) => KindTransport::BoolKind(kind),
-    }
-  }
+pub enum IntegerKind {
+  I8,
+  I16,
+  I32,
+  I64,
+  Isize,
+  U8,
+  U16,
+  U32,
+  U64,
+  Usize,
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
-pub enum ExprTransport<'a> {
-  BoolLiteral(&'a BoolLiteral),
-  IntLiteral(&'a IntLiteral),
-  CallExpr(&'a CallExpr<'a>),
-}
-
-impl<'a> From<&'a ExprHolder<'a>> for ExprTransport<'a> {
-  fn from(expr_holder: &'a ExprHolder<'a>) -> Self {
-    match expr_holder {
-      ExprHolder::BoolLiteral(bool_literal) => ExprTransport::BoolLiteral(bool_literal),
-      ExprHolder::IntLiteral(int_literal) => ExprTransport::IntLiteral(int_literal),
-      ExprHolder::CallExpr(call_expr) => ExprTransport::CallExpr(call_expr),
-    }
-  }
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub struct Identifier {
-  pub name: String,
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub struct BoolLiteral {
-  pub value: bool,
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub struct IntLiteral {
-  pub value: u64,
-  pub kind: int_kind::IntKind,
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub struct StringLiteral {
-  pub value: String,
-  // TODO: In the future, add support for prefixes (as well as parsing of them).
+pub enum Literal {
+  Bool(bool),
+  Integer(u64, IntegerKind),
+  Char(char),
+  String(String),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -81,19 +75,6 @@ pub struct Prototype {
   pub parameters: Vec<Parameter>,
   pub is_variadic: bool,
   pub return_kind_group: Option<KindGroup>,
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub enum ExprHolder<'a> {
-  BoolLiteral(BoolLiteral),
-  IntLiteral(IntLiteral),
-  CallExpr(CallExpr<'a>),
-}
-
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
-pub enum KindHolder {
-  IntKind(int_kind::IntKind),
-  BoolKind(int_kind::BoolKind),
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
@@ -188,34 +169,8 @@ pub struct WhileStmt<'a> {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug)]
-pub enum AnyExprNode<'a> {
-  CallExpr(&'a CallExpr<'a>),
-  LiteralWrapperExpr(ExprHolder<'a>),
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub enum CalleeTransport<'a> {
-  Function(&'a Function<'a>),
-  External(&'a External),
-}
-
-impl<'a> CalleeTransport<'a> {
-  pub fn get_prototype(&self) -> &Prototype {
-    match self {
-      CalleeTransport::Function(function) => &function.prototype,
-      CalleeTransport::External(external) => &external.prototype,
-    }
-  }
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub struct CalleeStub<'a> {
-  pub name: String,
-  pub value: Option<CalleeTransport<'a>>,
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct CallExpr<'a> {
-  pub callee_stub: CalleeStub<'a>,
+  // FIXME: Finish implementing.
+  pub callee: Option<context::>,
   pub arguments: Vec<ExprTransport<'a>>,
 }

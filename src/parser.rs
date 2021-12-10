@@ -562,7 +562,7 @@ impl<'a> Parser {
     skip_past!(self, token::Token::SymbolParenthesesR);
 
     Ok(ast::CallExpr {
-      callee_stub: ast::CalleeStub {
+      callee: ast::CalleeStub {
         name: callee_name,
         value: None,
       },

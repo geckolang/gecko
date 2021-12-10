@@ -1,4 +1,4 @@
-use crate::{diagnostic, int_kind, ast};
+use crate::{ast, context, diagnostic, int_kind};
 use inkwell::{types::AnyType, values::BasicValue};
 
 macro_rules! lower_or_retrieve_type {
@@ -99,6 +99,92 @@ impl<'a> From<&'a ast::ExprHolder<'a>> for NodeValueKey<'a> {
       ast::ExprHolder::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
       ast::ExprHolder::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
       ast::ExprHolder::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
+    }
+  }
+}
+
+struct LlvmGenerator<'ctx> {
+  llvm_context: &'ctx inkwell::context::Context,
+  llvm_module: inkwell::module::Module<'ctx>,
+}
+
+trait Lower {
+  fn lower<'ctx>(
+    &self,
+    generator: LlvmGenerator<'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx>;
+}
+
+impl Lower for ast::Prototype {
+  fn lower<'ctx>(
+    &self,
+    generator: LlvmGenerator<'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: Simplify process of lowering parameters for externals as well.
+    let mut parameters = vec![];
+
+    parameters.reserve(self.parameters.len());
+
+    // TODO: Further on, need to make use of the parameter's name somehow (maybe during lookups?).
+    for (parameter_name, parameter_kind_group) in &self.parameters {
+      let llvm_parameter =
+        lower_or_retrieve_type!(self, &NodeKindKey::from(&parameter_kind_group.kind))?;
+
+      parameters.push(match llvm_parameter {
+        // TODO: Add other types as they become available.
+        inkwell::types::AnyTypeEnum::IntType(int_type) => {
+          inkwell::types::BasicMetadataTypeEnum::IntType(*int_type)
+        }
+        inkwell::types::AnyTypeEnum::VoidType(_) => {
+          todo!();
+          // return Err(diagnostic::Diagnostic {
+          //   message: format!("type of parameter `{}` cannot be void", parameter_name),
+          //   severity: diagnostic::Severity::Internal,
+          // })
+        }
+        _ => {
+          todo!();
+          // return Err(diagnostic::Diagnostic {
+          //   message: format!("unsupported parameter type for `{}`", parameter_name),
+          //   severity: diagnostic::Severity::Internal,
+          // })
+        }
+      });
+    }
+
+    // TODO: Creating regardless.
+    let llvm_void_type = generator.llvm_context.void_type().as_any_type_enum();
+
+    let llvm_function_type = Self::get_function_type_from(
+      parameters.as_slice(),
+      if let Some(return_kind_group) = &prototype.return_kind_group {
+        lower_or_retrieve_type!(self, &NodeKindKey::from(&return_kind_group.kind))?
+      } else {
+        &llvm_void_type
+      },
+      self.is_variadic,
+    )?;
+
+    Ok(llvm_function_type)
+  }
+}
+
+impl Lower for ast::Literal {
+  fn lower<'ctx>(
+    &self,
+    generator: LlvmGenerator<'ctx>,
+    _: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    match self {
+      ast::Literal::Char(character) => generator
+        .llvm_context
+        .i8_type()
+        .const_int(*character as u64, false)
+        .as_basic_value_enum(),
+      // TODO: Process all literals.
+      _ => todo!(),
     }
   }
 }
@@ -471,9 +557,9 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
     call_expr: &'a ast::CallExpr<'a>,
   ) -> diagnostic::DiagnosticResult<inkwell::values::CallSiteValue<'ctx>> {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
-    crate::pass_assert!(call_expr.callee_stub.value.is_some());
+    crate::pass_assert!(call_expr.callee.value.is_some());
 
-    match call_expr.callee_stub.value.as_ref().unwrap() {
+    match call_expr.callee.value.as_ref().unwrap() {
       // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
       ast::CalleeTransport::Function(function) => self.lower_function(function)?,
       ast::CalleeTransport::External(external) => self.lower_external(external)?,
