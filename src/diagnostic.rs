@@ -28,3 +28,5 @@ pub fn unreachable() -> Diagnostic {
     severity: Severity::Internal,
   }
 }
+
+pub type DiagnosticResult<T> = Result<T, Diagnostic>;

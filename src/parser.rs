@@ -1,4 +1,4 @@
-use crate::{diagnostic, int_kind, node, token};
+use crate::{diagnostic, int_kind, ast, token};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -120,7 +120,7 @@ impl<'a> Parser {
 
   /// TODO: Be specific, which statements? Also include lonely expression.
   /// '{' (%statement+) '}'
-  fn parse_block(&mut self, llvm_name: &str) -> ParserResult<node::Block<'a>> {
+  fn parse_block(&mut self, llvm_name: &str) -> ParserResult<ast::Block<'a>> {
     // TODO: Have a symbol table for blocks, and check for re-declarations here.
 
     skip_past!(self, token::Token::SymbolBraceL);
@@ -129,14 +129,14 @@ impl<'a> Parser {
 
     while !self.is(token::Token::SymbolBraceR) && !self.is_eof() {
       statements.push(match self.tokens[self.index] {
-        token::Token::KeywordReturn => node::AnyStmtNode::ReturnStmt(self.parse_return_stmt()?),
-        token::Token::KeywordLet => node::AnyStmtNode::LetStmt(self.parse_let_stmt()?),
-        token::Token::KeywordIf => node::AnyStmtNode::IfStmt(self.parse_if_stmt()?),
-        token::Token::KeywordWhile => node::AnyStmtNode::WhileStmt(self.parse_while_stmt()?),
-        token::Token::SymbolBraceL => node::AnyStmtNode::BlockStmt(self.parse_block_stmt()?),
-        token::Token::KeywordBreak => node::AnyStmtNode::BreakStmt(self.parse_break_stmt()?),
+        token::Token::KeywordReturn => ast::AnyStmtNode::ReturnStmt(self.parse_return_stmt()?),
+        token::Token::KeywordLet => ast::AnyStmtNode::LetStmt(self.parse_let_stmt()?),
+        token::Token::KeywordIf => ast::AnyStmtNode::IfStmt(self.parse_if_stmt()?),
+        token::Token::KeywordWhile => ast::AnyStmtNode::WhileStmt(self.parse_while_stmt()?),
+        token::Token::SymbolBraceL => ast::AnyStmtNode::BlockStmt(self.parse_block_stmt()?),
+        token::Token::KeywordBreak => ast::AnyStmtNode::BreakStmt(self.parse_break_stmt()?),
         _ => {
-          let expr_wrapper_stmt = node::AnyStmtNode::ExprWrapperStmt(self.parse_expr()?);
+          let expr_wrapper_stmt = ast::AnyStmtNode::ExprWrapperStmt(self.parse_expr()?);
 
           expr_wrapper_stmt
         }
@@ -145,7 +145,7 @@ impl<'a> Parser {
 
     skip_past!(self, token::Token::SymbolBraceR);
 
-    Ok(node::Block {
+    Ok(ast::Block {
       llvm_name: llvm_name.to_string(),
       statements,
     })
@@ -191,7 +191,7 @@ impl<'a> Parser {
   }
 
   /// ('&') (mut) %kind
-  fn parse_kind_group(&mut self) -> ParserResult<node::KindGroup> {
+  fn parse_kind_group(&mut self) -> ParserResult<ast::KindGroup> {
     let mut is_reference = false;
     let mut is_mutable = false;
 
@@ -211,8 +211,8 @@ impl<'a> Parser {
       token::Token::KeywordUnsigned
       | token::Token::TypeInt16
       | token::Token::TypeInt32
-      | token::Token::TypeInt64 => node::KindHolder::IntKind(self.parse_int_kind()?),
-      token::Token::TypeBool => node::KindHolder::BoolKind(self.parse_bool_kind()?),
+      | token::Token::TypeInt64 => ast::KindHolder::IntKind(self.parse_int_kind()?),
+      token::Token::TypeBool => ast::KindHolder::BoolKind(self.parse_bool_kind()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -225,7 +225,7 @@ impl<'a> Parser {
       }
     };
 
-    Ok(node::KindGroup {
+    Ok(ast::KindGroup {
       kind,
       is_reference,
       is_mutable,
@@ -233,7 +233,7 @@ impl<'a> Parser {
   }
 
   /// %name ':' %kind_group
-  fn parse_parameter(&mut self) -> ParserResult<node::Parameter> {
+  fn parse_parameter(&mut self) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolColon);
@@ -244,7 +244,7 @@ impl<'a> Parser {
   }
 
   /// %name '(' {%parameter* (,)} (+) ')' '~' %kind_group
-  fn parse_prototype(&mut self) -> ParserResult<node::Prototype> {
+  fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
@@ -279,7 +279,7 @@ impl<'a> Parser {
       return_kind_group = Some(self.parse_kind_group()?);
     }
 
-    Ok(node::Prototype {
+    Ok(ast::Prototype {
       name,
       parameters,
       is_variadic,
@@ -288,7 +288,7 @@ impl<'a> Parser {
   }
 
   /// (pub) fn %prototype %block
-  fn parse_function(&mut self) -> ParserResult<node::Function<'a>> {
+  fn parse_function(&mut self) -> ParserResult<ast::Function<'a>> {
     // TODO: Visibility should not be handled here.
 
     let mut is_public = false;
@@ -307,12 +307,12 @@ impl<'a> Parser {
     if body.statements.is_empty() {
       body
         .statements
-        .push(node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
+        .push(ast::AnyStmtNode::ReturnStmt(ast::ReturnStmt {
           value: None,
         }));
     }
 
-    Ok(node::Function {
+    Ok(ast::Function {
       is_public,
       prototype,
       body,
@@ -320,7 +320,7 @@ impl<'a> Parser {
   }
 
   /// (pub) extern fn %prototype
-  fn parse_external(&mut self) -> ParserResult<node::External> {
+  fn parse_external(&mut self) -> ParserResult<ast::External> {
     // TODO: Support for visibility.
 
     skip_past!(self, token::Token::KeywordExtern);
@@ -328,10 +328,10 @@ impl<'a> Parser {
 
     let prototype = self.parse_prototype()?;
 
-    Ok(node::External { prototype })
+    Ok(ast::External { prototype })
   }
 
-  fn parse_top_level_node(&mut self) -> ParserResult<node::TopLevelNodeHolder<'a>> {
+  fn parse_top_level_node(&mut self) -> ParserResult<ast::TopLevelNodeHolder<'a>> {
     let mut token = self.tokens.get(self.index);
 
     if self.is(token::Token::KeywordPub) {
@@ -346,8 +346,8 @@ impl<'a> Parser {
     }
 
     Ok(match token.unwrap() {
-      token::Token::KeywordFn => node::TopLevelNodeHolder::Function(self.parse_function()?),
-      token::Token::KeywordExtern => node::TopLevelNodeHolder::External(self.parse_external()?),
+      token::Token::KeywordFn => ast::TopLevelNodeHolder::Function(self.parse_function()?),
+      token::Token::KeywordExtern => ast::TopLevelNodeHolder::External(self.parse_external()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -361,7 +361,7 @@ impl<'a> Parser {
   }
 
   /// return (%expr)
-  fn parse_return_stmt(&mut self) -> ParserResult<node::ReturnStmt<'a>> {
+  fn parse_return_stmt(&mut self) -> ParserResult<ast::ReturnStmt<'a>> {
     skip_past!(self, token::Token::KeywordReturn);
 
     let mut value = None;
@@ -371,11 +371,11 @@ impl<'a> Parser {
       value = Some(self.parse_literal()?);
     }
 
-    Ok(node::ReturnStmt { value })
+    Ok(ast::ReturnStmt { value })
   }
 
   /// let %name (':' %kind_group) '=' %expr
-  fn parse_let_stmt(&mut self) -> ParserResult<node::LetStmt<'a>> {
+  fn parse_let_stmt(&mut self) -> ParserResult<ast::LetStmt<'a>> {
     skip_past!(self, token::Token::KeywordLet);
 
     let name = self.parse_name()?;
@@ -393,22 +393,22 @@ impl<'a> Parser {
     // Infer the kind of the variable, based on its value.
     if kind_group.is_none() {
       let kind = match &value {
-        node::ExprHolder::BoolLiteral(_) => node::KindHolder::BoolKind(int_kind::BoolKind),
-        node::ExprHolder::IntLiteral(int_literal) => {
-          node::KindHolder::IntKind(int_literal.kind.clone())
+        ast::ExprHolder::BoolLiteral(_) => ast::KindHolder::BoolKind(int_kind::BoolKind),
+        ast::ExprHolder::IntLiteral(int_literal) => {
+          ast::KindHolder::IntKind(int_literal.kind.clone())
         }
         // TODO: Implement.
-        node::ExprHolder::CallExpr(_) => todo!(),
+        ast::ExprHolder::CallExpr(_) => todo!(),
       };
 
-      kind_group = Some(node::KindGroup {
+      kind_group = Some(ast::KindGroup {
         kind,
         is_mutable: false,
         is_reference: false,
       });
     }
 
-    Ok(node::LetStmt {
+    Ok(ast::LetStmt {
       name,
       kind_group: kind_group.unwrap(),
       value,
@@ -416,7 +416,7 @@ impl<'a> Parser {
   }
 
   /// if %expr %block (else %block)
-  fn parse_if_stmt(&mut self) -> ParserResult<node::IfStmt<'a>> {
+  fn parse_if_stmt(&mut self) -> ParserResult<ast::IfStmt<'a>> {
     skip_past!(self, token::Token::KeywordIf);
 
     let condition = self.parse_expr()?;
@@ -428,41 +428,41 @@ impl<'a> Parser {
       else_block = Some(self.parse_block("if_else")?);
     }
 
-    Ok(node::IfStmt {
+    Ok(ast::IfStmt {
       condition,
       then_block,
       else_block,
     })
   }
 
-  fn parse_while_stmt(&mut self) -> ParserResult<node::WhileStmt<'a>> {
+  fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt<'a>> {
     skip_past!(self, token::Token::KeywordWhile);
 
     let condition = self.parse_expr()?;
     let body = self.parse_block("while_then")?;
 
-    Ok(node::WhileStmt { condition, body })
+    Ok(ast::WhileStmt { condition, body })
   }
 
-  fn parse_block_stmt(&mut self) -> ParserResult<node::BlockStmt<'a>> {
-    Ok(node::BlockStmt {
+  fn parse_block_stmt(&mut self) -> ParserResult<ast::BlockStmt<'a>> {
+    Ok(ast::BlockStmt {
       block: self.parse_block("block_stmt")?,
     })
   }
 
-  fn parse_break_stmt(&mut self) -> ParserResult<node::BreakStmt> {
+  fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
     skip_past!(self, token::Token::KeywordBreak);
 
-    Ok(node::BreakStmt {})
+    Ok(ast::BreakStmt {})
   }
 
   /// {true | false}
-  fn parse_bool_literal(&mut self) -> ParserResult<node::BoolLiteral> {
+  fn parse_bool_literal(&mut self) -> ParserResult<ast::BoolLiteral> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(value) => {
         self.skip();
 
-        node::BoolLiteral { value }
+        ast::BoolLiteral { value }
       }
       // TODO: Better error.
       _ => {
@@ -474,7 +474,7 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_int_literal(&mut self) -> ParserResult<node::IntLiteral> {
+  fn parse_int_literal(&mut self) -> ParserResult<ast::IntLiteral> {
     // TODO:
     // Ok(match self.tokens.get(self.index) {
     //   Some(token::Token::LiteralInt(value)) => {
@@ -499,7 +499,7 @@ impl<'a> Parser {
           size = int_kind::IntSize::Size32;
         }
 
-        node::IntLiteral {
+        ast::IntLiteral {
           value,
           // TODO: Signed or not.
           kind: int_kind::IntKind {
@@ -517,10 +517,10 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_literal(&mut self) -> ParserResult<node::ExprHolder<'a>> {
+  fn parse_literal(&mut self) -> ParserResult<ast::ExprHolder<'a>> {
     Ok(match self.tokens[self.index] {
-      token::Token::LiteralBool(_) => node::ExprHolder::BoolLiteral(self.parse_bool_literal()?),
-      token::Token::LiteralInt(_) => node::ExprHolder::IntLiteral(self.parse_int_literal()?),
+      token::Token::LiteralBool(_) => ast::ExprHolder::BoolLiteral(self.parse_bool_literal()?),
+      token::Token::LiteralInt(_) => ast::ExprHolder::IntLiteral(self.parse_int_literal()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           // TODO: Show the actual token.
@@ -531,11 +531,11 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_expr(&mut self) -> ParserResult<node::ExprHolder<'a>> {
+  fn parse_expr(&mut self) -> ParserResult<ast::ExprHolder<'a>> {
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
-          node::ExprHolder::CallExpr(self.parse_call_expr()?)
+          ast::ExprHolder::CallExpr(self.parse_call_expr()?)
         } else {
           return Err(diagnostic::Diagnostic {
             // TODO: Show the actual token.
@@ -549,20 +549,20 @@ impl<'a> Parser {
   }
 
   /// %name '(' (%expr (,))* ')'
-  fn parse_call_expr(&mut self) -> ParserResult<node::CallExpr<'a>> {
+  fn parse_call_expr(&mut self) -> ParserResult<ast::CallExpr<'a>> {
     let callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
     // TODO: Shouldn't it be a `Vec<node::ExprTransport<'a>>`?
-    let arguments: Vec<node::ExprTransport<'a>> = vec![];
+    let arguments: Vec<ast::ExprTransport<'a>> = vec![];
 
     // TODO: Parse arguments.
 
     skip_past!(self, token::Token::SymbolParenthesesR);
 
-    Ok(node::CallExpr {
-      callee_stub: node::CalleeStub {
+    Ok(ast::CallExpr {
+      callee_stub: ast::CalleeStub {
         name: callee_name,
         value: None,
       },
@@ -572,18 +572,18 @@ impl<'a> Parser {
 
   // TODO: Must add tests for this.
   /// module %name
-  pub fn parse_module(&mut self) -> ParserResult<node::Module<'a>> {
+  pub fn parse_module(&mut self) -> ParserResult<ast::Module<'a>> {
     skip_past!(self, token::Token::KeywordModule);
 
     let name = self.parse_name()?;
-    let mut module = node::Module::new(name.as_str());
+    let mut module = ast::Module::new(name.as_str());
 
     while !self.is_eof() && !self.is(token::Token::KeywordModule) {
       let top_level_node = self.parse_top_level_node()?;
 
       let top_level_node_name = match &top_level_node {
-        node::TopLevelNodeHolder::Function(function) => &function.prototype.name,
-        node::TopLevelNodeHolder::External(external) => &external.prototype.name,
+        ast::TopLevelNodeHolder::Function(function) => &function.prototype.name,
+        ast::TopLevelNodeHolder::External(external) => &external.prototype.name,
       };
 
       if module.symbol_table.contains_key(top_level_node_name) {

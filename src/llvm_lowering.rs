@@ -1,4 +1,4 @@
-use crate::{diagnostic, int_kind, node};
+use crate::{diagnostic, int_kind, ast};
 use inkwell::{types::AnyType, values::BasicValue};
 
 macro_rules! lower_or_retrieve_type {
@@ -62,48 +62,46 @@ const ENTRY_POINT_NAME: &str = "main";
 
 #[derive(Hash, Eq, PartialEq)]
 enum NodeValueKey<'a> {
-  BoolLiteral(&'a node::BoolLiteral),
-  IntLiteral(&'a node::IntLiteral),
-  CallExpr(&'a node::CallExpr<'a>),
+  BoolLiteral(&'a ast::BoolLiteral),
+  IntLiteral(&'a ast::IntLiteral),
+  CallExpr(&'a ast::CallExpr<'a>),
 }
 
 #[derive(Hash, Eq, PartialEq)]
 enum NodeKindKey<'a> {
-  Prototype(&'a node::Prototype),
+  Prototype(&'a ast::Prototype),
   IntKind(&'a int_kind::IntKind),
   BoolKind(&'a int_kind::BoolKind),
 }
 
-impl<'a> From<&'a node::KindHolder> for NodeKindKey<'a> {
-  fn from(kind: &'a node::KindHolder) -> Self {
+impl<'a> From<&'a ast::KindHolder> for NodeKindKey<'a> {
+  fn from(kind: &'a ast::KindHolder) -> Self {
     match kind {
-      node::KindHolder::IntKind(kind) => NodeKindKey::IntKind(kind),
-      node::KindHolder::BoolKind(kind) => NodeKindKey::BoolKind(kind),
+      ast::KindHolder::IntKind(kind) => NodeKindKey::IntKind(kind),
+      ast::KindHolder::BoolKind(kind) => NodeKindKey::BoolKind(kind),
     }
   }
 }
 
-impl<'a> From<node::ExprTransport<'a>> for NodeValueKey<'a> {
-  fn from(expr_transport: node::ExprTransport<'a>) -> Self {
+impl<'a> From<ast::ExprTransport<'a>> for NodeValueKey<'a> {
+  fn from(expr_transport: ast::ExprTransport<'a>) -> Self {
     match expr_transport {
-      node::ExprTransport::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
-      node::ExprTransport::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
-      node::ExprTransport::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
+      ast::ExprTransport::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
+      ast::ExprTransport::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
+      ast::ExprTransport::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
     }
   }
 }
 
-impl<'a> From<&'a node::ExprHolder<'a>> for NodeValueKey<'a> {
-  fn from(expr_holder: &'a node::ExprHolder<'a>) -> Self {
+impl<'a> From<&'a ast::ExprHolder<'a>> for NodeValueKey<'a> {
+  fn from(expr_holder: &'a ast::ExprHolder<'a>) -> Self {
     match expr_holder {
-      node::ExprHolder::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
-      node::ExprHolder::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
-      node::ExprHolder::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
+      ast::ExprHolder::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
+      ast::ExprHolder::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
+      ast::ExprHolder::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
     }
   }
 }
-
-type DiagnosticResult<T> = Result<T, diagnostic::Diagnostic>;
 
 pub struct LlvmLowering<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
@@ -112,12 +110,12 @@ pub struct LlvmLowering<'a, 'ctx> {
   llvm_value_map:
     std::collections::HashMap<NodeValueKey<'a>, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_basic_block_map:
-    std::collections::HashMap<&'a node::Block<'a>, inkwell::basic_block::BasicBlock<'ctx>>,
+    std::collections::HashMap<&'a ast::Block<'a>, inkwell::basic_block::BasicBlock<'ctx>>,
   llvm_basic_block_fallthrough_stack: Vec<inkwell::basic_block::BasicBlock<'ctx>>,
   llvm_function_like_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Consider making Option?
   llvm_builder_buffer: inkwell::builder::Builder<'ctx>,
-  module_buffer: Option<&'a node::Module<'a>>,
+  module_buffer: Option<&'a ast::Module<'a>>,
 }
 
 impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
@@ -159,7 +157,7 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
   ///
   /// These nodes will be emitted to the LLVM module provided for this
   /// instance of the lowering struct.
-  pub fn lower_module(&mut self, module: &'a node::Module<'a>) -> DiagnosticResult<()> {
+  pub fn lower_module(&mut self, module: &'a ast::Module<'a>) -> diagnostic::DiagnosticResult<()> {
     // Reset all buffers when visiting a new module.
     self.llvm_builder_buffer.clear_insertion_position();
     self.llvm_function_like_buffer = None;
@@ -167,8 +165,8 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
     for top_level_node in module.symbol_table.values() {
       match top_level_node {
-        node::TopLevelNodeHolder::Function(function) => self.lower_function(function)?,
-        node::TopLevelNodeHolder::External(external) => self.lower_external(external)?,
+        ast::TopLevelNodeHolder::Function(function) => self.lower_function(function)?,
+        ast::TopLevelNodeHolder::External(external) => self.lower_external(external)?,
       };
     }
 
@@ -178,7 +176,7 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
   fn lower_int_kind(
     &mut self,
     int_kind: &'a int_kind::IntKind,
-  ) -> DiagnosticResult<inkwell::types::IntType<'ctx>> {
+  ) -> diagnostic::DiagnosticResult<inkwell::types::IntType<'ctx>> {
     let llvm_int_type = match int_kind.size {
       int_kind::IntSize::Size8 => self.llvm_context.i8_type(),
       int_kind::IntSize::Size16 => self.llvm_context.i16_type(),
@@ -197,7 +195,7 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
   fn lower_bool_kind(
     &mut self,
     bool_kind: &'a int_kind::BoolKind,
-  ) -> DiagnosticResult<inkwell::types::IntType<'ctx>> {
+  ) -> diagnostic::DiagnosticResult<inkwell::types::IntType<'ctx>> {
     let llvm_bool_kind = self.llvm_context.bool_type();
 
     self.llvm_type_map.insert(
@@ -210,8 +208,8 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
   fn lower_function(
     &mut self,
-    function: &'a node::Function<'a>,
-  ) -> DiagnosticResult<inkwell::values::FunctionValue<'ctx>> {
+    function: &'a ast::Function<'a>,
+  ) -> diagnostic::DiagnosticResult<inkwell::values::FunctionValue<'ctx>> {
     // TODO: At this point is should be clear by default (unless specific methods where called). Maybe put note about this.
     self.llvm_basic_block_fallthrough_stack.clear();
 
@@ -279,8 +277,8 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
   fn lower_external(
     &mut self,
-    external: &'a node::External,
-  ) -> DiagnosticResult<inkwell::values::FunctionValue<'ctx>> {
+    external: &'a ast::External,
+  ) -> diagnostic::DiagnosticResult<inkwell::values::FunctionValue<'ctx>> {
     let llvm_function_type =
       lower_or_retrieve_type!(self, &NodeKindKey::Prototype(&external.prototype))?;
 
@@ -302,8 +300,8 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
   fn lower_block(
     &mut self,
-    block: &'a node::Block<'a>,
-  ) -> DiagnosticResult<inkwell::basic_block::BasicBlock<'ctx>> {
+    block: &'a ast::Block<'a>,
+  ) -> diagnostic::DiagnosticResult<inkwell::basic_block::BasicBlock<'ctx>> {
     crate::pass_assert!(self.llvm_function_like_buffer.is_some());
 
     let llvm_basic_block = self.llvm_context.append_basic_block(
@@ -317,30 +315,30 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
     for statement in &block.statements {
       // TODO: Get `&dyn Node` then call `accept()` on it. Only if this occurs more than once (would need to implement `From<>`).
       match statement {
-        node::AnyStmtNode::ReturnStmt(return_stmt) => {
+        ast::AnyStmtNode::ReturnStmt(return_stmt) => {
           self.lower_return_stmt(&return_stmt)?;
         }
         // TODO: Consider relocating as an associated function for `Pass`? Does this occur more than once?
-        node::AnyStmtNode::ExprWrapperStmt(expr) => {
+        ast::AnyStmtNode::ExprWrapperStmt(expr) => {
           match expr {
             // TODO: Implement missing cases.
-            node::ExprHolder::CallExpr(call_expr) => self.lower_call_expr(call_expr)?,
+            ast::ExprHolder::CallExpr(call_expr) => self.lower_call_expr(call_expr)?,
             _ => todo!(),
           };
         }
-        node::AnyStmtNode::LetStmt(let_stmt) => {
+        ast::AnyStmtNode::LetStmt(let_stmt) => {
           self.lower_let_stmt(&let_stmt)?;
         }
-        node::AnyStmtNode::IfStmt(if_stmt) => {
+        ast::AnyStmtNode::IfStmt(if_stmt) => {
           self.lower_if_stmt(&if_stmt)?;
         }
-        node::AnyStmtNode::WhileStmt(while_stmt) => {
+        ast::AnyStmtNode::WhileStmt(while_stmt) => {
           self.lower_while_stmt(&while_stmt)?;
         }
-        node::AnyStmtNode::BlockStmt(block_stmt) => {
+        ast::AnyStmtNode::BlockStmt(block_stmt) => {
           self.lower_block_stmt(&block_stmt)?;
         }
-        node::AnyStmtNode::BreakStmt(break_stmt) => {
+        ast::AnyStmtNode::BreakStmt(break_stmt) => {
           self.lower_break_stmt(&break_stmt)?;
         }
       };
@@ -351,14 +349,14 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
   fn lower_return_stmt(
     &mut self,
-    return_stmt: &'a node::ReturnStmt<'a>,
-  ) -> DiagnosticResult<inkwell::values::InstructionValue<'ctx>> {
+    return_stmt: &'a ast::ReturnStmt<'a>,
+  ) -> diagnostic::DiagnosticResult<inkwell::values::InstructionValue<'ctx>> {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
     if return_stmt.value.is_some() {
       lower_or_retrieve_value!(
         self,
-        &NodeValueKey::from(node::ExprTransport::from(
+        &NodeValueKey::from(ast::ExprTransport::from(
           return_stmt.value.as_ref().unwrap(),
         ))
       )?;
@@ -370,7 +368,7 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
         Some(
           self
             .llvm_value_map
-            .get(&NodeValueKey::from(node::ExprTransport::from(
+            .get(&NodeValueKey::from(ast::ExprTransport::from(
               return_stmt.value.as_ref().unwrap(),
             )))
             .unwrap(),
@@ -384,8 +382,8 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
   fn lower_let_stmt(
     &mut self,
-    let_stmt: &'a node::LetStmt<'a>,
-  ) -> DiagnosticResult<inkwell::values::PointerValue<'ctx>> {
+    let_stmt: &'a ast::LetStmt<'a>,
+  ) -> diagnostic::DiagnosticResult<inkwell::values::PointerValue<'ctx>> {
     use inkwell::types::BasicType;
 
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
@@ -426,15 +424,15 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
   fn lower_bool_literal(
     &mut self,
-    bool_literal: &'a node::BoolLiteral,
-  ) -> DiagnosticResult<inkwell::values::IntValue<'ctx>> {
+    bool_literal: &'a ast::BoolLiteral,
+  ) -> diagnostic::DiagnosticResult<inkwell::values::IntValue<'ctx>> {
     let llvm_bool_value = self
       .llvm_context
       .bool_type()
       .const_int(bool_literal.value as u64, false);
 
     self.llvm_value_map.insert(
-      node::ExprTransport::BoolLiteral(bool_literal).into(),
+      ast::ExprTransport::BoolLiteral(bool_literal).into(),
       inkwell::values::BasicValueEnum::IntValue(llvm_bool_value),
     );
 
@@ -443,8 +441,8 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
   fn lower_int_literal(
     &mut self,
-    int_literal: &'a node::IntLiteral,
-  ) -> DiagnosticResult<inkwell::values::IntValue<'ctx>> {
+    int_literal: &'a ast::IntLiteral,
+  ) -> diagnostic::DiagnosticResult<inkwell::values::IntValue<'ctx>> {
     let llvm_type = lower_or_retrieve_type!(self, &NodeKindKey::IntKind(&int_literal.kind))?;
 
     let llvm_int_value = match llvm_type {
@@ -461,7 +459,7 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
     };
 
     self.llvm_value_map.insert(
-      node::ExprTransport::IntLiteral(&int_literal).into(),
+      ast::ExprTransport::IntLiteral(&int_literal).into(),
       inkwell::values::BasicValueEnum::IntValue(llvm_int_value),
     );
 
@@ -470,15 +468,15 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
 
   fn lower_call_expr(
     &mut self,
-    call_expr: &'a node::CallExpr<'a>,
-  ) -> DiagnosticResult<inkwell::values::InstructionValue<'ctx>> {
+    call_expr: &'a ast::CallExpr<'a>,
+  ) -> diagnostic::DiagnosticResult<inkwell::values::CallSiteValue<'ctx>> {
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
     crate::pass_assert!(call_expr.callee_stub.value.is_some());
 
     match call_expr.callee_stub.value.as_ref().unwrap() {
       // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
-      node::CalleeTransport::Function(function) => self.lower_function(function)?,
-      node::CalleeTransport::External(external) => self.lower_external(external)?,
+      ast::CalleeTransport::Function(function) => self.lower_function(function)?,
+      ast::CalleeTransport::External(external) => self.lower_external(external)?,
     };
 
     let mut arguments = Vec::new();
@@ -503,31 +501,27 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
       });
     }
 
-    // TODO: Process & provide call arguments.
-    // TODO: Ensure it's not the alternative void type.
-    let llvm_call_result = self
-      .llvm_builder_buffer
-      .build_call(
-        self.llvm_function_like_buffer.unwrap(),
-        arguments.as_slice(),
-        "call_result",
-      )
-      .try_as_basic_value();
+    let llvm_call_value = self.llvm_builder_buffer.build_call(
+      self.llvm_function_like_buffer.unwrap(),
+      arguments.as_slice(),
+      "call_result",
+    );
 
-    crate::pass_assert!(llvm_call_result.is_left());
+    let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();
 
-    let llvm_call_inst = llvm_call_result.left().unwrap();
+    crate::pass_assert!(llvm_call_basic_value_result.is_left());
+
+    let llvm_call_basic_value = llvm_call_basic_value_result.left().unwrap();
 
     self
       .llvm_value_map
-      .insert(NodeValueKey::CallExpr(call_expr), llvm_call_inst);
+      .insert(NodeValueKey::CallExpr(call_expr), llvm_call_basic_value);
 
-    // FIXME: Awaiting checks.
-    // Ok(llvm_call_inst)
-    todo!();
+    // FIXME: Awaiting checks?
+    Ok(llvm_call_value)
   }
 
-  fn lower_if_stmt(&mut self, if_stmt: &'a node::IfStmt<'a>) -> DiagnosticResult<()> {
+  fn lower_if_stmt(&mut self, if_stmt: &'a ast::IfStmt<'a>) -> diagnostic::DiagnosticResult<()> {
     crate::pass_assert!(self.llvm_function_like_buffer.is_some());
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
@@ -594,7 +588,10 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
     todo!();
   }
 
-  fn lower_while_stmt(&mut self, while_stmt: &'a node::WhileStmt<'a>) -> DiagnosticResult<()> {
+  fn lower_while_stmt(
+    &mut self,
+    while_stmt: &'a ast::WhileStmt<'a>,
+  ) -> diagnostic::DiagnosticResult<()> {
     // FIXME: The problem is that fallthrough only occurs once, it does not propagate. (Along with the possible empty block problem).
 
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
@@ -646,7 +643,10 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
     Ok(())
   }
 
-  fn lower_block_stmt(&mut self, block_stmt: &'a node::BlockStmt<'a>) -> DiagnosticResult<()> {
+  fn lower_block_stmt(
+    &mut self,
+    block_stmt: &'a ast::BlockStmt<'a>,
+  ) -> diagnostic::DiagnosticResult<()> {
     crate::pass_assert!(self.llvm_function_like_buffer.is_some());
     crate::pass_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
 
@@ -682,15 +682,18 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
     Ok(())
   }
 
-  fn lower_break_stmt(&mut self, _break_stmt: &'a node::BreakStmt) -> DiagnosticResult<()> {
+  fn lower_break_stmt(
+    &mut self,
+    _break_stmt: &'a ast::BreakStmt,
+  ) -> diagnostic::DiagnosticResult<()> {
     // TODO: Must ensure that the current block is a loop block.
     todo!();
   }
 
   fn lower_prototype(
     &mut self,
-    prototype: &'a node::Prototype,
-  ) -> DiagnosticResult<inkwell::types::FunctionType<'ctx>> {
+    prototype: &'a ast::Prototype,
+  ) -> diagnostic::DiagnosticResult<inkwell::types::FunctionType<'ctx>> {
     // TODO: Creating regardless.
     let llvm_void_type = self.llvm_context.void_type().as_any_type_enum();
 
@@ -803,22 +806,22 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let mut llvm_lowering_pass = LlvmLowering::new(&llvm_context, &llvm_module);
-    let module = node::Module::new("test");
+    let module = ast::Module::new("test");
 
     llvm_lowering_pass.module_buffer = Some(&module);
 
-    let function = node::Function {
+    let function = ast::Function {
       is_public: false,
-      prototype: node::Prototype {
+      prototype: ast::Prototype {
         name: "foo".to_string(),
         return_kind_group: None,
         parameters: vec![],
         is_variadic: false,
       },
-      body: node::Block {
+      body: ast::Block {
         llvm_name: "entry".to_string(),
 
-        statements: vec![node::AnyStmtNode::ReturnStmt(node::ReturnStmt {
+        statements: vec![ast::AnyStmtNode::ReturnStmt(ast::ReturnStmt {
           value: None,
         })],
       },

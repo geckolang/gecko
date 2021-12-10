@@ -1,4 +1,4 @@
-use crate::node;
+use crate::ast;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, std::cmp::PartialOrd)]
 pub enum IntSize {
@@ -14,14 +14,14 @@ pub struct IntKind {
   pub is_signed: bool,
 }
 
-impl<'a> node::Node for IntKind {
+impl<'a> ast::Node for IntKind {
   //
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct BoolKind;
 
-impl<'a> node::Node for BoolKind {
+impl<'a> ast::Node for BoolKind {
   //
 }
 

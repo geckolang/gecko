@@ -1,23 +1,23 @@
 use crate::{
+  ast::{self, Node},
   diagnostic, int_kind,
-  node::{self, Node},
 };
 
 pub type TypeCheckResult = Option<Vec<diagnostic::Diagnostic>>;
 
-fn find_blocks_of<'a>(statement: &'a node::AnyStmtNode<'a>) -> Option<Vec<&'a node::Block<'a>>> {
+fn find_blocks_of<'a>(statement: &'a ast::AnyStmtNode<'a>) -> Option<Vec<&'a ast::Block<'a>>> {
   // FIXME: This should be done recursively.
   Some(match statement {
-    node::AnyStmtNode::BlockStmt(block_stmt) => vec![&block_stmt.block],
+    ast::AnyStmtNode::BlockStmt(block_stmt) => vec![&block_stmt.block],
     _ => return None,
   })
 }
 
-fn find_kind_of(expr: &node::ExprHolder<'_>) -> Option<node::KindHolder> {
+fn find_kind_of(expr: &ast::ExprHolder<'_>) -> Option<ast::KindHolder> {
   Some(match expr {
-    node::ExprHolder::BoolLiteral(_) => node::KindHolder::BoolKind(int_kind::BoolKind),
-    node::ExprHolder::IntLiteral(int_literal) => node::KindHolder::IntKind(int_literal.kind),
-    node::ExprHolder::CallExpr(call_expr) => {
+    ast::ExprHolder::BoolLiteral(_) => ast::KindHolder::BoolKind(int_kind::BoolKind),
+    ast::ExprHolder::IntLiteral(int_literal) => ast::KindHolder::IntKind(int_literal.kind),
+    ast::ExprHolder::CallExpr(call_expr) => {
       assert!(call_expr.callee_stub.value.is_some());
 
       let callee = call_expr.callee_stub.value.as_ref().unwrap();
@@ -33,7 +33,7 @@ fn find_kind_of(expr: &node::ExprHolder<'_>) -> Option<node::KindHolder> {
   })
 }
 
-pub fn type_check_module(module: &mut node::Module<'_>) -> TypeCheckResult {
+pub fn type_check_module(module: &mut ast::Module<'_>) -> TypeCheckResult {
   let mut diagnostics = Vec::new();
 
   module.walk_children(&mut |child: &mut dyn Node| {
@@ -50,7 +50,7 @@ pub fn type_check_module(module: &mut node::Module<'_>) -> TypeCheckResult {
   }
 }
 
-pub fn type_check_function<'a>(function: &node::Function<'a>) -> TypeCheckResult {
+pub fn type_check_function<'a>(function: &ast::Function<'a>) -> TypeCheckResult {
   // FIXME: Need proper implementation of walking the tree for return values.
   let mut block_queue = vec![&function.body];
   let mut values_returned = Vec::new();
@@ -103,4 +103,14 @@ pub fn type_check_function<'a>(function: &node::Function<'a>) -> TypeCheckResult
   } else {
     Some(diagnostics)
   }
+}
+
+pub fn type_check_let_stmt(let_stmt: &ast::LetStmt<'_>) -> TypeCheckResult {
+  // let mut diagnostics = Vec::new();
+
+  // if let Some(kind) = &let_stmt.kind {
+  //   if let Some(kind_group) = kind.get_kind_group() {}
+  // }
+
+  None
 }
