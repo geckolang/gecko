@@ -1,107 +1,7 @@
 use crate::{ast, context, diagnostic, int_kind};
 use inkwell::{types::AnyType, values::BasicValue};
 
-macro_rules! lower_or_retrieve_type {
-  ($self:expr, $key:expr) => {{
-    if !$self.llvm_type_map.contains_key($key) {
-      match $key {
-        NodeKindKey::Prototype(prototype) => {
-          $self.lower_prototype(prototype)?;
-        }
-        NodeKindKey::IntKind(int_kind) => {
-          $self.lower_int_kind(int_kind)?;
-        }
-        NodeKindKey::BoolKind(bool_kind) => {
-          $self.lower_bool_kind(bool_kind)?;
-        }
-      };
-    }
-
-    // TODO: Add additional check.
-
-    Ok($self.llvm_type_map.get($key).unwrap())
-  }};
-}
-
-macro_rules! lower_or_retrieve_value {
-  ($self:expr, $key:expr) => {{
-    if !$self.llvm_value_map.contains_key($key) {
-      match $key {
-        NodeValueKey::BoolLiteral(bool_literal) => {
-          $self.lower_bool_literal(bool_literal)?;
-        }
-        NodeValueKey::IntLiteral(int_literal) => {
-          $self.lower_int_literal(int_literal)?;
-        }
-        NodeValueKey::CallExpr(call_expr) => {
-          $self.lower_call_expr(call_expr)?;
-        }
-      };
-    }
-
-    // TODO: Add additional check.
-
-    Ok($self.llvm_value_map.get($key).unwrap())
-  }};
-}
-
-macro_rules! lower_or_retrieve_block {
-  ($self:expr, $block:expr) => {{
-    if !$self.llvm_basic_block_map.contains_key($block) {
-      $self.lower_block($block)?;
-    }
-
-    // TODO: Add additional check.
-
-    // FIXME: Block is being removed to avoid Rust's borrow checker.
-    Ok($self.llvm_basic_block_map.remove($block).unwrap())
-  }};
-}
-
 const ENTRY_POINT_NAME: &str = "main";
-
-#[derive(Hash, Eq, PartialEq)]
-enum NodeValueKey<'a> {
-  BoolLiteral(&'a ast::BoolLiteral),
-  IntLiteral(&'a ast::IntLiteral),
-  CallExpr(&'a ast::CallExpr<'a>),
-}
-
-#[derive(Hash, Eq, PartialEq)]
-enum NodeKindKey<'a> {
-  Prototype(&'a ast::Prototype),
-  IntKind(&'a int_kind::IntKind),
-  BoolKind(&'a int_kind::BoolKind),
-}
-
-impl<'a> From<&'a ast::KindHolder> for NodeKindKey<'a> {
-  fn from(kind: &'a ast::KindHolder) -> Self {
-    match kind {
-      ast::KindHolder::IntKind(kind) => NodeKindKey::IntKind(kind),
-      ast::KindHolder::BoolKind(kind) => NodeKindKey::BoolKind(kind),
-    }
-  }
-}
-
-impl<'a> From<ast::ExprTransport<'a>> for NodeValueKey<'a> {
-  fn from(expr_transport: ast::ExprTransport<'a>) -> Self {
-    match expr_transport {
-      ast::ExprTransport::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
-      ast::ExprTransport::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
-      ast::ExprTransport::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
-    }
-  }
-}
-
-impl<'a> From<&'a ast::ExprHolder<'a>> for NodeValueKey<'a> {
-  fn from(expr_holder: &'a ast::ExprHolder<'a>) -> Self {
-    match expr_holder {
-      ast::ExprHolder::BoolLiteral(bool_literal) => NodeValueKey::BoolLiteral(bool_literal),
-      ast::ExprHolder::IntLiteral(int_literal) => NodeValueKey::IntLiteral(int_literal),
-      ast::ExprHolder::CallExpr(call_expr) => NodeValueKey::CallExpr(call_expr),
-    }
-  }
-}
 
 struct LlvmGenerator<'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
@@ -192,9 +92,6 @@ impl Lower for ast::Literal {
 pub struct LlvmLowering<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   pub llvm_module: &'a inkwell::module::Module<'ctx>,
-  llvm_type_map: std::collections::HashMap<NodeKindKey<'a>, inkwell::types::AnyTypeEnum<'ctx>>,
-  llvm_value_map:
-    std::collections::HashMap<NodeValueKey<'a>, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_basic_block_map:
     std::collections::HashMap<&'a ast::Block<'a>, inkwell::basic_block::BasicBlock<'ctx>>,
   llvm_basic_block_fallthrough_stack: Vec<inkwell::basic_block::BasicBlock<'ctx>>,
@@ -229,8 +126,6 @@ impl<'a, 'ctx> LlvmLowering<'a, 'ctx> {
     Self {
       llvm_context,
       llvm_module,
-      llvm_type_map: std::collections::HashMap::new(),
-      llvm_value_map: std::collections::HashMap::new(),
       llvm_basic_block_map: std::collections::HashMap::new(),
       llvm_basic_block_fallthrough_stack: Vec::new(),
       llvm_function_like_buffer: None,
@@ -897,7 +792,6 @@ mod tests {
     llvm_lowering_pass.module_buffer = Some(&module);
 
     let function = ast::Function {
-      is_public: false,
       prototype: ast::Prototype {
         name: "foo".to_string(),
         return_kind_group: None,

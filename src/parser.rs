@@ -1,4 +1,4 @@
-use crate::{diagnostic, int_kind, ast, token};
+use crate::{ast, diagnostic, int_kind, token};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -450,14 +450,14 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
+  fn parse_break_stmt(&mut self) -> ParserResult<ast::Node<'a>> {
     skip_past!(self, token::Token::KeywordBreak);
 
     Ok(ast::BreakStmt {})
   }
 
   /// {true | false}
-  fn parse_bool_literal(&mut self) -> ParserResult<ast::BoolLiteral> {
+  fn parse_bool_literal(&mut self) -> ParserResult<ast::Node<'a>> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(value) => {
         self.skip();
@@ -474,7 +474,7 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_int_literal(&mut self) -> ParserResult<ast::IntLiteral> {
+  fn parse_int_literal(&mut self) -> ParserResult<ast::Node<'a>> {
     // TODO:
     // Ok(match self.tokens.get(self.index) {
     //   Some(token::Token::LiteralInt(value)) => {
@@ -517,7 +517,7 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_literal(&mut self) -> ParserResult<ast::ExprHolder<'a>> {
+  fn parse_literal(&mut self) -> ParserResult<ast::Node<'a>> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(_) => ast::ExprHolder::BoolLiteral(self.parse_bool_literal()?),
       token::Token::LiteralInt(_) => ast::ExprHolder::IntLiteral(self.parse_int_literal()?),
@@ -531,7 +531,7 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_expr(&mut self) -> ParserResult<ast::ExprHolder<'a>> {
+  fn parse_expr(&mut self) -> ParserResult<ast::Node<'a>> {
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
@@ -549,7 +549,7 @@ impl<'a> Parser {
   }
 
   /// %name '(' (%expr (,))* ')'
-  fn parse_call_expr(&mut self) -> ParserResult<ast::CallExpr<'a>> {
+  fn parse_call_expr(&mut self) -> ParserResult<ast::Node<'a>> {
     let callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
@@ -572,7 +572,7 @@ impl<'a> Parser {
 
   // TODO: Must add tests for this.
   /// module %name
-  pub fn parse_module(&mut self) -> ParserResult<ast::Module<'a>> {
+  pub fn parse_module(&mut self) -> ParserResult<ast::Node<'a>> {
     skip_past!(self, token::Token::KeywordModule);
 
     let name = self.parse_name()?;

@@ -1,34 +1,6 @@
-use crate::{ast, diagnostic, int_kind};
+use crate::{ast, diagnostic};
 
 pub type TypeCheckResult = Option<Vec<diagnostic::Diagnostic>>;
-
-fn find_blocks_of<'a>(statement: &'a ast::AnyStmtNode<'a>) -> Option<Vec<&'a ast::Block<'a>>> {
-  // FIXME: This should be done recursively.
-  Some(match statement {
-    ast::AnyStmtNode::BlockStmt(block_stmt) => vec![&block_stmt.block],
-    _ => return None,
-  })
-}
-
-fn find_kind_of(expr: &ast::ExprHolder<'_>) -> Option<ast::KindHolder> {
-  Some(match expr {
-    ast::ExprHolder::BoolLiteral(_) => ast::KindHolder::BoolKind(int_kind::BoolKind),
-    ast::ExprHolder::IntLiteral(int_literal) => ast::KindHolder::IntKind(int_literal.kind),
-    ast::ExprHolder::CallExpr(call_expr) => {
-      assert!(call_expr.callee_stub.value.is_some());
-
-      let callee = call_expr.callee_stub.value.as_ref().unwrap();
-      let callee_prototype = callee.get_prototype();
-
-      if let Some(return_kind_group) = &callee_prototype.return_kind_group {
-        // TODO: Cloning return kind.
-        return_kind_group.kind.clone()
-      } else {
-        return None;
-      }
-    }
-  })
-}
 
 pub fn type_check_module(_module: &mut ast::Module<'_>) -> TypeCheckResult {
   // let mut _diagnostics = Vec::new();
