@@ -51,6 +51,43 @@ impl<'a> Parser {
     Self { tokens, index: 0 }
   }
 
+  // TODO: Must add tests for this.
+  /// module %name
+  pub fn parse_module(&mut self) -> ParserResult<ast::Node<'a>> {
+    skip_past!(self, token::Token::KeywordModule);
+
+    let name = self.parse_name()?;
+    let mut module = ast::Module::new(name.as_str());
+
+    while !self.is_eof() && !self.is(token::Token::KeywordModule) {
+      let top_level_node = self.parse_top_level_node()?;
+
+      let top_level_node_name = match &top_level_node {
+        ast::Node::Function(function) => &function.prototype.name,
+        ast::Node::External(external) => &external.prototype.name,
+        // TODO: Emit I.C.E. instead?
+        _ => unreachable!(),
+      };
+
+      if module.symbol_table.contains_key(top_level_node_name) {
+        return Err(diagnostic::Diagnostic {
+          message: format!(
+            "definition of function `{}` already exists",
+            top_level_node_name
+          ),
+          severity: diagnostic::Severity::Error,
+        });
+      }
+
+      // TODO: Cloning name.
+      module
+        .symbol_table
+        .insert(top_level_node_name.to_string(), top_level_node);
+    }
+
+    Ok(module)
+  }
+
   fn is(&self, token: token::Token) -> bool {
     if self.index >= self.tokens.len() {
       return false;
@@ -129,14 +166,14 @@ impl<'a> Parser {
 
     while !self.is(token::Token::SymbolBraceR) && !self.is_eof() {
       statements.push(match self.tokens[self.index] {
-        token::Token::KeywordReturn => ast::AnyStmtNode::ReturnStmt(self.parse_return_stmt()?),
-        token::Token::KeywordLet => ast::AnyStmtNode::LetStmt(self.parse_let_stmt()?),
-        token::Token::KeywordIf => ast::AnyStmtNode::IfStmt(self.parse_if_stmt()?),
-        token::Token::KeywordWhile => ast::AnyStmtNode::WhileStmt(self.parse_while_stmt()?),
-        token::Token::SymbolBraceL => ast::AnyStmtNode::BlockStmt(self.parse_block_stmt()?),
-        token::Token::KeywordBreak => ast::AnyStmtNode::BreakStmt(self.parse_break_stmt()?),
+        token::Token::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
+        token::Token::KeywordLet => ast::Node::LetStmt(self.parse_let_stmt()?),
+        token::Token::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
+        token::Token::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
+        token::Token::SymbolBraceL => ast::Node::BlockStmt(self.parse_block_stmt()?),
+        token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
         _ => {
-          let expr_wrapper_stmt = ast::AnyStmtNode::ExprWrapperStmt(self.parse_expr()?);
+          let expr_wrapper_stmt = ast::Node::ExprWrapperStmt(self.parse_expr()?);
 
           expr_wrapper_stmt
         }
@@ -190,21 +227,8 @@ impl<'a> Parser {
     Ok(int_kind::BoolKind)
   }
 
-  /// ('&') (mut) %kind
-  fn parse_kind_group(&mut self) -> ParserResult<ast::KindGroup> {
-    let mut is_reference = false;
-    let mut is_mutable = false;
-
-    if self.is(token::Token::SymbolAmpersand) {
-      is_reference = true;
-      self.skip();
-    }
-
-    if self.is(token::Token::KeywordMut) {
-      is_mutable = true;
-      self.skip();
-    }
-
+  /// %kind
+  fn parse_kind_group(&mut self) -> ParserResult<ast::Node<'_>> {
     // TODO: Check if the index is valid?
     // TODO: Support for more types.
     let kind = match self.tokens[self.index] {
@@ -289,15 +313,6 @@ impl<'a> Parser {
 
   /// (pub) fn %prototype %block
   fn parse_function(&mut self) -> ParserResult<ast::Function<'a>> {
-    // TODO: Visibility should not be handled here.
-
-    let mut is_public = false;
-
-    if self.is(token::Token::KeywordPub) {
-      is_public = true;
-      self.skip();
-    }
-
     skip_past!(self, token::Token::KeywordFn);
 
     let prototype = self.parse_prototype()?;
@@ -307,16 +322,10 @@ impl<'a> Parser {
     if body.statements.is_empty() {
       body
         .statements
-        .push(ast::AnyStmtNode::ReturnStmt(ast::ReturnStmt {
-          value: None,
-        }));
+        .push(ast::Node::ReturnStmt(ast::ReturnStmt { value: None }));
     }
 
-    Ok(ast::Function {
-      is_public,
-      prototype,
-      body,
-    })
+    Ok(ast::Function { prototype, body })
   }
 
   /// (pub) extern fn %prototype
@@ -331,7 +340,7 @@ impl<'a> Parser {
     Ok(ast::External { prototype })
   }
 
-  fn parse_top_level_node(&mut self) -> ParserResult<ast::TopLevelNodeHolder<'a>> {
+  fn parse_top_level_node(&mut self) -> ParserResult<ast::Node<'_>> {
     let mut token = self.tokens.get(self.index);
 
     if self.is(token::Token::KeywordPub) {
@@ -346,8 +355,8 @@ impl<'a> Parser {
     }
 
     Ok(match token.unwrap() {
-      token::Token::KeywordFn => ast::TopLevelNodeHolder::Function(self.parse_function()?),
-      token::Token::KeywordExtern => ast::TopLevelNodeHolder::External(self.parse_external()?),
+      token::Token::KeywordFn => ast::Node::Function(self.parse_function()?),
+      token::Token::KeywordExtern => ast::Node::External(self.parse_external()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -457,12 +466,12 @@ impl<'a> Parser {
   }
 
   /// {true | false}
-  fn parse_bool_literal(&mut self) -> ParserResult<ast::Node<'a>> {
+  fn parse_bool_literal(&mut self) -> ParserResult<ast::Literal> {
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(value) => {
         self.skip();
 
-        ast::BoolLiteral { value }
+        ast::Literal::Bool(value)
       }
       // TODO: Better error.
       _ => {
@@ -499,14 +508,14 @@ impl<'a> Parser {
           size = int_kind::IntSize::Size32;
         }
 
-        ast::IntLiteral {
+        ast::Literal::Integer(
           value,
           // TODO: Signed or not.
-          kind: int_kind::IntKind {
+          int_kind::IntKind {
             size,
             is_signed: true,
           },
-        }
+        )
       }
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -517,10 +526,10 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_literal(&mut self) -> ParserResult<ast::Node<'a>> {
+  fn parse_literal(&mut self) -> ParserResult<ast::Literal> {
     Ok(match self.tokens[self.index] {
-      token::Token::LiteralBool(_) => ast::ExprHolder::BoolLiteral(self.parse_bool_literal()?),
-      token::Token::LiteralInt(_) => ast::ExprHolder::IntLiteral(self.parse_int_literal()?),
+      token::Token::LiteralBool(_) => self.parse_bool_literal()?,
+      token::Token::LiteralInt(_) => self.parse_int_literal()?,
       _ => {
         return Err(diagnostic::Diagnostic {
           // TODO: Show the actual token.
@@ -535,7 +544,7 @@ impl<'a> Parser {
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
-          ast::ExprHolder::CallExpr(self.parse_call_expr()?)
+          ast::Node::CallExpr(self.parse_call_expr()?)
         } else {
           return Err(diagnostic::Diagnostic {
             // TODO: Show the actual token.
@@ -544,6 +553,7 @@ impl<'a> Parser {
           });
         }
       }
+      // Default to a literal if nothing else matched.
       _ => self.parse_literal()?,
     })
   }
@@ -555,7 +565,7 @@ impl<'a> Parser {
     skip_past!(self, token::Token::SymbolParenthesesL);
 
     // TODO: Shouldn't it be a `Vec<node::ExprTransport<'a>>`?
-    let arguments: Vec<ast::ExprTransport<'a>> = vec![];
+    let arguments: Vec<ast::Node<'_>> = vec![];
 
     // TODO: Parse arguments.
 
@@ -568,41 +578,6 @@ impl<'a> Parser {
       },
       arguments,
     })
-  }
-
-  // TODO: Must add tests for this.
-  /// module %name
-  pub fn parse_module(&mut self) -> ParserResult<ast::Node<'a>> {
-    skip_past!(self, token::Token::KeywordModule);
-
-    let name = self.parse_name()?;
-    let mut module = ast::Module::new(name.as_str());
-
-    while !self.is_eof() && !self.is(token::Token::KeywordModule) {
-      let top_level_node = self.parse_top_level_node()?;
-
-      let top_level_node_name = match &top_level_node {
-        ast::TopLevelNodeHolder::Function(function) => &function.prototype.name,
-        ast::TopLevelNodeHolder::External(external) => &external.prototype.name,
-      };
-
-      if module.symbol_table.contains_key(top_level_node_name) {
-        return Err(diagnostic::Diagnostic {
-          message: format!(
-            "definition of function `{}` already exists",
-            top_level_node_name
-          ),
-          severity: diagnostic::Severity::Error,
-        });
-      }
-
-      // TODO: Cloning name.
-      module
-        .symbol_table
-        .insert(top_level_node_name.to_string(), top_level_node);
-    }
-
-    Ok(module)
   }
 }
 
