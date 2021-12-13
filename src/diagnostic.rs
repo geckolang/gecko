@@ -1,3 +1,18 @@
+#[macro_export]
+macro_rules! diagnostic_assert {
+  ($condition:expr) => {
+    match $condition {
+      true => true,
+      false => {
+        return Err(diagnostic::Diagnostic {
+          message: format!("assertion failed: `{}`", stringify!($condition)),
+          severity: diagnostic::Severity::Internal,
+        });
+      }
+    }
+  };
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Severity {
   Warning,

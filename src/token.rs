@@ -12,8 +12,6 @@ pub enum Token {
   KeywordExtern,
   KeywordModule,
   KeywordReturn,
-  KeywordMut,
-  KeywordUnsigned,
   KeywordLet,
   KeywordIf,
   KeywordElse,

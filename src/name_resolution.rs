@@ -12,7 +12,7 @@ trait Resolvable {
   }
 }
 
-impl Resolvable for ast::Node<'_> {
+impl Resolvable for ast::Node {
   fn declare(&mut self, resolver: &mut NameResolver) {
     crate::dispatch!(self, Resolvable::declare, resolver);
   }
@@ -22,11 +22,11 @@ impl Resolvable for ast::Node<'_> {
   }
 }
 
-impl Resolvable for ast::Function<'_> {
+impl Resolvable for ast::Function {
   //
 }
 
-impl Resolvable for ast::CallExpr<'_> {
+impl Resolvable for ast::CallExpr {
   //
 }
 
@@ -35,7 +35,7 @@ pub struct NameResolver {
 }
 
 impl<'a> NameResolver {
-  pub fn begin(mut node: ast::Node<'a>) {
+  pub fn begin(mut node: ast::Node) {
     let mut resolver = NameResolver {};
 
     node.declare(&mut resolver);

@@ -78,7 +78,7 @@ pub fn type_check_module(_module: &mut ast::Module) -> TypeCheckResult {
 //   }
 // }
 
-pub fn type_check_let_stmt(_let_stmt: &ast::LetStmt<'_>) -> TypeCheckResult {
+pub fn type_check_let_stmt(_let_stmt: &ast::LetStmt) -> TypeCheckResult {
   // let mut diagnostics = Vec::new();
 
   // if let Some(kind) = &let_stmt.kind {

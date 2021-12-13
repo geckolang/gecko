@@ -8,22 +8,9 @@ macro_rules! dispatch {
   };
 }
 
-pub enum Node<'a> {
-  Literal(Literal),
-  External(External),
-  Function(Function<'a>),
-  Prototype(Prototype),
-  Module(Module),
-  Block(Block<'a>),
-  BlockStmt(BlockStmt<'a>),
-  ReturnStmt(ReturnStmt<'a>),
-  LetStmt(LetStmt<'a>),
-  IfStmt(IfStmt<'a>),
-  WhileStmt(WhileStmt<'a>),
-  CallExpr(CallExpr<'a>),
-}
+pub type Parameter = (String, Type);
 
-pub enum IntegerKind {
+pub enum IntSize {
   I8,
   I16,
   I32,
@@ -36,73 +23,97 @@ pub enum IntegerKind {
   Usize,
 }
 
+pub enum PrimitiveType {
+  IntType(IntSize),
+  BooleanType,
+  CharType,
+}
+
+pub enum Type {
+  PrimitiveType(PrimitiveType),
+  Prototype(Vec<Type>, Box<Type>, bool),
+}
+
+pub enum Node {
+  Literal(Literal),
+  External(Extern),
+  Function(Function),
+  Module(Module),
+  Block(Block),
+  BlockStmt(BlockStmt),
+  ReturnStmt(ReturnStmt),
+  LetStmt(LetStmt),
+  IfStmt(IfStmt),
+  WhileStmt(WhileStmt),
+  CallExpr(CallExpr),
+}
+
 pub enum Literal {
   Bool(bool),
-  Integer(u64, IntegerKind),
+  Integer(u64, IntSize),
   Char(char),
   String(String),
 }
 
-pub struct External {
+pub struct Extern {
   pub prototype: Prototype,
 }
 
-pub struct Function<'a> {
+pub struct Function {
   pub prototype: Prototype,
-  pub body: Block<'a>,
+  pub body: Block,
 }
 
 pub struct Prototype {
   pub name: String,
-  // TODO: Parameters.
-  // pub parameters: Vec<Parameter>,
+  pub parameters: Vec<Parameter>,
   pub is_variadic: bool,
-  // TODO: Return type.
+  pub return_type: Type,
 }
 
 pub struct Module {
   pub name: String,
   // TODO: Symbol table?
-  // pub symbol_table: std::collections::HashMap<String, TopLevelNodeHolder<'a>>,
+  // pub symbol_table: std::collections::HashMap<String, TopLevelNodeHolder>,
 }
 
-pub struct Block<'a> {
+pub struct Block {
   // TODO: Consider using an enum then assigning a name based on its value.
   pub llvm_name: String,
-  pub statements: Vec<Node<'a>>,
+  pub statements: Vec<Box<Node>>,
 }
 
-pub struct BlockStmt<'a> {
-  pub block: Block<'a>,
+pub struct BlockStmt {
+  pub block: Block,
 }
 
 pub struct BreakStmt {
   //
 }
 
-pub struct ReturnStmt<'a> {
-  pub value: Option<Node<'a>>,
+pub struct ReturnStmt {
+  pub value: Option<Box<Node>>,
 }
 
-pub struct LetStmt<'a> {
+pub struct LetStmt {
   pub name: String,
-  // pub kind_group: KindGroup,
-  pub value: Node<'a>,
+  pub ty: Type,
+  pub value: Box<Node>,
 }
 
-pub struct IfStmt<'a> {
-  pub condition: Node<'a>,
-  pub then_block: Block<'a>,
-  pub else_block: Option<Block<'a>>,
+pub struct IfStmt {
+  pub condition: Box<Node>,
+  pub then_block: Block,
+  pub else_block: Option<Block>,
 }
 
-pub struct WhileStmt<'a> {
-  pub condition: Node<'a>,
-  pub body: Block<'a>,
+pub struct WhileStmt {
+  pub condition: Box<Node>,
+  pub body: Block,
 }
 
-pub struct CallExpr<'a> {
+pub struct CallExpr {
   // FIXME: Finish implementing.
-  pub callee: Node<'a>,
-  pub arguments: Vec<Node<'a>>,
+  pub callee: Box<Node>,
+  pub arguments: Vec<Box<Node>>,
 }

@@ -3,7 +3,6 @@
 pub mod ast;
 pub mod context;
 pub mod diagnostic;
-pub mod int_kind;
 pub mod lexer;
 pub mod llvm_lowering;
 pub mod name_resolution;

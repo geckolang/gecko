@@ -1,4 +1,4 @@
-use crate::{ast, diagnostic, int_kind, token};
+use crate::{ast, diagnostic, token};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -24,19 +24,23 @@ macro_rules! skip_past {
   };
 }
 
-#[macro_export]
-macro_rules! pass_assert {
-  ($condition:expr) => {
-    match $condition {
-      true => true,
-      false => {
-        return Err(diagnostic::Diagnostic {
-          message: format!("assertion failed: `{}`", stringify!($condition)),
-          severity: diagnostic::Severity::Internal,
-        });
-      }
-    }
-  };
+// TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
+/// Determine the minimum bit-size in which a number can fit.
+fn minimum_int_size_of(number: &u64) -> ast::IntSize {
+  let log2_result = f64::log2(*number as f64 + 1_f64);
+  let minimum_bit_size = f64::floor(log2_result) as u64;
+
+  if minimum_bit_size <= 8 {
+    ast::IntSize::I8
+  } else if minimum_bit_size <= 16 {
+    ast::IntSize::I16
+  } else if minimum_bit_size <= 32 {
+    ast::IntSize::I32
+  } else if minimum_bit_size <= 64 {
+    ast::IntSize::I64
+  } else {
+    panic!("expected calculated minimum bit-size to be smaller than 64");
+  }
 }
 
 type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
@@ -46,14 +50,14 @@ pub struct Parser {
   index: usize,
 }
 
-impl<'a> Parser {
+impl Parser {
   pub fn new(tokens: Vec<token::Token>) -> Self {
     Self { tokens, index: 0 }
   }
 
   // TODO: Must add tests for this.
   /// module %name
-  pub fn parse_module(&mut self) -> ParserResult<ast::Node<'a>> {
+  pub fn parse_module(&mut self) -> ParserResult<ast::Node> {
     skip_past!(self, token::Token::KeywordModule);
 
     let name = self.parse_name()?;
@@ -137,7 +141,7 @@ impl<'a> Parser {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
 
     // TODO: Wrong error message.
-    crate::pass_assert!(match &self.tokens[self.index] {
+    crate::diagnostic_assert!(match &self.tokens[self.index] {
       token::Token::Identifier(_) => true,
       _ => false,
     });
@@ -149,7 +153,7 @@ impl<'a> Parser {
       }
     };
 
-    crate::pass_assert!(name.is_some());
+    crate::diagnostic_assert!(name.is_some());
     self.skip();
 
     Ok(name.unwrap())
@@ -157,7 +161,7 @@ impl<'a> Parser {
 
   /// TODO: Be specific, which statements? Also include lonely expression.
   /// '{' (%statement+) '}'
-  fn parse_block(&mut self, llvm_name: &str) -> ParserResult<ast::Block<'a>> {
+  fn parse_block(&mut self, llvm_name: &str) -> ParserResult<ast::Block> {
     // TODO: Have a symbol table for blocks, and check for re-declarations here.
 
     skip_past!(self, token::Token::SymbolBraceL);
@@ -189,21 +193,15 @@ impl<'a> Parser {
   }
 
   /// (unsigned) {i8 | i16 | i32 | i64}
-  fn parse_int_kind(&mut self) -> ParserResult<int_kind::IntKind> {
-    let mut is_signed = true;
-
-    if self.is(token::Token::KeywordUnsigned) {
-      self.skip();
-      is_signed = false;
-    }
-
+  fn parse_int_type(&mut self) -> ParserResult<ast::Type> {
     // TODO: Accessing index unsafely.
     let current_token = &self.tokens[self.index];
 
     let size = match current_token {
-      token::Token::TypeInt16 => int_kind::IntSize::Size16,
-      token::Token::TypeInt32 => int_kind::IntSize::Size32,
-      token::Token::TypeInt64 => int_kind::IntSize::Size64,
+      token::Token::TypeInt16 => ast::IntSize::I16,
+      token::Token::TypeInt32 => ast::IntSize::I32,
+      token::Token::TypeInt64 => ast::IntSize::I64,
+      // TODO: Add unsigned type tokens.
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -217,26 +215,26 @@ impl<'a> Parser {
 
     self.skip();
 
-    Ok(int_kind::IntKind { size, is_signed })
+    Ok(ast::Type::PrimitiveType(ast::PrimitiveType::IntType(size)))
   }
 
   /// bool
-  fn parse_bool_kind(&mut self) -> ParserResult<int_kind::BoolKind> {
+  fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
     skip_past!(self, token::Token::TypeBool);
 
-    Ok(int_kind::BoolKind)
+    Ok(ast::Type::PrimitiveType(ast::PrimitiveType::Bool))
   }
 
-  /// %kind
-  fn parse_kind_group(&mut self) -> ParserResult<ast::Node<'_>> {
+  /// %type
+  fn parse_type(&mut self) -> ParserResult<ast::Type> {
     // TODO: Check if the index is valid?
     // TODO: Support for more types.
-    let kind = match self.tokens[self.index] {
+    match self.tokens[self.index] {
       token::Token::KeywordUnsigned
       | token::Token::TypeInt16
       | token::Token::TypeInt32
-      | token::Token::TypeInt64 => ast::KindHolder::IntKind(self.parse_int_kind()?),
-      token::Token::TypeBool => ast::KindHolder::BoolKind(self.parse_bool_kind()?),
+      | token::Token::TypeInt64 => self.parse_int_type()?,
+      token::Token::TypeBool => self.parse_bool_type()?,
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -247,13 +245,7 @@ impl<'a> Parser {
           severity: diagnostic::Severity::Error,
         });
       }
-    };
-
-    Ok(ast::KindGroup {
-      kind,
-      is_reference,
-      is_mutable,
-    })
+    }
   }
 
   /// %name ':' %kind_group
@@ -262,7 +254,7 @@ impl<'a> Parser {
 
     skip_past!(self, token::Token::SymbolColon);
 
-    let kind_group = self.parse_kind_group()?;
+    let kind_group = self.parse_type()?;
 
     Ok((name, kind_group))
   }
@@ -296,23 +288,23 @@ impl<'a> Parser {
 
     skip_past!(self, token::Token::SymbolParenthesesR);
 
-    let mut return_kind_group = None;
+    let mut return_type = None;
 
     if self.is(token::Token::SymbolTilde) {
       self.skip();
-      return_kind_group = Some(self.parse_kind_group()?);
+      return_type = Some(self.parse_type()?);
     }
 
     Ok(ast::Prototype {
       name,
       parameters,
       is_variadic,
-      return_kind_group,
+      return_type,
     })
   }
 
   /// (pub) fn %prototype %block
-  fn parse_function(&mut self) -> ParserResult<ast::Function<'a>> {
+  fn parse_function(&mut self) -> ParserResult<ast::Function> {
     skip_past!(self, token::Token::KeywordFn);
 
     let prototype = self.parse_prototype()?;
@@ -329,7 +321,7 @@ impl<'a> Parser {
   }
 
   /// (pub) extern fn %prototype
-  fn parse_external(&mut self) -> ParserResult<ast::External> {
+  fn parse_external(&mut self) -> ParserResult<ast::Extern> {
     // TODO: Support for visibility.
 
     skip_past!(self, token::Token::KeywordExtern);
@@ -337,10 +329,10 @@ impl<'a> Parser {
 
     let prototype = self.parse_prototype()?;
 
-    Ok(ast::External { prototype })
+    Ok(ast::Extern { prototype })
   }
 
-  fn parse_top_level_node(&mut self) -> ParserResult<ast::Node<'_>> {
+  fn parse_top_level_node(&mut self) -> ParserResult<ast::Node> {
     let mut token = self.tokens.get(self.index);
 
     if self.is(token::Token::KeywordPub) {
@@ -370,7 +362,7 @@ impl<'a> Parser {
   }
 
   /// return (%expr)
-  fn parse_return_stmt(&mut self) -> ParserResult<ast::ReturnStmt<'a>> {
+  fn parse_return_stmt(&mut self) -> ParserResult<ast::ReturnStmt> {
     skip_past!(self, token::Token::KeywordReturn);
 
     let mut value = None;
@@ -384,15 +376,15 @@ impl<'a> Parser {
   }
 
   /// let %name (':' %kind_group) '=' %expr
-  fn parse_let_stmt(&mut self) -> ParserResult<ast::LetStmt<'a>> {
+  fn parse_let_stmt(&mut self) -> ParserResult<ast::LetStmt> {
     skip_past!(self, token::Token::KeywordLet);
 
     let name = self.parse_name()?;
-    let mut kind_group = None;
+    let mut ty = None;
 
     if self.is(token::Token::SymbolColon) {
       self.skip();
-      kind_group = Some(self.parse_kind_group()?);
+      ty = Some(self.parse_type()?);
     }
 
     skip_past!(self, token::Token::SymbolEqual);
@@ -400,32 +392,20 @@ impl<'a> Parser {
     let value = self.parse_expr()?;
 
     // Infer the kind of the variable, based on its value.
-    if kind_group.is_none() {
-      let kind = match &value {
-        ast::ExprHolder::BoolLiteral(_) => ast::KindHolder::BoolKind(int_kind::BoolKind),
-        ast::ExprHolder::IntLiteral(int_literal) => {
-          ast::KindHolder::IntKind(int_literal.kind.clone())
-        }
-        // TODO: Implement.
-        ast::ExprHolder::CallExpr(_) => todo!(),
-      };
-
-      kind_group = Some(ast::KindGroup {
-        kind,
-        is_mutable: false,
-        is_reference: false,
-      });
+    if ty.is_none() {
+      // FIXME: Implement.
+      todo!();
     }
 
     Ok(ast::LetStmt {
       name,
-      kind_group: kind_group.unwrap(),
+      ty: ty.unwrap(),
       value,
     })
   }
 
   /// if %expr %block (else %block)
-  fn parse_if_stmt(&mut self) -> ParserResult<ast::IfStmt<'a>> {
+  fn parse_if_stmt(&mut self) -> ParserResult<ast::IfStmt> {
     skip_past!(self, token::Token::KeywordIf);
 
     let condition = self.parse_expr()?;
@@ -444,7 +424,7 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt<'a>> {
+  fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt> {
     skip_past!(self, token::Token::KeywordWhile);
 
     let condition = self.parse_expr()?;
@@ -453,13 +433,13 @@ impl<'a> Parser {
     Ok(ast::WhileStmt { condition, body })
   }
 
-  fn parse_block_stmt(&mut self) -> ParserResult<ast::BlockStmt<'a>> {
+  fn parse_block_stmt(&mut self) -> ParserResult<ast::BlockStmt> {
     Ok(ast::BlockStmt {
       block: self.parse_block("block_stmt")?,
     })
   }
 
-  fn parse_break_stmt(&mut self) -> ParserResult<ast::Node<'a>> {
+  fn parse_break_stmt(&mut self) -> ParserResult<ast::Node> {
     skip_past!(self, token::Token::KeywordBreak);
 
     Ok(ast::BreakStmt {})
@@ -483,7 +463,7 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_int_literal(&mut self) -> ParserResult<ast::Node<'a>> {
+  fn parse_int_literal(&mut self) -> ParserResult<ast::Node> {
     // TODO:
     // Ok(match self.tokens.get(self.index) {
     //   Some(token::Token::LiteralInt(value)) => {
@@ -502,20 +482,14 @@ impl<'a> Parser {
       token::Token::LiteralInt(value) => {
         self.skip();
 
-        let mut size = int_kind::minimum_int_size_of(&value);
+        let mut size = minimum_int_size_of(&value);
 
-        if size < int_kind::IntSize::Size32 {
-          size = int_kind::IntSize::Size32;
+        // Default size to 32 bit-width.
+        if size < ast::IntSize::I32 {
+          size = ast::IntSize::I32;
         }
 
-        ast::Literal::Integer(
-          value,
-          // TODO: Signed or not.
-          int_kind::IntKind {
-            size,
-            is_signed: true,
-          },
-        )
+        ast::Literal::Integer(value, size)
       }
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -540,7 +514,7 @@ impl<'a> Parser {
     })
   }
 
-  fn parse_expr(&mut self) -> ParserResult<ast::Node<'a>> {
+  fn parse_expr(&mut self) -> ParserResult<ast::Node> {
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
@@ -559,25 +533,28 @@ impl<'a> Parser {
   }
 
   /// %name '(' (%expr (,))* ')'
-  fn parse_call_expr(&mut self) -> ParserResult<ast::Node<'a>> {
+  fn parse_call_expr(&mut self) -> ParserResult<ast::Node> {
     let callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
-    // TODO: Shouldn't it be a `Vec<node::ExprTransport<'a>>`?
+    // TODO: Shouldn't it be a `Vec<node::ExprTransport<'_>>`?
     let arguments: Vec<ast::Node<'_>> = vec![];
 
     // TODO: Parse arguments.
 
     skip_past!(self, token::Token::SymbolParenthesesR);
 
-    Ok(ast::CallExpr {
-      callee: ast::CalleeStub {
-        name: callee_name,
-        value: None,
-      },
-      arguments,
-    })
+    // FIXME: Fix implementation.
+    todo!();
+
+    // Ok(ast::CallExpr {
+    //   callee: ast::CalleeStub {
+    //     name: callee_name,
+    //     value: None,
+    //   },
+    //   arguments,
+    // })
   }
 }
 
@@ -655,10 +632,10 @@ mod tests {
   #[test]
   fn parse_int_kind() {
     let mut parser = Parser::new(vec![token::Token::TypeInt32]);
-    let int_kind = parser.parse_int_kind();
+    let int_kind = parser.parse_int_type();
 
     assert_eq!(true, int_kind.is_ok());
-    assert_eq!(int_kind.ok().unwrap().size, int_kind::IntSize::Size32);
+    assert_eq!(int_kind.ok().unwrap().size, ast::IntSize::I32);
   }
 
   #[test]
@@ -721,7 +698,7 @@ mod tests {
     let int_literal = int_literal_result.unwrap();
 
     assert_eq!(123, int_literal.value);
-    assert_eq!(int_kind::IntSize::Size32, int_literal.kind.size);
+    assert_eq!(ast::IntSize::I32, int_literal.kind.size);
     assert_eq!(true, int_literal.kind.is_signed);
   }
 
@@ -753,7 +730,7 @@ mod tests {
   #[test]
   fn parse_kind_group() {
     let mut parser = Parser::new(vec![token::Token::TypeInt32]);
-    let kind_group_result = parser.parse_kind_group();
+    let kind_group_result = parser.parse_type();
 
     assert_eq!(true, kind_group_result.is_ok());
 
@@ -766,7 +743,7 @@ mod tests {
   #[test]
   fn parse_kind_group_reference() {
     let mut parser = Parser::new(vec![token::Token::SymbolAmpersand, token::Token::TypeInt32]);
-    let kind_group_result = parser.parse_kind_group();
+    let kind_group_result = parser.parse_type();
 
     assert_eq!(true, kind_group_result.is_ok());
 
@@ -779,7 +756,7 @@ mod tests {
   #[test]
   fn parse_kind_group_mutable() {
     let mut parser = Parser::new(vec![token::Token::KeywordMut, token::Token::TypeInt32]);
-    let kind_group_result = parser.parse_kind_group();
+    let kind_group_result = parser.parse_type();
 
     assert_eq!(true, kind_group_result.is_ok());
 
@@ -797,7 +774,7 @@ mod tests {
       token::Token::TypeInt32,
     ]);
 
-    let kind_group_result = parser.parse_kind_group();
+    let kind_group_result = parser.parse_type();
 
     assert_eq!(true, kind_group_result.is_ok());
 
