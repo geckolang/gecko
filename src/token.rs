@@ -45,8 +45,6 @@ pub fn get_keyword_or_type_token(identifier_str: &str) -> Option<Token> {
     "fn" => Token::KeywordFn,
     "extern" => Token::KeywordExtern,
     "let" => Token::KeywordLet,
-    "mut" => Token::KeywordMut,
-    "unsigned" => Token::KeywordUnsigned,
     "module" => Token::KeywordModule,
     "return" => Token::KeywordReturn,
     "if" => Token::KeywordIf,

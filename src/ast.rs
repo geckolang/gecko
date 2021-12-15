@@ -31,7 +31,7 @@ pub enum PrimitiveType {
 
 pub enum Type {
   PrimitiveType(PrimitiveType),
-  Prototype(Vec<Type>, Box<Type>, bool),
+  Prototype(Vec<(String, Type)>, Box<Type>, bool),
 }
 
 pub enum Node {
@@ -50,25 +50,18 @@ pub enum Node {
 
 pub enum Literal {
   Bool(bool),
-  Integer(u64, IntSize),
+  Int(u64, IntSize),
   Char(char),
   String(String),
 }
 
 pub struct Extern {
-  pub prototype: Prototype,
+  pub prototype: Type,
 }
 
 pub struct Function {
-  pub prototype: Prototype,
+  pub prototype: Type,
   pub body: Block,
-}
-
-pub struct Prototype {
-  pub name: String,
-  pub parameters: Vec<Parameter>,
-  pub is_variadic: bool,
-  pub return_type: Type,
 }
 
 pub struct Module {

@@ -61,7 +61,7 @@ impl Parser {
     skip_past!(self, token::Token::KeywordModule);
 
     let name = self.parse_name()?;
-    let mut module = ast::Module::new(name.as_str());
+    let mut module = ast::Module { name };
 
     while !self.is_eof() && !self.is(token::Token::KeywordModule) {
       let top_level_node = self.parse_top_level_node()?;
@@ -230,11 +230,11 @@ impl Parser {
     // TODO: Check if the index is valid?
     // TODO: Support for more types.
     match self.tokens[self.index] {
-      token::Token::KeywordUnsigned
-      | token::Token::TypeInt16
-      | token::Token::TypeInt32
-      | token::Token::TypeInt64 => self.parse_int_type()?,
-      token::Token::TypeBool => self.parse_bool_type()?,
+      // TODO: Other types as well.
+      token::Token::TypeInt16 | token::Token::TypeInt32 | token::Token::TypeInt64 => {
+        self.parse_int_type()
+      }
+      token::Token::TypeBool => self.parse_bool_type(),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -260,7 +260,7 @@ impl Parser {
   }
 
   /// %name '(' {%parameter* (,)} (+) ')' '~' %kind_group
-  fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
+  fn parse_prototype(&mut self) -> ParserResult<ast::Type> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
@@ -418,7 +418,7 @@ impl Parser {
     }
 
     Ok(ast::IfStmt {
-      condition,
+      condition: Box::new(condition),
       then_block,
       else_block,
     })
@@ -489,7 +489,7 @@ impl Parser {
           size = ast::IntSize::I32;
         }
 
-        ast::Literal::Integer(value, size)
+        ast::Literal::Int(value, size)
       }
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -539,7 +539,7 @@ impl Parser {
     skip_past!(self, token::Token::SymbolParenthesesL);
 
     // TODO: Shouldn't it be a `Vec<node::ExprTransport<'_>>`?
-    let arguments: Vec<ast::Node<'_>> = vec![];
+    let arguments: Vec<ast::Node> = vec![];
 
     // TODO: Parse arguments.
 
@@ -725,63 +725,6 @@ mod tests {
 
     assert_eq!(true, parameter.is_ok());
     assert_eq!(String::from("foo"), parameter.unwrap().0);
-  }
-
-  #[test]
-  fn parse_kind_group() {
-    let mut parser = Parser::new(vec![token::Token::TypeInt32]);
-    let kind_group_result = parser.parse_type();
-
-    assert_eq!(true, kind_group_result.is_ok());
-
-    let kind_group_value = kind_group_result.unwrap();
-
-    assert_eq!(false, kind_group_value.is_reference);
-    assert_eq!(false, kind_group_value.is_mutable);
-  }
-
-  #[test]
-  fn parse_kind_group_reference() {
-    let mut parser = Parser::new(vec![token::Token::SymbolAmpersand, token::Token::TypeInt32]);
-    let kind_group_result = parser.parse_type();
-
-    assert_eq!(true, kind_group_result.is_ok());
-
-    let kind_group_value = kind_group_result.unwrap();
-
-    assert_eq!(true, kind_group_value.is_reference);
-    assert_eq!(false, kind_group_value.is_mutable);
-  }
-
-  #[test]
-  fn parse_kind_group_mutable() {
-    let mut parser = Parser::new(vec![token::Token::KeywordMut, token::Token::TypeInt32]);
-    let kind_group_result = parser.parse_type();
-
-    assert_eq!(true, kind_group_result.is_ok());
-
-    let kind_group_value = kind_group_result.unwrap();
-
-    assert_eq!(false, kind_group_value.is_reference);
-    assert_eq!(true, kind_group_value.is_mutable);
-  }
-
-  #[test]
-  fn parse_kind_group_mutable_reference() {
-    let mut parser = Parser::new(vec![
-      token::Token::SymbolAmpersand,
-      token::Token::KeywordMut,
-      token::Token::TypeInt32,
-    ]);
-
-    let kind_group_result = parser.parse_type();
-
-    assert_eq!(true, kind_group_result.is_ok());
-
-    let kind_group_value = kind_group_result.unwrap();
-
-    assert_eq!(true, kind_group_value.is_reference);
-    assert_eq!(true, kind_group_value.is_mutable);
   }
 
   #[test]
