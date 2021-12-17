@@ -24,14 +24,14 @@ pub enum IntSize {
 }
 
 pub enum PrimitiveType {
-  IntType(IntSize),
-  BooleanType,
-  CharType,
+  Int(IntSize),
+  Bool,
+  Char,
 }
 
 pub enum Type {
   PrimitiveType(PrimitiveType),
-  Prototype(Vec<(String, Type)>, Box<Type>, bool),
+  Prototype(Vec<(String, Type)>, Option<Box<Type>>, bool),
 }
 
 pub enum Node {
@@ -46,6 +46,8 @@ pub enum Node {
   IfStmt(IfStmt),
   WhileStmt(WhileStmt),
   CallExpr(CallExpr),
+  BreakStmt(BreakStmt),
+  ExprWrapperStmt(Box<Node>),
 }
 
 pub enum Literal {

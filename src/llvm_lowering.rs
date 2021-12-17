@@ -6,7 +6,7 @@ const ENTRY_POINT_NAME: &str = "main";
 trait Lower {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx>;
 }
@@ -14,7 +14,7 @@ trait Lower {
 impl Lower for ast::Node {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     dispatch!(self, Lower::lower, generator, context)
@@ -24,7 +24,7 @@ impl Lower for ast::Node {
 impl Lower for ast::Literal {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     _: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     match self {
@@ -71,11 +71,11 @@ impl Lower for ast::Literal {
 impl Lower for ast::Function {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_function_type = generator
-      .lower_type(self.prototype)
+      .lower_type(&self.prototype)
       .into_pointer_type()
       .get_element_type();
 
@@ -98,7 +98,7 @@ impl Lower for ast::Function {
       Some(inkwell::module::Linkage::Private),
     );
 
-    match self.prototype {
+    match &self.prototype {
       ast::Type::Prototype(parameters, _, _) => {
         // TODO: Find a way to use only one loop to process both local parameters and LLVM's names.
         for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
@@ -121,11 +121,11 @@ impl Lower for ast::Function {
 impl Lower for ast::Extern {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_function_type = generator
-      .lower_type(self.prototype)
+      .lower_type(&self.prototype)
       .into_pointer_type()
       .get_element_type();
 
@@ -146,7 +146,7 @@ impl Lower for ast::Extern {
 impl Lower for ast::Block {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_basic_block = generator
@@ -168,10 +168,10 @@ impl Lower for ast::Block {
 impl Lower for ast::ReturnStmt {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    if let Some(return_value) = self.value {
+    if let Some(return_value) = &self.value {
       let llvm_return_value = return_value.lower(generator, context);
 
       return llvm_return_value;
@@ -185,10 +185,10 @@ impl Lower for ast::ReturnStmt {
 impl Lower for ast::LetStmt {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_type = generator.lower_type(self.ty);
+    let llvm_type = generator.lower_type(&self.ty);
 
     // TODO: Finish implementing.
     let llvm_alloca_inst_ptr = generator
@@ -209,10 +209,10 @@ impl Lower for ast::LetStmt {
 impl Lower for ast::CallExpr {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    match *self.callee {
+    match &*self.callee {
       // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
       ast::Node::Function(function) => function.lower(generator, context),
       ast::Node::External(external) => external.lower(generator, context),
@@ -424,7 +424,7 @@ impl Lower for ast::CallExpr {
 impl Lower for ast::BreakStmt {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // TODO: Must ensure that the current block is a loop block.
@@ -435,8 +435,8 @@ impl Lower for ast::BreakStmt {
 impl Lower for ast::Module {
   fn lower<'ctx>(
     &self,
-    generator: LlvmGenerator<'ctx>,
-    context: &mut context::Context,
+    _generator: &mut LlvmGenerator<'ctx>,
+    _context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // for top_level_node in module.symbol_table.values() {
     //   match top_level_node {
@@ -473,26 +473,27 @@ impl<'ctx> LlvmGenerator<'ctx> {
     }
   }
 
-  fn lower_type(&self, ty: ast::Type) -> inkwell::types::BasicTypeEnum<'ctx> {
+  fn lower_type(&self, ty: &ast::Type) -> inkwell::types::BasicTypeEnum<'ctx> {
     use inkwell::types::BasicType;
 
     match ty {
       ast::Type::PrimitiveType(primitive_type) => match primitive_type {
-        ast::PrimitiveType::BooleanType => self.llvm_context.bool_type().as_basic_type_enum(),
+        ast::PrimitiveType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
         // TODO: Take into account size.
-        ast::PrimitiveType::IntType(size) => self.llvm_context.i32_type().as_basic_type_enum(),
-        ast::PrimitiveType::CharType => self.llvm_context.i8_type().as_basic_type_enum(),
+        ast::PrimitiveType::Int(_size) => self.llvm_context.i32_type().as_basic_type_enum(),
+        ast::PrimitiveType::Char => self.llvm_context.i8_type().as_basic_type_enum(),
       },
       ast::Type::Prototype(parameter_types, return_type, is_variadic) => {
-        let llvm_parameter_types = parameter_types
+        let _llvm_parameter_types = parameter_types
           .iter()
-          .map(|parameter_type| self.lower_type(parameter_type.1))
+          .map(|parameter_type| self.lower_type(&parameter_type.1))
           .collect::<Vec<_>>();
 
-        let llvm_return_type = self.lower_type(*return_type);
+        // FIXME: Return type may be `None`.
+        let llvm_return_type = self.lower_type(&return_type.as_ref().unwrap());
 
         llvm_return_type
-          .fn_type(&[], is_variadic)
+          .fn_type(&[], *is_variadic)
           .ptr_type(inkwell::AddressSpace::Generic)
           .into()
       }

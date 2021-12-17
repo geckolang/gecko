@@ -66,30 +66,10 @@ impl Parser {
     while !self.is_eof() && !self.is(token::Token::KeywordModule) {
       let top_level_node = self.parse_top_level_node()?;
 
-      let top_level_node_name = match &top_level_node {
-        ast::Node::Function(function) => &function.prototype.name,
-        ast::Node::External(external) => &external.prototype.name,
-        // TODO: Emit I.C.E. instead?
-        _ => unreachable!(),
-      };
-
-      if module.symbol_table.contains_key(top_level_node_name) {
-        return Err(diagnostic::Diagnostic {
-          message: format!(
-            "definition of function `{}` already exists",
-            top_level_node_name
-          ),
-          severity: diagnostic::Severity::Error,
-        });
-      }
-
-      // TODO: Cloning name.
-      module
-        .symbol_table
-        .insert(top_level_node_name.to_string(), top_level_node);
+      // FIXME: Nothing being done to the parsed top-level node.
     }
 
-    Ok(module)
+    Ok(ast::Node::Module(module))
   }
 
   fn is(&self, token: token::Token) -> bool {
@@ -169,7 +149,7 @@ impl Parser {
     let mut statements = vec![];
 
     while !self.is(token::Token::SymbolBraceR) && !self.is_eof() {
-      statements.push(match self.tokens[self.index] {
+      statements.push(Box::new(match self.tokens[self.index] {
         token::Token::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
         token::Token::KeywordLet => ast::Node::LetStmt(self.parse_let_stmt()?),
         token::Token::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
@@ -177,11 +157,11 @@ impl Parser {
         token::Token::SymbolBraceL => ast::Node::BlockStmt(self.parse_block_stmt()?),
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
         _ => {
-          let expr_wrapper_stmt = ast::Node::ExprWrapperStmt(self.parse_expr()?);
+          let expr_wrapper_stmt = ast::Node::ExprWrapperStmt(Box::new(self.parse_expr()?));
 
           expr_wrapper_stmt
         }
-      });
+      }));
     }
 
     skip_past!(self, token::Token::SymbolBraceR);
@@ -215,7 +195,7 @@ impl Parser {
 
     self.skip();
 
-    Ok(ast::Type::PrimitiveType(ast::PrimitiveType::IntType(size)))
+    Ok(ast::Type::PrimitiveType(ast::PrimitiveType::Int(size)))
   }
 
   /// bool
@@ -292,15 +272,10 @@ impl Parser {
 
     if self.is(token::Token::SymbolTilde) {
       self.skip();
-      return_type = Some(self.parse_type()?);
+      return_type = Some(Box::new(self.parse_type()?));
     }
 
-    Ok(ast::Prototype {
-      name,
-      parameters,
-      is_variadic,
-      return_type,
-    })
+    Ok(ast::Type::Prototype(parameters, return_type, is_variadic))
   }
 
   /// (pub) fn %prototype %block
@@ -314,7 +289,9 @@ impl Parser {
     if body.statements.is_empty() {
       body
         .statements
-        .push(ast::Node::ReturnStmt(ast::ReturnStmt { value: None }));
+        .push(Box::new(ast::Node::ReturnStmt(ast::ReturnStmt {
+          value: None,
+        })));
     }
 
     Ok(ast::Function { prototype, body })
@@ -369,7 +346,7 @@ impl Parser {
 
     // TODO: Does this cover all cases?
     if !self.is(token::Token::SymbolBraceR) {
-      value = Some(self.parse_literal()?);
+      value = Some(Box::new(ast::Node::Literal(self.parse_literal()?)));
     }
 
     Ok(ast::ReturnStmt { value })
@@ -400,7 +377,7 @@ impl Parser {
     Ok(ast::LetStmt {
       name,
       ty: ty.unwrap(),
-      value,
+      value: Box::new(value),
     })
   }
 
@@ -430,7 +407,10 @@ impl Parser {
     let condition = self.parse_expr()?;
     let body = self.parse_block("while_then")?;
 
-    Ok(ast::WhileStmt { condition, body })
+    Ok(ast::WhileStmt {
+      condition: Box::new(condition),
+      body,
+    })
   }
 
   fn parse_block_stmt(&mut self) -> ParserResult<ast::BlockStmt> {
@@ -439,7 +419,7 @@ impl Parser {
     })
   }
 
-  fn parse_break_stmt(&mut self) -> ParserResult<ast::Node> {
+  fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
     skip_past!(self, token::Token::KeywordBreak);
 
     Ok(ast::BreakStmt {})
@@ -463,7 +443,7 @@ impl Parser {
     })
   }
 
-  fn parse_int_literal(&mut self) -> ParserResult<ast::Node> {
+  fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
     // TODO:
     // Ok(match self.tokens.get(self.index) {
     //   Some(token::Token::LiteralInt(value)) => {
@@ -485,9 +465,10 @@ impl Parser {
         let mut size = minimum_int_size_of(&value);
 
         // Default size to 32 bit-width.
-        if size < ast::IntSize::I32 {
-          size = ast::IntSize::I32;
-        }
+        // FIXME:
+        // if size < ast::IntSize::I32 {
+        //   size = ast::IntSize::I32;
+        // }
 
         ast::Literal::Int(value, size)
       }
@@ -528,12 +509,12 @@ impl Parser {
         }
       }
       // Default to a literal if nothing else matched.
-      _ => self.parse_literal()?,
+      _ => ast::Node::Literal(self.parse_literal()?),
     })
   }
 
   /// %name '(' (%expr (,))* ')'
-  fn parse_call_expr(&mut self) -> ParserResult<ast::Node> {
+  fn parse_call_expr(&mut self) -> ParserResult<ast::CallExpr> {
     let callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
@@ -610,190 +591,6 @@ mod tests {
     assert_eq!(false, parser.is_eof());
     parser.skip();
     assert_eq!(true, parser.is_eof());
-  }
-
-  #[test]
-  fn parse_name() {
-    let mut parser = Parser::new(vec![token::Token::Identifier("foo".to_string())]);
-    let name = parser.parse_name();
-
-    assert_eq!(true, name.is_ok());
-    assert_eq!("foo", name.ok().unwrap().as_str());
-  }
-
-  #[test]
-  fn parse_block() {
-    let mut parser = Parser::new(vec![token::Token::SymbolBraceL, token::Token::SymbolBraceR]);
-    let block = parser.parse_block("test");
-
-    assert_eq!(true, block.is_ok());
-  }
-
-  #[test]
-  fn parse_int_kind() {
-    let mut parser = Parser::new(vec![token::Token::TypeInt32]);
-    let int_kind = parser.parse_int_type();
-
-    assert_eq!(true, int_kind.is_ok());
-    assert_eq!(int_kind.ok().unwrap().size, ast::IntSize::I32);
-  }
-
-  #[test]
-  fn parse_module_decl() {
-    let mut parser = Parser::new(vec![
-      token::Token::KeywordModule,
-      token::Token::Identifier("test".to_string()),
-    ]);
-
-    let module = parser.parse_module();
-
-    assert_eq!(true, module.is_ok());
-    assert_eq!(String::from("test"), module.unwrap().name);
-  }
-
-  #[test]
-  fn parse_external() {
-    let mut parser = Parser::new(vec![
-      token::Token::KeywordExtern,
-      token::Token::KeywordFn,
-      token::Token::Identifier("test".to_string()),
-      token::Token::SymbolParenthesesL,
-      token::Token::SymbolParenthesesR,
-    ]);
-
-    let external = parser.parse_external();
-
-    assert_eq!(true, external.is_ok());
-
-    let external_prototype = &external.unwrap().prototype;
-
-    assert_eq!(String::from("test"), external_prototype.name);
-    assert_eq!(false, external_prototype.is_variadic);
-
-    // TODO: Verify return kind.
-  }
-
-  #[test]
-  fn parse_bool_literal() {
-    let mut parser_for_true = Parser::new(vec![token::Token::LiteralBool(true)]);
-    let true_bool_literal = parser_for_true.parse_bool_literal();
-
-    assert_eq!(true, true_bool_literal.is_ok());
-    assert_eq!(true, true_bool_literal.unwrap().value);
-
-    let mut parser_for_false = Parser::new(vec![token::Token::LiteralBool(false)]);
-    let false_bool_literal = parser_for_false.parse_bool_literal();
-
-    assert_eq!(true, false_bool_literal.is_ok());
-    assert_eq!(false, false_bool_literal.unwrap().value);
-  }
-
-  #[test]
-  fn parse_int_literal() {
-    let mut parser = Parser::new(vec![token::Token::LiteralInt(123)]);
-    let int_literal_result = parser.parse_int_literal();
-
-    assert_eq!(true, int_literal_result.is_ok());
-
-    let int_literal = int_literal_result.unwrap();
-
-    assert_eq!(123, int_literal.value);
-    assert_eq!(ast::IntSize::I32, int_literal.kind.size);
-    assert_eq!(true, int_literal.kind.is_signed);
-  }
-
-  #[test]
-  fn parse_literal() {
-    let mut parser = Parser::new(vec![
-      token::Token::LiteralInt(123),
-      token::Token::LiteralBool(true),
-    ]);
-
-    assert_eq!(true, parser.parse_literal().is_ok());
-    assert_eq!(true, parser.parse_literal().is_ok());
-  }
-
-  #[test]
-  fn parse_parameter() {
-    let mut parser = Parser::new(vec![
-      token::Token::Identifier("foo".to_string()),
-      token::Token::SymbolColon,
-      token::Token::TypeInt32,
-    ]);
-
-    let parameter = parser.parse_parameter();
-
-    assert_eq!(true, parameter.is_ok());
-    assert_eq!(String::from("foo"), parameter.unwrap().0);
-  }
-
-  #[test]
-  fn parse_return_stmt() {
-    let mut parser = Parser::new(vec![
-      token::Token::KeywordReturn,
-      token::Token::LiteralInt(123),
-    ]);
-
-    let return_stmt_result = parser.parse_return_stmt();
-
-    assert_eq!(true, return_stmt_result.is_ok());
-
-    let return_stmt = return_stmt_result.unwrap();
-
-    assert_eq!(true, return_stmt.value.is_some());
-  }
-
-  #[test]
-  fn parse_return_stmt_void() {
-    let mut parser = Parser::new(vec![
-      token::Token::KeywordReturn,
-      token::Token::SymbolBraceR,
-    ]);
-
-    let return_stmt_result = parser.parse_return_stmt();
-
-    assert_eq!(true, return_stmt_result.is_ok());
-
-    let return_stmt = return_stmt_result.unwrap();
-
-    assert_eq!(true, return_stmt.value.is_none());
-  }
-
-  #[test]
-  fn parse_prototype_no_params() {
-    let mut parser = Parser::new(vec![
-      token::Token::Identifier("foo".to_string()),
-      token::Token::SymbolParenthesesL,
-      token::Token::SymbolParenthesesR,
-    ]);
-
-    let prototype_result = parser.parse_prototype();
-
-    assert_eq!(true, prototype_result.is_ok());
-
-    let prototype = prototype_result.unwrap();
-
-    assert_eq!(String::from("foo"), prototype.name);
-    assert_eq!(false, prototype.is_variadic);
-    assert_eq!(true, prototype.parameters.is_empty());
-  }
-
-  #[test]
-  fn parse_if_stmt() {
-    let mut parser = Parser::new(vec![
-      token::Token::KeywordIf,
-      token::Token::LiteralBool(true),
-      token::Token::SymbolBraceL,
-      token::Token::SymbolBraceR,
-    ]);
-
-    let if_stmt_result = parser.parse_if_stmt();
-
-    assert_eq!(true, if_stmt_result.is_ok());
-
-    let if_stmt = if_stmt_result.unwrap();
-
-    assert_eq!(true, if_stmt.else_block.is_none());
   }
 
   // TODO: Add more tests.
