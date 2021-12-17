@@ -127,17 +127,7 @@ Several intrinsic types are defined by the compiler. It is intended for the intr
 
 #### 1.4 &mdash; Modules
 
-Modules provide a simple way of organizing code within a project. They also have the advantage of preventing global naming collisions (ex. when importing a library).
-
-```cpp
-module foo
-```
-
-Modules can be nested by separating their names with the `::` delimiter as follows:
-
-```cpp
-module foo::bar
-```
+Modules provide a simple way of organizing code within a project. They also have the advantage of preventing global naming collisions (ex. when importing a library). Modules are based off the file name, and are to be defined in the `src/` directory. They are not declared in code for simplicity.
 
 Accessing a module is trivial:
 

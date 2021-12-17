@@ -156,8 +156,7 @@ impl Lower for ast::Block {
     generator.llvm_builder.position_at_end(llvm_basic_block);
 
     for statement in &self.statements {
-      // TODO: Invoke dispatch for the statement.
-      // dispatch!(statement, Lower::, generator, context);
+      statement.lower(generator, context);
     }
 
     // FIXME: What if there are no statements (i.e. empty block)?
@@ -216,7 +215,6 @@ impl Lower for ast::CallExpr {
       // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
       ast::Node::Function(function) => function.lower(generator, context),
       ast::Node::External(external) => external.lower(generator, context),
-      // TODO: Emit I.C.E. instead?
       _ => unreachable!(),
     };
 
@@ -517,88 +515,3 @@ impl<'ctx> LlvmGenerator<'ctx> {
 fn mangle_name(scope_name: &String, name: &String) -> String {
   format!(".{}.{}", scope_name, name)
 }
-
-// #[cfg(test)]
-// mod tests {
-//   use super::*;
-
-//   #[test]
-//   fn proper_initial_values<'a>() {
-//     let llvm_context = inkwell::context::Context::create();
-//     let llvm_module: inkwell::module::Module<'_> = llvm_context.create_module("test");
-
-//     assert_eq!(
-//       true,
-//       LlvmLowering::new(&llvm_context, &llvm_module)
-//         .llvm_type_map
-//         .is_empty()
-//     );
-//   }
-
-//   // TODO:
-//   // #[test]
-//   // fn visit_or_retrieve_type() {
-//   //   let llvm_context = inkwell::context::Context::create();
-//   //   let llvm_module = llvm_context.create_module("test");
-//   //   let mut llvm_lowering_pass = LlvmLoweringPass::new(&llvm_context, &llvm_module);
-
-//   //   let int_kind = node::KindTransport::IntKind(&int_kind::IntKind {
-//   //     size: int_kind::IntSize::Bit32,
-//   //     is_signed: true,
-//   //   });
-
-//   //   let visit_or_retrieve_result = visit_or_retrieve_type!(llvm_lowering_pass, &int_kind);
-
-//   //   assert_eq!(true, visit_or_retrieve_result.is_ok());
-//   //   assert_eq!(true, visit_or_retrieve_result.ok().is_some());
-//   //   assert_eq!(1, llvm_lowering_pass.llvm_type_map.len());
-//   // }
-
-//   #[test]
-//   fn visit_int_kind() {
-//     let llvm_context = inkwell::context::Context::create();
-//     let llvm_module = llvm_context.create_module("test");
-//     let mut llvm_lowering_pass = LlvmLowering::new(&llvm_context, &llvm_module);
-
-//     let visit_int_kind_result = llvm_lowering_pass.lower_int_kind(&int_kind::IntKind {
-//       size: int_kind::IntSize::Size32,
-//       is_signed: true,
-//     });
-
-//     assert_eq!(true, visit_int_kind_result.is_ok());
-//     assert_eq!(llvm_lowering_pass.llvm_type_map.len(), 1);
-//   }
-
-//   #[test]
-//   fn visit_function() {
-//     let llvm_context = inkwell::context::Context::create();
-//     let llvm_module = llvm_context.create_module("test");
-//     let mut llvm_lowering_pass = LlvmLowering::new(&llvm_context, &llvm_module);
-//     let module = ast::Module::new("test");
-
-//     llvm_lowering_pass.module_buffer = Some(&module);
-
-//     let function = ast::Function {
-//       prototype: ast::Prototype {
-//         name: "foo".to_string(),
-//         return_kind_group: None,
-//         parameters: vec![],
-//         is_variadic: false,
-//       },
-//       body: ast::Block {
-//         llvm_name: "entry".to_string(),
-
-//         statements: vec![ast::AnyStmtNode::ReturnStmt(ast::ReturnStmt {
-//           value: None,
-//         })],
-//       },
-//     };
-
-//     let visit_function_result = llvm_lowering_pass.lower_function(&function);
-
-//     assert_eq!(true, visit_function_result.is_ok());
-//     assert_eq!(true, llvm_lowering_pass.llvm_function_like_buffer.is_some());
-//   }
-
-//   // TODO: Add more tests: `visit_prototype()`, etc.
-// }

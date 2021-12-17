@@ -108,7 +108,6 @@ pub struct WhileStmt {
 }
 
 pub struct CallExpr {
-  // FIXME: Finish implementing.
   pub callee: Box<Node>,
   pub arguments: Vec<Box<Node>>,
 }

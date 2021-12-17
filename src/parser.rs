@@ -55,21 +55,17 @@ impl Parser {
     Self { tokens, index: 0 }
   }
 
-  // TODO: Must add tests for this.
-  /// module %name
-  pub fn parse_module(&mut self) -> ParserResult<ast::Node> {
-    skip_past!(self, token::Token::KeywordModule);
-
-    let name = self.parse_name()?;
-    let mut module = ast::Module { name };
+  /// Parse all top-level definitions.
+  pub fn parse_all(&mut self) -> ParserResult<Vec<ast::Node>> {
+    let mut result = Vec::new();
 
     while !self.is_eof() && !self.is(token::Token::KeywordModule) {
-      let top_level_node = self.parse_top_level_node()?;
+      result.push(self.parse_top_level_node()?);
 
       // FIXME: Nothing being done to the parsed top-level node.
     }
 
-    Ok(ast::Node::Module(module))
+    Ok(result)
   }
 
   fn is(&self, token: token::Token) -> bool {
