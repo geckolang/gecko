@@ -1,20 +1,20 @@
 use crate::{ast, context, dispatch};
 use inkwell::values::BasicValue;
 
-const ENTRY_POINT_NAME: &str = "main";
+const _ENTRY_POINT_NAME: &str = "main";
 
-trait Lower {
-  fn lower<'ctx>(
+pub trait Lower {
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx>;
 }
 
 impl Lower for ast::Node {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     dispatch!(self, Lower::lower, generator, context)
@@ -22,9 +22,9 @@ impl Lower for ast::Node {
 }
 
 impl Lower for ast::Literal {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     _: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     match self {
@@ -69,9 +69,9 @@ impl Lower for ast::Literal {
 }
 
 impl Lower for ast::Function {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_function_type = generator
@@ -88,7 +88,7 @@ impl Lower for ast::Function {
     // };
 
     let llvm_function = generator.llvm_module.add_function(
-      "todo_name_fn",
+      self.name.as_str(),
       llvm_function_type.into_function_type(),
       // Some(if self.prototype.name == ENTRY_POINT_NAME {
       //   inkwell::module::Linkage::External
@@ -119,10 +119,10 @@ impl Lower for ast::Function {
 }
 
 impl Lower for ast::Extern {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
-    context: &mut context::Context,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    _: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_function_type = generator
       .lower_type(&self.prototype)
@@ -132,7 +132,7 @@ impl Lower for ast::Extern {
     assert!(llvm_function_type.is_function_type());
 
     let llvm_external_function = generator.llvm_module.add_function(
-      "todo_name",
+      self.name.as_str(),
       llvm_function_type.into_function_type(),
       Some(inkwell::module::Linkage::External),
     );
@@ -144,9 +144,9 @@ impl Lower for ast::Extern {
 }
 
 impl Lower for ast::Block {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_basic_block = generator
@@ -165,9 +165,9 @@ impl Lower for ast::Block {
 }
 
 impl Lower for ast::ReturnStmt {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     if let Some(return_value) = &self.value {
@@ -182,9 +182,9 @@ impl Lower for ast::ReturnStmt {
 }
 
 impl Lower for ast::LetStmt {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_type = generator.lower_type(&self.ty);
@@ -206,15 +206,15 @@ impl Lower for ast::LetStmt {
 }
 
 impl Lower for ast::CallExpr {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     match &*self.callee {
       // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
       ast::Node::Function(function) => function.lower(generator, context),
-      ast::Node::External(external) => external.lower(generator, context),
+      ast::Node::Extern(external) => external.lower(generator, context),
       _ => unreachable!(),
     };
 
@@ -420,10 +420,10 @@ impl Lower for ast::CallExpr {
 // }
 
 impl Lower for ast::BreakStmt {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'ctx>,
-    context: &mut context::Context,
+    _generator: &mut LlvmGenerator<'a, 'ctx>,
+    _context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // TODO: Must ensure that the current block is a loop block.
     todo!();
@@ -431,9 +431,9 @@ impl Lower for ast::BreakStmt {
 }
 
 impl Lower for ast::Module {
-  fn lower<'ctx>(
+  fn lower<'a, 'ctx>(
     &self,
-    _generator: &mut LlvmGenerator<'ctx>,
+    _generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // for top_level_node in module.symbol_table.values() {
@@ -450,24 +450,24 @@ impl Lower for ast::Module {
   }
 }
 
-struct LlvmGenerator<'ctx> {
+pub struct LlvmGenerator<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
-  llvm_module: inkwell::module::Module<'ctx>,
+  llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_builder: inkwell::builder::Builder<'ctx>,
-  definitions:
+  _definitions:
     std::collections::HashMap<context::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
 }
 
-impl<'ctx> LlvmGenerator<'ctx> {
-  fn new(
+impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
+  pub fn new(
     llvm_context: &'ctx inkwell::context::Context,
-    llvm_module: inkwell::module::Module<'ctx>,
+    llvm_module: &'a inkwell::module::Module<'ctx>,
   ) -> Self {
     Self {
       llvm_context,
       llvm_module,
       llvm_builder: llvm_context.create_builder(),
-      definitions: std::collections::HashMap::new(),
+      _definitions: std::collections::HashMap::new(),
     }
   }
 
@@ -503,7 +503,7 @@ impl<'ctx> LlvmGenerator<'ctx> {
   }
 
   fn get_current_block(&self) -> inkwell::basic_block::BasicBlock<'ctx> {
-    // TODO: What if the insertion point for the builder is not set?
+    // FIXME: What if the insertion point for the builder is not set? (Actually throwing errors).
     self.llvm_builder.get_insert_block().unwrap()
   }
 
@@ -512,6 +512,6 @@ impl<'ctx> LlvmGenerator<'ctx> {
   }
 }
 
-fn mangle_name(scope_name: &String, name: &String) -> String {
+fn _mangle_name(scope_name: &String, name: &String) -> String {
   format!(".{}.{}", scope_name, name)
 }

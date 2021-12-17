@@ -59,7 +59,7 @@ impl Parser {
   pub fn parse_all(&mut self) -> ParserResult<Vec<ast::Node>> {
     let mut result = Vec::new();
 
-    while !self.is_eof() && !self.is(token::Token::KeywordModule) {
+    while !self.is_eof() {
       result.push(self.parse_top_level_node()?);
 
       // FIXME: Nothing being done to the parsed top-level node.
@@ -237,8 +237,6 @@ impl Parser {
 
   /// %name '(' {%parameter* (,)} (+) ')' '~' %kind_group
   fn parse_prototype(&mut self) -> ParserResult<ast::Type> {
-    let name = self.parse_name()?;
-
     skip_past!(self, token::Token::SymbolParenthesesL);
 
     let mut parameters = vec![];
@@ -278,6 +276,7 @@ impl Parser {
   fn parse_function(&mut self) -> ParserResult<ast::Function> {
     skip_past!(self, token::Token::KeywordFn);
 
+    let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
     let mut body = self.parse_block("entry")?;
 
@@ -290,19 +289,24 @@ impl Parser {
         })));
     }
 
-    Ok(ast::Function { prototype, body })
+    Ok(ast::Function {
+      name,
+      prototype,
+      body,
+    })
   }
 
   /// (pub) extern fn %prototype
-  fn parse_external(&mut self) -> ParserResult<ast::Extern> {
+  fn parse_extern(&mut self) -> ParserResult<ast::Extern> {
     // TODO: Support for visibility.
 
     skip_past!(self, token::Token::KeywordExtern);
     skip_past!(self, token::Token::KeywordFn);
 
+    let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
 
-    Ok(ast::Extern { prototype })
+    Ok(ast::Extern { name, prototype })
   }
 
   fn parse_top_level_node(&mut self) -> ParserResult<ast::Node> {
@@ -321,7 +325,7 @@ impl Parser {
 
     Ok(match token.unwrap() {
       token::Token::KeywordFn => ast::Node::Function(self.parse_function()?),
-      token::Token::KeywordExtern => ast::Node::External(self.parse_external()?),
+      token::Token::KeywordExtern => ast::Node::Extern(self.parse_extern()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -458,7 +462,7 @@ impl Parser {
       token::Token::LiteralInt(value) => {
         self.skip();
 
-        let mut size = minimum_int_size_of(&value);
+        let size = minimum_int_size_of(&value);
 
         // Default size to 32 bit-width.
         // FIXME:
@@ -511,12 +515,12 @@ impl Parser {
 
   /// %name '(' (%expr (,))* ')'
   fn parse_call_expr(&mut self) -> ParserResult<ast::CallExpr> {
-    let callee_name = self.parse_name()?;
+    let _callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
     // TODO: Shouldn't it be a `Vec<node::ExprTransport<'_>>`?
-    let arguments: Vec<ast::Node> = vec![];
+    let _arguments: Vec<ast::Node> = vec![];
 
     // TODO: Parse arguments.
 

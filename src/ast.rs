@@ -36,7 +36,7 @@ pub enum Type {
 
 pub enum Node {
   Literal(Literal),
-  External(Extern),
+  Extern(Extern),
   Function(Function),
   Module(Module),
   Block(Block),
@@ -58,10 +58,12 @@ pub enum Literal {
 }
 
 pub struct Extern {
+  pub name: String,
   pub prototype: Type,
 }
 
 pub struct Function {
+  pub name: String,
   pub prototype: Type,
   pub body: Block,
 }
