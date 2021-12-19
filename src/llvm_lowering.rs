@@ -1,8 +1,6 @@
 use crate::{ast, context, dispatch};
 use inkwell::values::BasicValue;
 
-const _ENTRY_POINT_NAME: &str = "main";
-
 pub trait Lower {
   fn lower<'a, 'ctx>(
     &self,
@@ -27,8 +25,41 @@ impl Lower for ast::WhileStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO: Implement.
-    todo!();
+    // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
+    let llvm_condition = self.condition.lower(generator, context).into_int_value();
+    let llvm_current_function = generator.llvm_function_buffer.unwrap();
+
+    let llvm_then_block = generator
+      .llvm_context
+      .append_basic_block(llvm_current_function, "while_then");
+
+    let llvm_after_block = generator
+      .llvm_context
+      .append_basic_block(llvm_current_function, "while_after");
+
+    generator.llvm_builder.build_conditional_branch(
+      llvm_condition,
+      llvm_then_block,
+      llvm_after_block,
+    );
+
+    generator.llvm_builder.position_at_end(llvm_then_block);
+    self.body.lower(generator, context);
+
+    // Fallthrough or loop if applicable.
+    if llvm_then_block.get_terminator().is_none() {
+      generator.llvm_builder.position_at_end(llvm_then_block);
+
+      generator.llvm_builder.build_conditional_branch(
+        llvm_condition,
+        llvm_then_block,
+        llvm_after_block,
+      );
+    }
+
+    generator.llvm_builder.position_at_end(llvm_after_block);
+
+    generator.make_unit_value()
   }
 }
 
@@ -38,16 +69,47 @@ impl Lower for ast::IfStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO: Implement.
-    todo!();
+    // TODO: Add logic for the `else` branch.
+
+    let llvm_condition = self.condition.lower(generator, context);
+    let llvm_current_function = generator.llvm_function_buffer.unwrap();
+
+    let llvm_then_block = generator
+      .llvm_context
+      .append_basic_block(llvm_current_function, "if_then");
+
+    let llvm_after_block = generator
+      .llvm_context
+      .append_basic_block(llvm_current_function, "if_after");
+
+    // NOTE: At this point, the condition must be verified to be a boolean by the type-checker.
+    generator.llvm_builder.build_conditional_branch(
+      llvm_condition.into_int_value(),
+      llvm_then_block,
+      llvm_after_block,
+    );
+
+    generator.llvm_builder.position_at_end(llvm_then_block);
+    self.then_block.lower(generator, context);
+
+    // Fallthrough if applicable.
+    if llvm_then_block.get_terminator().is_none() {
+      generator
+        .llvm_builder
+        .build_unconditional_branch(llvm_after_block);
+    }
+
+    generator.llvm_builder.position_at_end(llvm_after_block);
+
+    generator.make_unit_value()
   }
 }
 
 impl Lower for ast::BlockStmt {
   fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    context: &mut context::Context,
+    _generator: &mut LlvmGenerator<'a, 'ctx>,
+    _context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // TODO: Implement.
     todo!();
@@ -114,14 +176,16 @@ impl Lower for ast::Function {
 
     assert!(llvm_function_type.is_function_type());
 
-    // let llvm_function_name = if self.prototype.name == ENTRY_POINT_NAME {
-    //   self.prototype.name.clone()
-    // } else {
-    //   mangle_name(&self.module_buffer.unwrap().name, &self.prototype.name)
-    // };
+    let llvm_function_name = if self.name == "main" {
+      // TODO: Name being cloned.
+      self.name.clone()
+    } else {
+      // TODO: Pending scope.
+      mangle_name(&"pending_scope".to_string(), &self.name)
+    };
 
     let llvm_function = generator.llvm_module.add_function(
-      self.name.as_str(),
+      llvm_function_name.as_str(),
       llvm_function_type.into_function_type(),
       // Some(if self.prototype.name == ENTRY_POINT_NAME {
       //   inkwell::module::Linkage::External
@@ -131,11 +195,7 @@ impl Lower for ast::Function {
       Some(inkwell::module::Linkage::Private),
     );
 
-    let llvm_entry_block = generator
-      .llvm_context
-      .append_basic_block(llvm_function, "fn_entry");
-
-    generator.llvm_builder.position_at_end(llvm_entry_block);
+    generator.llvm_function_buffer = Some(llvm_function);
 
     match &self.prototype {
       ast::Type::Prototype(parameters, _, _) => {
@@ -150,7 +210,13 @@ impl Lower for ast::Function {
       _ => unreachable!(),
     };
 
+    let llvm_entry_block = generator
+      .llvm_context
+      .append_basic_block(llvm_function, "fn_entry");
+
+    generator.llvm_builder.position_at_end(llvm_entry_block);
     self.body.lower(generator, context);
+
     // FIXME: Verification turned off for debugging.
     // assert!(llvm_function.verify(false));
 
@@ -189,12 +255,6 @@ impl Lower for ast::Block {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_basic_block = generator
-      .llvm_context
-      .append_basic_block(generator.get_current_function(), self.llvm_name.as_str());
-
-    generator.llvm_builder.position_at_end(llvm_basic_block);
-
     for statement in &self.statements {
       statement.lower(generator, context);
     }
@@ -278,7 +338,7 @@ impl Lower for ast::CallExpr {
     }
 
     let llvm_call_value = generator.llvm_builder.build_call(
-      generator.get_current_function(),
+      generator.llvm_function_buffer.unwrap(),
       arguments.as_slice(),
       "call_result",
     );
@@ -495,6 +555,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_builder: inkwell::builder::Builder<'ctx>,
+  llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   _definitions:
     std::collections::HashMap<context::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
 }
@@ -508,6 +569,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_context,
       llvm_module,
       llvm_builder: llvm_context.create_builder(),
+      llvm_function_buffer: None,
       _definitions: std::collections::HashMap::new(),
     }
   }
@@ -548,10 +610,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     self.llvm_builder.get_insert_block().unwrap()
   }
 
-  fn get_current_function(&self) -> inkwell::values::FunctionValue<'ctx> {
-    self.get_current_block().get_parent().unwrap()
-  }
-
   fn build_return(&mut self, return_value: Option<inkwell::values::BasicValueEnum<'ctx>>) {
     // Only build a single return instruction per block.
     if self.get_current_block().get_terminator().is_some() {
@@ -564,6 +622,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   }
 }
 
-fn _mangle_name(scope_name: &String, name: &String) -> String {
+// TODO: Receive scope path as `std::path::PathBuf` instead?
+fn mangle_name(scope_name: &String, name: &String) -> String {
   format!(".{}.{}", scope_name, name)
 }

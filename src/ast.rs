@@ -84,8 +84,6 @@ pub struct Module {
 }
 
 pub struct Block {
-  // TODO: Consider using an enum then assigning a name based on its value.
-  pub llvm_name: String,
   pub statements: Vec<Box<Node>>,
 }
 

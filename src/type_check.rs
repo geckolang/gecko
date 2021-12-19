@@ -1,26 +1,9 @@
-use crate::{ast, diagnostic};
+use crate::{ast, context, diagnostic};
 
 pub type TypeCheckResult = Option<Vec<diagnostic::Diagnostic>>;
 
-pub fn type_check_module(_module: &mut ast::Module) -> TypeCheckResult {
-  // let mut _diagnostics = Vec::new();
-
-  todo!();
-
-  // FIXME:
-  // module.walk_children(&mut |child: &mut dyn Node| {
-  //   if let Some(child_diagnostics) = child.type_check() {
-  //     diagnostics.extend(child_diagnostics);
-  //   }
-  // });
-
-  // TODO: Consider just returning a vector (or better yet, a Result<(), Vec<Diagnostic>>).
-  // FIXME:
-  // if diagnostics.is_empty() {
-  //   None
-  // } else {
-  //   Some(diagnostics)
-  // }
+pub trait TypeCheck {
+  fn type_check<'ctx>(&self, context: &mut context::Context) -> Vec<diagnostic::Diagnostic>;
 }
 
 // pub fn type_check_function<'a>(function: &ast::Function<'a>) -> TypeCheckResult {

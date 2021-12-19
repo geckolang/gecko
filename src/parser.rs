@@ -137,7 +137,7 @@ impl Parser {
 
   /// TODO: Be specific, which statements? Also include lonely expression.
   /// '{' (%statement+) '}'
-  fn parse_block(&mut self, llvm_name: &str) -> ParserResult<ast::Block> {
+  fn parse_block(&mut self) -> ParserResult<ast::Block> {
     // TODO: Have a symbol table for blocks, and check for re-declarations here.
 
     skip_past!(self, token::Token::SymbolBraceL);
@@ -159,10 +159,7 @@ impl Parser {
 
     skip_past!(self, token::Token::SymbolBraceR);
 
-    Ok(ast::Block {
-      llvm_name: llvm_name.to_string(),
-      statements,
-    })
+    Ok(ast::Block { statements })
   }
 
   /// (unsigned) {i8 | i16 | i32 | i64}
@@ -275,15 +272,13 @@ impl Parser {
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
-    let mut body = self.parse_block("fn_body")?;
+    let mut body = self.parse_block()?;
 
     // Insert a return void instruction if the function body is empty.
     if body.statements.is_empty() {
-      body
-        .statements
-        .push(Box::new(ast::Node::ReturnStmt(ast::ReturnStmt {
-          value: None,
-        })));
+      let empty_return_stmt = ast::Node::ReturnStmt(ast::ReturnStmt { value: None });
+
+      body.statements.push(Box::new(empty_return_stmt));
     }
 
     Ok(ast::Function {
@@ -383,12 +378,12 @@ impl Parser {
     skip_past!(self, token::Token::KeywordIf);
 
     let condition = self.parse_expr()?;
-    let then_block = self.parse_block("if_then")?;
+    let then_block = self.parse_block()?;
     let mut else_block = None;
 
     if self.is(token::Token::KeywordElse) {
       self.skip();
-      else_block = Some(self.parse_block("if_else")?);
+      else_block = Some(self.parse_block()?);
     }
 
     Ok(ast::IfStmt {
@@ -402,7 +397,7 @@ impl Parser {
     skip_past!(self, token::Token::KeywordWhile);
 
     let condition = self.parse_expr()?;
-    let body = self.parse_block("while_then")?;
+    let body = self.parse_block()?;
 
     Ok(ast::WhileStmt {
       condition: Box::new(condition),
@@ -412,7 +407,7 @@ impl Parser {
 
   fn parse_block_stmt(&mut self) -> ParserResult<ast::BlockStmt> {
     Ok(ast::BlockStmt {
-      block: self.parse_block("block_stmt")?,
+      block: self.parse_block()?,
     })
   }
 
