@@ -108,11 +108,36 @@ impl Lower for ast::IfStmt {
 impl Lower for ast::BlockStmt {
   fn lower<'a, 'ctx>(
     &self,
-    _generator: &mut LlvmGenerator<'a, 'ctx>,
-    _context: &mut context::Context,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO: Implement.
-    todo!();
+    let llvm_current_function = generator.llvm_function_buffer.unwrap();
+
+    let llvm_body_block = generator
+      .llvm_context
+      .append_basic_block(llvm_current_function, "block_stmt_body");
+
+    generator
+      .llvm_builder
+      .build_unconditional_branch(llvm_body_block);
+
+    generator.llvm_builder.position_at_end(llvm_body_block);
+    self.block.lower(generator, context);
+
+    let llvm_after_block = generator
+      .llvm_context
+      .append_basic_block(llvm_current_function, "block_stmt_after");
+
+    // Fallthrough if applicable.
+    if llvm_body_block.get_terminator().is_none() {
+      generator
+        .llvm_builder
+        .build_unconditional_branch(llvm_after_block);
+    }
+
+    generator.llvm_builder.position_at_end(llvm_after_block);
+
+    generator.make_unit_value()
   }
 }
 
@@ -312,89 +337,32 @@ impl Lower for ast::CallExpr {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    match &*self.callee {
-      // TODO: Need to stop callee from lowering more than once. Also, watch out for buffers being overwritten.
-      ast::Node::Function(function) => function.lower(generator, context),
-      ast::Node::Extern(external) => external.lower(generator, context),
-      _ => unreachable!(),
-    };
+    // NOTE: Because the callee is a definition, memoization will automatically take place.
+    self.callee.lower(generator, context);
 
-    let mut arguments = Vec::new();
-
-    arguments.reserve(self.arguments.len());
-
-    for argument in &self.arguments {
-      // TODO: Cloning argument.
-      let llvm_value = argument.lower(generator, context);
-
-      arguments.push(match llvm_value {
-        // TODO: Is this check necessary?
-        // TODO: Add support for missing basic values.
-        inkwell::values::BasicValueEnum::IntValue(int_value) => {
-          inkwell::values::BasicMetadataValueEnum::IntValue(int_value)
-        }
-        _ => unreachable!(),
-      });
-    }
+    let llvm_arguments = self
+      .arguments
+      .iter()
+      .map(|argument| argument.lower(generator, context).into())
+      .collect::<Vec<_>>();
 
     let llvm_call_value = generator.llvm_builder.build_call(
       generator.llvm_function_buffer.unwrap(),
-      arguments.as_slice(),
-      "call_result",
+      llvm_arguments.as_slice(),
+      "fn_call_result",
     );
 
     let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();
 
+    // TODO: Why assert, if either way, it will fail if it's not left?
     assert!(llvm_call_basic_value_result.is_left());
 
     let llvm_call_basic_value = llvm_call_basic_value_result.left().unwrap();
 
-    // FIXME: Awaiting checks?
+    // TODO: Awaiting checks?
     llvm_call_basic_value
   }
 }
-
-// impl Lower for ast::BlockStmt<'_> {
-//   fn lower<'ctx>(
-//     &self,
-//     generator: LlvmGenerator<'ctx>,
-//     context: &mut context::Context,
-//   ) -> inkwell::values::BasicValueEnum<'ctx> {
-//     crate::diagnostic_assert!(self.llvm_function_like_buffer.is_some());
-//     crate::diagnostic_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
-
-//     let llvm_parent_block = self.llvm_builder_buffer.get_insert_block().unwrap();
-//     let llvm_temporary_builder = self.llvm_context.create_builder();
-
-//     llvm_temporary_builder.position_at_end(llvm_parent_block);
-
-//     let llvm_after_block = self
-//       .llvm_context
-//       .append_basic_block(self.llvm_function_like_buffer.unwrap(), "block_stmt_after");
-
-//     // Push the `after` block before visiting the statement's body.
-//     self
-//       .llvm_basic_block_fallthrough_stack
-//       .push(llvm_after_block);
-
-//     // TODO: Cloning LLVM basic block.
-//     let llvm_new_block = lower_or_retrieve_block!(self, &self.block)?.to_owned();
-
-//     if llvm_parent_block.get_terminator().is_none() {
-//       llvm_temporary_builder.build_unconditional_branch(llvm_new_block);
-//     }
-
-//     llvm_temporary_builder.position_at_end(llvm_new_block);
-
-//     if llvm_new_block.get_terminator().is_none() {
-//       llvm_temporary_builder.build_unconditional_branch(llvm_after_block);
-//     }
-
-//     self.llvm_builder_buffer.position_at_end(llvm_after_block);
-
-//     Ok(())
-//   }
-// }
 
 impl Lower for ast::BreakStmt {
   fn lower<'a, 'ctx>(
@@ -407,12 +375,31 @@ impl Lower for ast::BreakStmt {
   }
 }
 
+impl Lower for ast::Definition {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    if context.is_memoized(&self.key) {
+      // FIXME: Ensure the underlying LLVM value isn't actually cloned.
+      return *generator.definitions.get(&self.key).unwrap();
+    }
+
+    let llvm_value = self.node.lower(generator, context);
+
+    generator.definitions.insert(self.key, llvm_value);
+
+    llvm_value
+  }
+}
+
 pub struct LlvmGenerator<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_builder: inkwell::builder::Builder<'ctx>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
-  _definitions:
+  definitions:
     std::collections::HashMap<context::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
 }
 
@@ -426,7 +413,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_module,
       llvm_builder: llvm_context.create_builder(),
       llvm_function_buffer: None,
-      _definitions: std::collections::HashMap::new(),
+      definitions: std::collections::HashMap::new(),
     }
   }
 
@@ -440,30 +427,38 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         ast::PrimitiveType::Int(_size) => self.llvm_context.i32_type().as_basic_type_enum(),
         ast::PrimitiveType::Char => self.llvm_context.i8_type().as_basic_type_enum(),
       },
-      ast::Type::Prototype(parameter_types, return_type, is_variadic) => {
+      ast::Type::Prototype(parameter_types, return_type_result, is_variadic) => {
         let llvm_parameter_types = parameter_types
           .iter()
           .map(|parameter_type| self.lower_type(&parameter_type.1).into())
           .collect::<Vec<_>>();
 
-        // FIXME: Return type may be `None`.
-        let llvm_return_type = self.lower_type(&return_type.as_ref().unwrap());
-
-        llvm_return_type
-          // TODO: Is `is_variadic` being copied?
-          .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
-          .ptr_type(inkwell::AddressSpace::Generic)
-          .into()
+        // TODO: Simplify code (find common ground between `void` and `basic` types).
+        if let Some(return_type) = return_type_result {
+          self
+            .lower_type(&return_type)
+            // TODO: Is `is_variadic` being copied?
+            .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
+            .ptr_type(inkwell::AddressSpace::Generic)
+            .into()
+        } else {
+          self
+            .llvm_context
+            .void_type() // TODO: Is `is_variadic` being copied?
+            .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
+            .ptr_type(inkwell::AddressSpace::Generic)
+            .into()
+        }
       }
     }
   }
 
   fn make_unit_value(&self) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: In our case, this might not be ideal.
     self.llvm_context.bool_type().const_int(0, false).into()
   }
 
   fn get_current_block(&self) -> inkwell::basic_block::BasicBlock<'ctx> {
-    // FIXME: What if the insertion point for the builder is not set? (Actually throwing errors).
     self.llvm_builder.get_insert_block().unwrap()
   }
 

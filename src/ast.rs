@@ -1,3 +1,5 @@
+use crate::context;
+
 #[macro_export]
 macro_rules! dispatch {
   ($node:expr, $target_fn:expr $(, $($args:expr),* )? ) => {
@@ -109,6 +111,11 @@ pub struct WhileStmt {
 }
 
 pub struct CallExpr {
-  pub callee: Box<Node>,
+  pub callee: Definition,
   pub arguments: Vec<Box<Node>>,
+}
+
+pub struct Definition {
+  pub node: Box<Node>,
+  pub key: context::DefinitionKey,
 }
