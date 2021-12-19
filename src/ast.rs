@@ -5,7 +5,6 @@ macro_rules! dispatch {
       $crate::ast::Node::Literal(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Extern(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Function(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Module(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Block(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BlockStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
@@ -48,7 +47,6 @@ pub enum Node {
   Literal(Literal),
   Extern(Extern),
   Function(Function),
-  Module(Module),
   Block(Block),
   BlockStmt(BlockStmt),
   ReturnStmt(ReturnStmt),
@@ -75,12 +73,6 @@ pub struct Function {
   pub name: String,
   pub prototype: Type,
   pub body: Block,
-}
-
-pub struct Module {
-  pub name: String,
-  // TODO: Symbol table?
-  // pub symbol_table: std::collections::HashMap<String, TopLevelNodeHolder>,
 }
 
 pub struct Block {

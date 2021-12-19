@@ -50,10 +50,6 @@ impl Resolvable for ast::Block {
   //
 }
 
-impl Resolvable for ast::Module {
-  //
-}
-
 impl Resolvable for ast::Extern {
   //
 }

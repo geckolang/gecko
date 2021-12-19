@@ -354,130 +354,6 @@ impl Lower for ast::CallExpr {
   }
 }
 
-// impl Lower for ast::WhileStmt {
-//   fn lower<'ctx>(
-//     &self,
-//     generator: LlvmGenerator<'ctx>,
-//     context: &mut context::Context,
-//   ) -> inkwell::values::BasicValueEnum<'ctx> {
-//     let llvm_parent_block = self.llvm_builder_buffer.get_insert_block().unwrap();
-//     let llvm_condition_basic_value = self.condition.lower(generator, context);
-//     let llvm_condition_int_value = llvm_condition_basic_value.into_int_value();
-
-//     // TODO: What if even tho. we set the buffer to the after block, there isn't any instructions lowered? This would leave the block without even a `ret void` (which is required).
-//     let llvm_after_block = self
-//       .generator
-//       .llvm_context
-//       .append_basic_block(self.llvm_function_like_buffer.unwrap(), "while_after");
-
-//     self
-//       .llvm_basic_block_fallthrough_stack
-//       .push(llvm_after_block);
-
-//     // FIXME: `BasicValueEnum` is not associated with `BasicBlock`.
-//     let llvm_then_block = self.body.lower(generator, context);
-//     let llvm_parent_builder = self.llvm_context.create_builder();
-
-//     llvm_parent_builder.position_at_end(llvm_parent_block);
-
-//     llvm_parent_builder.build_conditional_branch(
-//       llvm_condition_int_value,
-//       llvm_then_block,
-//       llvm_after_block,
-//     );
-
-//     // TODO: Assert condition is both an int value and that it has 1 bit width.
-
-//     self.llvm_builder_buffer.position_at_end(llvm_after_block);
-
-//     if llvm_then_block.get_terminator().is_none() {
-//       let llvm_temporary_builder = self.llvm_context.create_builder();
-
-//       llvm_temporary_builder.position_at_end(llvm_then_block);
-
-//       llvm_temporary_builder.build_conditional_branch(
-//         llvm_condition_int_value,
-//         llvm_then_block,
-//         llvm_after_block,
-//       );
-//     }
-
-//     Ok(())
-//   }
-// }
-
-// impl Lower for ast::IfStmt<'_> {
-//   fn lower<'ctx>(
-//     &self,
-//     generator: LlvmGenerator<'ctx>,
-//     context: &mut context::Context,
-//   ) -> inkwell::values::BasicValueEnum<'ctx> {
-//     crate::diagnostic_assert!(self.llvm_function_like_buffer.is_some());
-//     crate::diagnostic_assert!(self.llvm_builder_buffer.get_insert_block().is_some());
-
-//     let llvm_function = self.llvm_function_like_buffer.unwrap();
-
-//     // TODO: Verify builder is in the correct/expected block.
-//     // TODO: What if the buffer was intended to be for an external?
-
-//     let llvm_parent_block = self.llvm_builder_buffer.get_insert_block().unwrap();
-
-//     let llvm_after_block = self
-//       .llvm_context
-//       .append_basic_block(llvm_function, "if_after");
-
-//     self
-//       .llvm_basic_block_fallthrough_stack
-//       .push(llvm_after_block);
-
-//     let llvm_then_block = self.then_block.lower(generator, context);
-
-//     // Position the builder on the `after` block, for the next statement(s) (if any).
-//     // It is important to do this after visiting the `then` block.
-//     self.llvm_builder_buffer.position_at_end(llvm_after_block);
-
-//     // TODO: Does it matter if the condition is visited before the `then` block? (Remember that the code is not being executed).
-//     let llvm_condition_basic_value = self.condition.lower(generator, context);
-
-//     crate::diagnostic_assert!(llvm_condition_basic_value.is_int_value());
-
-//     let llvm_condition_int_value = llvm_condition_basic_value.into_int_value();
-
-//     crate::diagnostic_assert!(llvm_condition_int_value.get_type().get_bit_width() == 1);
-
-//     let llvm_temporary_builder = self.llvm_context.create_builder();
-
-//     llvm_temporary_builder.position_at_end(llvm_parent_block);
-
-//     llvm_temporary_builder.build_conditional_branch(
-//       llvm_condition_int_value,
-//       // TODO: Cloning LLVM basic block.
-//       llvm_then_block.to_owned(),
-//       llvm_after_block,
-//     );
-
-//     // If there is no terminator instruction on the `then` LLVM basic block,
-//     // build a link to continue the code after the if statement.
-//     if llvm_then_block.get_terminator().is_none() {
-//       // TODO: Cloning LLVM basic block.
-//       llvm_temporary_builder.position_at_end(llvm_then_block.to_owned());
-//       llvm_temporary_builder.build_unconditional_branch(llvm_after_block);
-//     }
-
-//     // TODO: At this point not all instructions have been lowered (only up to the `if` statement itself), which means that a terminator can exist afterwards, but that case is being ignored here.
-//     // If the `after` block has no terminator instruction, there might be a
-//     // possibility for fallthrough. If after visiting the `then` block, the
-//     // length of the LLVM basic block stack is larger than the cached length,
-//     // then there is a fallthrough.
-//     if llvm_after_block.get_terminator().is_none() {
-//       llvm_temporary_builder.position_at_end(llvm_after_block);
-//     }
-
-//     // FIXME: Complete implementation.
-//     todo!();
-//   }
-// }
-
 // impl Lower for ast::BlockStmt<'_> {
 //   fn lower<'ctx>(
 //     &self,
@@ -531,26 +407,6 @@ impl Lower for ast::BreakStmt {
   }
 }
 
-impl Lower for ast::Module {
-  fn lower<'a, 'ctx>(
-    &self,
-    _generator: &mut LlvmGenerator<'a, 'ctx>,
-    _context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // for top_level_node in module.symbol_table.values() {
-    //   match top_level_node {
-    //     ast::Node::Function(function) => self.lower_function(function)?,
-    //     ast::Node::External(external) => self.lower_external(external)?,
-    //     // TODO: Emit I.C.E. instead?
-    //     _ => unreachable!(),
-    //   };
-    // }
-
-    // Ok(())
-    todo!();
-  }
-}
-
 pub struct LlvmGenerator<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
@@ -585,16 +441,17 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         ast::PrimitiveType::Char => self.llvm_context.i8_type().as_basic_type_enum(),
       },
       ast::Type::Prototype(parameter_types, return_type, is_variadic) => {
-        let _llvm_parameter_types = parameter_types
+        let llvm_parameter_types = parameter_types
           .iter()
-          .map(|parameter_type| self.lower_type(&parameter_type.1))
+          .map(|parameter_type| self.lower_type(&parameter_type.1).into())
           .collect::<Vec<_>>();
 
         // FIXME: Return type may be `None`.
         let llvm_return_type = self.lower_type(&return_type.as_ref().unwrap());
 
         llvm_return_type
-          .fn_type(&[], *is_variadic)
+          // TODO: Is `is_variadic` being copied?
+          .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
           .ptr_type(inkwell::AddressSpace::Generic)
           .into()
       }
