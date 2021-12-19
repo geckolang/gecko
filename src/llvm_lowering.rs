@@ -21,6 +21,39 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::WhileStmt {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: Implement.
+    todo!();
+  }
+}
+
+impl Lower for ast::IfStmt {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: Implement.
+    todo!();
+  }
+}
+
+impl Lower for ast::BlockStmt {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: Implement.
+    todo!();
+  }
+}
+
 impl Lower for ast::Literal {
   fn lower<'a, 'ctx>(
     &self,
@@ -98,6 +131,12 @@ impl Lower for ast::Function {
       Some(inkwell::module::Linkage::Private),
     );
 
+    let llvm_entry_block = generator
+      .llvm_context
+      .append_basic_block(llvm_function, "fn_entry");
+
+    generator.llvm_builder.position_at_end(llvm_entry_block);
+
     match &self.prototype {
       ast::Type::Prototype(parameters, _, _) => {
         // TODO: Find a way to use only one loop to process both local parameters and LLVM's names.
@@ -112,7 +151,8 @@ impl Lower for ast::Function {
     };
 
     self.body.lower(generator, context);
-    assert!(llvm_function.verify(false));
+    // FIXME: Verification turned off for debugging.
+    // assert!(llvm_function.verify(false));
 
     llvm_function.as_global_value().as_basic_value_enum()
   }
@@ -170,13 +210,14 @@ impl Lower for ast::ReturnStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    if let Some(return_value) = &self.value {
-      let llvm_return_value = return_value.lower(generator, context);
+    let llvm_return_value = if let Some(return_value) = &self.value {
+      Some(return_value.lower(generator, context))
+    } else {
+      None
+    };
 
-      return llvm_return_value;
-    }
+    generator.build_return(llvm_return_value);
 
-    // TODO: Shouldn't be returning unit value here, instead there should always be a value returned.
     generator.make_unit_value()
   }
 }
@@ -200,8 +241,8 @@ impl Lower for ast::LetStmt {
       .llvm_builder
       .build_store(llvm_alloca_inst_ptr, llvm_value);
 
-    todo!();
-    // Ok(llvm_alloca_inst_ptr)
+    // TODO: Must return a value which links back to this variable instead.
+    generator.make_unit_value()
   }
 }
 
@@ -509,6 +550,17 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   fn get_current_function(&self) -> inkwell::values::FunctionValue<'ctx> {
     self.get_current_block().get_parent().unwrap()
+  }
+
+  fn build_return(&mut self, return_value: Option<inkwell::values::BasicValueEnum<'ctx>>) {
+    // Only build a single return instruction per block.
+    if self.get_current_block().get_terminator().is_some() {
+      return;
+    } else if let Some(return_value) = return_value {
+      self.llvm_builder.build_return(Some(&return_value));
+    } else {
+      self.llvm_builder.build_return(None);
+    }
   }
 }
 

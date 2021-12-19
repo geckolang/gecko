@@ -22,6 +22,46 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::BreakStmt {
+  //
+}
+
+impl Resolvable for ast::WhileStmt {
+  //
+}
+
+impl Resolvable for ast::IfStmt {
+  //
+}
+
+impl Resolvable for ast::LetStmt {
+  //
+}
+
+impl Resolvable for ast::ReturnStmt {
+  //
+}
+
+impl Resolvable for ast::BlockStmt {
+  //
+}
+
+impl Resolvable for ast::Block {
+  //
+}
+
+impl Resolvable for ast::Module {
+  //
+}
+
+impl Resolvable for ast::Extern {
+  //
+}
+
+impl Resolvable for ast::Literal {
+  //
+}
+
 impl Resolvable for ast::Function {
   //
 }

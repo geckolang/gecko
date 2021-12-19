@@ -152,11 +152,8 @@ impl Parser {
         token::Token::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
         token::Token::SymbolBraceL => ast::Node::BlockStmt(self.parse_block_stmt()?),
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
-        _ => {
-          let expr_wrapper_stmt = ast::Node::ExprWrapperStmt(Box::new(self.parse_expr()?));
-
-          expr_wrapper_stmt
-        }
+        // TODO: Throw error/diagnostic instead.
+        _ => todo!(),
       }));
     }
 
@@ -278,7 +275,7 @@ impl Parser {
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
-    let mut body = self.parse_block("entry")?;
+    let mut body = self.parse_block("fn_body")?;
 
     // Insert a return void instruction if the function body is empty.
     if body.statements.is_empty() {
@@ -419,6 +416,7 @@ impl Parser {
     })
   }
 
+  /// break
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
     skip_past!(self, token::Token::KeywordBreak);
 

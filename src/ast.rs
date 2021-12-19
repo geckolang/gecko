@@ -2,8 +2,18 @@
 macro_rules! dispatch {
   ($node:expr, $target_fn:expr $(, $($args:expr),* )? ) => {
     match $node {
+      $crate::ast::Node::Literal(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::Extern(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Function(inner) => $target_fn(inner $(, $($args),* )?),
-      _ => todo!(),
+      $crate::ast::Node::Module(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::Block(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::BlockStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::WhileStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -47,7 +57,6 @@ pub enum Node {
   WhileStmt(WhileStmt),
   CallExpr(CallExpr),
   BreakStmt(BreakStmt),
-  ExprWrapperStmt(Box<Node>),
 }
 
 pub enum Literal {
