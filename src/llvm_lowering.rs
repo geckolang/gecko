@@ -1,4 +1,8 @@
-use crate::{ast, context, dispatch};
+use crate::{
+  ast,
+  context::{self, DefinitionKey},
+  dispatch,
+};
 use inkwell::values::BasicValue;
 
 pub trait Lower {
@@ -294,14 +298,14 @@ impl Lower for ast::LetStmt {
   }
 }
 
-impl Lower for ast::CallExpr {
+impl Lower for ast::FunctionCall {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // NOTE: Because the callee is a definition, memoization will automatically take place.
-    self.callee.lower(generator, context);
+    // TODO:
+    //generator.retrieve_definition(self.callee.unwrap())
 
     let llvm_arguments = self
       .arguments
@@ -309,6 +313,7 @@ impl Lower for ast::CallExpr {
       .map(|argument| argument.lower(generator, context).into())
       .collect::<Vec<_>>();
 
+    // TODO: Calling the current function for debugging.
     let llvm_call_value = generator.llvm_builder.build_call(
       generator.llvm_function_buffer.unwrap(),
       llvm_arguments.as_slice(),
@@ -317,13 +322,11 @@ impl Lower for ast::CallExpr {
 
     let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();
 
-    // TODO: Why assert, if either way, it will fail if it's not left?
-    assert!(llvm_call_basic_value_result.is_left());
-
-    let llvm_call_basic_value = llvm_call_basic_value_result.left().unwrap();
-
-    // TODO: Awaiting checks?
-    llvm_call_basic_value
+    if llvm_call_basic_value_result.is_left() {
+      llvm_call_basic_value_result.left().unwrap()
+    } else {
+      generator.make_unit_value()
+    }
   }
 }
 
@@ -346,7 +349,7 @@ impl Lower for ast::Definition {
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     if context.is_memoized(&self.key) {
       // FIXME: Ensure the underlying LLVM value isn't actually cloned.
-      return *generator.definitions.get(&self.key).unwrap();
+      return *generator.definitions.get(self.key).unwrap();
     }
 
     let llvm_value = self.node.lower(generator, context);
@@ -357,13 +360,22 @@ impl Lower for ast::Definition {
   }
 }
 
+impl Lower for ast::ExprWrapperStmt {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    self.expr.lower(generator, context)
+  }
+}
+
 pub struct LlvmGenerator<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_builder: inkwell::builder::Builder<'ctx>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
-  definitions:
-    std::collections::HashMap<context::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
+  definitions: Vec<inkwell::values::BasicValueEnum<'ctx>>,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -376,7 +388,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_module,
       llvm_builder: llvm_context.create_builder(),
       llvm_function_buffer: None,
-      definitions: std::collections::HashMap::new(),
+      definitions: Vec::new(),
     }
   }
 
@@ -434,6 +446,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     } else {
       self.llvm_builder.build_return(None);
     }
+  }
+
+  fn _retrieve_definition(
+    &mut self,
+    definition_key: DefinitionKey,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // FIXME: Ensure this isn't cloning the underlying LLVM value.
+    *self.definitions.get(definition_key).unwrap()
   }
 }
 

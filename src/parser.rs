@@ -151,8 +151,9 @@ impl Parser {
         token::Token::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
         token::Token::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
-        // TODO: Throw error/diagnostic instead.
-        _ => todo!(),
+        _ => ast::Node::ExprWrapperStmt(ast::ExprWrapperStmt {
+          expr: Box::new(self.parse_expr()?),
+        }),
       }));
     }
 
@@ -485,7 +486,7 @@ impl Parser {
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
-          ast::Node::CallExpr(self.parse_call_expr()?)
+          ast::Node::FunctionCall(self.parse_function_call()?)
         } else {
           return Err(diagnostic::Diagnostic {
             // TODO: Show the actual token.
@@ -500,28 +501,23 @@ impl Parser {
   }
 
   /// %name '(' (%expr (,))* ')'
-  fn parse_call_expr(&mut self) -> ParserResult<ast::CallExpr> {
+  fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
+    // TODO: We need to push a definition within parser. Then, make use of the callee name.
+
     let _callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
-    // TODO: Shouldn't it be a `Vec<node::ExprTransport<'_>>`?
-    let _arguments: Vec<ast::Node> = vec![];
+    let arguments = vec![];
 
     // TODO: Parse arguments.
 
     skip_past!(self, token::Token::SymbolParenthesesR);
 
-    // FIXME: Fix implementation.
-    todo!();
-
-    // Ok(ast::CallExpr {
-    //   callee: ast::CalleeStub {
-    //     name: callee_name,
-    //     value: None,
-    //   },
-    //   arguments,
-    // })
+    Ok(ast::FunctionCall {
+      callee: None,
+      arguments,
+    })
   }
 }
 

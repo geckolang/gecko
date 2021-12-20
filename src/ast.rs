@@ -1,4 +1,4 @@
-use crate::context;
+use crate::context::{self, DefinitionKey};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -12,8 +12,9 @@ macro_rules! dispatch {
       $crate::ast::Node::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::WhileStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::FunctionCall(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -53,8 +54,9 @@ pub enum Node {
   LetStmt(LetStmt),
   IfStmt(IfStmt),
   WhileStmt(WhileStmt),
-  CallExpr(CallExpr),
+  FunctionCall(FunctionCall),
   BreakStmt(BreakStmt),
+  ExprWrapperStmt(ExprWrapperStmt),
 }
 
 pub enum Literal {
@@ -104,9 +106,12 @@ pub struct WhileStmt {
   pub body: Block,
 }
 
-pub struct CallExpr {
-  // FIXME: We don't have access to the actual node at this point (which is under `Definition`).
-  pub callee: Definition,
+pub struct ExprWrapperStmt {
+  pub expr: Box<Node>,
+}
+
+pub struct FunctionCall {
+  pub callee: Option<DefinitionKey>,
   pub arguments: Vec<Box<Node>>,
 }
 

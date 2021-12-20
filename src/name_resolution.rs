@@ -58,7 +58,11 @@ impl Resolvable for ast::Function {
   //
 }
 
-impl Resolvable for ast::CallExpr {
+impl Resolvable for ast::FunctionCall {
+  //
+}
+
+impl Resolvable for ast::ExprWrapperStmt {
   //
 }
 
