@@ -42,10 +42,6 @@ impl Resolvable for ast::ReturnStmt {
   //
 }
 
-impl Resolvable for ast::BlockStmt {
-  //
-}
-
 impl Resolvable for ast::Block {
   //
 }

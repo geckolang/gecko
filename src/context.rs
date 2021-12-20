@@ -9,6 +9,12 @@ pub struct Context {
 }
 
 impl Context {
+  pub fn new() -> Self {
+    Context {
+      definition_infos: Vec::new(),
+    }
+  }
+
   pub fn push_definition(&mut self, name: String) -> DefinitionKey {
     let key = self.definition_infos.len();
 

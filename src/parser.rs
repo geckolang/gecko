@@ -150,7 +150,6 @@ impl Parser {
         token::Token::KeywordLet => ast::Node::LetStmt(self.parse_let_stmt()?),
         token::Token::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
         token::Token::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
-        token::Token::SymbolBraceL => ast::Node::BlockStmt(self.parse_block_stmt()?),
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
         // TODO: Throw error/diagnostic instead.
         _ => todo!(),
@@ -402,12 +401,6 @@ impl Parser {
     Ok(ast::WhileStmt {
       condition: Box::new(condition),
       body,
-    })
-  }
-
-  fn parse_block_stmt(&mut self) -> ParserResult<ast::BlockStmt> {
-    Ok(ast::BlockStmt {
-      block: self.parse_block()?,
     })
   }
 

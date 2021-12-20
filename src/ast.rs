@@ -8,7 +8,6 @@ macro_rules! dispatch {
       $crate::ast::Node::Extern(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Function(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Block(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::BlockStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
@@ -50,7 +49,6 @@ pub enum Node {
   Extern(Extern),
   Function(Function),
   Block(Block),
-  BlockStmt(BlockStmt),
   ReturnStmt(ReturnStmt),
   LetStmt(LetStmt),
   IfStmt(IfStmt),
@@ -81,10 +79,6 @@ pub struct Block {
   pub statements: Vec<Box<Node>>,
 }
 
-pub struct BlockStmt {
-  pub block: Block,
-}
-
 pub struct BreakStmt {
   //
 }
@@ -111,6 +105,7 @@ pub struct WhileStmt {
 }
 
 pub struct CallExpr {
+  // FIXME: We don't have access to the actual node at this point (which is under `Definition`).
   pub callee: Definition,
   pub arguments: Vec<Box<Node>>,
 }

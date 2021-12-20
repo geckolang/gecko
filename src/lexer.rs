@@ -80,11 +80,6 @@ impl Lexer {
         Some(token) => tokens.push(token),
         None => break,
       };
-
-      if tokens.len() > 100 {
-        println!("{:?}", tokens);
-        unreachable!("Too many tokens! Possible infinite loop?");
-      }
     }
 
     Ok(tokens)

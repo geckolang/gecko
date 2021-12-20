@@ -105,42 +105,6 @@ impl Lower for ast::IfStmt {
   }
 }
 
-impl Lower for ast::BlockStmt {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_current_function = generator.llvm_function_buffer.unwrap();
-
-    let llvm_body_block = generator
-      .llvm_context
-      .append_basic_block(llvm_current_function, "block_stmt_body");
-
-    generator
-      .llvm_builder
-      .build_unconditional_branch(llvm_body_block);
-
-    generator.llvm_builder.position_at_end(llvm_body_block);
-    self.block.lower(generator, context);
-
-    let llvm_after_block = generator
-      .llvm_context
-      .append_basic_block(llvm_current_function, "block_stmt_after");
-
-    // Fallthrough if applicable.
-    if llvm_body_block.get_terminator().is_none() {
-      generator
-        .llvm_builder
-        .build_unconditional_branch(llvm_after_block);
-    }
-
-    generator.llvm_builder.position_at_end(llvm_after_block);
-
-    generator.make_unit_value()
-  }
-}
-
 impl Lower for ast::Literal {
   fn lower<'a, 'ctx>(
     &self,
@@ -284,8 +248,7 @@ impl Lower for ast::Block {
       statement.lower(generator, context);
     }
 
-    // FIXME: What if there are no statements (i.e. empty block)?
-    self.statements.last().unwrap().lower(generator, context)
+    generator.make_unit_value()
   }
 }
 
