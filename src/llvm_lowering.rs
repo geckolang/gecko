@@ -1,8 +1,4 @@
-use crate::{
-  ast,
-  context::{self, DefinitionKey},
-  dispatch,
-};
+use crate::{ast, context, dispatch};
 use inkwell::values::BasicValue;
 
 pub trait Lower {
@@ -336,7 +332,7 @@ impl Lower for ast::BreakStmt {
     _generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO: Must ensure that the current block is a loop block.
+    // TODO: Must ensure that the current block is a loop block. Additionally, will also need access to the next block in advance (maybe using a buffer?).
     todo!();
   }
 }
@@ -450,7 +446,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   fn _retrieve_definition(
     &mut self,
-    definition_key: DefinitionKey,
+    definition_key: context::DefinitionKey,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // FIXME: Ensure this isn't cloning the underlying LLVM value.
     *self.definitions.get(definition_key).unwrap()

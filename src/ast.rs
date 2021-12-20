@@ -111,11 +111,13 @@ pub struct ExprWrapperStmt {
 }
 
 pub struct FunctionCall {
-  pub callee: Option<DefinitionKey>,
+  pub callee_name: String,
+  pub callee_definition: Option<DefinitionKey>,
   pub arguments: Vec<Box<Node>>,
 }
 
 pub struct Definition {
+  pub name: String,
   pub node: Box<Node>,
   pub key: context::DefinitionKey,
 }

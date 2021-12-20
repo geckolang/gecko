@@ -1,4 +1,4 @@
-use crate::{ast, diagnostic, token};
+use crate::{ast, context, diagnostic, token};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -45,14 +45,19 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
 
 type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 
-pub struct Parser {
+pub struct Parser<'a> {
   tokens: Vec<token::Token>,
   index: usize,
+  context: &'a mut context::Context,
 }
 
-impl Parser {
-  pub fn new(tokens: Vec<token::Token>) -> Self {
-    Self { tokens, index: 0 }
+impl<'a> Parser<'a> {
+  pub fn new(tokens: Vec<token::Token>, context: &'a mut context::Context) -> Self {
+    Self {
+      tokens,
+      index: 0,
+      context,
+    }
   }
 
   /// Parse all top-level definitions.
@@ -504,7 +509,7 @@ impl Parser {
   fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
     // TODO: We need to push a definition within parser. Then, make use of the callee name.
 
-    let _callee_name = self.parse_name()?;
+    let callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
@@ -515,7 +520,8 @@ impl Parser {
     skip_past!(self, token::Token::SymbolParenthesesR);
 
     Ok(ast::FunctionCall {
-      callee: None,
+      callee_name,
+      callee_definition: None,
       arguments,
     })
   }
@@ -527,28 +533,36 @@ mod tests {
 
   #[test]
   fn proper_initial_values() {
-    let parser = Parser::new(vec![]);
+    let mut context = context::Context::new();
+    let parser = Parser::new(vec![], &mut context);
 
     assert_eq!(0, parser.index);
   }
 
   #[test]
   fn is() {
-    let parser = Parser::new(vec![token::Token::KeywordFn]);
+    let mut context = context::Context::new();
+    let parser = Parser::new(vec![token::Token::KeywordFn], &mut context);
 
     assert_eq!(true, parser.is(token::Token::KeywordFn));
   }
 
   #[test]
   fn is_empty() {
-    let parser = Parser::new(vec![]);
+    let mut context = context::Context::new();
+    let parser = Parser::new(vec![], &mut context);
 
     assert_eq!(false, parser.is(token::Token::KeywordFn));
   }
 
   #[test]
   fn skip() {
-    let mut parser = Parser::new(vec![token::Token::KeywordFn, token::Token::KeywordFn]);
+    let mut context = context::Context::new();
+
+    let mut parser = Parser::new(
+      vec![token::Token::KeywordFn, token::Token::KeywordFn],
+      &mut context,
+    );
 
     parser.skip();
     assert_eq!(1, parser.index);
@@ -556,7 +570,8 @@ mod tests {
 
   #[test]
   fn skip_out_of_bounds() {
-    let mut parser = Parser::new(vec![token::Token::KeywordFn]);
+    let mut context = context::Context::new();
+    let mut parser = Parser::new(vec![token::Token::KeywordFn], &mut context);
 
     parser.skip();
     assert_eq!(0, parser.index);
@@ -564,7 +579,8 @@ mod tests {
 
   #[test]
   fn is_eof() {
-    let mut parser = Parser::new(vec![]);
+    let mut context = context::Context::new();
+    let mut parser = Parser::new(vec![], &mut context);
 
     assert_eq!(true, parser.is_eof());
     parser.tokens.push(token::Token::KeywordFn);
