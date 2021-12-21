@@ -75,6 +75,7 @@ pub struct Function {
   pub name: String,
   pub prototype: Type,
   pub body: Block,
+  pub definition_key: Option<context::DefinitionKey>,
 }
 
 pub struct Block {
@@ -112,7 +113,7 @@ pub struct ExprWrapperStmt {
 
 pub struct FunctionCall {
   pub callee_name: String,
-  pub callee_definition: Option<DefinitionKey>,
+  pub callee_key: Option<DefinitionKey>,
   pub arguments: Vec<Box<Node>>,
 }
 

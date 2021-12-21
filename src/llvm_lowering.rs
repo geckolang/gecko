@@ -1,5 +1,6 @@
 use crate::{ast, context, dispatch};
 use inkwell::values::BasicValue;
+use std::convert::TryFrom;
 
 pub trait Lower {
   fn lower<'a, 'ctx>(
@@ -209,7 +210,15 @@ impl Lower for ast::Function {
     // FIXME: Verification turned off for debugging.
     // assert!(llvm_function.verify(false));
 
-    llvm_function.as_global_value().as_basic_value_enum()
+    let llvm_value = llvm_function.as_global_value().as_basic_value_enum();
+
+    // TODO: Need to lower target if not already memoized. This isn't being handled, so functions declared later on will not be picked up.
+    // TODO: Only insert if not already memoized. Consider making a helper function for this.
+    generator
+      .definitions
+      .insert(self.definition_key.unwrap(), llvm_value);
+
+    llvm_value
   }
 }
 
@@ -309,9 +318,13 @@ impl Lower for ast::FunctionCall {
       .map(|argument| argument.lower(generator, context).into())
       .collect::<Vec<_>>();
 
+    let llvm_target_function = generator
+      .retrieve_definition(self.callee_key.unwrap())
+      .into_pointer_value();
+
     // TODO: Calling the current function for debugging.
     let llvm_call_value = generator.llvm_builder.build_call(
-      generator.llvm_function_buffer.unwrap(),
+      inkwell::values::CallableValue::try_from(llvm_target_function).unwrap(),
       llvm_arguments.as_slice(),
       "fn_call_result",
     );
@@ -345,7 +358,7 @@ impl Lower for ast::Definition {
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     if context.is_memoized(&self.key) {
       // FIXME: Ensure the underlying LLVM value isn't actually cloned.
-      return *generator.definitions.get(self.key).unwrap();
+      return *generator.definitions.get(&self.key).unwrap();
     }
 
     let llvm_value = self.node.lower(generator, context);
@@ -371,7 +384,8 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_builder: inkwell::builder::Builder<'ctx>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
-  definitions: Vec<inkwell::values::BasicValueEnum<'ctx>>,
+  definitions:
+    std::collections::HashMap<context::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -384,7 +398,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_module,
       llvm_builder: llvm_context.create_builder(),
       llvm_function_buffer: None,
-      definitions: Vec::new(),
+      definitions: std::collections::HashMap::new(),
     }
   }
 
@@ -444,12 +458,12 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
-  fn _retrieve_definition(
+  fn retrieve_definition(
     &mut self,
     definition_key: context::DefinitionKey,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // FIXME: Ensure this isn't cloning the underlying LLVM value.
-    *self.definitions.get(definition_key).unwrap()
+    *self.definitions.get(&definition_key).unwrap()
   }
 }
 

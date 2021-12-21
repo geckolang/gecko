@@ -48,7 +48,7 @@ type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 pub struct Parser<'a> {
   tokens: Vec<token::Token>,
   index: usize,
-  context: &'a mut context::Context,
+  _context: &'a mut context::Context,
 }
 
 impl<'a> Parser<'a> {
@@ -56,7 +56,7 @@ impl<'a> Parser<'a> {
     Self {
       tokens,
       index: 0,
-      context,
+      _context: context,
     }
   }
 
@@ -290,6 +290,7 @@ impl<'a> Parser<'a> {
       name,
       prototype,
       body,
+      definition_key: None,
     })
   }
 
@@ -521,7 +522,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::FunctionCall {
       callee_name,
-      callee_definition: None,
+      callee_key: None,
       arguments,
     })
   }
