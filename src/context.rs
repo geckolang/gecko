@@ -1,3 +1,5 @@
+use crate::ast;
+
 pub type DefinitionKey = usize;
 
 pub struct DefinitionInfo {
@@ -6,12 +8,15 @@ pub struct DefinitionInfo {
 
 pub struct Context {
   pub definition_infos: Vec<DefinitionInfo>,
+  pub declarations:
+    std::collections::HashMap<DefinitionKey, std::rc::Rc<std::cell::RefCell<ast::Node>>>,
 }
 
 impl Context {
   pub fn new() -> Self {
     Context {
       definition_infos: Vec::new(),
+      declarations: std::collections::HashMap::new(),
     }
   }
 

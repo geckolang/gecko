@@ -272,7 +272,7 @@ impl<'a> Parser<'a> {
   }
 
   /// (pub) fn %prototype %block
-  fn parse_function(&mut self) -> ParserResult<ast::Function> {
+  fn parse_function(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, token::Token::KeywordFn);
 
     let name = self.parse_name()?;
@@ -286,11 +286,18 @@ impl<'a> Parser<'a> {
       body.statements.push(Box::new(empty_return_stmt));
     }
 
-    Ok(ast::Function {
-      name,
+    let function = ast::Function {
+      // TODO: Cloning. This should be okay?
+      name: name.clone(),
       prototype,
       body,
-      definition_key: None,
+    };
+
+    Ok(ast::Definition {
+      name,
+      // TODO: This field shouldn't be here.
+      key: 0,
+      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
     })
   }
 
@@ -322,7 +329,7 @@ impl<'a> Parser<'a> {
     }
 
     Ok(match token.unwrap() {
-      token::Token::KeywordFn => ast::Node::Function(self.parse_function()?),
+      token::Token::KeywordFn => ast::Node::Definition(self.parse_function()?),
       token::Token::KeywordExtern => ast::Node::Extern(self.parse_extern()?),
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -522,7 +529,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::FunctionCall {
       callee_name,
-      callee_key: None,
+      callee_definition_key: None,
       arguments,
     })
   }

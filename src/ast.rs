@@ -15,6 +15,7 @@ macro_rules! dispatch {
       $crate::ast::Node::FunctionCall(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -57,6 +58,7 @@ pub enum Node {
   FunctionCall(FunctionCall),
   BreakStmt(BreakStmt),
   ExprWrapperStmt(ExprWrapperStmt),
+  Definition(Definition),
 }
 
 pub enum Literal {
@@ -75,7 +77,6 @@ pub struct Function {
   pub name: String,
   pub prototype: Type,
   pub body: Block,
-  pub definition_key: Option<context::DefinitionKey>,
 }
 
 pub struct Block {
@@ -113,12 +114,12 @@ pub struct ExprWrapperStmt {
 
 pub struct FunctionCall {
   pub callee_name: String,
-  pub callee_key: Option<DefinitionKey>,
+  pub callee_definition_key: Option<DefinitionKey>,
   pub arguments: Vec<Box<Node>>,
 }
 
 pub struct Definition {
   pub name: String,
-  pub node: Box<Node>,
+  pub node: std::rc::Rc<std::cell::RefCell<Node>>,
   pub key: context::DefinitionKey,
 }

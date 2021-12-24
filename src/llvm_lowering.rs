@@ -214,9 +214,10 @@ impl Lower for ast::Function {
 
     // TODO: Need to lower target if not already memoized. This isn't being handled, so functions declared later on will not be picked up.
     // TODO: Only insert if not already memoized. Consider making a helper function for this.
-    generator
-      .definitions
-      .insert(self.definition_key.unwrap(), llvm_value);
+    // TODO: Disabled because the `function` node no longer has `.definition_key` field. This is to conform with `std::rc::Rc<>`.
+    // generator
+    //   .definitions
+    //   .insert(self.definition_key.unwrap(), llvm_value);
 
     llvm_value
   }
@@ -318,8 +319,10 @@ impl Lower for ast::FunctionCall {
       .map(|argument| argument.lower(generator, context).into())
       .collect::<Vec<_>>();
 
+    // FIXME: What if the function hasn't been lowered yet? How do we lower it on-demand?
+
     let llvm_target_function = generator
-      .retrieve_definition(self.callee_key.unwrap())
+      .memoize_or_retrieve(self.callee_definition_key.unwrap(), context)
       .into_pointer_value();
 
     // TODO: Calling the current function for debugging.
@@ -361,7 +364,7 @@ impl Lower for ast::Definition {
       return *generator.definitions.get(&self.key).unwrap();
     }
 
-    let llvm_value = self.node.lower(generator, context);
+    let llvm_value = self.node.borrow_mut().lower(generator, context);
 
     generator.definitions.insert(self.key, llvm_value);
 
@@ -458,11 +461,24 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
-  fn retrieve_definition(
+  fn memoize_or_retrieve(
     &mut self,
     definition_key: context::DefinitionKey,
+    context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // FIXME: Ensure this isn't cloning the underlying LLVM value.
+    if !self.definitions.contains_key(&definition_key) {
+      // FIXME: What is being cloned, the reference, or the underlying value itself?
+      // If the definition is not already memoized, memoize it.
+      // This retrieval will panic in case of a logic error (internal error).
+      return context
+        .declarations
+        .get(&definition_key)
+        .unwrap()
+        .clone()
+        .borrow_mut()
+        .lower(self, context);
+    }
+
     *self.definitions.get(&definition_key).unwrap()
   }
 }

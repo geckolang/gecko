@@ -69,17 +69,7 @@ impl Resolvable for ast::Literal {
 }
 
 impl Resolvable for ast::Function {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    let definition_key = resolver.create_definition_key();
-
-    self.definition_key = Some(definition_key);
-
-    resolver
-      .scopes
-      .last_mut()
-      .unwrap()
-      .insert(self.name.clone(), definition_key);
-
+  fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
     // TODO: Something's wrong. Scopes may be out of sync when switching declare/resolve step.
 
     // FIXME: Need to call `declare` step for the body (and possibly arguments?).
@@ -95,12 +85,43 @@ impl Resolvable for ast::Function {
   }
 }
 
+impl Resolvable for ast::Definition {
+  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    // TODO: Move the logic to the function call, to lower functions on-demand?
+    match *self.node.borrow() {
+      ast::Node::Function(_) => {
+        let definition_key = resolver.create_definition_key();
+
+        // FIXME: What is being cloned, the reference, or the underlying value itself?
+        context
+          .declarations
+          .insert(definition_key, self.node.clone());
+
+        resolver
+          .scopes
+          .last_mut()
+          .unwrap()
+          .insert(self.name.clone(), definition_key);
+      }
+      _ => {
+        //
+      }
+    };
+
+    self.node.as_ref().borrow_mut().declare(resolver, context);
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.node.as_ref().borrow_mut().resolve(resolver, context);
+  }
+}
+
 impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     if let Some(callee_key) = resolver.lookup(&self.callee_name) {
       // TODO: Cloning `callee_key`.
-      self.callee_key = Some(callee_key.clone());
+      self.callee_definition_key = Some(callee_key.clone());
     } else {
       // TODO: Use diagnostics.
       panic!("Callee not found");
@@ -115,13 +136,6 @@ impl Resolvable for ast::FunctionCall {
 impl Resolvable for ast::ExprWrapperStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.expr.resolve(resolver, context);
-  }
-}
-
-impl Resolvable for ast::Definition {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO:
-    self.node.resolve(resolver, context);
   }
 }
 
