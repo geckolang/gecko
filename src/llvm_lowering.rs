@@ -207,6 +207,11 @@ impl Lower for ast::Function {
     generator.llvm_builder.position_at_end(llvm_entry_block);
     self.body.lower(generator, context);
 
+    // Build return void instruction if the function doesn't return.
+    if generator.get_current_block().get_terminator().is_none() {
+      generator.llvm_builder.build_return(None);
+    }
+
     // FIXME: Verification turned off for debugging.
     // assert!(llvm_function.verify(false));
 
@@ -359,7 +364,7 @@ impl Lower for ast::Definition {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    if context.is_memoized(&self.key) {
+    if generator.definitions.contains_key(&self.key) {
       // FIXME: Ensure the underlying LLVM value isn't actually cloned.
       return *generator.definitions.get(&self.key).unwrap();
     }
@@ -451,6 +456,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   }
 
   fn build_return(&mut self, return_value: Option<inkwell::values::BasicValueEnum<'ctx>>) {
+    // TODO: Consider mixing this with the function's terminator check, for void functions?
     // Only build a single return instruction per block.
     if self.get_current_block().get_terminator().is_some() {
       return;
@@ -470,15 +476,12 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       // FIXME: What is being cloned, the reference, or the underlying value itself?
       // If the definition is not already memoized, memoize it.
       // This retrieval will panic in case of a logic error (internal error).
-      return context
-        .declarations
-        .get(&definition_key)
-        .unwrap()
-        .clone()
+      return std::rc::Rc::clone(context.declarations.get_mut(&definition_key).unwrap())
         .borrow_mut()
         .lower(self, context);
     }
 
+    // FIXME: Is this value being cloned?
     *self.definitions.get(&definition_key).unwrap()
   }
 }

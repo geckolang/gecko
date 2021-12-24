@@ -95,7 +95,7 @@ impl Resolvable for ast::Definition {
         // FIXME: What is being cloned, the reference, or the underlying value itself?
         context
           .declarations
-          .insert(definition_key, self.node.clone());
+          .insert(definition_key, std::rc::Rc::clone(&self.node));
 
         resolver
           .scopes

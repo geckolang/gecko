@@ -277,14 +277,7 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
-    let mut body = self.parse_block()?;
-
-    // Insert a return void instruction if the function body is empty.
-    if body.statements.is_empty() {
-      let empty_return_stmt = ast::Node::ReturnStmt(ast::ReturnStmt { value: None });
-
-      body.statements.push(Box::new(empty_return_stmt));
-    }
+    let body = self.parse_block()?;
 
     let function = ast::Function {
       // TODO: Cloning. This should be okay?
@@ -294,9 +287,9 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::Definition {
-      name,
-      // TODO: This field shouldn't be here.
-      key: 0,
+      // TODO: Cloning. This should be okay?
+      name: name.clone(),
+      key: self._context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
     })
   }
