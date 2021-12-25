@@ -30,6 +30,7 @@ pub enum Token {
   SymbolComma,
   SymbolPlus,
   SymbolEqual,
+  SymbolSemiColon,
 }
 
 impl std::fmt::Display for Token {

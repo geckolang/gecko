@@ -293,7 +293,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// extern fn %prototype
+  /// extern fn %prototype ';'
   fn parse_extern(&mut self) -> ParserResult<ast::Definition> {
     // TODO: Support for visibility.
 
@@ -302,6 +302,8 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
+
+    skip_past!(self, token::Token::SymbolSemiColon);
 
     let extern_node = ast::Extern {
       name: name.clone(),
@@ -351,14 +353,16 @@ impl<'a> Parser<'a> {
     let mut value = None;
 
     // TODO: Does this cover all cases?
-    if !self.is(token::Token::SymbolBraceR) {
+    if !self.is(token::Token::SymbolSemiColon) {
       value = Some(Box::new(self.parse_expr()?));
     }
+
+    skip_past!(self, token::Token::SymbolSemiColon);
 
     Ok(ast::ReturnStmt { value })
   }
 
-  /// let %name (':' %kind_group) '=' %expr
+  /// let %name (':' %kind_group) '=' %expr ';'
   fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, token::Token::KeywordLet);
 
@@ -373,6 +377,8 @@ impl<'a> Parser<'a> {
     skip_past!(self, token::Token::SymbolEqual);
 
     let value = self.parse_expr()?;
+
+    skip_past!(self, token::Token::SymbolSemiColon);
 
     // Infer the kind of the variable, based on its value.
     if ty.is_none() {
@@ -426,9 +432,10 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// break
+  /// break ';'
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
     skip_past!(self, token::Token::KeywordBreak);
+    skip_past!(self, token::Token::SymbolSemiColon);
 
     Ok(ast::BreakStmt {})
   }

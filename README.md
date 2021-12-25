@@ -143,7 +143,7 @@ Omitting the return type will imply that such function does not return a value (
 
 ```rust
 fn main(argc: i32, argv: i32[]) ~ i32 {
-  return 0
+  return 0;
 }
 
 fn do_nothing() { }
@@ -155,16 +155,16 @@ Variable declaration, assignment and reference follow straight-forward rules and
 
 ```rust
 fn double_number(number: i32) ~ i32 {
-  let result: i32 = number * 2
+  let result: i32 = number * 2;
 
-  return result
+  return result;
 }
 ```
 
 For convenience, variables can also be declared without specifying their types by using the `let` keyword for type inference. When inferring type from a literal integer, the preferred type inferred by the compiler will be `i32`, unless the integer cannot fit into `i32`'s bit-size, in which case it will be either `i64` or `i128` depending on the value's required bit-size. For example, a value larger than `2147483647` will be inferred as `i64` because it cannot fit into `i32`.
 
 ```rust
-fn do_work() ~ i32 { return 1 }
+fn do_work() ~ i32 { return 1; }
 
 fn do_computation() ~ i32 {
   let work = do_work(); # Inferred i32 type from function call.
@@ -181,9 +181,9 @@ The language includes support for conditional statements, variable statements, a
 
 ```rust
 fn do_work() {
-  let mut number = 1
+  let mut number = 1;
 
-  number = 2
+  number = 2;
 
   if true { }
   else if false { }
@@ -201,7 +201,7 @@ fn do_work() {
     _ -> do_work()
   }
 
-  return
+  return;
 }
 ```
 
@@ -217,7 +217,7 @@ fn do_work() {
 
 #### 1.1 &mdash; Environment variables
 
-Set the `LLVM_SYS_120_PREFIX` environment variable to the `build` directory inside the LLVM source files. It is expected that LLVM was built from source at this point. Additionally, set the `LLVM_CONFIG` to point to the `build/bin/llvm-config` (or `build/bin/llvm-config.exe` on Windows) executable file. Do not wrap the path with quotes, as it might lead to `Access denied` errors when attempting to build `llvm-sys`. If you're using Visual Studio Code, ensure it is seeing the `LLVM_SYS_120_PREFIX` environment variable.
+**If building from source**: Set the `LLVM_SYS_120_PREFIX` environment variable to the `build` directory inside the LLVM source files. It is expected that LLVM was built from source at this point. Additionally, set the `LLVM_CONFIG` to point to the `build/bin/llvm-config` (or `build/bin/llvm-config.exe` on Windows) executable file. Do not wrap the path with quotes, as it might lead to `Access denied` errors when attempting to build `llvm-sys`. If you're using Visual Studio Code, ensure it is seeing the `LLVM_SYS_120_PREFIX` environment variable.
 
 #### 1.2 &mdash; Linux
 
