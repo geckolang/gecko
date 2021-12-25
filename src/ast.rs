@@ -16,23 +16,25 @@ macro_rules! dispatch {
       $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
 
 pub type Parameter = (String, Type);
 
+#[derive(PartialEq, PartialOrd)]
 pub enum IntSize {
-  I8,
-  I16,
-  I32,
-  I64,
-  Isize,
   U8,
   U16,
   U32,
   U64,
   Usize,
+  I8,
+  I16,
+  I32,
+  I64,
+  Isize,
 }
 
 pub enum PrimitiveType {
@@ -59,6 +61,12 @@ pub enum Node {
   BreakStmt(BreakStmt),
   ExprWrapperStmt(ExprWrapperStmt),
   Definition(Definition),
+  VariableRef(VariableRef),
+}
+
+pub struct VariableRef {
+  pub name: String,
+  pub definition_key: Option<DefinitionKey>,
 }
 
 pub enum Literal {
@@ -115,7 +123,7 @@ pub struct ExprWrapperStmt {
 pub struct FunctionCall {
   pub callee_name: String,
   pub callee_definition_key: Option<DefinitionKey>,
-  pub arguments: Vec<Box<Node>>,
+  pub arguments: Vec<Node>,
 }
 
 pub struct Definition {

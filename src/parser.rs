@@ -48,7 +48,7 @@ type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 pub struct Parser<'a> {
   tokens: Vec<token::Token>,
   index: usize,
-  _context: &'a mut context::Context,
+  context: &'a mut context::Context,
 }
 
 impl<'a> Parser<'a> {
@@ -56,7 +56,7 @@ impl<'a> Parser<'a> {
     Self {
       tokens,
       index: 0,
-      _context: context,
+      context,
     }
   }
 
@@ -152,10 +152,11 @@ impl<'a> Parser<'a> {
     while !self.is(token::Token::SymbolBraceR) && !self.is_eof() {
       statements.push(Box::new(match self.tokens[self.index] {
         token::Token::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
-        token::Token::KeywordLet => ast::Node::LetStmt(self.parse_let_stmt()?),
+        token::Token::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
         token::Token::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
         token::Token::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
+        token::Token::Identifier(_) => ast::Node::VariableRef(self.parse_variable_ref()?),
         _ => ast::Node::ExprWrapperStmt(ast::ExprWrapperStmt {
           expr: Box::new(self.parse_expr()?),
         }),
@@ -289,13 +290,13 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       // TODO: Cloning. This should be okay?
       name: name.clone(),
-      key: self._context.create_definition_key(),
+      key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
     })
   }
 
   /// (pub) extern fn %prototype
-  fn parse_extern(&mut self) -> ParserResult<ast::Extern> {
+  fn parse_extern(&mut self) -> ParserResult<ast::Definition> {
     // TODO: Support for visibility.
 
     skip_past!(self, token::Token::KeywordExtern);
@@ -304,7 +305,16 @@ impl<'a> Parser<'a> {
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
 
-    Ok(ast::Extern { name, prototype })
+    let extern_node = ast::Extern {
+      name: name.clone(),
+      prototype,
+    };
+
+    Ok(ast::Definition {
+      name,
+      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Extern(extern_node))),
+      key: self.context.create_definition_key(),
+    })
   }
 
   fn parse_top_level_node(&mut self) -> ParserResult<ast::Node> {
@@ -323,7 +333,7 @@ impl<'a> Parser<'a> {
 
     Ok(match token.unwrap() {
       token::Token::KeywordFn => ast::Node::Definition(self.parse_function()?),
-      token::Token::KeywordExtern => ast::Node::Extern(self.parse_extern()?),
+      token::Token::KeywordExtern => ast::Node::Definition(self.parse_extern()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -344,14 +354,14 @@ impl<'a> Parser<'a> {
 
     // TODO: Does this cover all cases?
     if !self.is(token::Token::SymbolBraceR) {
-      value = Some(Box::new(ast::Node::Literal(self.parse_literal()?)));
+      value = Some(Box::new(self.parse_expr()?));
     }
 
     Ok(ast::ReturnStmt { value })
   }
 
   /// let %name (':' %kind_group) '=' %expr
-  fn parse_let_stmt(&mut self) -> ParserResult<ast::LetStmt> {
+  fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, token::Token::KeywordLet);
 
     let name = self.parse_name()?;
@@ -372,10 +382,16 @@ impl<'a> Parser<'a> {
       todo!();
     }
 
-    Ok(ast::LetStmt {
-      name,
+    let let_stmt = ast::LetStmt {
+      name: name.clone(),
       ty: ty.unwrap(),
       value: Box::new(value),
+    };
+
+    Ok(ast::Definition {
+      name,
+      key: self.context.create_definition_key(),
+      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::LetStmt(let_stmt))),
     })
   }
 
@@ -455,13 +471,13 @@ impl<'a> Parser<'a> {
       token::Token::LiteralInt(value) => {
         self.skip();
 
-        let size = minimum_int_size_of(&value);
+        let mut size = minimum_int_size_of(&value);
 
+        // TODO: Deal with unsigned integers.
         // Default size to 32 bit-width.
-        // FIXME:
-        // if size < ast::IntSize::I32 {
-        //   size = ast::IntSize::I32;
-        // }
+        if size < ast::IntSize::I32 {
+          size = ast::IntSize::I32;
+        }
 
         ast::Literal::Int(value, size)
       }
@@ -489,16 +505,13 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_expr(&mut self) -> ParserResult<ast::Node> {
+    // TODO: Might need to revisit. Might need to make room for other cases in the future (binary/unary operators, etc).
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
           ast::Node::FunctionCall(self.parse_function_call()?)
         } else {
-          return Err(diagnostic::Diagnostic {
-            // TODO: Show the actual token.
-            message: "unexpected token, expected expression".to_string(),
-            severity: diagnostic::Severity::Error,
-          });
+          ast::Node::VariableRef(self.parse_variable_ref()?)
         }
       }
       // Default to a literal if nothing else matched.
@@ -514,9 +527,15 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
-    let arguments = vec![];
+    let mut arguments = vec![];
 
-    // TODO: Parse arguments.
+    while !self.is_eof() && !self.is(token::Token::SymbolParenthesesR) {
+      arguments.push(self.parse_expr()?);
+
+      if self.is(token::Token::SymbolComma) {
+        self.skip();
+      }
+    }
 
     skip_past!(self, token::Token::SymbolParenthesesR);
 
@@ -524,6 +543,16 @@ impl<'a> Parser<'a> {
       callee_name,
       callee_definition_key: None,
       arguments,
+    })
+  }
+
+  // %name
+  fn parse_variable_ref(&mut self) -> ParserResult<ast::VariableRef> {
+    let name = self.parse_name()?;
+
+    Ok(ast::VariableRef {
+      name,
+      definition_key: None,
     })
   }
 }

@@ -1,5 +1,5 @@
 use crate::{ast, context, dispatch};
-use inkwell::values::{AnyValue, BasicValue};
+use inkwell::values::BasicValue;
 use std::convert::TryFrom;
 
 pub trait Lower {
@@ -17,6 +17,20 @@ impl Lower for ast::Node {
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     dispatch!(self, Lower::lower, generator, context)
+  }
+}
+
+impl Lower for ast::VariableRef {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    let llvm_variable = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
+
+    generator
+      .llvm_builder
+      .build_load(llvm_variable.into_pointer_value(), "variable_ref")
   }
 }
 
@@ -166,7 +180,9 @@ impl Lower for ast::Function {
 
     assert!(llvm_function_type.is_function_type());
 
-    let llvm_function_name = if self.name == "main" {
+    let is_main = self.name == "main";
+
+    let llvm_function_name = if is_main {
       // TODO: Name being cloned. Is this okay?
       self.name.to_owned()
     } else {
@@ -187,12 +203,11 @@ impl Lower for ast::Function {
     let llvm_function = generator.llvm_module.add_function(
       llvm_function_name.as_str(),
       llvm_function_type.into_function_type(),
-      // Some(if self.prototype.name == ENTRY_POINT_NAME {
-      //   inkwell::module::Linkage::External
-      // } else {
-      //   inkwell::module::Linkage::Private
-      // }),
-      Some(inkwell::module::Linkage::Private),
+      Some(if is_main {
+        inkwell::module::Linkage::External
+      } else {
+        inkwell::module::Linkage::Private
+      }),
     );
 
     generator.llvm_function_buffer = Some(llvm_function);
@@ -222,17 +237,9 @@ impl Lower for ast::Function {
       generator.llvm_builder.build_return(None);
     }
 
-    // FIXME: Verification turned off for debugging.
-    // assert!(llvm_function.verify(false));
+    assert!(llvm_function.verify(false));
 
-    let llvm_value = llvm_function.as_global_value().as_basic_value_enum();
-
-    // TODO: Disabled because the `function` node no longer has `.definition_key` field. This is to conform with `std::rc::Rc<>`. However, this is needed, in order to prevent the function from being lowered twice.
-    // generator
-    //   .definitions
-    //   .insert(self.definition_key.unwrap(), llvm_value);
-
-    llvm_value
+    llvm_function.as_global_value().as_basic_value_enum()
   }
 }
 
@@ -257,7 +264,9 @@ impl Lower for ast::Extern {
 
     assert!(llvm_external_function.verify(false));
 
-    generator.make_unit_value()
+    llvm_external_function
+      .as_global_value()
+      .as_basic_value_enum()
   }
 }
 
@@ -312,8 +321,7 @@ impl Lower for ast::LetStmt {
       .llvm_builder
       .build_store(llvm_alloca_inst_ptr, llvm_value);
 
-    // TODO: Must return a value which links back to this variable instead.
-    generator.make_unit_value()
+    llvm_alloca_inst_ptr.as_basic_value_enum()
   }
 }
 
