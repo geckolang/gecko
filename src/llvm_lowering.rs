@@ -1,5 +1,5 @@
 use crate::{ast, context, dispatch};
-use inkwell::values::BasicValue;
+use inkwell::values::{AnyValue, BasicValue};
 use std::convert::TryFrom;
 
 pub trait Lower {
@@ -167,12 +167,22 @@ impl Lower for ast::Function {
     assert!(llvm_function_type.is_function_type());
 
     let llvm_function_name = if self.name == "main" {
-      // TODO: Name being cloned.
-      self.name.clone()
+      // TODO: Name being cloned. Is this okay?
+      self.name.to_owned()
     } else {
-      // TODO: Pending scope.
+      // FIXME: Pending scope.
       mangle_name(&"pending_scope".to_string(), &self.name)
     };
+
+    // FIXME: Function is emitted twice when being called. This is because first the function is lowered when it is invoked, then again during reaching its declaration. This is temporary fix.
+    if let Some(llvm_existing_function) = generator
+      .llvm_module
+      .get_function(llvm_function_name.as_str())
+    {
+      return llvm_existing_function
+        .as_global_value()
+        .as_basic_value_enum();
+    }
 
     let llvm_function = generator.llvm_module.add_function(
       llvm_function_name.as_str(),
@@ -217,9 +227,7 @@ impl Lower for ast::Function {
 
     let llvm_value = llvm_function.as_global_value().as_basic_value_enum();
 
-    // TODO: Need to lower target if not already memoized. This isn't being handled, so functions declared later on will not be picked up.
-    // TODO: Only insert if not already memoized. Consider making a helper function for this.
-    // TODO: Disabled because the `function` node no longer has `.definition_key` field. This is to conform with `std::rc::Rc<>`.
+    // TODO: Disabled because the `function` node no longer has `.definition_key` field. This is to conform with `std::rc::Rc<>`. However, this is needed, in order to prevent the function from being lowered twice.
     // generator
     //   .definitions
     //   .insert(self.definition_key.unwrap(), llvm_value);
@@ -315,11 +323,6 @@ impl Lower for ast::FunctionCall {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO:
-    //generator.retrieve_definition(self.callee.unwrap())
-
-    // TODO: Problem might be because of buffers being overwritten (self.builder, and possibly current_function).
-
     let llvm_arguments = self
       .arguments
       .iter()
@@ -368,8 +371,6 @@ impl Lower for ast::Definition {
       // NOTE: The underlying LLVM value is not actually cloned, but rather its reference.
       return generator.definitions.get(&self.key).unwrap().clone();
     }
-
-    println!("Lowering definition: {}", self.key);
 
     let llvm_value = self.node.borrow_mut().lower(generator, context);
 
@@ -475,10 +476,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     if !self.definitions.contains_key(&definition_key) {
+      // TODO: Will there be a case where we'd need the buffers to change? If so, take in a flag parameter.
       let previous_function_buffer = self.llvm_function_buffer;
       let previous_block = self.get_current_block();
 
-      // FIXME: What is being cloned, the reference, or the underlying value itself?
       // If the definition is not already memoized, memoize it.
       // This retrieval will panic in case of a logic error (internal error).
       let result = std::rc::Rc::clone(context.declarations.get_mut(&definition_key).unwrap())
