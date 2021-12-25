@@ -318,13 +318,13 @@ impl Lower for ast::FunctionCall {
     // TODO:
     //generator.retrieve_definition(self.callee.unwrap())
 
+    // TODO: Problem might be because of buffers being overwritten (self.builder, and possibly current_function).
+
     let llvm_arguments = self
       .arguments
       .iter()
       .map(|argument| argument.lower(generator, context).into())
       .collect::<Vec<_>>();
-
-    // FIXME: What if the function hasn't been lowered yet? How do we lower it on-demand?
 
     let llvm_target_function = generator
       .memoize_or_retrieve(self.callee_definition_key.unwrap(), context)
@@ -365,9 +365,11 @@ impl Lower for ast::Definition {
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     if generator.definitions.contains_key(&self.key) {
-      // FIXME: Ensure the underlying LLVM value isn't actually cloned.
-      return *generator.definitions.get(&self.key).unwrap();
+      // NOTE: The underlying LLVM value is not actually cloned, but rather its reference.
+      return generator.definitions.get(&self.key).unwrap().clone();
     }
+
+    println!("Lowering definition: {}", self.key);
 
     let llvm_value = self.node.borrow_mut().lower(generator, context);
 
@@ -473,16 +475,25 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     if !self.definitions.contains_key(&definition_key) {
+      let previous_function_buffer = self.llvm_function_buffer;
+      let previous_block = self.get_current_block();
+
       // FIXME: What is being cloned, the reference, or the underlying value itself?
       // If the definition is not already memoized, memoize it.
       // This retrieval will panic in case of a logic error (internal error).
-      return std::rc::Rc::clone(context.declarations.get_mut(&definition_key).unwrap())
+      let result = std::rc::Rc::clone(context.declarations.get_mut(&definition_key).unwrap())
         .borrow_mut()
         .lower(self, context);
+
+      // Restore buffers after processing.
+      self.llvm_builder.position_at_end(previous_block);
+      self.llvm_function_buffer = previous_function_buffer;
+
+      return result;
     }
 
-    // FIXME: Is this value being cloned?
-    *self.definitions.get(&definition_key).unwrap()
+    // NOTE: The LLVM value is not copied, but rather the reference to it.
+    self.definitions.get(&definition_key).unwrap().clone()
   }
 }
 

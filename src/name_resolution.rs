@@ -92,7 +92,6 @@ impl Resolvable for ast::Definition {
       ast::Node::Function(_) => {
         let definition_key = resolver.create_definition_key();
 
-        // FIXME: What is being cloned, the reference, or the underlying value itself?
         context
           .declarations
           .insert(definition_key, std::rc::Rc::clone(&self.node));
@@ -120,7 +119,6 @@ impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     if let Some(callee_key) = resolver.lookup(&self.callee_name) {
-      // TODO: Cloning `callee_key`.
       self.callee_definition_key = Some(callee_key.clone());
     } else {
       // TODO: Use diagnostics.
