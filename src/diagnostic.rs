@@ -37,6 +37,38 @@ impl Diagnostic {
   }
 }
 
+pub struct DiagnosticBuilder {
+  pub diagnostics: Vec<Diagnostic>,
+}
+
+impl DiagnosticBuilder {
+  pub fn new() -> Self {
+    Self {
+      diagnostics: Vec::new(),
+    }
+  }
+
+  pub fn error(&mut self, message: String) {
+    self.diagnostics.push(Diagnostic {
+      message,
+      severity: Severity::Error,
+    });
+  }
+
+  pub fn warning(&mut self, message: String) {
+    self.diagnostics.push(Diagnostic {
+      message,
+      severity: Severity::Warning,
+    });
+  }
+}
+
+impl Into<Vec<Diagnostic>> for DiagnosticBuilder {
+  fn into(self) -> Vec<Diagnostic> {
+    self.diagnostics
+  }
+}
+
 pub fn unreachable() -> Diagnostic {
   Diagnostic {
     message: "unreachable point reached".to_string(),

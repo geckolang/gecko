@@ -39,7 +39,7 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
   } else if minimum_bit_size <= 64 {
     ast::IntSize::I64
   } else {
-    panic!("expected calculated minimum bit-size to be smaller than 64");
+    panic!("expected minimum bit-size to be smaller than 64");
   }
 }
 
@@ -140,10 +140,9 @@ impl<'a> Parser<'a> {
     Ok(name.unwrap())
   }
 
-  /// TODO: Be specific, which statements? Also include lonely expression.
   /// '{' (%statement+) '}'
   fn parse_block(&mut self) -> ParserResult<ast::Block> {
-    // TODO: Have a symbol table for blocks, and check for re-declarations here.
+    // TODO: Have a symbol table for blocks, and check for re-declarations here?
 
     skip_past!(self, token::Token::SymbolBraceL);
 
@@ -235,10 +234,11 @@ impl<'a> Parser<'a> {
     Ok((name, kind_group))
   }
 
-  /// %name '(' {%parameter* (,)} (+) ')' '~' %kind_group
+  /// '(' {%parameter* (,)} (+) ')' '~' %kind_group
   fn parse_prototype(&mut self) -> ParserResult<ast::Type> {
     skip_past!(self, token::Token::SymbolParenthesesL);
 
+    // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
     let mut parameters = vec![];
     let mut is_variadic = false;
 
@@ -272,7 +272,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Prototype(parameters, return_type, is_variadic))
   }
 
-  /// (pub) fn %prototype %block
+  /// fn %prototype %block
   fn parse_function(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, token::Token::KeywordFn);
 
@@ -281,21 +281,19 @@ impl<'a> Parser<'a> {
     let body = self.parse_block()?;
 
     let function = ast::Function {
-      // TODO: Cloning. This should be okay?
       name: name.clone(),
       prototype,
       body,
     };
 
     Ok(ast::Definition {
-      // TODO: Cloning. This should be okay?
-      name: name.clone(),
+      name,
       key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
     })
   }
 
-  /// (pub) extern fn %prototype
+  /// extern fn %prototype
   fn parse_extern(&mut self) -> ParserResult<ast::Definition> {
     // TODO: Support for visibility.
 
@@ -415,6 +413,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// while %expr %block
   fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt> {
     skip_past!(self, token::Token::KeywordWhile);
 

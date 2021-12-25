@@ -1,9 +1,48 @@
 use crate::{ast, context, diagnostic};
+use std::borrow::Borrow;
 
 pub type TypeCheckResult = Option<Vec<diagnostic::Diagnostic>>;
 
 pub trait TypeCheck {
   fn type_check<'ctx>(&self, context: &mut context::Context) -> Vec<diagnostic::Diagnostic>;
+}
+
+impl TypeCheck for ast::Function {
+  fn type_check<'ctx>(&self, _context: &mut context::Context) -> Vec<diagnostic::Diagnostic> {
+    let mut diagnostics = diagnostic::DiagnosticBuilder::new();
+    let mut is_value_returned = false;
+    let mut block_queue = vec![&self.body];
+
+    while let Some(next_block) = block_queue.pop() {
+      for statement in &next_block.statements {
+        // TODO:
+        // block_queue.extend(match statement {
+        //   // TODO:
+        //   _ => vec![],
+        // });
+
+        if let ast::Node::ReturnStmt(return_stmt) = statement.borrow() {
+          if return_stmt.value.is_some() {
+            is_value_returned = true;
+
+            break;
+          }
+        }
+      }
+    }
+
+    match &self.prototype {
+      ast::Type::Prototype(_parameters, return_type, _is_variadic) => {
+        // Ensure function returns a value if its return type is defined.
+        if return_type.is_some() && !is_value_returned {
+          diagnostics.error(format!("Function `{}` must return a value", self.name));
+        }
+      }
+      _ => unreachable!(),
+    };
+
+    diagnostics.into()
+  }
 }
 
 // pub fn type_check_function<'a>(function: &ast::Function<'a>) -> TypeCheckResult {
@@ -60,13 +99,3 @@ pub trait TypeCheck {
 //     Some(diagnostics)
 //   }
 // }
-
-pub fn type_check_let_stmt(_let_stmt: &ast::LetStmt) -> TypeCheckResult {
-  // let mut diagnostics = Vec::new();
-
-  // if let Some(kind) = &let_stmt.kind {
-  //   if let Some(kind_group) = kind.get_kind_group() {}
-  // }
-
-  None
-}
