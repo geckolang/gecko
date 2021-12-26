@@ -155,10 +155,18 @@ impl<'a> Parser<'a> {
         token::Token::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
         token::Token::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
-        token::Token::Identifier(_) => ast::Node::VariableRef(self.parse_variable_ref()?),
-        _ => ast::Node::ExprWrapperStmt(ast::ExprWrapperStmt {
-          expr: Box::new(self.parse_expr()?),
-        }),
+        token::Token::Identifier(_) if !self.peek_is(token::Token::SymbolParenthesesL) => {
+          ast::Node::VariableRef(self.parse_variable_ref()?)
+        }
+        _ => {
+          let result = ast::Node::ExprWrapperStmt(ast::ExprWrapperStmt {
+            expr: Box::new(self.parse_expr()?),
+          });
+
+          skip_past!(self, token::Token::SymbolSemiColon);
+
+          result
+        }
       }));
     }
 
@@ -210,6 +218,11 @@ impl<'a> Parser<'a> {
         self.parse_int_type()
       }
       token::Token::TypeBool => self.parse_bool_type(),
+      token::Token::TypeString => {
+        self.skip();
+
+        Ok(ast::Type::PrimitiveType(ast::PrimitiveType::String))
+      }
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -442,6 +455,7 @@ impl<'a> Parser<'a> {
 
   /// {true | false}
   fn parse_bool_literal(&mut self) -> ParserResult<ast::Literal> {
+    // TODO: Accessing tokens like this is unsafe/unchecked.
     Ok(match self.tokens[self.index] {
       token::Token::LiteralBool(value) => {
         self.skip();
@@ -459,27 +473,15 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
-    // TODO:
-    // Ok(match self.tokens.get(self.index) {
-    //   Some(token::Token::LiteralInt(value)) => {
-    //     self.skip();
-
-    //     let size = int_kind::calculate_int_size_of(value);
-
-    //     node::IntLiteral {
-    //       value: *value,
-    //       kind: int_kind::IntKind { size, is_signed: true },
-    //     }
-    //   }
-    //   _ => return Err(diagnostic::error_unexpected_eof("integer literal")),
-    // })
+    // TODO: Accessing tokens like this is unsafe/unchecked.
+    // TODO: Possibly cloning value.
     Ok(match self.tokens[self.index] {
       token::Token::LiteralInt(value) => {
         self.skip();
 
         let mut size = minimum_int_size_of(&value);
 
-        // TODO: Deal with unsigned integers.
+        // TODO: Deal with unsigned integers here?
         // Default size to 32 bit-width.
         if size < ast::IntSize::I32 {
           size = ast::IntSize::I32;
@@ -496,14 +498,34 @@ impl<'a> Parser<'a> {
     })
   }
 
+  fn parse_string_literal(&mut self) -> ParserResult<ast::Literal> {
+    // TODO: Accessing tokens like this is unsafe/unchecked.
+    let result = match &self.tokens[self.index] {
+      token::Token::LiteralString(value) => ast::Literal::String(value.clone()),
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: "expected string literal but got end of file".to_string(),
+          severity: diagnostic::Severity::Error,
+        })
+      }
+    };
+
+    self.skip();
+
+    Ok(result)
+  }
+
   fn parse_literal(&mut self) -> ParserResult<ast::Literal> {
-    Ok(match self.tokens[self.index] {
+    let current_token = &self.tokens[self.index];
+
+    Ok(match current_token {
       token::Token::LiteralBool(_) => self.parse_bool_literal()?,
       token::Token::LiteralInt(_) => self.parse_int_literal()?,
+      token::Token::LiteralString(_) => self.parse_string_literal()?,
       _ => {
         return Err(diagnostic::Diagnostic {
           // TODO: Show the actual token.
-          message: "unexpected token, expected literal".to_string(),
+          message: format!("unexpected token `{}`, expected literal", current_token),
           severity: diagnostic::Severity::Error,
         });
       }
@@ -536,6 +558,7 @@ impl<'a> Parser<'a> {
     let mut arguments = vec![];
 
     while !self.is_eof() && !self.is(token::Token::SymbolParenthesesR) {
+      println!("parse arg: {:?}", self.tokens[self.index]);
       arguments.push(self.parse_expr()?);
 
       if self.is(token::Token::SymbolComma) {

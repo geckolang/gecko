@@ -41,6 +41,7 @@ pub enum PrimitiveType {
   Int(IntSize),
   Bool,
   Char,
+  String,
 }
 
 pub enum Type {

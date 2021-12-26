@@ -131,7 +131,7 @@ impl Lexer {
     // Skip the hash symbol.
     self.read_char();
 
-    self.read_while(|character| -> bool { character != '\n' })
+    self.read_while(|character| character != '\n')
   }
 
   fn read_whitespace(&mut self) -> String {
@@ -142,12 +142,13 @@ impl Lexer {
     // Skip the opening quote.
     self.read_char();
 
-    let string = self.read_while(|character| -> bool { character != '"' });
+    let string = self.read_while(|character| character != '"');
 
     // FIXME: Need to ensure that EOF was not met (which is a possibility).
 
+    // FIXME: Temporary fix for the closing quote being skipped twice (as a simple token).
     // Skip the closing quote.
-    self.read_char();
+    // self.read_char();
 
     string
   }
@@ -170,7 +171,7 @@ impl Lexer {
     } else {
       let final_token = match current_char {
         '#' => token::Token::Comment(self.read_comment()),
-        '"' => token::Token::String(self.read_string()),
+        '"' => token::Token::LiteralString(self.read_string()),
         '{' => token::Token::SymbolBraceL,
         '}' => token::Token::SymbolBraceR,
         '(' => token::Token::SymbolParenthesesL,
@@ -203,6 +204,7 @@ impl Lexer {
         }
       };
 
+      // FIXME: This isn't always the case (for example string's closing quotes).
       // Skip simple matched token.
       self.read_char();
 
@@ -377,7 +379,7 @@ mod tests {
     let mut lexer = Lexer::from_str("\"hello\"");
 
     assert_eq!(
-      Ok(Some(token::Token::String("hello".to_string()))),
+      Ok(Some(token::Token::LiteralString("hello".to_string()))),
       lexer.lex_token()
     );
   }
