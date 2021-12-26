@@ -127,6 +127,25 @@ pub struct FunctionCall {
   pub arguments: Vec<Node>,
 }
 
+pub enum OperatorKind {
+  Not,
+  Add,
+  Subtract,
+  Multiply,
+  Divide,
+  GreaterThan,
+  LessThan,
+  GreaterThanOrEqual,
+  LessThanOrEqual,
+  Equal,
+}
+
+pub struct BinaryOrUnaryExpr {
+  pub left: Box<Node>,
+  pub right: Option<Box<Node>>,
+  pub operator: OperatorKind,
+}
+
 pub struct Definition {
   pub name: String,
   pub node: std::rc::Rc<std::cell::RefCell<Node>>,

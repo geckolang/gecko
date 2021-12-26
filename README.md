@@ -60,7 +60,7 @@ fn main(argc: i32, argv: i32[]) ~ i32 {
 *🔨 &mdash; Work in progress.* *✔️ &mdash; Completed.*
 | Feature            | Note(s)                                                    | Status  |
 |--------------------|------------------------------------------------------------|---------|
-| Functions          | -                                                          | 🔨      |
+| Functions          | -                                                          | ✔️      |
 | Externs            | -                                                          | ✔️      |
 | Function calls     | -                                                          | ✔️      |
 | Structs            | Definition, declaration & accessing of structs.            | 🔨      |
@@ -68,12 +68,12 @@ fn main(argc: i32, argv: i32[]) ~ i32 {
 | Modules            | -                                                          | 🔨      |
 | Generics           | -                                                          | 🔨      |
 | `if` statement     | Includes the `else` statement as well.                     | 🔨      |
-| `return` statement | -                                                          | 🔨      |
-| Variables          | Declaration, assignment, and reference of variables.       | 🔨      |
+| `return` statement | -                                                          | ✔️      |
+| Variables          | Declaration, assignment, and reference of variables.       | ✔️      |
 | Casting            | -                                                          | 🔨      |
 | Binary expressions | -                                                          | 🔨      |
-| Literals           | Includes string, integer, character, and boolean literals. | 🔨      |
-| Types              | Intrinsic types such as `bool`, `i32`, `void`, etc.        | 🔨      |
+| Literals           | Includes string, integer, character, and boolean literals. | ✔️      |
+| Types              | Intrinsic types such as `bool`, `i32`, `str`, etc.         | ✔️      |
 | Arrays             | -                                                          | 🔨      |
 
 ### Directory structure
@@ -193,7 +193,7 @@ fn do_work() {
 
   while true { break }
 
-  for i32 i = 0; i < 10; i += 1 { }
+  for i = 0; i < 10; i += 1 { }
 
   match true {
     true -> do_work(),
@@ -244,7 +244,7 @@ This project uses the `inkwell` crate to interface with LLVM. Thus, the GCC tool
 #### 1.4 &mdash; Building Cargo crate
 
 You will need to have [🔗Rust](https://www.rust-lang.org/tools/install) installed in order to build the project using Cargo. Once (or
-if you already have it) installed, you can simply build the project by issuing the following command:
+if you already have it) installed, you can simply build the project and its dependencies by issuing the following command:
 
 ```bash
 $ cargo build

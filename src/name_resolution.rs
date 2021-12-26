@@ -27,14 +27,6 @@ impl Resolvable for ast::Node {
 
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
-    // TODO: Debugging.
-    println!(
-      "looking up variable: `{}` in `{:?}` (sized {})",
-      self.name,
-      resolver.scopes,
-      resolver.scopes.len()
-    );
-
     if let Some(definition_key) = resolver.lookup(&self.name, SymbolKind::LocalVariable) {
       self.definition_key = Some(definition_key.clone());
     } else {
@@ -160,8 +152,6 @@ impl Resolvable for ast::Definition {
       .last_mut()
       .unwrap()
       .insert(self.name.clone(), declaration_key);
-
-    println!("pushed: {} into {:?}", self.name, resolver.scopes);
 
     self.node.as_ref().borrow_mut().declare(resolver, context);
   }

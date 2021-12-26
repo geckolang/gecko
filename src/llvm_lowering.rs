@@ -431,10 +431,20 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     match ty {
       ast::Type::PrimitiveType(primitive_type) => match primitive_type {
         ast::PrimitiveType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
-        // TODO: Take into account size.
-        ast::PrimitiveType::Int(_size) => self.llvm_context.i32_type().as_basic_type_enum(),
+        ast::PrimitiveType::Int(size) => {
+          // TODO: Should we handle unsigned integers here?
+
+          let llvm_int_type = self.llvm_context.custom_width_int_type(match size {
+            ast::IntSize::I8 | ast::IntSize::U8 => 8,
+            ast::IntSize::I16 | ast::IntSize::U16 => 16,
+            ast::IntSize::I32 | ast::IntSize::U32 => 32,
+            ast::IntSize::I64 | ast::IntSize::U64 => 64,
+            ast::IntSize::Isize | ast::IntSize::Usize => 128,
+          });
+
+          llvm_int_type.as_basic_type_enum()
+        }
         ast::PrimitiveType::Char => self.llvm_context.i8_type().as_basic_type_enum(),
-        // FIXME: Should be `i8*`.
         ast::PrimitiveType::String => self
           .llvm_context
           .i8_type()

@@ -393,7 +393,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, token::Token::SymbolSemiColon);
 
-    // Infer the kind of the variable, based on its value.
+    // Infer the type based on the value.
     if ty.is_none() {
       // FIXME: Implement.
       todo!();
@@ -547,6 +547,49 @@ impl<'a> Parser<'a> {
     })
   }
 
+  fn _parse_operator(&mut self) -> ParserResult<ast::OperatorKind> {
+    // TODO: Unsafe access.
+    Ok(match self.tokens[self.index] {
+      token::Token::SymbolBang => ast::OperatorKind::Not,
+      token::Token::SymbolPlus => ast::OperatorKind::Add,
+      token::Token::SymbolMinus => ast::OperatorKind::Subtract,
+      token::Token::SymbolAsterisk => ast::OperatorKind::Multiply,
+      token::Token::SymbolSlash => ast::OperatorKind::Divide,
+      token::Token::SymbolLessThan => ast::OperatorKind::LessThan,
+      token::Token::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
+      // TODO: Implement logic for GTE & LTE.
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: "unexpected token, expected operator".to_string(),
+          severity: diagnostic::Severity::Error,
+        })
+      }
+    })
+  }
+
+  fn _parse_binary_or_unary_expr(&mut self) -> ParserResult<ast::BinaryOrUnaryExpr> {
+    let left = self.parse_expr()?;
+
+    // TODO: Should be marked `mut`.
+    let right = None;
+
+    // TODO: Wrong position.
+    let operator = self._parse_operator()?;
+
+    // TODO: Implement.
+    // while self.is(token::Token::SymbolOperator) {
+    //   let operator = self.parse_operator()?;
+
+    //   right = self.parse_expr()?;
+    // }
+
+    Ok(ast::BinaryOrUnaryExpr {
+      left: Box::new(left),
+      right,
+      operator,
+    })
+  }
+
   /// %name '(' (%expr (,))* ')'
   fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
     // TODO: We need to push a definition within parser. Then, make use of the callee name.
@@ -558,7 +601,6 @@ impl<'a> Parser<'a> {
     let mut arguments = vec![];
 
     while !self.is_eof() && !self.is(token::Token::SymbolParenthesesR) {
-      println!("parse arg: {:?}", self.tokens[self.index]);
       arguments.push(self.parse_expr()?);
 
       if self.is(token::Token::SymbolComma) {

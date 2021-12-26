@@ -7,6 +7,7 @@ pub enum Token {
   LiteralString(String),
   LiteralInt(u64),
   LiteralBool(bool),
+  LiteralChar(char),
   KeywordPub,
   KeywordFn,
   KeywordExtern,
@@ -30,8 +31,14 @@ pub enum Token {
   SymbolAmpersand,
   SymbolComma,
   SymbolPlus,
+  SymbolMinus,
+  SymbolAsterisk,
+  SymbolSlash,
+  SymbolBang,
   SymbolEqual,
   SymbolSemiColon,
+  SymbolLessThan,
+  SymbolGreaterThan,
 }
 
 impl std::fmt::Display for Token {

@@ -139,7 +139,7 @@ impl Lexer {
   }
 
   fn read_string(&mut self) -> String {
-    // Skip the opening quote.
+    // Skip the opening double-quote.
     self.read_char();
 
     let string = self.read_while(|character| character != '"');
@@ -151,6 +151,20 @@ impl Lexer {
     // self.read_char();
 
     string
+  }
+
+  fn read_character(&mut self) -> Result<char, diagnostic::Diagnostic> {
+    // Skip the opening single-quote, and retrieve the character.
+    let character = self.read_char();
+
+    if character.is_none() {
+      return Err(diagnostic::Diagnostic {
+        message: "unexpected end of input, expected character".to_string(),
+        severity: diagnostic::Severity::Error,
+      });
+    }
+
+    Ok(character.unwrap())
   }
 
   /// Attempt to retrieve the next token.
@@ -172,6 +186,7 @@ impl Lexer {
       let final_token = match current_char {
         '#' => token::Token::Comment(self.read_comment()),
         '"' => token::Token::LiteralString(self.read_string()),
+        '\'' => token::Token::LiteralChar(self.read_character()?),
         '{' => token::Token::SymbolBraceL,
         '}' => token::Token::SymbolBraceR,
         '(' => token::Token::SymbolParenthesesL,
@@ -181,8 +196,14 @@ impl Lexer {
         '&' => token::Token::SymbolAmpersand,
         ',' => token::Token::SymbolComma,
         '+' => token::Token::SymbolPlus,
+        '-' => token::Token::SymbolMinus,
+        '*' => token::Token::SymbolAsterisk,
+        '/' => token::Token::SymbolSlash,
+        '!' => token::Token::SymbolBang,
         '=' => token::Token::SymbolEqual,
         ';' => token::Token::SymbolSemiColon,
+        '<' => token::Token::SymbolLessThan,
+        '>' => token::Token::SymbolGreaterThan,
         _ => {
           // NOTE: Identifiers will never start with a digit.
           return if current_char == '_' || is_letter(current_char) {
