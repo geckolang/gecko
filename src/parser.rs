@@ -282,17 +282,11 @@ impl<'a> Parser<'a> {
       return_type = Some(Box::new(self.parse_type()?));
     }
 
-    if is_variadic {
       Ok(ast::Type::Function(ast::FunctionType {
-        parameters: ast::FunctionParameters::Variadic,
+      parameters,
         return_type,
+      is_variadic,
       }))
-    } else {
-      Ok(ast::Type::Function(ast::FunctionType {
-        parameters: ast::FunctionParameters::List(parameters),
-        return_type,
-      }))
-    }
   }
 
   /// fn %prototype %block

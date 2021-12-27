@@ -48,16 +48,10 @@ pub enum PrimitiveType {
   String,
 }
 
-pub enum StructType {}
-
-pub enum FunctionParameters {
-  Variadic,
-  List(Vec<Type>),
-}
-
 pub struct FunctionType {
-  pub parameters: FunctionParameters,
+  pub parameters: Vec<Type>,
   pub return_type: Option<Box<Type>>,
+  pub is_variadic: bool,
 }
 
 pub enum Type {

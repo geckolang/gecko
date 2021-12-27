@@ -461,35 +461,26 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::Function(ast::FunctionType {
         parameters,
         return_type,
+        is_variadic,
       }) => {
-        let is_variadic = if let ast::FunctionParameters::Variadic = parameters {
-          true
-        } else {
-          false
-        };
-        let llvm_parameter_types =
-          if let ast::FunctionParameters::List(ref parameter_types) = parameters {
-            parameter_types
+        let llvm_parameter_types = parameters
               .iter()
               .map(|parameter_type| self.lower_type(parameter_type).into())
-              .collect::<Vec<_>>()
-          } else {
-            Vec::<_>::default()
-          };
+          .collect::<Vec<_>>();
 
         // TODO: Simplify code (find common ground between `void` and `basic` types).
         if let Some(return_type) = return_type {
           self
             .lower_type(&return_type)
             // TODO: Is `is_variadic` being copied?
-            .fn_type(llvm_parameter_types.as_slice(), is_variadic)
+            .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
             .ptr_type(inkwell::AddressSpace::Generic)
             .into()
         } else {
           self
             .llvm_context
             .void_type() // TODO: Is `is_variadic` being copied?
-            .fn_type(llvm_parameter_types.as_slice(), is_variadic)
+            .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
             .ptr_type(inkwell::AddressSpace::Generic)
             .into()
         }
