@@ -5,7 +5,7 @@ pub enum Token {
   Whitespace(String),
   Comment(String),
   LiteralString(String),
-  LiteralInt(u64),
+  LiteralInt(rug::Integer),
   LiteralBool(bool),
   LiteralChar(char),
   KeywordPub,

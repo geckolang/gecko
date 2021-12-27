@@ -114,8 +114,8 @@ impl Lexer {
     })
   }
 
-  fn read_number(&mut self) -> Result<u64, diagnostic::Diagnostic> {
-    let number_result = self.read_while(is_digit).parse::<u64>();
+  fn read_integer(&mut self) -> Result<rug::Integer, diagnostic::Diagnostic> {
+    let number_result = self.read_while(is_digit).parse::<rug::Integer>();
 
     if let Err(_) = number_result {
       return Err(diagnostic::Diagnostic {
@@ -214,7 +214,7 @@ impl Lexer {
               None => Ok(Some(token::Token::Identifier(identifier))),
             }
           } else if is_digit(current_char) {
-            Ok(Some(token::Token::LiteralInt(self.read_number()?)))
+            Ok(Some(token::Token::LiteralInt(self.read_integer()?)))
           } else {
             let illegal_char = current_char;
 
@@ -409,14 +409,53 @@ mod tests {
   fn lex_number_single_digit() {
     let mut lexer = Lexer::from_str("1");
 
-    assert_eq!(Ok(Some(token::Token::LiteralInt(1))), lexer.lex_token());
+    assert_eq!(
+      Ok(Some(token::Token::LiteralInt(rug::Integer::from(1)))),
+      lexer.lex_token()
+    );
   }
 
   #[test]
-  fn lex_number() {
+  fn lex_integer() {
     let mut lexer = Lexer::from_str("123");
 
-    assert_eq!(Ok(Some(token::Token::LiteralInt(123))), lexer.lex_token());
+    assert_eq!(
+      Ok(Some(token::Token::LiteralInt(rug::Integer::from(123)))),
+      lexer.lex_token()
+    );
+  }
+  #[test]
+  fn lex_float1() {
+    let mut lexer = Lexer::from_str("42.69");
+    assert_eq!(
+      lexer.lex_token(),
+      Ok(Some(token::Token::LiteralInt(rug::Integer::from(42))))
+    );
+    assert_eq!(lexer.lex_token(), Ok(Some(token::Token::SymbolDot)));
+    assert_eq!(
+      lexer.lex_token(),
+      Ok(Some(token::Token::LiteralInt(rug::Integer::from(69))))
+    );
+  }
+
+  #[test]
+  fn lex_float2() {
+    let mut lexer = Lexer::from_str("42.");
+    assert_eq!(
+      lexer.lex_token(),
+      Ok(Some(token::Token::LiteralInt(rug::Integer::from(42))))
+    );
+    assert_eq!(lexer.lex_token(), Ok(Some(token::Token::SymbolDot)));
+  }
+
+  #[test]
+  fn lex_float3() {
+    let mut lexer = Lexer::from_str(".69");
+    assert_eq!(lexer.lex_token(), Ok(Some(token::Token::SymbolDot)));
+    assert_eq!(
+      lexer.lex_token(),
+      Ok(Some(token::Token::LiteralInt(rug::Integer::from(69))))
+    );
   }
 
   #[test]

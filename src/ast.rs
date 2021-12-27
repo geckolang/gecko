@@ -82,7 +82,7 @@ pub struct VariableRef {
 
 pub enum Literal {
   Bool(bool),
-  Int(u64, IntSize),
+  Int(rug::Integer, IntSize),
   Char(char),
   String(String),
 }

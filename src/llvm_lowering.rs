@@ -139,14 +139,11 @@ impl Lower for ast::Literal {
           });
 
         llvm_int_type
-          .const_int(
-            // TODO: Is this cloning?
-            *value,
-            match integer_kind {
-              ast::IntSize::I8 => true,
-              _ => false,
-            },
+          .const_int_from_string(
+            value.to_string_radix(16).as_str(),
+            inkwell::types::StringRadix::Hexadecimal,
           )
+          .unwrap()
           .as_basic_value_enum()
       }
       ast::Literal::Char(value) => generator
@@ -215,10 +212,7 @@ impl Lower for ast::Function {
     generator.llvm_function_buffer = Some(llvm_function);
 
     match &self.prototype {
-      ast::Type::Function(ast::FunctionType {
-        parameters: ast::FunctionParameters::List(_),
-        ..
-      }) => {
+      ast::Type::Function(ast::FunctionType { .. }) => {
         for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
           let parameter_name = i.to_string();
           llvm_parameter.set_name(parameter_name.as_str());

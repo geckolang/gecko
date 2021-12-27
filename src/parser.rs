@@ -24,22 +24,21 @@ macro_rules! skip_past {
   };
 }
 
-// TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
+// TODO: Add more test cases for larger numbers than `0`.
 /// Determine the minimum bit-size in which a number can fit.
-fn minimum_int_size_of(number: &u64) -> ast::IntSize {
-  let log2_result = f64::log2(*number as f64 + 1_f64);
-  let minimum_bit_size = f64::floor(log2_result) as u64;
+fn minimum_int_size_of(number: &rug::Integer) -> Option<ast::IntSize> {
+  let minimum_bit_size = number.significant_bits();
 
   if minimum_bit_size <= 8 {
-    ast::IntSize::I8
+    Some(ast::IntSize::I8)
   } else if minimum_bit_size <= 16 {
-    ast::IntSize::I16
+    Some(ast::IntSize::I16)
   } else if minimum_bit_size <= 32 {
-    ast::IntSize::I32
+    Some(ast::IntSize::I32)
   } else if minimum_bit_size <= 64 {
-    ast::IntSize::I64
+    Some(ast::IntSize::I64)
   } else {
-    panic!("expected minimum bit-size to be smaller than 64");
+    None
   }
 }
 
@@ -476,14 +475,20 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
+  fn parse_integer_literal(&mut self) -> ParserResult<ast::Literal> {
     // TODO: Accessing tokens like this is unsafe/unchecked.
-    // TODO: Possibly cloning value.
-    Ok(match self.tokens[self.index] {
-      token::Token::LiteralInt(value) => {
+    if let token::Token::LiteralInt(ref value) = self.tokens[self.index] {
+      let value = value.clone();
         self.skip();
 
-        let mut size = minimum_int_size_of(&value);
+      let mut size = if let Some(result) = minimum_int_size_of(&value) {
+        result
+      } else {
+        return Err(diagnostic::Diagnostic {
+          message: "integer literal is too big to fit in any builtin type".to_string(),
+          severity: diagnostic::Severity::Error,
+        });
+      };
 
         // TODO: Deal with unsigned integers here?
         // Default size to 32 bit-width.
@@ -491,15 +496,13 @@ impl<'a> Parser<'a> {
           size = ast::IntSize::I32;
         }
 
-        ast::Literal::Int(value, size)
-      }
-      _ => {
-        return Err(diagnostic::Diagnostic {
+      Ok(ast::Literal::Int(value.clone(), size))
+    } else {
+      Err(diagnostic::Diagnostic {
           message: "expected integer literal but got end of file".to_string(),
           severity: diagnostic::Severity::Error,
         })
       }
-    })
   }
 
   fn parse_string_literal(&mut self) -> ParserResult<ast::Literal> {
