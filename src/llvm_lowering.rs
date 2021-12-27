@@ -239,8 +239,8 @@ impl Lower for ast::Function {
       generator.llvm_builder.build_return(None);
     }
 
-    // FIXME: This assertion shouldn't trigger to begin with but if it
-    //        does make sure to display as much information as possible
+    // TODO: This assertion shouldn't trigger to begin with due to type checking,
+    //        but if it does, make sure to display as much information as possible.
     assert!(llvm_function.verify(true));
 
     llvm_function.as_global_value().as_basic_value_enum()
