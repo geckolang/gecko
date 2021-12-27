@@ -198,14 +198,14 @@ impl<'a> Parser<'a> {
 
     self.skip();
 
-    Ok(ast::Type::PrimitiveType(ast::PrimitiveType::Int(size)))
+    Ok(ast::Type::Primitive(ast::PrimitiveType::Int(size)))
   }
 
   /// bool
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
     skip_past!(self, token::Token::TypeBool);
 
-    Ok(ast::Type::PrimitiveType(ast::PrimitiveType::Bool))
+    Ok(ast::Type::Primitive(ast::PrimitiveType::Bool))
   }
 
   /// %type
@@ -221,7 +221,7 @@ impl<'a> Parser<'a> {
       token::Token::TypeString => {
         self.skip();
 
-        Ok(ast::Type::PrimitiveType(ast::PrimitiveType::String))
+        Ok(ast::Type::Primitive(ast::PrimitiveType::String))
       }
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -237,14 +237,14 @@ impl<'a> Parser<'a> {
   }
 
   /// %name ':' %kind_group
-  fn parse_parameter(&mut self) -> ParserResult<ast::Parameter> {
-    let name = self.parse_name()?;
+  fn parse_parameter(&mut self) -> ParserResult<ast::Type> {
+    let _name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolColon);
 
     let kind_group = self.parse_type()?;
 
-    Ok((name, kind_group))
+    Ok(kind_group)
   }
 
   /// '(' {%parameter* (,)} (+) ')' '~' %kind_group
@@ -253,12 +253,12 @@ impl<'a> Parser<'a> {
 
     // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
     let mut parameters = vec![];
-    let mut is_variadic = false;
+    let mut is_varidic = false;
 
     // TODO: Analyze, and remove possibility of lonely comma.
     while !self.is(token::Token::SymbolParenthesesR) && !self.is_eof() {
       if self.is(token::Token::SymbolPlus) {
-        is_variadic = true;
+        is_varidic = true;
         self.skip();
 
         break;
@@ -282,7 +282,17 @@ impl<'a> Parser<'a> {
       return_type = Some(Box::new(self.parse_type()?));
     }
 
-    Ok(ast::Type::Prototype(parameters, return_type, is_variadic))
+    if is_varidic {
+      Ok(ast::Type::Function(ast::FunctionType {
+        parameters: ast::FunctionParameters::Variadic,
+        return_type,
+      }))
+    } else {
+      Ok(ast::Type::Function(ast::FunctionType {
+        parameters: ast::FunctionParameters::List(parameters),
+        return_type,
+      }))
+    }
   }
 
   /// fn %prototype %block

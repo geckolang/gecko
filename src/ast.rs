@@ -21,8 +21,6 @@ macro_rules! dispatch {
   };
 }
 
-pub type Parameter = (String, Type);
-
 #[derive(PartialEq, PartialOrd)]
 pub enum IntSize {
   U8,
@@ -37,16 +35,35 @@ pub enum IntSize {
   Isize,
 }
 
+pub enum FloatSize {
+  F32,
+  F64,
+}
+
 pub enum PrimitiveType {
   Int(IntSize),
+  Float(FloatSize),
   Bool,
   Char,
   String,
 }
 
+pub enum StructType {}
+
+pub enum FunctionParameters {
+  Variadic,
+  List(Vec<Type>),
+}
+
+pub struct FunctionType {
+  pub parameters: FunctionParameters,
+  pub return_type: Option<Box<Type>>,
+}
+
 pub enum Type {
-  PrimitiveType(PrimitiveType),
-  Prototype(Vec<(String, Type)>, Option<Box<Type>>, bool),
+  Primitive(PrimitiveType),
+  Struct(StructType),
+  Function(FunctionType),
 }
 
 pub enum Node {

@@ -215,12 +215,12 @@ impl Lower for ast::Function {
     generator.llvm_function_buffer = Some(llvm_function);
 
     match &self.prototype {
-      ast::Type::Prototype(parameters, _, _) => {
-        // TODO: Find a way to use only one loop to process both local parameters and LLVM's names.
+      ast::Type::Function(ast::FunctionType {
+        parameters: ast::FunctionParameters::List(_),
+        ..
+      }) => {
         for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
-          // TODO: Ensure this access is safe and checked.
-          let (parameter_name, _) = parameters.get(i).unwrap();
-
+          let parameter_name = i.to_string();
           llvm_parameter.set_name(parameter_name.as_str());
         }
       }
@@ -239,7 +239,9 @@ impl Lower for ast::Function {
       generator.llvm_builder.build_return(None);
     }
 
-    assert!(llvm_function.verify(false));
+    // FIXME: This assertion shouldn't trigger to begin with but if it
+    //        does make sure to display as much information as possible
+    assert!(llvm_function.verify(true));
 
     llvm_function.as_global_value().as_basic_value_enum()
   }
@@ -430,7 +432,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     use inkwell::types::BasicType;
 
     match ty {
-      ast::Type::PrimitiveType(primitive_type) => match primitive_type {
+      ast::Type::Primitive(primitive) => match primitive {
         ast::PrimitiveType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
         ast::PrimitiveType::Int(size) => {
           // TODO: Should we handle unsigned integers here?
@@ -451,26 +453,44 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .i8_type()
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum(),
+        ast::PrimitiveType::Float(_size) => {
+          //TODO: implement llvm generation for structs
+          self.llvm_context.f32_type().as_basic_type_enum()
+        }
       },
-      ast::Type::Prototype(parameter_types, return_type_result, is_variadic) => {
-        let llvm_parameter_types = parameter_types
-          .iter()
-          .map(|parameter_type| self.lower_type(&parameter_type.1).into())
-          .collect::<Vec<_>>();
+      ast::Type::Struct(_) => self.llvm_context.i8_type().as_basic_type_enum(),
+      ast::Type::Function(ast::FunctionType {
+        parameters,
+        return_type,
+      }) => {
+        let is_variadic = if let ast::FunctionParameters::Variadic = parameters {
+          true
+        } else {
+          false
+        };
+        let llvm_parameter_types =
+          if let ast::FunctionParameters::List(ref parameter_types) = parameters {
+            parameter_types
+              .iter()
+              .map(|parameter_type| self.lower_type(parameter_type).into())
+              .collect::<Vec<_>>()
+          } else {
+            Vec::<_>::default()
+          };
 
         // TODO: Simplify code (find common ground between `void` and `basic` types).
-        if let Some(return_type) = return_type_result {
+        if let Some(return_type) = return_type {
           self
             .lower_type(&return_type)
             // TODO: Is `is_variadic` being copied?
-            .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
+            .fn_type(llvm_parameter_types.as_slice(), is_variadic)
             .ptr_type(inkwell::AddressSpace::Generic)
             .into()
         } else {
           self
             .llvm_context
             .void_type() // TODO: Is `is_variadic` being copied?
-            .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
+            .fn_type(llvm_parameter_types.as_slice(), is_variadic)
             .ptr_type(inkwell::AddressSpace::Generic)
             .into()
         }
