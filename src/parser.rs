@@ -395,7 +395,7 @@ impl<'a> Parser<'a> {
 
     // Infer the type based on the value.
     if ty.is_none() {
-      // FIXME: Implement.
+      // FIXME: Implement type inference.
       todo!();
     }
 

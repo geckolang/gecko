@@ -221,6 +221,7 @@ impl NameResolver {
     scope.insert(name, definition_key);
   }
 
+  // TODO: How about taking in a tuple of (name, symbol_kind)? Then make the map have the same as its key.
   fn lookup(&self, name: &str, _symbol_kind: SymbolKind) -> Option<&usize> {
     // TODO: Make use of `symbol_kind`.
 

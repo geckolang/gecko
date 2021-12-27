@@ -15,7 +15,7 @@ impl TypeCheck for ast::Function {
 
     while let Some(next_block) = block_queue.pop() {
       for statement in &next_block.statements {
-        // TODO:
+        // TODO: Implement.
         // block_queue.extend(match statement {
         //   // TODO:
         //   _ => vec![],

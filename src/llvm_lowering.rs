@@ -189,8 +189,7 @@ impl Lower for ast::Function {
       // TODO: Name being cloned. Is this okay?
       self.name.to_owned()
     } else {
-      // FIXME: Pending scope.
-      mangle_name(&"pending_scope".to_string(), &self.name)
+      mangle_name(&generator.module_name, &self.name)
     };
 
     // FIXME: Function is emitted twice when being called. This is because first the function is lowered when it is invoked, then again during reaching its declaration. This is temporary fix.
@@ -240,8 +239,7 @@ impl Lower for ast::Function {
       generator.llvm_builder.build_return(None);
     }
 
-    // FIXME: Disabled for debugging.
-    // assert!(llvm_function.verify(false));
+    assert!(llvm_function.verify(false));
 
     llvm_function.as_global_value().as_basic_value_enum()
   }
@@ -403,6 +401,7 @@ impl Lower for ast::ExprWrapperStmt {
 }
 
 pub struct LlvmGenerator<'a, 'ctx> {
+  module_name: String,
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_builder: inkwell::builder::Builder<'ctx>,
@@ -413,10 +412,12 @@ pub struct LlvmGenerator<'a, 'ctx> {
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   pub fn new(
+    module_name: String,
     llvm_context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
   ) -> Self {
     Self {
+      module_name,
       llvm_context,
       llvm_module,
       llvm_builder: llvm_context.create_builder(),
