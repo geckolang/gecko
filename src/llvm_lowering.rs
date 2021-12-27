@@ -127,6 +127,17 @@ impl Lower for ast::Literal {
     _: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     match self {
+      ast::Literal::Float(value, float_kind) => {
+        let llvm_float_type = match float_kind {
+          ast::FloatSize::F16 => generator.llvm_context.f16_type(),
+          ast::FloatSize::F32 => generator.llvm_context.f32_type(),
+          ast::FloatSize::F64 => generator.llvm_context.f64_type(),
+          ast::FloatSize::F128 => generator.llvm_context.f128_type(),
+        };
+        llvm_float_type
+          .const_float_from_string(&value.to_string_radix(16, None))
+          .as_basic_value_enum()
+      }
       ast::Literal::Int(value, integer_kind) => {
         let llvm_int_type = generator
           .llvm_context
@@ -447,9 +458,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .i8_type()
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum(),
-        ast::PrimitiveType::Float(_size) => {
-          //TODO: implement llvm generation for structs
-          self.llvm_context.f32_type().as_basic_type_enum()
+        ast::PrimitiveType::Float(float_kind) => {
+          let llvm_float_type = match float_kind {
+            ast::FloatSize::F16 => self.llvm_context.f16_type(),
+            ast::FloatSize::F32 => self.llvm_context.f32_type(),
+            ast::FloatSize::F64 => self.llvm_context.f64_type(),
+            ast::FloatSize::F128 => self.llvm_context.f128_type(),
+          };
+          llvm_float_type.as_basic_type_enum()
         }
       },
       ast::Type::Function(ast::FunctionType {
