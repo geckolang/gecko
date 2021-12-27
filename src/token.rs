@@ -30,6 +30,7 @@ pub enum Token {
   SymbolColon,
   SymbolAmpersand,
   SymbolComma,
+  SymbolDot,
   SymbolPlus,
   SymbolMinus,
   SymbolAsterisk,

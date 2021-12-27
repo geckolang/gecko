@@ -36,8 +36,10 @@ pub enum IntSize {
 }
 
 pub enum FloatSize {
+  F16,
   F32,
   F64,
+  F128,
 }
 
 pub enum PrimitiveType {
@@ -83,6 +85,7 @@ pub struct VariableRef {
 pub enum Literal {
   Bool(bool),
   Int(rug::Integer, IntSize),
+  Float(rug::Float, FloatSize),
   Char(char),
   String(String),
 }

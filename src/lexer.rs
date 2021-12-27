@@ -14,9 +14,7 @@ pub struct Lexer {
 /// Determine whether a character is a letter, and within
 /// the range of a-Z, or is _.
 fn is_letter(character: char) -> bool {
-  ('a' <= character && character <= 'z')
-    || ('A' <= character && character <= 'Z')
-    || character == '_'
+  character.is_ascii_alphabetic() || character == '_'
 }
 
 /// Determine if the character is a digit within the range
@@ -28,10 +26,7 @@ fn is_digit(character: char) -> bool {
 /// Determine if the current character is a whitespace
 /// character.
 fn is_whitespace(character: char) -> bool {
-  match character {
-    ' ' | '\t' | '\n' | '\r' => true,
-    _ => false,
-  }
+  character.is_whitespace()
 }
 
 impl Lexer {
@@ -195,6 +190,7 @@ impl Lexer {
         ':' => token::Token::SymbolColon,
         '&' => token::Token::SymbolAmpersand,
         ',' => token::Token::SymbolComma,
+        '.' => token::Token::SymbolDot,
         '+' => token::Token::SymbolPlus,
         '-' => token::Token::SymbolMinus,
         '*' => token::Token::SymbolAsterisk,

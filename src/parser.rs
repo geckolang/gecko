@@ -281,11 +281,11 @@ impl<'a> Parser<'a> {
       return_type = Some(Box::new(self.parse_type()?));
     }
 
-      Ok(ast::Type::Function(ast::FunctionType {
+    Ok(ast::Type::Function(ast::FunctionType {
       parameters,
-        return_type,
+      return_type,
       is_variadic,
-      }))
+    }))
   }
 
   /// fn %prototype %block
@@ -475,11 +475,37 @@ impl<'a> Parser<'a> {
     })
   }
 
+  fn parse_float_literal(&mut self) -> ParserResult<ast::Literal> {
+    match self.tokens[self.index..self.index + 3] {
+      [token::Token::LiteralInt(ref whole), token::Token::SymbolDot, token::Token::LiteralInt(ref decimal)] =>
+      {
+        let whole = whole.clone();
+        let decimal = decimal.clone();
+        // we consume 3 tokens
+        self.skip();
+        self.skip();
+        self.skip();
+        let mut result = rug::Float::new(rug::float::prec_max());
+        result += whole;
+        result += decimal.clone() / {
+          let mut tmp = rug::Float::new(rug::float::prec_max());
+          tmp += decimal;
+          tmp.log10().ceil()
+        };
+        Ok(ast::Literal::Float(result, ast::FloatSize::F128))
+      }
+      _ => Err(diagnostic::Diagnostic {
+        message: "float literal malformed".to_string(),
+        severity: diagnostic::Severity::Error,
+      }),
+    }
+  }
+
   fn parse_integer_literal(&mut self) -> ParserResult<ast::Literal> {
     // TODO: Accessing tokens like this is unsafe/unchecked.
     if let token::Token::LiteralInt(ref value) = self.tokens[self.index] {
       let value = value.clone();
-        self.skip();
+      self.skip();
 
       let mut size = if let Some(result) = minimum_int_size_of(&value) {
         result
@@ -490,19 +516,19 @@ impl<'a> Parser<'a> {
         });
       };
 
-        // TODO: Deal with unsigned integers here?
-        // Default size to 32 bit-width.
-        if size < ast::IntSize::I32 {
-          size = ast::IntSize::I32;
-        }
+      // TODO: Deal with unsigned integers here?
+      // Default size to 32 bit-width.
+      if size < ast::IntSize::I32 {
+        size = ast::IntSize::I32;
+      }
 
       Ok(ast::Literal::Int(value.clone(), size))
     } else {
       Err(diagnostic::Diagnostic {
-          message: "expected integer literal but got end of file".to_string(),
-          severity: diagnostic::Severity::Error,
-        })
-      }
+        message: "expected integer literal but got end of file".to_string(),
+        severity: diagnostic::Severity::Error,
+      })
+    }
   }
 
   fn parse_string_literal(&mut self) -> ParserResult<ast::Literal> {
@@ -527,12 +553,17 @@ impl<'a> Parser<'a> {
 
     Ok(match current_token {
       token::Token::LiteralBool(_) => self.parse_bool_literal()?,
-      token::Token::LiteralInt(_) => self.parse_int_literal()?,
+      token::Token::LiteralInt(_) => {
+        // TODO: There must be a better way of doing this
+        self
+          .parse_float_literal()
+          .or_else(|_error| self.parse_integer_literal())?
+      }
       token::Token::LiteralString(_) => self.parse_string_literal()?,
       _ => {
         return Err(diagnostic::Diagnostic {
           // TODO: Show the actual token.
-          message: format!("unexpected token `{}`, expected literal", current_token),
+          message: format!("unexpected token {:?}, expected literal", current_token),
           severity: diagnostic::Severity::Error,
         });
       }

@@ -458,8 +458,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         is_variadic,
       }) => {
         let llvm_parameter_types = parameters
-              .iter()
-              .map(|parameter_type| self.lower_type(parameter_type).into())
+          .iter()
+          .map(|parameter_type| self.lower_type(parameter_type).into())
           .collect::<Vec<_>>();
 
         // TODO: Simplify code (find common ground between `void` and `basic` types).
