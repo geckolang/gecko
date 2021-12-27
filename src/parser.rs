@@ -253,12 +253,12 @@ impl<'a> Parser<'a> {
 
     // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
     let mut parameters = vec![];
-    let mut is_varidic = false;
+    let mut is_variadic = false;
 
     // TODO: Analyze, and remove possibility of lonely comma.
     while !self.is(token::Token::SymbolParenthesesR) && !self.is_eof() {
       if self.is(token::Token::SymbolPlus) {
-        is_varidic = true;
+        is_variadic = true;
         self.skip();
 
         break;
@@ -282,7 +282,7 @@ impl<'a> Parser<'a> {
       return_type = Some(Box::new(self.parse_type()?));
     }
 
-    if is_varidic {
+    if is_variadic {
       Ok(ast::Type::Function(ast::FunctionType {
         parameters: ast::FunctionParameters::Variadic,
         return_type,
