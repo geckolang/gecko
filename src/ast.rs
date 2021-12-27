@@ -62,7 +62,6 @@ pub struct FunctionType {
 
 pub enum Type {
   Primitive(PrimitiveType),
-  Struct(StructType),
   Function(FunctionType),
 }
 

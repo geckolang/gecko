@@ -458,7 +458,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           self.llvm_context.f32_type().as_basic_type_enum()
         }
       },
-      ast::Type::Struct(_) => self.llvm_context.i8_type().as_basic_type_enum(),
       ast::Type::Function(ast::FunctionType {
         parameters,
         return_type,
