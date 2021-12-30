@@ -1,4 +1,4 @@
-use crate::{ast, context, diagnostic, token};
+use crate::{ast, context, diagnostic, name_resolution, token};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -301,6 +301,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
+      symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
       key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
     })
@@ -325,6 +326,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
+      symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Extern(extern_node))),
       key: self.context.create_definition_key(),
     })
@@ -403,6 +405,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
+      symbol_kind: name_resolution::SymbolKind::LocalVariable,
       key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::LetStmt(let_stmt))),
     })

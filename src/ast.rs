@@ -1,4 +1,4 @@
-use crate::context::{self, DefinitionKey};
+use crate::{context::{self, DefinitionKey}, name_resolution};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -148,6 +148,7 @@ pub struct BinaryOrUnaryExpr {
 
 pub struct Definition {
   pub name: String,
+  pub symbol_kind: name_resolution::SymbolKind,
   pub node: std::rc::Rc<std::cell::RefCell<Node>>,
   pub key: context::DefinitionKey,
 }

@@ -1,5 +1,6 @@
 use crate::{ast, context, diagnostic};
 
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub enum SymbolKind {
   LocalVariable,
   FunctionOrExtern,
@@ -27,7 +28,8 @@ impl Resolvable for ast::Node {
 
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
-    if let Some(definition_key) = resolver.lookup(&self.name, SymbolKind::LocalVariable) {
+    // TODO: Cloning name.
+    if let Some(definition_key) = resolver.lookup((self.name.clone(), SymbolKind::LocalVariable)) {
       self.definition_key = Some(definition_key.clone());
     } else {
       resolver
@@ -69,7 +71,7 @@ impl Resolvable for ast::IfStmt {
 
 impl Resolvable for ast::LetStmt {
   fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
-    // TODO: Implement this.
+    // TODO: Implement.
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
@@ -147,13 +149,10 @@ impl Resolvable for ast::Definition {
       .declarations
       .insert(declaration_key, std::rc::Rc::clone(&self.node));
 
-    // Register the name on the last scope for name resolution lookup.
-    resolver
-      .scopes
-      .last_mut()
-      .unwrap()
-      .insert(self.name.clone(), declaration_key);
-
+    resolver.bind(
+      (self.name.clone(), self.symbol_kind.clone()),
+      declaration_key,
+    );
     self.node.as_ref().borrow_mut().declare(resolver, context);
   }
 
@@ -165,7 +164,10 @@ impl Resolvable for ast::Definition {
 impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
-    if let Some(callee_key) = resolver.lookup(&self.callee_name, SymbolKind::FunctionOrExtern) {
+    // TODO: Cloning name.
+    if let Some(callee_key) =
+      resolver.lookup((self.callee_name.clone(), SymbolKind::FunctionOrExtern))
+    {
       self.callee_definition_key = Some(callee_key.clone());
     } else {
       resolver.diagnostics.error(format!(
@@ -190,9 +192,9 @@ pub struct NameResolver {
   pub diagnostics: diagnostic::DiagnosticBuilder,
   definition_key_counter: usize,
   // TODO: Should this be on `context::Context` instead? Something's missing. We might need to link the context to the resolver.
-  scopes: Vec<std::collections::HashMap<String, context::DefinitionKey>>,
+  scopes: Vec<std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>>,
   // TODO: Make use of the global scope.
-  _global_scope: std::collections::HashMap<String, context::DefinitionKey>,
+  _global_scope: std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>,
 }
 
 impl NameResolver {
@@ -205,10 +207,6 @@ impl NameResolver {
     }
   }
 
-  fn _is_global_scope(&self) -> bool {
-    self.scopes.len() == 1
-  }
-
   // TODO: Consider returning the pushed scope?
   fn push_scope(&mut self) {
     self.scopes.push(std::collections::HashMap::new());
@@ -218,19 +216,20 @@ impl NameResolver {
     self.scopes.pop();
   }
 
-  fn _bind(&mut self, name: String, definition_key: context::DefinitionKey) {
+  /// Register a name on the last scope for name resolution lookups.
+  fn bind(&mut self, key: (String, SymbolKind), definition_key: context::DefinitionKey) {
     // TODO: What if there is no scopes? Maybe have an initial global scope set? Make use of the `global_scope` field.
     let scope = self.scopes.last_mut().unwrap();
 
-    scope.insert(name, definition_key);
+    scope.insert(key, definition_key);
   }
 
   // TODO: How about taking in a tuple of (name, symbol_kind)? Then make the map have the same as its key.
-  fn lookup(&self, name: &str, _symbol_kind: SymbolKind) -> Option<&usize> {
+  fn lookup(&self, key: (String, SymbolKind)) -> Option<&usize> {
     // TODO: Make use of `symbol_kind`.
 
     for scope in self.scopes.iter().rev() {
-      if let Some(definition_key) = scope.get(name) {
+      if let Some(definition_key) = scope.get(&key) {
         return Some(definition_key);
       }
     }
@@ -246,3 +245,5 @@ impl NameResolver {
     definition_key
   }
 }
+
+// TODO: Add essential tests.
