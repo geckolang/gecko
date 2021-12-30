@@ -1,4 +1,4 @@
-use crate::{ast, context};
+use crate::{ast, context, diagnostic};
 
 pub enum SymbolKind {
   LocalVariable,
@@ -30,8 +30,9 @@ impl Resolvable for ast::VariableRef {
     if let Some(definition_key) = resolver.lookup(&self.name, SymbolKind::LocalVariable) {
       self.definition_key = Some(definition_key.clone());
     } else {
-      // TODO: Use diagnostics.
-      panic!("Variable not found");
+      resolver
+        .diagnostics
+        .error(format!("undefined reference to variable `{}`", self.name));
     }
   }
 }
@@ -163,13 +164,14 @@ impl Resolvable for ast::Definition {
 
 impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO: Must specify that we're looking for a function/extern.
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     if let Some(callee_key) = resolver.lookup(&self.callee_name, SymbolKind::FunctionOrExtern) {
       self.callee_definition_key = Some(callee_key.clone());
     } else {
-      // TODO: Use diagnostics.
-      panic!("Callee not found");
+      resolver.diagnostics.error(format!(
+        "undefined reference to function `{}`",
+        self.callee_name
+      ));
     }
 
     for argument in &mut self.arguments {
@@ -185,6 +187,7 @@ impl Resolvable for ast::ExprWrapperStmt {
 }
 
 pub struct NameResolver {
+  pub diagnostics: diagnostic::DiagnosticBuilder,
   definition_key_counter: usize,
   // TODO: Should this be on `context::Context` instead? Something's missing. We might need to link the context to the resolver.
   scopes: Vec<std::collections::HashMap<String, context::DefinitionKey>>,
@@ -195,6 +198,7 @@ pub struct NameResolver {
 impl NameResolver {
   pub fn new() -> Self {
     Self {
+      diagnostics: diagnostic::DiagnosticBuilder::new(),
       definition_key_counter: 0,
       scopes: vec![std::collections::HashMap::new()],
       _global_scope: std::collections::HashMap::new(),

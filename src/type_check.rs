@@ -35,7 +35,7 @@ impl TypeCheck for ast::Function {
       ast::Type::Prototype(_parameters, return_type, _is_variadic) => {
         // Ensure function returns a value if its return type is defined.
         if return_type.is_some() && !is_value_returned {
-          diagnostics.error(format!("Function `{}` must return a value", self.name));
+          diagnostics.error(format!("function `{}` must return a value", self.name));
         }
       }
       _ => unreachable!(),

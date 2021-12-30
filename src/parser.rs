@@ -236,18 +236,18 @@ impl<'a> Parser<'a> {
     }
   }
 
-  /// %name ':' %kind_group
+  /// %name ':' %type_group
   fn parse_parameter(&mut self) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolColon);
 
-    let kind_group = self.parse_type()?;
+    let type_group = self.parse_type()?;
 
-    Ok((name, kind_group))
+    Ok((name, type_group))
   }
 
-  /// '(' {%parameter* (,)} (+) ')' '~' %kind_group
+  /// '(' {%parameter* (,)} (+) ')' '~' %type_group
   fn parse_prototype(&mut self) -> ParserResult<ast::Type> {
     skip_past!(self, token::Token::SymbolParenthesesL);
 
@@ -331,11 +331,7 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_top_level_node(&mut self) -> ParserResult<ast::Node> {
-    let mut token = self.tokens.get(self.index);
-
-    if self.is(token::Token::KeywordPub) {
-      token = self.peek();
-    }
+    let token = self.tokens.get(self.index);
 
     if token.is_none() {
       return Err(diagnostic::Diagnostic {
@@ -375,7 +371,7 @@ impl<'a> Parser<'a> {
     Ok(ast::ReturnStmt { value })
   }
 
-  /// let %name (':' %kind_group) '=' %expr ';'
+  /// let %name (':' %type_group) '=' %expr ';'
   fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, token::Token::KeywordLet);
 

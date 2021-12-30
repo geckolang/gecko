@@ -8,7 +8,6 @@ pub enum Token {
   LiteralInt(u64),
   LiteralBool(bool),
   LiteralChar(char),
-  KeywordPub,
   KeywordFn,
   KeywordExtern,
   KeywordReturn,
@@ -49,7 +48,6 @@ impl std::fmt::Display for Token {
 
 pub fn get_keyword_or_type_token(identifier_str: &str) -> Option<Token> {
   Some(match identifier_str {
-    "pub" => Token::KeywordPub,
     "fn" => Token::KeywordFn,
     "extern" => Token::KeywordExtern,
     "let" => Token::KeywordLet,
