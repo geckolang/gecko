@@ -72,14 +72,18 @@ impl Lexer {
     self.current_char
   }
 
-  pub fn collect_tokens(&mut self) -> Result<Vec<token::Token>, diagnostic::Diagnostic> {
+  /// Attempt to lex all possible tokens until reaching `EOF`.
+  pub fn lex_all(&mut self) -> Result<Vec<token::Token>, diagnostic::Diagnostic> {
     let mut tokens = Vec::new();
 
     loop {
-      match self.lex_token()? {
-        Some(token) => tokens.push(token),
-        None => break,
-      };
+      let token = self.lex_token()?;
+
+      if token == token::Token::EOF {
+        break;
+      }
+
+      tokens.push(token);
     }
 
     Ok(tokens)
@@ -173,9 +177,9 @@ impl Lexer {
   /// returned. If the current character is neither an identifier nor a
   /// digit, an [`Illegal`] token with the encountered character as its
   /// value will be returned.
-  fn lex_token(&mut self) -> Result<Option<token::Token>, diagnostic::Diagnostic> {
+  fn lex_token(&mut self) -> Result<token::Token, diagnostic::Diagnostic> {
     if self.is_eof() {
-      return Ok(None);
+      return Ok(token::Token::EOF);
     }
 
     let current_char = self.current_char.unwrap();
@@ -210,17 +214,17 @@ impl Lexer {
             let identifier = self.read_identifier();
 
             match token::get_keyword_or_type_token(identifier.as_str()) {
-              Some(keyword_token) => Ok(Some(keyword_token)),
-              None => Ok(Some(token::Token::Identifier(identifier))),
+              Some(keyword_token) => Ok(keyword_token),
+              None => Ok(token::Token::Identifier(identifier)),
             }
           } else if is_digit(current_char) {
-            Ok(Some(token::Token::LiteralInt(self.read_number()?)))
+            Ok(token::Token::LiteralInt(self.read_number()?))
           } else {
             let illegal_char = current_char;
 
             self.read_char();
 
-            Ok(Some(token::Token::Illegal(illegal_char)))
+            Ok(token::Token::Illegal(illegal_char))
           };
         }
       };
@@ -232,7 +236,7 @@ impl Lexer {
       final_token
     };
 
-    Ok(Some(token))
+    Ok(token)
   }
 }
 
@@ -275,7 +279,7 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(
-      Ok(Some(token::Token::Identifier("a".to_string()))),
+      Ok(token::Token::Identifier("a".to_string())),
       lexer.lex_token()
     );
   }
@@ -287,7 +291,7 @@ mod tests {
     assert_eq!(true, lexer.lex_token().is_ok());
 
     assert_eq!(
-      Ok(Some(token::Token::Identifier("abc".to_string()))),
+      Ok(token::Token::Identifier("abc".to_string())),
       lexer.lex_token()
     );
   }
@@ -297,7 +301,7 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a', 'b', 'c']);
 
     assert_eq!(
-      Ok(Some(token::Token::Identifier("abc".to_string()))),
+      Ok(token::Token::Identifier("abc".to_string())),
       lexer.lex_token()
     );
   }
@@ -307,21 +311,21 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(true, lexer.lex_token().is_ok());
-    assert_eq!(Ok(None), lexer.lex_token());
+    assert_eq!(Ok(token::Token::EOF), lexer.lex_token());
   }
 
   #[test]
   fn lex_empty() {
     let mut lexer = Lexer::new(vec![]);
 
-    assert_eq!(Ok(None), lexer.lex_token());
+    assert_eq!(Ok(token::Token::EOF), lexer.lex_token());
   }
 
   #[test]
   fn lex_illegal() {
     let mut lexer = Lexer::new(vec!['?']);
 
-    assert_eq!(Ok(Some(token::Token::Illegal('?'))), lexer.lex_token());
+    assert_eq!(Ok(token::Token::Illegal('?')), lexer.lex_token());
   }
 
   #[test]
@@ -358,7 +362,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#test");
 
     assert_eq!(
-      Ok(Some(token::Token::Comment("test".to_string()))),
+      Ok(token::Token::Comment("test".to_string())),
       lexer.lex_token()
     );
   }
@@ -368,7 +372,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#hello world");
 
     assert_eq!(
-      Ok(Some(token::Token::Comment("hello world".to_string()))),
+      Ok(token::Token::Comment("hello world".to_string())),
       lexer.lex_token()
     );
   }
@@ -378,7 +382,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#hello\n world");
 
     assert_eq!(
-      Ok(Some(token::Token::Comment("hello".to_string()))),
+      Ok(token::Token::Comment("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -390,7 +394,7 @@ mod tests {
     assert_eq!(true, lexer.lex_token().is_ok());
 
     assert_eq!(
-      Ok(Some(token::Token::Comment("hello".to_string()))),
+      Ok(token::Token::Comment("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -400,7 +404,7 @@ mod tests {
     let mut lexer = Lexer::from_str("\"hello\"");
 
     assert_eq!(
-      Ok(Some(token::Token::LiteralString("hello".to_string()))),
+      Ok(token::Token::LiteralString("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -409,20 +413,20 @@ mod tests {
   fn lex_number_single_digit() {
     let mut lexer = Lexer::from_str("1");
 
-    assert_eq!(Ok(Some(token::Token::LiteralInt(1))), lexer.lex_token());
+    assert_eq!(Ok(token::Token::LiteralInt(1)), lexer.lex_token());
   }
 
   #[test]
   fn lex_number() {
     let mut lexer = Lexer::from_str("123");
 
-    assert_eq!(Ok(Some(token::Token::LiteralInt(123))), lexer.lex_token());
+    assert_eq!(Ok(token::Token::LiteralInt(123)), lexer.lex_token());
   }
 
   #[test]
   fn collect_tokens() {
     let mut lexer = Lexer::from_str("let one = 1");
-    let tokens_result = lexer.collect_tokens();
+    let tokens_result = lexer.lex_all();
 
     assert_eq!(true, tokens_result.is_ok());
     assert_eq!(7, tokens_result.unwrap().len());

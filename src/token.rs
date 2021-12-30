@@ -1,5 +1,7 @@
 #[derive(PartialEq, Debug, Clone)]
 pub enum Token {
+  /// A special token emitted when there are no more tokens to lex.
+  EOF,
   Illegal(char),
   Identifier(String),
   Whitespace(String),
