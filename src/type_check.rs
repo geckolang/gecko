@@ -44,3 +44,22 @@ impl TypeCheck for ast::Function {
     diagnostics.into()
   }
 }
+
+impl TypeCheck for ast::FunctionCall {
+  fn type_check<'ctx>(&self, context: &mut context::Context) -> Vec<diagnostic::Diagnostic> {
+    // TODO: Need access to the current function.
+    // TODO: Ensure externs and unsafe function are only called from unsafe functions.
+
+    let callee = context
+      .declarations
+      .get(self.callee_definition_key.as_ref().unwrap())
+      .unwrap();
+
+    match *callee.as_ref().borrow() {
+      ast::Node::Extern(_) => todo!(),
+      _ => todo!(),
+    };
+
+    vec![]
+  }
+}

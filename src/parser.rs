@@ -592,10 +592,9 @@ impl<'a> Parser<'a> {
       let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
       // TODO: Cloning token.
-      let current_token = self.tokens[self.index].clone();
+      token = self.tokens[self.index].clone();
 
-      while is_binary_operator(&current_token) && get_token_precedence(&current_token) > precedence
-      {
+      while is_binary_operator(&token) && get_token_precedence(&token) > precedence {
         right = self.parse_bin_expr(right, precedence + 1)?;
         token = self.tokens[self.index].clone();
       }

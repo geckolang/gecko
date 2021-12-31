@@ -179,7 +179,15 @@ impl Resolvable for ast::ExprWrapperStmt {
 }
 
 impl Resolvable for ast::BinaryExpr {
-  //
+  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.left.declare(resolver, context);
+    self.right.declare(resolver, context);
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.left.resolve(resolver, context);
+    self.right.resolve(resolver, context);
+  }
 }
 
 pub struct NameResolver {
