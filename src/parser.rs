@@ -557,8 +557,10 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_operator(&mut self) -> ParserResult<ast::OperatorKind> {
-    // TODO: Unsafe access.
-    Ok(match self.tokens[self.index] {
+    // TODO: Unsafe access. Also, cloning token.
+    let current_token = self.tokens[self.index].clone();
+
+    let operator = match current_token {
       token::Token::SymbolBang => ast::OperatorKind::Not,
       token::Token::SymbolPlus => ast::OperatorKind::Add,
       token::Token::SymbolMinus => ast::OperatorKind::Subtract,
@@ -569,11 +571,15 @@ impl<'a> Parser<'a> {
       // TODO: Implement logic for GTE & LTE.
       _ => {
         return Err(diagnostic::Diagnostic {
-          message: "unexpected token, expected operator".to_string(),
+          message: format!("unexpected token `{}`, expected operator", current_token),
           severity: diagnostic::Severity::Error,
         })
       }
-    })
+    };
+
+    self.skip();
+
+    Ok(operator)
   }
 
   fn parse_bin_expr(&mut self, left: ast::Node, min_precedence: usize) -> ParserResult<ast::Node> {
@@ -583,6 +589,7 @@ impl<'a> Parser<'a> {
     let mut result = left;
 
     while is_binary_operator(&token) && (precedence > min_precedence) {
+      let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
       // TODO: Cloning token.
       let current_token = self.tokens[self.index].clone();
@@ -595,7 +602,7 @@ impl<'a> Parser<'a> {
 
       result = ast::Node::BinaryExpr(ast::BinaryExpr {
         left: Box::new(result),
-        operator: self.parse_operator()?,
+        operator,
         right: Box::new(right),
       });
     }
@@ -607,6 +614,7 @@ impl<'a> Parser<'a> {
   fn parse_bin_expr_begin(&mut self) -> ParserResult<ast::Node> {
     let left = self.parse_primary_expr()?;
 
+    // TODO: Should the precedence be zero here?
     Ok(self.parse_bin_expr(left, 0)?)
   }
 
