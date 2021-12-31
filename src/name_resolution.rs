@@ -2,8 +2,8 @@ use crate::{ast, context, diagnostic};
 
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub enum SymbolKind {
-  LocalVariable,
-  FunctionOrExtern,
+  Variable,
+  FunctionLike,
 }
 
 pub trait Resolvable {
@@ -29,7 +29,7 @@ impl Resolvable for ast::Node {
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
     // TODO: Cloning name.
-    if let Some(definition_key) = resolver.lookup((self.name.clone(), SymbolKind::LocalVariable)) {
+    if let Some(definition_key) = resolver.lookup((self.name.clone(), SymbolKind::Variable)) {
       self.definition_key = Some(definition_key.clone());
     } else {
       resolver
@@ -71,7 +71,7 @@ impl Resolvable for ast::IfStmt {
 
 impl Resolvable for ast::LetStmt {
   fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
-    // TODO: Implement.
+    // TODO: Implement?
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
@@ -95,15 +95,9 @@ impl Resolvable for ast::ReturnStmt {
 
 impl Resolvable for ast::Block {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // FIXME: The problem is that the scopes are destroyed before the `resolve` step.
-
-    resolver.push_scope();
-
     for statement in &mut self.statements {
       statement.declare(resolver, context);
     }
-
-    // resolver.pop_scope();
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
@@ -123,14 +117,12 @@ impl Resolvable for ast::Literal {
 
 impl Resolvable for ast::Function {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO: Something's wrong. Scopes may be out of sync when switching declare/resolve step.
-
-    // FIXME: Need to call `declare` step for the body (and possibly arguments?).
+    // TODO: Need to call `declare` step on parameters?
     self.body.declare(resolver, context);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO: Scopes?
+    // TODO: Scopes? Might need a scope pushed & popped for function parameters.
     self.body.resolve(resolver, context);
   }
 }
@@ -149,10 +141,12 @@ impl Resolvable for ast::Definition {
       .declarations
       .insert(declaration_key, std::rc::Rc::clone(&self.node));
 
+    // Bind the symbol to the current scope for name resolution lookup.
     resolver.bind(
       (self.name.clone(), self.symbol_kind.clone()),
       declaration_key,
     );
+
     self.node.as_ref().borrow_mut().declare(resolver, context);
   }
 
@@ -165,8 +159,7 @@ impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     // TODO: Cloning name.
-    if let Some(callee_key) =
-      resolver.lookup((self.callee_name.clone(), SymbolKind::FunctionOrExtern))
+    if let Some(callee_key) = resolver.lookup((self.callee_name.clone(), SymbolKind::FunctionLike))
     {
       self.callee_definition_key = Some(callee_key.clone());
     } else {
@@ -193,8 +186,7 @@ pub struct NameResolver {
   definition_key_counter: usize,
   // TODO: Should this be on `context::Context` instead? Something's missing. We might need to link the context to the resolver.
   scopes: Vec<std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>>,
-  // TODO: Make use of the global scope.
-  _global_scope: std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>,
+  global_scope: std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>,
 }
 
 impl NameResolver {
@@ -203,11 +195,11 @@ impl NameResolver {
       diagnostics: diagnostic::DiagnosticBuilder::new(),
       definition_key_counter: 0,
       scopes: vec![std::collections::HashMap::new()],
-      _global_scope: std::collections::HashMap::new(),
+      global_scope: std::collections::HashMap::new(),
     }
   }
 
-  // TODO: Consider returning the pushed scope?
+  // TODO: Consider returning the pushed scope? Unless it's not actually used.
   fn push_scope(&mut self) {
     self.scopes.push(std::collections::HashMap::new());
   }
@@ -217,21 +209,28 @@ impl NameResolver {
   }
 
   /// Register a name on the last scope for name resolution lookups.
+  ///
+  /// If there are no relative scopes, the symbol is registered on the global scope.
   fn bind(&mut self, key: (String, SymbolKind), definition_key: context::DefinitionKey) {
-    // TODO: What if there is no scopes? Maybe have an initial global scope set? Make use of the `global_scope` field.
-    let scope = self.scopes.last_mut().unwrap();
-
-    scope.insert(key, definition_key);
+    if self.scopes.is_empty() {
+      self.global_scope.insert(key, definition_key);
+    } else {
+      self.scopes.last_mut().unwrap().insert(key, definition_key);
+    }
   }
 
-  // TODO: How about taking in a tuple of (name, symbol_kind)? Then make the map have the same as its key.
+  /// Lookup a symbol starting from the nearest scope, all the way to the global scope.
   fn lookup(&self, key: (String, SymbolKind)) -> Option<&usize> {
-    // TODO: Make use of `symbol_kind`.
-
+    // First, look on relative scopes.
     for scope in self.scopes.iter().rev() {
       if let Some(definition_key) = scope.get(&key) {
         return Some(definition_key);
       }
+    }
+
+    // Finally, look in the global scope.
+    if let Some(definition_key) = self.global_scope.get(&key) {
+      return Some(definition_key);
     }
 
     None
