@@ -1,4 +1,7 @@
-use crate::{context::{self, DefinitionKey}, name_resolution};
+use crate::{
+  context::{self, DefinitionKey},
+  name_resolution,
+};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -17,6 +20,7 @@ macro_rules! dispatch {
       $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -63,6 +67,7 @@ pub enum Node {
   ExprWrapperStmt(ExprWrapperStmt),
   Definition(Definition),
   VariableRef(VariableRef),
+  BinaryExpr(BinaryExpr),
 }
 
 pub struct VariableRef {
@@ -140,9 +145,9 @@ pub enum OperatorKind {
   Equal,
 }
 
-pub struct BinaryOrUnaryExpr {
+pub struct BinaryExpr {
   pub left: Box<Node>,
-  pub right: Option<Box<Node>>,
+  pub right: Box<Node>,
   pub operator: OperatorKind,
 }
 

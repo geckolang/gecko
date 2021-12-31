@@ -20,6 +20,17 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::BinaryExpr {
+  fn lower<'a, 'ctx>(
+    &self,
+    _generator: &mut LlvmGenerator<'a, 'ctx>,
+    _context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: Implement.
+    todo!();
+  }
+}
+
 impl Lower for ast::VariableRef {
   fn lower<'a, 'ctx>(
     &self,
@@ -312,7 +323,6 @@ impl Lower for ast::LetStmt {
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_type = generator.lower_type(&self.ty);
 
-    // TODO: Finish implementing.
     let llvm_alloca_inst_ptr = generator
       .llvm_builder
       .build_alloca(llvm_type, self.name.as_str());
@@ -343,7 +353,6 @@ impl Lower for ast::FunctionCall {
       .memoize_or_retrieve(self.callee_definition_key.unwrap(), context)
       .into_pointer_value();
 
-    // TODO: Calling the current function for debugging.
     let llvm_call_value = generator.llvm_builder.build_call(
       inkwell::values::CallableValue::try_from(llvm_target_function).unwrap(),
       llvm_arguments.as_slice(),
@@ -469,7 +478,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         } else {
           self
             .llvm_context
-            .void_type() // TODO: Is `is_variadic` being copied?
+            .void_type()
+            // TODO: Is `is_variadic` being copied?
             .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
             .ptr_type(inkwell::AddressSpace::Generic)
             .into()

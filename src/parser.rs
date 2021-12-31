@@ -2,14 +2,6 @@ use crate::{ast, context, diagnostic, name_resolution, token};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
-    // FIXME: Something's wrong, we get an error when no input is provided (eof at index 0).
-    // if $self.is_eof() {
-    //   return Err(diagnostic::Diagnostic {
-    //     message: format!("expected token `{}` but reached eof", $token),
-    //     severity: diagnostic::Severity::Error,
-    //   });
-    // }
-
     if !$self.is($token) {
       return Err(diagnostic::Diagnostic {
         message: format!(
@@ -40,6 +32,24 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
     ast::IntSize::I64
   } else {
     panic!("expected minimum bit-size to be smaller than 64");
+  }
+}
+
+fn is_binary_operator(token: &token::Token) -> bool {
+  match token {
+    token::Token::SymbolPlus
+    | token::Token::SymbolMinus
+    | token::Token::SymbolAsterisk
+    | token::Token::SymbolSlash => true,
+    _ => false,
+  }
+}
+
+fn get_token_precedence(token: &token::Token) -> usize {
+  match token {
+    token::Token::SymbolPlus | token::Token::SymbolMinus => 1,
+    token::Token::SymbolAsterisk | token::Token::SymbolSlash => 2,
+    _ => 0,
   }
 }
 
@@ -160,7 +170,7 @@ impl<'a> Parser<'a> {
         }
         _ => {
           let result = ast::Node::ExprWrapperStmt(ast::ExprWrapperStmt {
-            expr: Box::new(self.parse_expr()?),
+            expr: Box::new(self.parse_bin_expr_begin()?),
           });
 
           skip_past!(self, token::Token::SymbolSemiColon);
@@ -301,7 +311,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::FunctionLike,
+      symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
       key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
     })
@@ -326,7 +336,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::FunctionLike,
+      symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Extern(extern_node))),
       key: self.context.create_definition_key(),
     })
@@ -365,7 +375,7 @@ impl<'a> Parser<'a> {
 
     // TODO: Does this cover all cases?
     if !self.is(token::Token::SymbolSemiColon) {
-      value = Some(Box::new(self.parse_expr()?));
+      value = Some(Box::new(self.parse_bin_expr_begin()?));
     }
 
     skip_past!(self, token::Token::SymbolSemiColon);
@@ -387,7 +397,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, token::Token::SymbolEqual);
 
-    let value = self.parse_expr()?;
+    let value = self.parse_bin_expr_begin()?;
 
     skip_past!(self, token::Token::SymbolSemiColon);
 
@@ -405,7 +415,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::Variable,
+      symbol_kind: name_resolution::SymbolKind::LocalVariable,
       key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::LetStmt(let_stmt))),
     })
@@ -415,7 +425,7 @@ impl<'a> Parser<'a> {
   fn parse_if_stmt(&mut self) -> ParserResult<ast::IfStmt> {
     skip_past!(self, token::Token::KeywordIf);
 
-    let condition = self.parse_expr()?;
+    let condition = self.parse_bin_expr_begin()?;
     let then_block = self.parse_block()?;
     let mut else_block = None;
 
@@ -435,7 +445,7 @@ impl<'a> Parser<'a> {
   fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt> {
     skip_past!(self, token::Token::KeywordWhile);
 
-    let condition = self.parse_expr()?;
+    let condition = self.parse_bin_expr_begin()?;
     let body = self.parse_block()?;
 
     Ok(ast::WhileStmt {
@@ -531,7 +541,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_expr(&mut self) -> ParserResult<ast::Node> {
+  fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     // TODO: Might need to revisit. Might need to make room for other cases in the future (binary/unary operators, etc).
     Ok(match self.tokens[self.index] {
       token::Token::Identifier(_) => {
@@ -546,7 +556,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn _parse_operator(&mut self) -> ParserResult<ast::OperatorKind> {
+  fn parse_operator(&mut self) -> ParserResult<ast::OperatorKind> {
     // TODO: Unsafe access.
     Ok(match self.tokens[self.index] {
       token::Token::SymbolBang => ast::OperatorKind::Not,
@@ -566,27 +576,38 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn _parse_binary_or_unary_expr(&mut self) -> ParserResult<ast::BinaryOrUnaryExpr> {
-    let left = self.parse_expr()?;
+  fn parse_bin_expr(&mut self, left: ast::Node, min_precedence: usize) -> ParserResult<ast::Node> {
+    // TODO: Cloning token.
+    let mut token = self.tokens[self.index].clone();
+    let precedence = get_token_precedence(&token);
+    let mut result = left;
 
-    // TODO: Should be marked `mut`.
-    let right = None;
+    while is_binary_operator(&token) && (precedence > min_precedence) {
+      let mut right = self.parse_primary_expr()?;
+      // TODO: Cloning token.
+      let current_token = self.tokens[self.index].clone();
 
-    // TODO: Wrong position.
-    let operator = self._parse_operator()?;
+      while is_binary_operator(&current_token) && get_token_precedence(&current_token) > precedence
+      {
+        right = self.parse_bin_expr(right, precedence + 1)?;
+        token = self.tokens[self.index].clone();
+      }
 
-    // TODO: Implement.
-    // while self.is(token::Token::SymbolOperator) {
-    //   let operator = self.parse_operator()?;
+      result = ast::Node::BinaryExpr(ast::BinaryExpr {
+        left: Box::new(result),
+        operator: self.parse_operator()?,
+        right: Box::new(right),
+      });
+    }
 
-    //   right = self.parse_expr()?;
-    // }
+    Ok(result)
+  }
 
-    Ok(ast::BinaryOrUnaryExpr {
-      left: Box::new(left),
-      right,
-      operator,
-    })
+  // TODO: Better naming and/or positioning for logic.
+  fn parse_bin_expr_begin(&mut self) -> ParserResult<ast::Node> {
+    let left = self.parse_primary_expr()?;
+
+    Ok(self.parse_bin_expr(left, 0)?)
   }
 
   /// %name '(' (%expr (,))* ')'
@@ -600,7 +621,7 @@ impl<'a> Parser<'a> {
     let mut arguments = vec![];
 
     while !self.is_eof() && !self.is(token::Token::SymbolParenthesesR) {
-      arguments.push(self.parse_expr()?);
+      arguments.push(self.parse_bin_expr_begin()?);
 
       if self.is(token::Token::SymbolComma) {
         self.skip();

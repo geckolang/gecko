@@ -2,8 +2,8 @@ use crate::{ast, context, diagnostic};
 
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub enum SymbolKind {
-  Variable,
-  FunctionLike,
+  LocalVariable,
+  FunctionOrExtern,
 }
 
 pub trait Resolvable {
@@ -29,7 +29,7 @@ impl Resolvable for ast::Node {
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
     // TODO: Cloning name.
-    if let Some(definition_key) = resolver.lookup((self.name.clone(), SymbolKind::Variable)) {
+    if let Some(definition_key) = resolver.lookup((self.name.clone(), SymbolKind::LocalVariable)) {
       self.definition_key = Some(definition_key.clone());
     } else {
       resolver
@@ -70,10 +70,6 @@ impl Resolvable for ast::IfStmt {
 }
 
 impl Resolvable for ast::LetStmt {
-  fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
-    // TODO: Implement?
-  }
-
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.value.resolve(resolver, context);
   }
@@ -159,7 +155,8 @@ impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     // TODO: Cloning name.
-    if let Some(callee_key) = resolver.lookup((self.callee_name.clone(), SymbolKind::FunctionLike))
+    if let Some(callee_key) =
+      resolver.lookup((self.callee_name.clone(), SymbolKind::FunctionOrExtern))
     {
       self.callee_definition_key = Some(callee_key.clone());
     } else {
@@ -179,6 +176,10 @@ impl Resolvable for ast::ExprWrapperStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.expr.resolve(resolver, context);
   }
+}
+
+impl Resolvable for ast::BinaryExpr {
+  //
 }
 
 pub struct NameResolver {
