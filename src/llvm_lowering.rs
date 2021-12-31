@@ -23,11 +23,40 @@ impl Lower for ast::Node {
 impl Lower for ast::BinaryExpr {
   fn lower<'a, 'ctx>(
     &self,
-    _generator: &mut LlvmGenerator<'a, 'ctx>,
-    _context: &mut context::Context,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO: Implement.
-    todo!();
+    let llvm_left = self.left.lower(generator, context);
+    let llvm_right = self.right.lower(generator, context);
+
+    // FIXME: Forcing integer-only operations. Must be implemented for floats as well. (There must be a better, more generic way to do this).
+
+    match self.operator {
+      ast::OperatorKind::Add => generator.llvm_builder.build_int_add(
+        llvm_left.into_int_value(),
+        llvm_right.into_int_value(),
+        "add",
+      ),
+      ast::OperatorKind::Subtract => generator.llvm_builder.build_int_sub(
+        llvm_left.into_int_value(),
+        llvm_right.into_int_value(),
+        "subtract",
+      ),
+      ast::OperatorKind::Multiply => generator.llvm_builder.build_int_mul(
+        llvm_left.into_int_value(),
+        llvm_right.into_int_value(),
+        "multiply",
+      ),
+      // TODO: What if there's division by zero?
+      ast::OperatorKind::Divide => generator.llvm_builder.build_int_signed_div(
+        llvm_left.into_int_value(),
+        llvm_right.into_int_value(),
+        "divide",
+      ),
+      // TODO: Support for all operators.
+      _ => todo!(),
+    }
+    .as_basic_value_enum()
   }
 }
 
