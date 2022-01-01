@@ -21,11 +21,13 @@ macro_rules! dispatch {
       $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
 
-pub type Parameter = (String, Type);
+/// A parameter containing its name, type, and index position.
+pub type Parameter = (String, Type, u32);
 
 #[derive(PartialEq, PartialOrd)]
 pub enum IntSize {
@@ -50,7 +52,7 @@ pub enum PrimitiveType {
 
 pub enum Type {
   PrimitiveType(PrimitiveType),
-  Prototype(Vec<(String, Type)>, Option<Box<Type>>, bool),
+  Prototype(Vec<Definition>, Option<Box<Type>>, bool),
 }
 
 pub enum Node {
@@ -68,6 +70,7 @@ pub enum Node {
   Definition(Definition),
   VariableRef(VariableRef),
   BinaryExpr(BinaryExpr),
+  Parameter(Parameter),
 }
 
 pub struct VariableRef {
@@ -138,10 +141,10 @@ pub enum OperatorKind {
   Subtract,
   Multiply,
   Divide,
-  GreaterThan,
   LessThan,
-  GreaterThanOrEqual,
+  GreaterThan,
   LessThanOrEqual,
+  GreaterThanOrEqual,
   Equal,
 }
 

@@ -49,6 +49,7 @@ impl TypeCheck for ast::FunctionCall {
   fn type_check<'ctx>(&self, context: &mut context::Context) -> Vec<diagnostic::Diagnostic> {
     // TODO: Need access to the current function.
     // TODO: Ensure externs and unsafe function are only called from unsafe functions.
+    // TODO: Continue implementation.
 
     let callee = context
       .declarations
@@ -60,6 +61,8 @@ impl TypeCheck for ast::FunctionCall {
       _ => todo!(),
     };
 
-    vec![]
+    todo!();
+
+    // vec![]
   }
 }

@@ -2,7 +2,7 @@ use crate::{ast, context, diagnostic};
 
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub enum SymbolKind {
-  LocalVariable,
+  VariableOrParameter,
   FunctionOrExtern,
 }
 
@@ -26,10 +26,14 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::Parameter {
+  //
+}
+
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
     // TODO: Cloning name.
-    if let Some(definition_key) = resolver.lookup((self.name.clone(), SymbolKind::LocalVariable)) {
+    if let Some(definition_key) = resolver.lookup((self.name.clone(), SymbolKind::VariableOrParameter)) {
       self.definition_key = Some(definition_key.clone());
     } else {
       resolver
@@ -113,12 +117,30 @@ impl Resolvable for ast::Literal {
 
 impl Resolvable for ast::Function {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO: Need to call `declare` step on parameters?
+    // TODO: Simplify this process.
+    match &mut self.prototype {
+      ast::Type::Prototype(parameters, _, _) => {
+        for parameter in parameters {
+          parameter.declare(resolver, context);
+        }
+      }
+      _ => unreachable!(),
+    };
+
     self.body.declare(resolver, context);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO: Scopes? Might need a scope pushed & popped for function parameters.
+    // TODO: Simplify this process.
+    match &mut self.prototype {
+      ast::Type::Prototype(parameters, _, _) => {
+        for parameter in parameters {
+          parameter.resolve(resolver, context);
+        }
+      }
+      _ => unreachable!(),
+    };
+
     self.body.resolve(resolver, context);
   }
 }
@@ -188,7 +210,6 @@ impl Resolvable for ast::BinaryExpr {
 
 pub struct NameResolver {
   pub diagnostics: diagnostic::DiagnosticBuilder,
-  definition_key_counter: usize,
   // TODO: Should this be on `context::Context` instead? Something's missing. We might need to link the context to the resolver.
   scopes: Vec<std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>>,
   global_scope: std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>,
@@ -198,7 +219,6 @@ impl NameResolver {
   pub fn new() -> Self {
     Self {
       diagnostics: diagnostic::DiagnosticBuilder::new(),
-      definition_key_counter: 0,
       scopes: vec![std::collections::HashMap::new()],
       global_scope: std::collections::HashMap::new(),
     }
@@ -239,14 +259,6 @@ impl NameResolver {
     }
 
     None
-  }
-
-  fn create_definition_key(&mut self) -> context::DefinitionKey {
-    let definition_key = self.definition_key_counter;
-
-    self.definition_key_counter += 1;
-
-    definition_key
   }
 }
 

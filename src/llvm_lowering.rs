@@ -20,44 +20,179 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::Parameter {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    _context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    generator
+      .llvm_function_buffer
+      .unwrap()
+      .get_nth_param(self.2)
+      .unwrap()
+  }
+}
+
 impl Lower for ast::BinaryExpr {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_left = self.left.lower(generator, context);
-    let llvm_right = self.right.lower(generator, context);
+    let llvm_left_value = self.left.lower(generator, context);
+    let llvm_right_value = self.right.lower(generator, context);
 
-    // FIXME: Forcing integer-only operations. Must be implemented for floats as well. (There must be a better, more generic way to do this?).
+    // NOTE: By this point, we assume that both values are of the same type.
+    let is_int_values = llvm_left_value.is_int_value();
+
+    // TODO:
+    // let is_signed = llvm_left_value.into_int_value().get_sign_extended_constant();
 
     match self.operator {
-      ast::OperatorKind::Add => generator.llvm_builder.build_int_add(
-        llvm_left.into_int_value(),
-        llvm_right.into_int_value(),
-        "add_op",
-      ),
-      ast::OperatorKind::Subtract => generator.llvm_builder.build_int_sub(
-        llvm_left.into_int_value(),
-        llvm_right.into_int_value(),
-        "subtract_op",
-      ),
-      ast::OperatorKind::Multiply => generator.llvm_builder.build_int_mul(
-        llvm_left.into_int_value(),
-        llvm_right.into_int_value(),
-        "multiply_op",
-      ),
+      ast::OperatorKind::Add if is_int_values => generator
+        .llvm_builder
+        .build_int_add(
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int_add_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Add => generator
+        .llvm_builder
+        .build_float_add(
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float_add_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Subtract if is_int_values => generator
+        .llvm_builder
+        .build_int_sub(
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int_subtract_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Subtract => generator
+        .llvm_builder
+        .build_float_sub(
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float_subtract_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Multiply if is_int_values => generator
+        .llvm_builder
+        .build_int_mul(
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int_multiply_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Multiply => generator
+        .llvm_builder
+        .build_float_mul(
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float_multiply_op",
+        )
+        .as_basic_value_enum(),
       // TODO: What if there's division by zero?
       // TODO: Support for unsgined division?
-      ast::OperatorKind::Divide => generator.llvm_builder.build_int_signed_div(
-        llvm_left.into_int_value(),
-        llvm_right.into_int_value(),
-        "divide_op",
-      ),
+      ast::OperatorKind::Divide if is_int_values => generator
+        .llvm_builder
+        .build_int_signed_div(
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int_divide_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Divide => generator
+        .llvm_builder
+        .build_float_div(
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float_divide_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::LessThan if is_int_values => generator
+        .llvm_builder
+        .build_int_compare(
+          // TODO: Support for unsigned?
+          inkwell::IntPredicate::SLT,
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int_less_than_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::LessThan => generator
+        .llvm_builder
+        .build_float_compare(
+          inkwell::FloatPredicate::OLT,
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float_less_than_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::GreaterThan if is_int_values => generator
+        .llvm_builder
+        .build_int_compare(
+          // TODO: Support for unsigned?
+          inkwell::IntPredicate::SGT,
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int_greater_than_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::GreaterThan => generator
+        .llvm_builder
+        .build_float_compare(
+          inkwell::FloatPredicate::OGT,
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float_greater_than_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::LessThanOrEqual if is_int_values => generator
+        .llvm_builder
+        .build_int_compare(
+          inkwell::IntPredicate::SLE,
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int_less_than_or_equal_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::LessThanOrEqual => generator
+        .llvm_builder
+        .build_float_compare(
+          inkwell::FloatPredicate::OLE,
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float_less_than_or_equal_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::GreaterThanOrEqual if is_int_values => generator
+        .llvm_builder
+        .build_int_compare(
+          inkwell::IntPredicate::SGE,
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int_greater_than_or_equal_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::GreaterThanOrEqual => generator
+        .llvm_builder
+        .build_float_compare(
+          inkwell::FloatPredicate::OGE,
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float_greater_than_or_equal_op",
+        )
+        .as_basic_value_enum(),
       // TODO: Support for all operators.
       _ => todo!(),
     }
-    .as_basic_value_enum()
   }
 }
 
@@ -69,9 +204,14 @@ impl Lower for ast::VariableRef {
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_variable = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
 
-    generator
-      .llvm_builder
-      .build_load(llvm_variable.into_pointer_value(), "variable_ref")
+    // TODO: This logic is here to make up for parameters not being pointer values. Is this okay?
+    if llvm_variable.is_pointer_value() {
+      generator
+        .llvm_builder
+        .build_load(llvm_variable.into_pointer_value(), "variable_ref")
+    } else {
+      llvm_variable
+    }
   }
 }
 
@@ -262,8 +402,20 @@ impl Lower for ast::Function {
       ast::Type::Prototype(parameters, _, _) => {
         // TODO: Find a way to use only one loop to process both local parameters and LLVM's names.
         for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
+          // TODO: Is this cloning?
+          // TODO: Simplify this process. Maybe via implementing a `From` trait?
+          let parameter_node = &*parameters.get(i).unwrap().node.borrow();
+
+          let parameter = match parameter_node {
+            ast::Node::Parameter(parameter) => parameter,
+            _ => unreachable!(),
+          };
+
+          // TODO: No use for the resulting value?
+          parameter.lower(generator, context);
+
           // TODO: Ensure this access is safe and checked.
-          let (parameter_name, _) = parameters.get(i).unwrap();
+          let (parameter_name, _, _) = parameter;
 
           llvm_parameter.set_name(parameter_name.as_str());
         }
@@ -419,18 +571,7 @@ impl Lower for ast::Definition {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    if generator.definitions.contains_key(&self.key) {
-      // NOTE: The underlying LLVM value is not actually cloned, but rather its reference.
-      return generator.definitions.get(&self.key).unwrap().clone();
-    }
-
-    // TODO: Watchout for recursive cases, since the key isn't registered yet!
-    let llvm_value = self.node.borrow_mut().lower(generator, context);
-
-    // FIXME: This is already being done in the `memoize_or_retrieve` function. Is this redundant or problematic? Investigate.
-    generator.definitions.insert(self.key, llvm_value);
-
-    llvm_value
+    generator.memoize_or_retrieve(self.key, context)
   }
 }
 
@@ -500,7 +641,18 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::Prototype(parameter_types, return_type_result, is_variadic) => {
         let llvm_parameter_types = parameter_types
           .iter()
-          .map(|parameter_type| self.lower_type(&parameter_type.1).into())
+          .map(|parameter_type| {
+            self
+              .lower_type(
+                // TODO: Simplify. Also, is this cloning?
+                &match &*parameter_type.node.borrow() {
+                  ast::Node::Parameter(parameter) => parameter,
+                  _ => unreachable!(),
+                }
+                .1,
+              )
+              .into()
+          })
           .collect::<Vec<_>>();
 
         // TODO: Simplify code (find common ground between `void` and `basic` types).
@@ -553,7 +705,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     if !self.definitions.contains_key(&definition_key) {
       // TODO: Will there be a case where we'd need the buffers to change? If so, take in a flag parameter.
       let previous_function_buffer = self.llvm_function_buffer;
-      let previous_block = self.get_current_block();
+      let previous_block = self.llvm_builder.get_insert_block();
 
       // If the definition is not already memoized, memoize it.
       // This retrieval will panic in case of a logic error (internal error).
@@ -565,7 +717,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       self.definitions.insert(definition_key, result);
 
       // Restore buffers after processing.
-      self.llvm_builder.position_at_end(previous_block);
+      if let Some(previous_block) = previous_block {
+        self.llvm_builder.position_at_end(previous_block);
+      }
+
       self.llvm_function_buffer = previous_function_buffer;
 
       return result;

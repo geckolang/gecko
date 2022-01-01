@@ -247,14 +247,21 @@ impl<'a> Parser<'a> {
   }
 
   /// %name ':' %type_group
-  fn parse_parameter(&mut self) -> ParserResult<ast::Parameter> {
+  fn parse_parameter(&mut self, index: u32) -> ParserResult<ast::Definition> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolColon);
 
     let type_group = self.parse_type()?;
 
-    Ok((name, type_group))
+    Ok(ast::Definition {
+      name: name.clone(),
+      symbol_kind: name_resolution::SymbolKind::VariableOrParameter,
+      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Parameter((
+        name, type_group, index,
+      )))),
+      key: self.context.create_definition_key(),
+    })
   }
 
   /// '(' {%parameter* (,)} (+) ')' '~' %type_group
@@ -264,6 +271,7 @@ impl<'a> Parser<'a> {
     // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
     let mut parameters = vec![];
     let mut is_variadic = false;
+    let mut parameter_index_counter = 0;
 
     // TODO: Analyze, and remove possibility of lonely comma.
     while !self.is(token::Token::SymbolParenthesesR) && !self.is_eof() {
@@ -274,7 +282,8 @@ impl<'a> Parser<'a> {
         break;
       }
 
-      parameters.push(self.parse_parameter()?);
+      parameters.push(self.parse_parameter(parameter_index_counter)?);
+      parameter_index_counter += 1;
 
       if !self.is(token::Token::SymbolComma) {
         break;
@@ -312,8 +321,8 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
-      key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
+      key: self.context.create_definition_key(),
     })
   }
 
@@ -415,7 +424,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::LocalVariable,
+      symbol_kind: name_resolution::SymbolKind::VariableOrParameter,
       key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::LetStmt(let_stmt))),
     })
@@ -611,6 +620,8 @@ impl<'a> Parser<'a> {
 
   // TODO: Better naming and/or positioning for logic.
   fn parse_bin_expr_begin(&mut self) -> ParserResult<ast::Node> {
+    // TODO: Need support for unary expressions (such as `!`, '-', etc.).
+
     let left = self.parse_primary_expr()?;
 
     // TODO: Should the precedence be zero here?
