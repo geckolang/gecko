@@ -29,29 +29,30 @@ impl Lower for ast::BinaryExpr {
     let llvm_left = self.left.lower(generator, context);
     let llvm_right = self.right.lower(generator, context);
 
-    // FIXME: Forcing integer-only operations. Must be implemented for floats as well. (There must be a better, more generic way to do this).
+    // FIXME: Forcing integer-only operations. Must be implemented for floats as well. (There must be a better, more generic way to do this?).
 
     match self.operator {
       ast::OperatorKind::Add => generator.llvm_builder.build_int_add(
         llvm_left.into_int_value(),
         llvm_right.into_int_value(),
-        "add",
+        "add_op",
       ),
       ast::OperatorKind::Subtract => generator.llvm_builder.build_int_sub(
         llvm_left.into_int_value(),
         llvm_right.into_int_value(),
-        "subtract",
+        "subtract_op",
       ),
       ast::OperatorKind::Multiply => generator.llvm_builder.build_int_mul(
         llvm_left.into_int_value(),
         llvm_right.into_int_value(),
-        "multiply",
+        "multiply_op",
       ),
       // TODO: What if there's division by zero?
+      // TODO: Support for unsgined division?
       ast::OperatorKind::Divide => generator.llvm_builder.build_int_signed_div(
         llvm_left.into_int_value(),
         llvm_right.into_int_value(),
-        "divide",
+        "divide_op",
       ),
       // TODO: Support for all operators.
       _ => todo!(),
@@ -183,7 +184,11 @@ impl Lower for ast::Literal {
             // TODO: Is this cloning?
             *value,
             match integer_kind {
-              ast::IntSize::I8 => true,
+              ast::IntSize::I8
+              | ast::IntSize::I16
+              | ast::IntSize::I32
+              | ast::IntSize::I64
+              | ast::IntSize::Isize => true,
               _ => false,
             },
           )
@@ -195,7 +200,6 @@ impl Lower for ast::Literal {
         // TODO: Is this cloning?
         .const_int(*value as u64, false)
         .as_basic_value_enum(),
-      // TODO: Process all literals.
       ast::Literal::Bool(value) => generator
         .llvm_context
         .bool_type()
@@ -420,8 +424,10 @@ impl Lower for ast::Definition {
       return generator.definitions.get(&self.key).unwrap().clone();
     }
 
+    // TODO: Watchout for recursive cases, since the key isn't registered yet!
     let llvm_value = self.node.borrow_mut().lower(generator, context);
 
+    // FIXME: This is already being done in the `memoize_or_retrieve` function. Is this redundant or problematic? Investigate.
     generator.definitions.insert(self.key, llvm_value);
 
     llvm_value
@@ -444,6 +450,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_builder: inkwell::builder::Builder<'ctx>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
+  // TODO: Shouldn't this be a vector instead?
   definitions:
     std::collections::HashMap<context::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
 }
@@ -554,6 +561,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .borrow_mut()
         .lower(self, context);
 
+      // TODO: Should we be inserting the definition key here?
+      self.definitions.insert(definition_key, result);
+
       // Restore buffers after processing.
       self.llvm_builder.position_at_end(previous_block);
       self.llvm_function_buffer = previous_function_buffer;
@@ -561,6 +571,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       return result;
     }
 
+    // FIXME: Is this actually the case?
     // NOTE: The LLVM value is not copied, but rather the reference to it.
     self.definitions.get(&definition_key).unwrap().clone()
   }

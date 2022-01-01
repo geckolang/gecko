@@ -130,18 +130,14 @@ impl Resolvable for ast::Extern {
 impl Resolvable for ast::Definition {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: Proper naming for keys.
-    let declaration_key = resolver.create_definition_key();
 
     // Register the node on the context for lowering lookup.
     context
       .declarations
-      .insert(declaration_key, std::rc::Rc::clone(&self.node));
+      .insert(self.key, std::rc::Rc::clone(&self.node));
 
     // Bind the symbol to the current scope for name resolution lookup.
-    resolver.bind(
-      (self.name.clone(), self.symbol_kind.clone()),
-      declaration_key,
-    );
+    resolver.bind((self.name.clone(), self.symbol_kind.clone()), self.key);
 
     self.node.as_ref().borrow_mut().declare(resolver, context);
   }
@@ -229,7 +225,7 @@ impl NameResolver {
   }
 
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope.
-  fn lookup(&self, key: (String, SymbolKind)) -> Option<&usize> {
+  fn lookup(&self, key: (String, SymbolKind)) -> Option<&context::DefinitionKey> {
     // First, look on relative scopes.
     for scope in self.scopes.iter().rev() {
       if let Some(definition_key) = scope.get(&key) {
