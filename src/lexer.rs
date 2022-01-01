@@ -1,6 +1,5 @@
 use crate::{diagnostic, token};
 
-// TODO: Document (or consider merging) the `index` and `read_index` fields.
 pub struct Lexer {
   input: Vec<char>,
   index: usize,
@@ -89,7 +88,6 @@ impl Lexer {
     Ok(tokens)
   }
 
-  // TODO: Is this function needed? Why not just expand its contents for readability?
   /// Determine if the current character is unset, and therefore
   /// signifies the end of the input string.
   fn is_eof(&self) -> bool {

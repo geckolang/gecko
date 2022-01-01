@@ -26,6 +26,7 @@ impl Lower for ast::Parameter {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: In the future, consider having an `alloca` per parameter, for simpler tracking of them.
     generator
       .llvm_function_buffer
       .unwrap()
@@ -46,7 +47,7 @@ impl Lower for ast::BinaryExpr {
     // NOTE: By this point, we assume that both values are of the same type.
     let is_int_values = llvm_left_value.is_int_value();
 
-    // TODO:
+    // TODO: Make use of.
     // let is_signed = llvm_left_value.into_int_value().get_sign_extended_constant();
 
     match self.operator {
@@ -240,6 +241,7 @@ impl Lower for ast::WhileStmt {
     );
 
     generator.llvm_builder.position_at_end(llvm_then_block);
+    generator.next_block = Some(llvm_after_block);
     self.body.lower(generator, context);
 
     // Fallthrough or loop if applicable.
@@ -411,7 +413,6 @@ impl Lower for ast::Function {
             _ => unreachable!(),
           };
 
-          // TODO: No use for the resulting value?
           parameter.lower(generator, context);
 
           // TODO: Ensure this access is safe and checked.
@@ -452,8 +453,6 @@ impl Lower for ast::Extern {
       .into_pointer_type()
       .get_element_type();
 
-    assert!(llvm_function_type.is_function_type());
-
     let llvm_external_function = generator.llvm_module.add_function(
       self.name.as_str(),
       llvm_function_type.into_function_type(),
@@ -476,6 +475,11 @@ impl Lower for ast::Block {
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     for statement in &self.statements {
       statement.lower(generator, context);
+
+      // Do not continue lowering statements if the current block is terminated.
+      if generator.get_current_block().get_terminator().is_some() {
+        break;
+      }
     }
 
     generator.make_unit_value()
@@ -557,11 +561,15 @@ impl Lower for ast::FunctionCall {
 impl Lower for ast::BreakStmt {
   fn lower<'a, 'ctx>(
     &self,
-    _generator: &mut LlvmGenerator<'a, 'ctx>,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO: Must ensure that the current block is a loop block. Additionally, will also need access to the next block in advance (maybe using a buffer?).
-    todo!();
+    // NOTE: By this point, we assume that whether we're actually in a loop was handled by the type-checker.
+    generator
+      .llvm_builder
+      .build_unconditional_branch(generator.next_block.unwrap());
+
+    generator.make_unit_value()
   }
 }
 
@@ -594,6 +602,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   // TODO: Shouldn't this be a vector instead?
   definitions:
     std::collections::HashMap<context::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
+  next_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -609,6 +618,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_builder: llvm_context.create_builder(),
       llvm_function_buffer: None,
       definitions: std::collections::HashMap::new(),
+      next_block: None,
     }
   }
 
