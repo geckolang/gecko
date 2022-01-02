@@ -35,6 +35,16 @@ impl Lower for ast::Parameter {
   }
 }
 
+impl Lower for ast::UnsafeBlock {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    self.0.lower(generator, context)
+  }
+}
+
 impl Lower for ast::BinaryExpr {
   fn lower<'a, 'ctx>(
     &self,
@@ -564,6 +574,7 @@ impl Lower for ast::BreakStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: What happens if there are nested loops? Will the buffer be overwritten?
     // NOTE: By this point, we assume that whether we're actually in a loop was handled by the type-checker.
     generator
       .llvm_builder

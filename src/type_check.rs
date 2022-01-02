@@ -1,68 +1,176 @@
-use crate::{ast, context, diagnostic};
-use std::borrow::Borrow;
+use crate::{ast, context, diagnostic, dispatch};
 
 pub type TypeCheckResult = Option<Vec<diagnostic::Diagnostic>>;
 
+pub struct TypeCheckContext {
+  pub diagnostics: diagnostic::DiagnosticBuilder,
+  in_loop: bool,
+  in_unsafe_block: bool,
+  does_function_return: bool,
+}
+
+impl TypeCheckContext {
+  pub fn new() -> Self {
+    Self {
+      diagnostics: diagnostic::DiagnosticBuilder::new(),
+      in_loop: false,
+      in_unsafe_block: false,
+      does_function_return: false,
+    }
+  }
+}
+
 pub trait TypeCheck {
-  fn type_check<'ctx>(&self, context: &mut context::Context) -> Vec<diagnostic::Diagnostic>;
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context);
+}
+
+impl TypeCheck for ast::Node {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+    dispatch!(self, TypeCheck::type_check, ty_context, context);
+  }
+}
+
+impl TypeCheck for ast::UnsafeBlock {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+    // TODO: To avoid problems with nested cases, save a buffer here, then restore.
+    ty_context.in_unsafe_block = true;
+    self.0.type_check(ty_context, context);
+    ty_context.in_unsafe_block = false;
+  }
+}
+
+impl TypeCheck for ast::Extern {
+  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+  }
+}
+
+impl TypeCheck for ast::Parameter {
+  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+    todo!();
+  }
+}
+
+impl TypeCheck for ast::Block {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+    for statement in &self.statements {
+      statement.type_check(ty_context, context);
+    }
+  }
+}
+
+impl TypeCheck for ast::VariableRef {
+  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+    todo!();
+  }
+}
+
+impl TypeCheck for ast::Literal {
+  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+  }
+}
+
+impl TypeCheck for ast::IfStmt {
+  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+  }
+}
+
+impl TypeCheck for ast::BinaryExpr {
+  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+  }
+}
+
+impl TypeCheck for ast::BreakStmt {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    if !ty_context.in_loop {
+      ty_context
+        .diagnostics
+        .error("break statement may only occur inside loops".to_string());
+    }
+  }
+}
+
+impl TypeCheck for ast::Definition {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+    self.node.borrow().type_check(ty_context, context);
+  }
+}
+
+impl TypeCheck for ast::ExprWrapperStmt {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+    self.expr.type_check(ty_context, context);
+  }
+}
+
+impl TypeCheck for ast::LetStmt {
+  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+  }
+}
+
+impl TypeCheck for ast::ReturnStmt {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    if ty_context.does_function_return && self.value.is_none() {
+      ty_context
+        .diagnostics
+        .error("return statement must have a value".to_string());
+    } else if !ty_context.does_function_return && self.value.is_some() {
+      ty_context
+        .diagnostics
+        .error("return statement must not have a value".to_string());
+    }
+  }
 }
 
 impl TypeCheck for ast::Function {
-  fn type_check<'ctx>(&self, _context: &mut context::Context) -> Vec<diagnostic::Diagnostic> {
-    let mut diagnostics = diagnostic::DiagnosticBuilder::new();
-    let mut is_value_returned = false;
-    let mut block_queue = vec![&self.body];
-
-    while let Some(next_block) = block_queue.pop() {
-      for statement in &next_block.statements {
-        // TODO: Implement.
-        // block_queue.extend(match statement {
-        //   // TODO:
-        //   _ => vec![],
-        // });
-
-        if let ast::Node::ReturnStmt(return_stmt) = statement.borrow() {
-          if return_stmt.value.is_some() {
-            is_value_returned = true;
-
-            break;
-          }
-        }
-      }
-    }
-
-    match &self.prototype {
-      ast::Type::Prototype(_parameters, return_type, _is_variadic) => {
-        // Ensure function returns a value if its return type is defined.
-        if return_type.is_some() && !is_value_returned {
-          diagnostics.error(format!("function `{}` must return a value", self.name));
-        }
-      }
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+    ty_context.does_function_return = match &self.prototype {
+      ast::Type::Prototype(_, return_type, _) => return_type.is_some(),
       _ => unreachable!(),
     };
 
-    diagnostics.into()
+    // TODO: Type-check parameters?
+    self.body.type_check(ty_context, context);
+
+    // TODO: If it must return value, ensure a value was returned.
   }
 }
 
 impl TypeCheck for ast::FunctionCall {
-  fn type_check<'ctx>(&self, context: &mut context::Context) -> Vec<diagnostic::Diagnostic> {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
     // TODO: Need access to the current function.
     // TODO: Ensure externs and unsafe function are only called from unsafe functions.
-    // TODO: Continue implementation.
 
     let callee = context
       .declarations
       .get(self.callee_definition_key.as_ref().unwrap())
       .unwrap();
 
+    // TODO: Continue implementation.
     match *callee.as_ref().borrow() {
-      ast::Node::Extern(_) => todo!(),
-      _ => todo!(),
+      ast::Node::Extern(_) => {
+        if !ty_context.in_unsafe_block {
+          ty_context
+            .diagnostics
+            .error("extern function calls may only occur inside an unsafe block".to_string());
+        }
+      }
+      _ => {}
     };
+  }
+}
 
-    todo!();
-
-    // vec![]
+impl TypeCheck for ast::WhileStmt {
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+    // TODO: To avoid problems with nested cases, save a buffer here, then restore.
+    ty_context.in_loop = true;
+    self.condition.type_check(ty_context, context);
+    self.body.type_check(ty_context, context);
+    ty_context.in_loop = false;
   }
 }

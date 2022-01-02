@@ -22,6 +22,7 @@ macro_rules! dispatch {
       $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::UnsafeBlock(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -71,7 +72,10 @@ pub enum Node {
   VariableRef(VariableRef),
   BinaryExpr(BinaryExpr),
   Parameter(Parameter),
+  UnsafeBlock(UnsafeBlock),
 }
+
+pub struct UnsafeBlock(pub Block);
 
 pub struct VariableRef {
   pub name: String,

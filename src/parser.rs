@@ -165,6 +165,7 @@ impl<'a> Parser<'a> {
         token::Token::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
         token::Token::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
+        token::Token::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
         token::Token::Identifier(_) if !self.peek_is(token::Token::SymbolParenthesesL) => {
           ast::Node::VariableRef(self.parse_variable_ref()?)
         }
@@ -469,6 +470,13 @@ impl<'a> Parser<'a> {
     skip_past!(self, token::Token::SymbolSemiColon);
 
     Ok(ast::BreakStmt {})
+  }
+
+  // unsafe %block
+  fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlock> {
+    skip_past!(self, token::Token::KeywordUnsafe);
+
+    Ok(ast::UnsafeBlock(self.parse_block()?))
   }
 
   /// {true | false}

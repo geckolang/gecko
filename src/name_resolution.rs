@@ -26,6 +26,16 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::UnsafeBlock {
+  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.0.declare(resolver, context);
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.0.resolve(resolver, context);
+  }
+}
+
 impl Resolvable for ast::Parameter {
   //
 }
@@ -33,7 +43,9 @@ impl Resolvable for ast::Parameter {
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
     // TODO: Cloning name.
-    if let Some(definition_key) = resolver.lookup((self.name.clone(), SymbolKind::VariableOrParameter)) {
+    if let Some(definition_key) =
+      resolver.lookup((self.name.clone(), SymbolKind::VariableOrParameter))
+    {
       self.definition_key = Some(definition_key.clone());
     } else {
       resolver
