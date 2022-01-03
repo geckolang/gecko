@@ -1,7 +1,4 @@
-use crate::{
-  context::{self, DefinitionKey},
-  name_resolution,
-};
+use crate::{context, name_resolution};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -30,7 +27,7 @@ macro_rules! dispatch {
 /// A parameter containing its name, type, and index position.
 pub type Parameter = (String, Type, u32);
 
-#[derive(PartialEq, PartialOrd)]
+#[derive(PartialEq, PartialOrd, Clone)]
 pub enum IntSize {
   U8,
   U16,
@@ -44,6 +41,7 @@ pub enum IntSize {
   Isize,
 }
 
+#[derive(PartialEq, Clone)]
 pub enum PrimitiveType {
   Int(IntSize),
   Bool,
@@ -51,6 +49,7 @@ pub enum PrimitiveType {
   String,
 }
 
+#[derive(Clone)]
 pub enum Type {
   PrimitiveType(PrimitiveType),
   Prototype(Vec<Definition>, Option<Box<Type>>, bool),
@@ -79,7 +78,7 @@ pub struct UnsafeBlock(pub Block);
 
 pub struct VariableRef {
   pub name: String,
-  pub definition_key: Option<DefinitionKey>,
+  pub definition_key: Option<context::DefinitionKey>,
 }
 
 pub enum Literal {
@@ -135,7 +134,7 @@ pub struct ExprWrapperStmt {
 
 pub struct FunctionCall {
   pub callee_name: String,
-  pub callee_definition_key: Option<DefinitionKey>,
+  pub callee_definition_key: Option<context::DefinitionKey>,
   pub arguments: Vec<Node>,
 }
 
@@ -158,6 +157,7 @@ pub struct BinaryExpr {
   pub operator: OperatorKind,
 }
 
+#[derive(Clone)]
 pub struct Definition {
   pub name: String,
   pub symbol_kind: name_resolution::SymbolKind,

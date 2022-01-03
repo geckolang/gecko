@@ -2,6 +2,57 @@ use crate::{ast, context, diagnostic, dispatch};
 
 pub type TypeCheckResult = Option<Vec<diagnostic::Diagnostic>>;
 
+// TODO: Consider making this an optional function under the `TypeCheck` trait?
+fn infer_type_of(
+  node: &Box<ast::Node>,
+  context: &mut context::Context,
+) -> Option<ast::PrimitiveType> {
+  match node.as_ref() {
+    // NOTE: Binary expressions are checked recursively, to have all
+    // its sub-expressions be the same type. In other words, we just
+    // need to check any single sub-expression.
+    // FIXME: This is wrong in our context. We're using this to check for booleans.
+    ast::Node::BinaryExpr(binary_expr) => infer_type_of(&binary_expr.left, context),
+    ast::Node::Literal(ast::Literal::Bool(_)) => Some(ast::PrimitiveType::Bool),
+    ast::Node::Literal(ast::Literal::Char(_)) => Some(ast::PrimitiveType::Char),
+    ast::Node::Literal(ast::Literal::Int(_, size)) => Some(ast::PrimitiveType::Int(size.clone())),
+    ast::Node::Literal(ast::Literal::String(_)) => Some(ast::PrimitiveType::String),
+    // TODO: Implement.
+    ast::Node::VariableRef(_variable_ref) => todo!(),
+    ast::Node::FunctionCall(function_call) => {
+      // TODO: Is this cloning? Simplify this messy code section.
+      let function_or_extern = &*context
+        .declarations
+        .get(&function_call.callee_definition_key.unwrap())
+        .unwrap()
+        .as_ref()
+        .borrow();
+
+      let prototype = match function_or_extern {
+        ast::Node::Function(function) => &function.prototype,
+        ast::Node::Extern(extern_) => &extern_.prototype,
+        _ => unreachable!(),
+      };
+
+      // TODO: Simplify this process.
+      match prototype {
+        ast::Type::Prototype(_, return_type, _) => {
+          if return_type.is_none() {
+            None
+          } else {
+            match return_type.as_ref().unwrap().as_ref() {
+              ast::Type::PrimitiveType(primitive_type) => Some(primitive_type.clone()),
+              _ => unreachable!(),
+            }
+          }
+        }
+        _ => unreachable!(),
+      }
+    }
+    _ => unreachable!(),
+  }
+}
+
 pub struct TypeCheckContext {
   pub diagnostics: diagnostic::DiagnosticBuilder,
   in_loop: bool,
@@ -63,19 +114,22 @@ impl TypeCheck for ast::Block {
 impl TypeCheck for ast::VariableRef {
   fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
     // TODO: Implement.
-    todo!();
   }
 }
 
 impl TypeCheck for ast::Literal {
   fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    // TODO: Implement.
+    //
   }
 }
 
 impl TypeCheck for ast::IfStmt {
-  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    // TODO: Implement.
+  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+    if infer_type_of(&self.condition, context) != Some(ast::PrimitiveType::Bool) {
+      ty_context
+        .diagnostics
+        .error("if statement condition must evaluate to a boolean".to_string());
+    }
   }
 }
 
