@@ -219,6 +219,32 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::PrimitiveType(ast::PrimitiveType::Bool))
   }
 
+  fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
+    skip_past!(self, token::Token::SymbolBracketL);
+
+    let element_type = self.parse_type()?;
+
+    skip_past!(self, token::Token::SymbolComma);
+
+    // TODO: Cloning token.
+    let current_token = self.tokens[self.index].clone();
+
+    let size = match current_token {
+      token::Token::LiteralInt(value) => value as u32,
+      _ => {
+        return Err(diagnostic::Diagnostic {
+          message: format!("unexpected token `{}`, expected array size", current_token),
+          severity: diagnostic::Severity::Error,
+        });
+      }
+    };
+
+    self.skip();
+    skip_past!(self, token::Token::SymbolBracketR);
+
+    Ok(ast::Type::Array(Box::new(element_type), size.clone()))
+  }
+
   /// %type
   fn parse_type(&mut self) -> ParserResult<ast::Type> {
     // TODO: Check if the index is valid?
@@ -234,6 +260,7 @@ impl<'a> Parser<'a> {
 
         Ok(ast::Type::PrimitiveType(ast::PrimitiveType::String))
       }
+      token::Token::SymbolBracketL => self.parse_array_type(),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(

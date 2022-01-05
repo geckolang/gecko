@@ -658,6 +658,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum(),
       },
+      ast::Type::Array(_element_type, size) => self
+        .lower_type(&_element_type)
+        .array_type(size.clone())
+        .as_basic_type_enum(),
       ast::Type::Prototype(parameter_types, return_type_result, is_variadic) => {
         let llvm_parameter_types = parameter_types
           .iter()
@@ -690,7 +694,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
             // TODO: Is `is_variadic` being copied?
             .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
             .ptr_type(inkwell::AddressSpace::Generic)
-            .into()
+            .as_basic_type_enum()
         }
       }
     }

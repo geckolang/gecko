@@ -51,6 +51,7 @@ pub enum PrimitiveType {
 
 #[derive(Clone)]
 pub enum Type {
+  Array(Box<Type>, u32),
   PrimitiveType(PrimitiveType),
   Prototype(Vec<Definition>, Option<Box<Type>>, bool),
 }

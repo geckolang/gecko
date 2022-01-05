@@ -41,6 +41,8 @@ pub enum Token {
   SymbolSemiColon,
   SymbolLessThan,
   SymbolGreaterThan,
+  SymbolBracketL,
+  SymbolBracketR,
 }
 
 impl std::fmt::Display for Token {

@@ -184,12 +184,13 @@ impl TypeCheck for ast::LetStmt {
 
     let self_type = Some(match &self.ty {
       ast::Type::PrimitiveType(primitive_type) => primitive_type.clone(),
+      // TODO: Array types support?
       _ => unreachable!(),
     });
 
     let value_type = self.value.infer_type(context);
 
-    // FIXME: Ensure this comparison works as expected.
+    // TODO: Ensure this comparison works as expected (especially for complex types).
     if self_type != value_type {
       type_context
         .diagnostics
@@ -219,7 +220,7 @@ impl TypeCheck for ast::Function {
       _ => unreachable!(),
     };
 
-    // TODO: Type-check parameters?
+    // NOTE: No need to type-check parameters.
     self.body.type_check(type_context, context);
 
     // TODO: If it must return value, ensure a value was returned.

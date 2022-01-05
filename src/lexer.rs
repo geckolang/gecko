@@ -206,6 +206,8 @@ impl Lexer {
         ';' => token::Token::SymbolSemiColon,
         '<' => token::Token::SymbolLessThan,
         '>' => token::Token::SymbolGreaterThan,
+        '[' => token::Token::SymbolBracketL,
+        ']' => token::Token::SymbolBracketR,
         _ => {
           // NOTE: Identifiers will never start with a digit.
           return if current_char == '_' || is_letter(current_char) {
