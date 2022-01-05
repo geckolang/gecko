@@ -42,9 +42,8 @@ impl Resolvable for ast::Parameter {
 
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
-    // TODO: Cloning name.
     if let Some(definition_key) =
-      resolver.lookup((self.name.clone(), SymbolKind::VariableOrParameter))
+      resolver.lookup(&(self.name.clone(), SymbolKind::VariableOrParameter))
     {
       self.definition_key = Some(definition_key.clone());
     } else {
@@ -184,9 +183,8 @@ impl Resolvable for ast::Definition {
 impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
-    // TODO: Cloning name.
     if let Some(callee_key) =
-      resolver.lookup((self.callee_name.clone(), SymbolKind::FunctionOrExtern))
+      resolver.lookup(&(self.callee_name.clone(), SymbolKind::FunctionOrExtern))
     {
       self.callee_definition_key = Some(callee_key.clone());
     } else {
@@ -257,7 +255,7 @@ impl NameResolver {
   }
 
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope.
-  fn lookup(&self, key: (String, SymbolKind)) -> Option<&context::DefinitionKey> {
+  fn lookup(&self, key: &(String, SymbolKind)) -> Option<&context::DefinitionKey> {
     // First, look on relative scopes.
     for scope in self.scopes.iter().rev() {
       if let Some(definition_key) = scope.get(&key) {

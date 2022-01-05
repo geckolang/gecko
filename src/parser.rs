@@ -600,20 +600,19 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_bin_expr(&mut self, left: ast::Node, min_precedence: usize) -> ParserResult<ast::Node> {
-    // TODO: Cloning token.
-    let mut token = self.tokens[self.index].clone();
+    let mut token = &self.tokens[self.index];
     let precedence = get_token_precedence(&token);
     let mut result = left;
 
-    while is_binary_operator(&token) && (precedence > min_precedence) {
+    while is_binary_operator(token) && (precedence > min_precedence) {
       let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
-      // TODO: Cloning token.
-      token = self.tokens[self.index].clone();
+
+      token = &self.tokens[self.index];
 
       while is_binary_operator(&token) && get_token_precedence(&token) > precedence {
         right = self.parse_bin_expr(right, precedence + 1)?;
-        token = self.tokens[self.index].clone();
+        token = &self.tokens[self.index];
       }
 
       result = ast::Node::BinaryExpr(ast::BinaryExpr {
@@ -638,8 +637,6 @@ impl<'a> Parser<'a> {
 
   /// %name '(' (%expr (,))* ')'
   fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
-    // TODO: We need to push a definition within parser. Then, make use of the callee name.
-
     let callee_name = self.parse_name()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);

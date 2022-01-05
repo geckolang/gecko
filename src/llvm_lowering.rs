@@ -333,8 +333,7 @@ impl Lower for ast::Literal {
 
         llvm_int_type
           .const_int(
-            // TODO: Is this cloning?
-            *value,
+            value.clone(),
             match integer_kind {
               ast::IntSize::I8
               | ast::IntSize::I16
