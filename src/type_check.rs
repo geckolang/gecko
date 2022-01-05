@@ -17,8 +17,26 @@ fn infer_type_of(
     ast::Node::Literal(ast::Literal::Char(_)) => Some(ast::PrimitiveType::Char),
     ast::Node::Literal(ast::Literal::Int(_, size)) => Some(ast::PrimitiveType::Int(size.clone())),
     ast::Node::Literal(ast::Literal::String(_)) => Some(ast::PrimitiveType::String),
-    // TODO: Implement.
-    ast::Node::VariableRef(_variable_ref) => todo!(),
+    ast::Node::VariableRef(variable_ref) => {
+      let target_variable = &*context
+        .declarations
+        .get(&variable_ref.definition_key.unwrap())
+        .unwrap()
+        .as_ref()
+        .borrow();
+
+      // TODO: Simplify code.
+      let variable_type = match target_variable {
+        ast::Node::LetStmt(let_stmt) => &let_stmt.ty,
+        ast::Node::Parameter(parameter) => &parameter.1,
+        _ => unreachable!(),
+      };
+
+      match variable_type {
+        ast::Type::PrimitiveType(primitive_type) => Some(primitive_type.clone()),
+        _ => unreachable!(),
+      }
+    }
     ast::Node::FunctionCall(function_call) => {
       // TODO: Is this cloning? Simplify this messy code section.
       let function_or_extern = &*context
@@ -72,61 +90,58 @@ impl TypeCheckContext {
 }
 
 pub trait TypeCheck {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context);
+  fn type_check<'ctx>(
+    &self,
+    _type_context: &mut TypeCheckContext,
+    _context: &mut context::Context,
+  ) {
+    //
+  }
 }
 
 impl TypeCheck for ast::Node {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
-    dispatch!(self, TypeCheck::type_check, ty_context, context);
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    dispatch!(self, TypeCheck::type_check, type_context, context);
   }
 }
 
 impl TypeCheck for ast::UnsafeBlock {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
-    // TODO: To avoid problems with nested cases, save a buffer here, then restore.
-    ty_context.in_unsafe_block = true;
-    self.0.type_check(ty_context, context);
-    ty_context.in_unsafe_block = false;
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    // TODO: To avoid problems with nested cases, save a buffer here, then restore?
+    type_context.in_unsafe_block = true;
+    self.0.type_check(type_context, context);
+    type_context.in_unsafe_block = false;
   }
 }
 
 impl TypeCheck for ast::Extern {
-  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    // TODO: Implement.
-  }
+  //
 }
 
 impl TypeCheck for ast::Parameter {
-  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    // TODO: Implement.
-    todo!();
-  }
+  //
 }
 
 impl TypeCheck for ast::Block {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     for statement in &self.statements {
-      statement.type_check(ty_context, context);
+      statement.type_check(type_context, context);
     }
   }
 }
 
 impl TypeCheck for ast::VariableRef {
-  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    // TODO: Implement.
-  }
+  //
 }
 
 impl TypeCheck for ast::Literal {
-  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    //
-  }
+  //
 }
 
 impl TypeCheck for ast::IfStmt {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     if infer_type_of(&self.condition, context) != Some(ast::PrimitiveType::Bool) {
-      ty_context
+      type_context
         .diagnostics
         .error("if statement condition must evaluate to a boolean".to_string());
     }
@@ -134,15 +149,51 @@ impl TypeCheck for ast::IfStmt {
 }
 
 impl TypeCheck for ast::BinaryExpr {
-  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    // TODO: Implement.
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    self.left.type_check(type_context, context);
+    self.right.type_check(type_context, context);
+
+    let left_type = infer_type_of(&self.left, context);
+    let right_type = infer_type_of(&self.right, context);
+
+    // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
+
+    // FIXME: Does this equality check work as expected? Research & ensure.
+    if left_type != right_type {
+      type_context
+        .diagnostics
+        .error("binary expression operands must be the same type".to_string());
+
+      return;
+    }
+
+    // TODO: Check for mixed operators that don't make sense (ex. addition, then a comparison operator).
+
+    // NOTE: By this point, it is assumed that both operands are of the same type.
+    match self.operator {
+      ast::OperatorKind::Add
+      | ast::OperatorKind::Subtract
+      | ast::OperatorKind::Multiply
+      | ast::OperatorKind::Divide
+      | ast::OperatorKind::LessThan
+      | ast::OperatorKind::GreaterThan => {
+        // TODO: What about floats?
+        if !matches!(left_type, Some(ast::PrimitiveType::Int(_))) {
+          type_context
+            .diagnostics
+            .error("binary expression operands must be both integers".to_string());
+        }
+      }
+      // TODO: Equality operator, and others?
+      _ => todo!(),
+    }
   }
 }
 
 impl TypeCheck for ast::BreakStmt {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    if !ty_context.in_loop {
-      ty_context
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    if !type_context.in_loop {
+      type_context
         .diagnostics
         .error("break statement may only occur inside loops".to_string());
     }
@@ -150,31 +201,45 @@ impl TypeCheck for ast::BreakStmt {
 }
 
 impl TypeCheck for ast::Definition {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
-    self.node.borrow().type_check(ty_context, context);
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    self.node.borrow().type_check(type_context, context);
   }
 }
 
 impl TypeCheck for ast::ExprWrapperStmt {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
-    self.expr.type_check(ty_context, context);
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    self.expr.type_check(type_context, context);
   }
 }
 
 impl TypeCheck for ast::LetStmt {
-  fn type_check<'ctx>(&self, _ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    // TODO: Implement.
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    self.value.type_check(type_context, context);
+
+    let self_type = Some(match &self.ty {
+      ast::Type::PrimitiveType(primitive_type) => primitive_type.clone(),
+      _ => unreachable!(),
+    });
+
+    let value_type = infer_type_of(&self.value, context);
+
+    // FIXME: Ensure this comparison works as expected.
+    if self_type != value_type {
+      type_context
+        .diagnostics
+        .error("let statement value and type mismatch".to_string());
+    }
   }
 }
 
 impl TypeCheck for ast::ReturnStmt {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, _context: &mut context::Context) {
-    if ty_context.does_function_return && self.value.is_none() {
-      ty_context
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    if type_context.does_function_return && self.value.is_none() {
+      type_context
         .diagnostics
         .error("return statement must have a value".to_string());
-    } else if !ty_context.does_function_return && self.value.is_some() {
-      ty_context
+    } else if !type_context.does_function_return && self.value.is_some() {
+      type_context
         .diagnostics
         .error("return statement must not have a value".to_string());
     }
@@ -182,21 +247,21 @@ impl TypeCheck for ast::ReturnStmt {
 }
 
 impl TypeCheck for ast::Function {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
-    ty_context.does_function_return = match &self.prototype {
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    type_context.does_function_return = match &self.prototype {
       ast::Type::Prototype(_, return_type, _) => return_type.is_some(),
       _ => unreachable!(),
     };
 
     // TODO: Type-check parameters?
-    self.body.type_check(ty_context, context);
+    self.body.type_check(type_context, context);
 
     // TODO: If it must return value, ensure a value was returned.
   }
 }
 
 impl TypeCheck for ast::FunctionCall {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     // TODO: Need access to the current function.
     // TODO: Ensure externs and unsafe function are only called from unsafe functions.
 
@@ -208,8 +273,8 @@ impl TypeCheck for ast::FunctionCall {
     // TODO: Continue implementation.
     match *callee.as_ref().borrow() {
       ast::Node::Extern(_) => {
-        if !ty_context.in_unsafe_block {
-          ty_context
+        if !type_context.in_unsafe_block {
+          type_context
             .diagnostics
             .error("extern function calls may only occur inside an unsafe block".to_string());
         }
@@ -220,11 +285,11 @@ impl TypeCheck for ast::FunctionCall {
 }
 
 impl TypeCheck for ast::WhileStmt {
-  fn type_check<'ctx>(&self, ty_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check<'ctx>(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     // TODO: To avoid problems with nested cases, save a buffer here, then restore.
-    ty_context.in_loop = true;
-    self.condition.type_check(ty_context, context);
-    self.body.type_check(ty_context, context);
-    ty_context.in_loop = false;
+    type_context.in_loop = true;
+    self.condition.type_check(type_context, context);
+    self.body.type_check(type_context, context);
+    type_context.in_loop = false;
   }
 }
