@@ -165,13 +165,17 @@ impl<'a> Parser<'a> {
         token::Token::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
         token::Token::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
+        token::Token::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
         token::Token::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
+        token::Token::Identifier(_) if self.peek_is(token::Token::SymbolBracketL) => {
+          ast::Node::ArrayAssignStmt(self.parse_array_assign_stmt()?)
+        }
         token::Token::Identifier(_) if !self.peek_is(token::Token::SymbolParenthesesL) => {
           ast::Node::VariableRef(self.parse_variable_ref()?)
         }
         _ => {
           let result = ast::Node::ExprWrapperStmt(ast::ExprWrapperStmt {
-            expr: Box::new(self.parse_bin_expr_begin()?),
+            expr: Box::new(self.parse_expr()?),
           });
 
           skip_past!(self, token::Token::SymbolSemiColon);
@@ -412,7 +416,7 @@ impl<'a> Parser<'a> {
 
     // TODO: Does this cover all cases?
     if !self.is(token::Token::SymbolSemiColon) {
-      value = Some(Box::new(self.parse_bin_expr_begin()?));
+      value = Some(Box::new(self.parse_expr()?));
     }
 
     skip_past!(self, token::Token::SymbolSemiColon);
@@ -434,7 +438,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, token::Token::SymbolEqual);
 
-    let value = self.parse_bin_expr_begin()?;
+    let value = self.parse_expr()?;
 
     skip_past!(self, token::Token::SymbolSemiColon);
 
@@ -462,7 +466,7 @@ impl<'a> Parser<'a> {
   fn parse_if_stmt(&mut self) -> ParserResult<ast::IfStmt> {
     skip_past!(self, token::Token::KeywordIf);
 
-    let condition = self.parse_bin_expr_begin()?;
+    let condition = self.parse_expr()?;
     let then_block = self.parse_block()?;
     let mut else_block = None;
 
@@ -482,7 +486,7 @@ impl<'a> Parser<'a> {
   fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt> {
     skip_past!(self, token::Token::KeywordWhile);
 
-    let condition = self.parse_bin_expr_begin()?;
+    let condition = self.parse_expr()?;
     let body = self.parse_block()?;
 
     Ok(ast::WhileStmt {
@@ -499,11 +503,41 @@ impl<'a> Parser<'a> {
     Ok(ast::BreakStmt {})
   }
 
+  /// continue ';'
+  fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
+    skip_past!(self, token::Token::KeywordContinue);
+    skip_past!(self, token::Token::SymbolSemiColon);
+
+    Ok(ast::ContinueStmt)
+  }
+
   // unsafe %block
   fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlock> {
     skip_past!(self, token::Token::KeywordUnsafe);
 
     Ok(ast::UnsafeBlock(self.parse_block()?))
+  }
+
+  fn parse_array_assign_stmt(&mut self) -> ParserResult<ast::ArrayAssignStmt> {
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolBracketL);
+
+    let index = Box::new(self.parse_expr()?);
+
+    skip_past!(self, token::Token::SymbolBracketR);
+    skip_past!(self, token::Token::SymbolEqual);
+
+    let value = Box::new(self.parse_expr()?);
+
+    skip_past!(self, token::Token::SymbolSemiColon);
+
+    Ok(ast::ArrayAssignStmt {
+      name,
+      index,
+      value,
+      definition_key: None,
+    })
   }
 
   /// {true | false}
@@ -568,6 +602,55 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  fn parse_array_value(&mut self) -> ParserResult<ast::ArrayValue> {
+    let mut elements = Vec::new();
+
+    skip_past!(self, token::Token::SymbolBracketL);
+
+    loop {
+      if self.is(token::Token::SymbolBracketR) {
+        break;
+      }
+
+      elements.push(self.parse_expr()?);
+
+      // TODO: Make sure there isn't space for lonely commas.
+      if self.is(token::Token::SymbolComma) {
+        self.skip();
+      }
+    }
+
+    // Skip the closing bracket.
+    self.skip();
+
+    let mut explicit_type = None;
+
+    if elements.is_empty() {
+      explicit_type = Some(self.parse_type()?);
+    }
+
+    Ok(ast::ArrayValue {
+      elements,
+      explicit_type,
+    })
+  }
+
+  fn parse_array_indexing(&mut self) -> ParserResult<ast::ArrayIndexing> {
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolBracketL);
+
+    let index = Box::new(self.parse_expr()?);
+
+    skip_past!(self, token::Token::SymbolBracketR);
+
+    Ok(ast::ArrayIndexing {
+      name,
+      index,
+      definition_key: None,
+    })
+  }
+
   fn parse_literal(&mut self) -> ParserResult<ast::Literal> {
     let current_token = &self.tokens[self.index];
 
@@ -591,10 +674,13 @@ impl<'a> Parser<'a> {
       token::Token::Identifier(_) => {
         if self.peek_is(token::Token::SymbolParenthesesL) {
           ast::Node::FunctionCall(self.parse_function_call()?)
+        } else if self.peek_is(token::Token::SymbolBracketL) {
+          ast::Node::ArrayIndexing(self.parse_array_indexing()?)
         } else {
           ast::Node::VariableRef(self.parse_variable_ref()?)
         }
       }
+      token::Token::SymbolBracketL => ast::Node::ArrayValue(self.parse_array_value()?),
       // Default to a literal if nothing else matched.
       _ => ast::Node::Literal(self.parse_literal()?),
     })
@@ -653,7 +739,7 @@ impl<'a> Parser<'a> {
   }
 
   // TODO: Better naming and/or positioning for logic.
-  fn parse_bin_expr_begin(&mut self) -> ParserResult<ast::Node> {
+  fn parse_expr(&mut self) -> ParserResult<ast::Node> {
     // TODO: Need support for unary expressions (such as `!`, '-', etc.).
 
     let left = self.parse_primary_expr()?;
@@ -671,7 +757,7 @@ impl<'a> Parser<'a> {
     let mut arguments = vec![];
 
     while !self.is_eof() && !self.is(token::Token::SymbolParenthesesR) {
-      arguments.push(self.parse_bin_expr_begin()?);
+      arguments.push(self.parse_expr()?);
 
       if self.is(token::Token::SymbolComma) {
         self.skip();

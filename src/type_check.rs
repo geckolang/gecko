@@ -18,6 +18,10 @@ impl TypeCheckContext {
       does_function_return: false,
     }
   }
+
+  fn _unify_types() {
+    // TODO: Implement.
+  }
 }
 
 pub trait TypeCheck {
@@ -38,6 +42,28 @@ impl TypeCheck for ast::Node {
   fn infer_type(&self, context: &context::Context) -> Option<ast::PrimitiveType> {
     dispatch!(self, TypeCheck::infer_type, context)
   }
+}
+
+impl TypeCheck for ast::ContinueStmt {
+  fn type_check(&self, type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    if !type_context.in_loop {
+      type_context
+        .diagnostics
+        .error("continue statement may only occur inside loops".to_string());
+    }
+  }
+}
+
+impl TypeCheck for ast::ArrayIndexing {
+  // TODO: Infer type.
+
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+  }
+}
+
+impl TypeCheck for ast::ArrayValue {
+  // TODO: Implement. Ensure all values are of the same type.
 }
 
 impl TypeCheck for ast::UnsafeBlock {
@@ -178,6 +204,12 @@ impl TypeCheck for ast::ExprWrapperStmt {
   }
 }
 
+impl TypeCheck for ast::ArrayAssignStmt {
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement.
+  }
+}
+
 impl TypeCheck for ast::LetStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     self.value.type_check(type_context, context);
@@ -185,7 +217,8 @@ impl TypeCheck for ast::LetStmt {
     let self_type = Some(match &self.ty {
       ast::Type::PrimitiveType(primitive_type) => primitive_type.clone(),
       // TODO: Array types support?
-      _ => unreachable!(),
+      // FIXME: Temporary, for debugging purposes.
+      _ => return,
     });
 
     let value_type = self.value.infer_type(context);

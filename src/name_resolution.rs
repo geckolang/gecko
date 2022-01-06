@@ -26,6 +26,52 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::ContinueStmt {
+  //
+}
+
+impl Resolvable for ast::ArrayIndexing {
+  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.index.resolve(resolver, context);
+
+    // TODO: Find a way to merge this logic with the `VariableRef` node.
+    if let Some(definition_key) =
+      resolver.lookup(&(self.name.clone(), SymbolKind::VariableOrParameter))
+    {
+      self.definition_key = Some(definition_key.clone());
+    } else {
+      resolver
+        .diagnostics
+        .error(format!("undefined reference to array `{}`", self.name));
+    }
+  }
+}
+
+impl Resolvable for ast::ArrayValue {
+  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    for element in &mut self.elements {
+      element.resolve(resolver, context);
+    }
+  }
+}
+
+impl Resolvable for ast::ArrayAssignStmt {
+  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.value.resolve(resolver, context);
+
+    // TODO: Find a way to merge this logic with the `VariableRef` node.
+    if let Some(definition_key) =
+      resolver.lookup(&(self.name.clone(), SymbolKind::VariableOrParameter))
+    {
+      self.definition_key = Some(definition_key.clone());
+    } else {
+      resolver
+        .diagnostics
+        .error(format!("undefined reference to array `{}`", self.name));
+    }
+  }
+}
+
 impl Resolvable for ast::UnsafeBlock {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.0.declare(resolver, context);

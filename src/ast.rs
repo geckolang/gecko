@@ -14,12 +14,16 @@ macro_rules! dispatch {
       $crate::ast::Node::WhileStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::FunctionCall(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::ArrayAssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::UnsafeBlock(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -67,12 +71,36 @@ pub enum Node {
   WhileStmt(WhileStmt),
   FunctionCall(FunctionCall),
   BreakStmt(BreakStmt),
+  ContinueStmt(ContinueStmt),
   ExprWrapperStmt(ExprWrapperStmt),
+  ArrayAssignStmt(ArrayAssignStmt),
   Definition(Definition),
   VariableRef(VariableRef),
   BinaryExpr(BinaryExpr),
   Parameter(Parameter),
   UnsafeBlock(UnsafeBlock),
+  ArrayValue(ArrayValue),
+  ArrayIndexing(ArrayIndexing),
+}
+
+pub struct ContinueStmt;
+
+pub struct ArrayIndexing {
+  pub name: String,
+  pub index: Box<Node>,
+  pub definition_key: Option<context::DefinitionKey>,
+}
+
+pub struct ArrayAssignStmt {
+  pub name: String,
+  pub index: Box<Node>,
+  pub value: Box<Node>,
+  pub definition_key: Option<context::DefinitionKey>,
+}
+
+pub struct ArrayValue {
+  pub elements: Vec<Node>,
+  pub explicit_type: Option<Type>,
 }
 
 pub struct UnsafeBlock(pub Block);

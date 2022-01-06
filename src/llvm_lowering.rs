@@ -1,5 +1,5 @@
 use crate::{ast, context, dispatch};
-use inkwell::values::BasicValue;
+use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
 pub trait Lower {
@@ -20,6 +20,88 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::ContinueStmt {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    _context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    generator
+      .llvm_builder
+      .build_unconditional_branch(generator.get_current_block());
+
+    generator.make_unit_value()
+  }
+}
+
+impl Lower for ast::ArrayIndexing {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    let llvm_index = self.index.lower(generator, context).into_int_value();
+    let llvm_target_array = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
+
+    // TODO: Implement.
+    todo!();
+    // generator
+    //   .llvm_builder
+    //   .build_extract_value(
+    //     llvm_target_array.into_array_value(),
+    //     llvm_index,
+    //     "array_indexing",
+    //   )
+    //   .unwrap()
+  }
+}
+
+impl Lower for ast::ArrayValue {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    let mut llvm_values = Vec::new();
+
+    llvm_values.reserve(self.elements.len());
+
+    for element in &self.elements {
+      llvm_values.push(element.lower(generator, context));
+    }
+
+    // TODO: Is this cast (usize -> u32) safe?
+    let llvm_array_type = if llvm_values.is_empty() {
+      generator.lower_type(self.explicit_type.as_ref().unwrap())
+    } else {
+      llvm_values.first().unwrap().get_type()
+    }
+    .array_type(llvm_values.len() as u32);
+
+    let llvm_array_alloca = generator
+      .llvm_builder
+      .build_alloca(llvm_array_type, "array_value");
+
+    let llvm_array_ref = generator
+      .llvm_builder
+      .build_load(llvm_array_alloca, "array_load")
+      .into_array_value();
+
+    // TODO: Double loop is redundant (adds complexity). With a single one should be fine. Re-implement.
+    for (index, llvm_value) in llvm_values.iter().enumerate() {
+      generator.llvm_builder.build_insert_value(
+        llvm_array_ref,
+        llvm_value.clone(),
+        // TODO: Is this cast safe?
+        index as u32,
+        "array_init",
+      );
+    }
+
+    llvm_array_ref.as_basic_value_enum()
+  }
+}
+
 impl Lower for ast::Parameter {
   fn lower<'a, 'ctx>(
     &self,
@@ -32,6 +114,26 @@ impl Lower for ast::Parameter {
       .unwrap()
       .get_nth_param(self.2)
       .unwrap()
+  }
+}
+
+impl Lower for ast::ArrayAssignStmt {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // FIXME: This only works when assigning full arrays (not elements on their indexes them).
+
+    let llvm_array_variable = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
+    let llvm_value = self.value.lower(generator, context);
+
+    // TODO: What if the array variable is a not a pointer value? This must be enforced by the type-checker.
+    generator
+      .llvm_builder
+      .build_store(llvm_array_variable.into_pointer_value(), llvm_value);
+
+    generator.make_unit_value()
   }
 }
 
@@ -633,8 +735,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   }
 
   fn lower_type(&self, ty: &ast::Type) -> inkwell::types::BasicTypeEnum<'ctx> {
-    use inkwell::types::BasicType;
-
     match ty {
       ast::Type::PrimitiveType(primitive_type) => match primitive_type {
         ast::PrimitiveType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
