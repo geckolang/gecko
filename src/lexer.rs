@@ -10,6 +10,29 @@ pub struct Lexer {
   current_char: Option<char>,
 }
 
+pub fn match_token(identifier: &str) -> Option<token::Token> {
+  Some(match identifier {
+    "fn" => token::Token::KeywordFn,
+    "extern" => token::Token::KeywordExtern,
+    "let" => token::Token::KeywordLet,
+    "return" => token::Token::KeywordReturn,
+    "if" => token::Token::KeywordIf,
+    "else" => token::Token::KeywordElse,
+    "while" => token::Token::KeywordWhile,
+    "break" => token::Token::KeywordBreak,
+    "continue" => token::Token::KeywordContinue,
+    "unsafe" => token::Token::KeywordUnsafe,
+    "i16" => token::Token::TypeInt16,
+    "i32" => token::Token::TypeInt32,
+    "i64" => token::Token::TypeInt64,
+    "bool" => token::Token::TypeBool,
+    "str" => token::Token::TypeString,
+    "true" => token::Token::LiteralBool(true),
+    "false" => token::Token::LiteralBool(false),
+    _ => return None,
+  })
+}
+
 /// Determine whether a character is a letter, and within
 /// the range of a-Z, or is _.
 fn is_letter(character: char) -> bool {
@@ -213,7 +236,7 @@ impl Lexer {
           return if current_char == '_' || is_letter(current_char) {
             let identifier = self.read_identifier();
 
-            match token::get_keyword_or_type_token(identifier.as_str()) {
+            match match_token(identifier.as_str()) {
               Some(keyword_token) => Ok(keyword_token),
               None => Ok(token::Token::Identifier(identifier)),
             }

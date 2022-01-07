@@ -3,6 +3,7 @@ use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
 pub trait Lower {
+  // TODO: Make return type `Option<inkwell::values::BasicValueEnum<'ctx>>`.
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -17,6 +18,50 @@ impl Lower for ast::Node {
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     dispatch!(self, Lower::lower, generator, context)
+  }
+}
+
+impl Lower for ast::VariableAssignStmt {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    let llvm_value = self.value.lower(generator, context);
+    let definition_key = self.definition_key.unwrap();
+
+    // TODO: Here we should only be retrieving, no memoization should be done by this point (variables are declared top-down).
+    let llvm_variable = generator.memoize_or_retrieve(definition_key, context);
+
+    let llvm_new_variable = generator.llvm_builder.build_alloca(
+      llvm_variable.get_type(),
+      format!("{}.assign", self.name).as_str(),
+    );
+
+    // FIXME: This part is causing problems (segfault).
+    let llvm_new_variable_ptr = generator
+      .llvm_builder
+      .build_load(
+        llvm_new_variable,
+        format!("{}.assign.ptr", self.name).as_str(),
+      )
+      .into_pointer_value();
+
+    generator
+      .llvm_builder
+      .build_store(llvm_new_variable_ptr, llvm_value);
+
+    // TODO: Shouldn't the declaration be replaced as well? Think this through.
+    // Remove the original variable.
+    generator.definitions.remove(&definition_key);
+
+    // TODO: We're inserting a `load` instruction value here, yet on variable references we insert an `alloca` instruction. Research.
+    // Replace it with the new one.
+    generator
+      .definitions
+      .insert(definition_key, llvm_new_variable_ptr.as_basic_value_enum());
+
+    generator.make_unit_value()
   }
 }
 
@@ -40,8 +85,8 @@ impl Lower for ast::ArrayIndexing {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_index = self.index.lower(generator, context).into_int_value();
-    let llvm_target_array = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
+    let _llvm_index = self.index.lower(generator, context).into_int_value();
+    let _llvm_target_array = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
 
     // TODO: Implement.
     todo!();
@@ -319,9 +364,10 @@ impl Lower for ast::VariableRef {
 
     // TODO: This logic is here to make up for parameters not being pointer values. Is this okay?
     if llvm_variable.is_pointer_value() {
-      generator
-        .llvm_builder
-        .build_load(llvm_variable.into_pointer_value(), "variable_ref")
+      generator.llvm_builder.build_load(
+        llvm_variable.into_pointer_value(),
+        format!("{}.load", self.name).as_str(),
+      )
     } else {
       llvm_variable
     }
@@ -340,11 +386,11 @@ impl Lower for ast::WhileStmt {
 
     let llvm_then_block = generator
       .llvm_context
-      .append_basic_block(llvm_current_function, "while_then");
+      .append_basic_block(llvm_current_function, "while.then");
 
     let llvm_after_block = generator
       .llvm_context
-      .append_basic_block(llvm_current_function, "while_after");
+      .append_basic_block(llvm_current_function, "while.after");
 
     generator.llvm_builder.build_conditional_branch(
       llvm_condition,
@@ -386,11 +432,11 @@ impl Lower for ast::IfStmt {
 
     let llvm_then_block = generator
       .llvm_context
-      .append_basic_block(llvm_current_function, "if_then");
+      .append_basic_block(llvm_current_function, "if.then");
 
     let llvm_after_block = generator
       .llvm_context
-      .append_basic_block(llvm_current_function, "if_after");
+      .append_basic_block(llvm_current_function, "if.after");
 
     // NOTE: At this point, the condition must be verified to be a boolean by the type-checker.
     generator.llvm_builder.build_conditional_branch(
@@ -537,7 +583,7 @@ impl Lower for ast::Function {
 
     let llvm_entry_block = generator
       .llvm_context
-      .append_basic_block(llvm_function, "fn_entry");
+      .append_basic_block(llvm_function, "fn.entry");
 
     generator.llvm_builder.position_at_end(llvm_entry_block);
     self.body.lower(generator, context);
@@ -629,6 +675,7 @@ impl Lower for ast::LetStmt {
 
     let llvm_value = self.value.lower(generator, context);
 
+    // TODO: Shouldn't there be a load instruction first?
     generator
       .llvm_builder
       .build_store(llvm_alloca_inst_ptr, llvm_value);
@@ -656,7 +703,7 @@ impl Lower for ast::FunctionCall {
     let llvm_call_value = generator.llvm_builder.build_call(
       inkwell::values::CallableValue::try_from(llvm_target_function).unwrap(),
       llvm_arguments.as_slice(),
-      "fn_call_result",
+      format!("{}.call", self.callee_name).as_str(),
     );
 
     let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();

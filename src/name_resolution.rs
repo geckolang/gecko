@@ -26,6 +26,23 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::VariableAssignStmt {
+  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.value.resolve(resolver, context);
+
+    // TODO: Find a way to merge this logic with the `VariableRef` node.
+    if let Some(definition_key) =
+      resolver.lookup(&(self.name.clone(), SymbolKind::VariableOrParameter))
+    {
+      self.definition_key = Some(definition_key.clone());
+    } else {
+      resolver
+        .diagnostics
+        .error(format!("undefined reference to variable `{}`", self.name));
+    }
+  }
+}
+
 impl Resolvable for ast::ContinueStmt {
   //
 }

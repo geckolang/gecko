@@ -44,6 +44,10 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::VariableAssignStmt {
+  //
+}
+
 impl TypeCheck for ast::ContinueStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, _context: &mut context::Context) {
     if !type_context.in_loop {

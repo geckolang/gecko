@@ -132,10 +132,10 @@ impl<'a> Parser<'a> {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
 
     // TODO: Wrong error message.
-    crate::diagnostic_assert!(match &self.tokens[self.index] {
-      token::Token::Identifier(_) => true,
-      _ => false,
-    });
+    crate::diagnostic_assert!(matches!(
+      self.tokens[self.index],
+      token::Token::Identifier(_)
+    ));
 
     let name = {
       match &self.tokens[self.index] {
@@ -167,6 +167,9 @@ impl<'a> Parser<'a> {
         token::Token::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
         token::Token::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
         token::Token::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
+        token::Token::Identifier(_) if self.peek_is(token::Token::SymbolEqual) => {
+          ast::Node::VariableAssignStmt(self.parse_variable_assign_stmt()?)
+        }
         token::Token::Identifier(_) if self.peek_is(token::Token::SymbolBracketL) => {
           ast::Node::ArrayAssignStmt(self.parse_array_assign_stmt()?)
         }
@@ -190,7 +193,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Block { statements })
   }
 
-  /// (unsigned) {i8 | i16 | i32 | i64}
+  /// {u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64}
   fn parse_int_type(&mut self) -> ParserResult<ast::Type> {
     // TODO: Accessing index unsafely.
     let current_token = &self.tokens[self.index];
@@ -223,6 +226,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::PrimitiveType(ast::PrimitiveType::Bool))
   }
 
+  /// '[' %type, 0-9+ ']'
   fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
     skip_past!(self, token::Token::SymbolBracketL);
 
@@ -559,6 +563,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// 0-9+
   fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
     // TODO: Accessing tokens like this is unsafe/unchecked.
     // TODO: Possibly cloning value.
@@ -585,6 +590,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// '"' [^"]* '"'
   fn parse_string_literal(&mut self) -> ParserResult<ast::Literal> {
     // TODO: Accessing tokens like this is unsafe/unchecked.
     let result = match &self.tokens[self.index] {
@@ -602,6 +608,7 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  /// '[' (%expr (','))* ']'
   fn parse_array_value(&mut self) -> ParserResult<ast::ArrayValue> {
     let mut elements = Vec::new();
 
@@ -635,6 +642,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// %name '[' %expr ']'
   fn parse_array_indexing(&mut self) -> ParserResult<ast::ArrayIndexing> {
     let name = self.parse_name()?;
 
@@ -686,6 +694,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// {'+' | '-' | '*' | '/'}
   fn parse_operator(&mut self) -> ParserResult<ast::OperatorKind> {
     // TODO: Unsafe access. Also, cloning token.
     let current_token = self.tokens[self.index].clone();
@@ -779,6 +788,22 @@ impl<'a> Parser<'a> {
 
     Ok(ast::VariableRef {
       name,
+      definition_key: None,
+    })
+  }
+
+  fn parse_variable_assign_stmt(&mut self) -> ParserResult<ast::VariableAssignStmt> {
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolEqual);
+
+    let value = Box::new(self.parse_expr()?);
+
+    skip_past!(self, token::Token::SymbolSemiColon);
+
+    Ok(ast::VariableAssignStmt {
+      name,
+      value,
       definition_key: None,
     })
   }

@@ -51,26 +51,3 @@ impl std::fmt::Display for Token {
     write!(formatter, "{:?}", self)
   }
 }
-
-pub fn get_keyword_or_type_token(identifier_str: &str) -> Option<Token> {
-  Some(match identifier_str {
-    "fn" => Token::KeywordFn,
-    "extern" => Token::KeywordExtern,
-    "let" => Token::KeywordLet,
-    "return" => Token::KeywordReturn,
-    "if" => Token::KeywordIf,
-    "else" => Token::KeywordElse,
-    "while" => Token::KeywordWhile,
-    "break" => Token::KeywordBreak,
-    "continue" => Token::KeywordContinue,
-    "unsafe" => Token::KeywordUnsafe,
-    "i16" => Token::TypeInt16,
-    "i32" => Token::TypeInt32,
-    "i64" => Token::TypeInt64,
-    "bool" => Token::TypeBool,
-    "str" => Token::TypeString,
-    "true" => Token::LiteralBool(true),
-    "false" => Token::LiteralBool(false),
-    _ => return None,
-  })
-}

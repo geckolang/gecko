@@ -19,6 +19,7 @@ macro_rules! dispatch {
       $crate::ast::Node::ArrayAssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::VariableAssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::UnsafeBlock(inner) => $target_fn(inner $(, $($args),* )?),
@@ -76,6 +77,7 @@ pub enum Node {
   ArrayAssignStmt(ArrayAssignStmt),
   Definition(Definition),
   VariableRef(VariableRef),
+  VariableAssignStmt(VariableAssignStmt),
   BinaryExpr(BinaryExpr),
   Parameter(Parameter),
   UnsafeBlock(UnsafeBlock),
@@ -107,6 +109,12 @@ pub struct UnsafeBlock(pub Block);
 
 pub struct VariableRef {
   pub name: String,
+  pub definition_key: Option<context::DefinitionKey>,
+}
+
+pub struct VariableAssignStmt {
+  pub name: String,
+  pub value: Box<Node>,
   pub definition_key: Option<context::DefinitionKey>,
 }
 
