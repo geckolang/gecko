@@ -44,8 +44,12 @@ impl TypeCheck for ast::Node {
   }
 }
 
-impl TypeCheck for ast::VariableAssignStmt {
+impl TypeCheck for ast::Enum {
   //
+}
+
+impl TypeCheck for ast::VariableAssignStmt {
+  // TODO: Implement.
 }
 
 impl TypeCheck for ast::ContinueStmt {

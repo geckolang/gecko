@@ -25,6 +25,7 @@ macro_rules! dispatch {
       $crate::ast::Node::UnsafeBlock(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::Enum(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -83,6 +84,12 @@ pub enum Node {
   UnsafeBlock(UnsafeBlock),
   ArrayValue(ArrayValue),
   ArrayIndexing(ArrayIndexing),
+  Enum(Enum),
+}
+
+pub struct Enum {
+  pub name: String,
+  pub variants: Vec<String>,
 }
 
 pub struct ContinueStmt;

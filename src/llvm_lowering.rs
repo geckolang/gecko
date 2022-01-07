@@ -21,6 +21,31 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::Enum {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    _context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    for (index, name) in self.variants.iter().enumerate() {
+      let llvm_variant_global = generator.llvm_module.add_global(
+        generator.llvm_context.i32_type(),
+        Some(inkwell::AddressSpace::Const),
+        format!("{}.{}", self.name, name).as_str(),
+      );
+
+      llvm_variant_global.set_initializer(
+        &generator
+          .llvm_context
+          .i32_type()
+          .const_int(index as u64, false),
+      );
+    }
+
+    generator.make_unit_value()
+  }
+}
+
 impl Lower for ast::VariableAssignStmt {
   fn lower<'a, 'ctx>(
     &self,
@@ -593,6 +618,7 @@ impl Lower for ast::Function {
       generator.llvm_builder.build_return(None);
     }
 
+    // Verify the LLVM function to be well-formed.
     assert!(llvm_function.verify(false));
 
     llvm_function.as_global_value().as_basic_value_enum()

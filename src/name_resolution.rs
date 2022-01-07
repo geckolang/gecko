@@ -26,20 +26,17 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::Enum {
+  //
+}
+
 impl Resolvable for ast::VariableAssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.value.resolve(resolver, context);
 
-    // TODO: Find a way to merge this logic with the `VariableRef` node.
-    if let Some(definition_key) =
-      resolver.lookup(&(self.name.clone(), SymbolKind::VariableOrParameter))
-    {
-      self.definition_key = Some(definition_key.clone());
-    } else {
-      resolver
-        .diagnostics
-        .error(format!("undefined reference to variable `{}`", self.name));
-    }
+    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.definition_key =
+      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
 }
 
@@ -51,16 +48,9 @@ impl Resolvable for ast::ArrayIndexing {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.index.resolve(resolver, context);
 
-    // TODO: Find a way to merge this logic with the `VariableRef` node.
-    if let Some(definition_key) =
-      resolver.lookup(&(self.name.clone(), SymbolKind::VariableOrParameter))
-    {
-      self.definition_key = Some(definition_key.clone());
-    } else {
-      resolver
-        .diagnostics
-        .error(format!("undefined reference to array `{}`", self.name));
-    }
+    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.definition_key =
+      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
 }
 
@@ -76,16 +66,9 @@ impl Resolvable for ast::ArrayAssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.value.resolve(resolver, context);
 
-    // TODO: Find a way to merge this logic with the `VariableRef` node.
-    if let Some(definition_key) =
-      resolver.lookup(&(self.name.clone(), SymbolKind::VariableOrParameter))
-    {
-      self.definition_key = Some(definition_key.clone());
-    } else {
-      resolver
-        .diagnostics
-        .error(format!("undefined reference to array `{}`", self.name));
-    }
+    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.definition_key =
+      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
 }
 
@@ -105,15 +88,9 @@ impl Resolvable for ast::Parameter {
 
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
-    if let Some(definition_key) =
-      resolver.lookup(&(self.name.clone(), SymbolKind::VariableOrParameter))
-    {
-      self.definition_key = Some(definition_key.clone());
-    } else {
-      resolver
-        .diagnostics
-        .error(format!("undefined reference to variable `{}`", self.name));
-    }
+    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.definition_key =
+      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
 }
 
@@ -128,8 +105,8 @@ impl Resolvable for ast::WhileStmt {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.condition.declare(resolver, context);
-    self.body.declare(resolver, context);
+    self.condition.resolve(resolver, context);
+    self.body.resolve(resolver, context);
   }
 }
 
@@ -246,16 +223,9 @@ impl Resolvable for ast::Definition {
 impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
-    if let Some(callee_key) =
-      resolver.lookup(&(self.callee_name.clone(), SymbolKind::FunctionOrExtern))
-    {
-      self.callee_definition_key = Some(callee_key.clone());
-    } else {
-      resolver.diagnostics.error(format!(
-        "undefined reference to function `{}`",
-        self.callee_name
-      ));
-    }
+    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.callee_definition_key =
+      resolver.lookup_or_error(&(self.callee_name.clone(), SymbolKind::FunctionOrExtern));
 
     for argument in &mut self.arguments {
       argument.resolve(resolver, context);
@@ -330,6 +300,18 @@ impl NameResolver {
     if let Some(definition_key) = self.global_scope.get(&key) {
       return Some(definition_key);
     }
+
+    None
+  }
+
+  fn lookup_or_error(&mut self, key: &(String, SymbolKind)) -> Option<context::DefinitionKey> {
+    if let Some(definition_key) = self.lookup(key).cloned() {
+      return Some(definition_key);
+    }
+
+    self
+      .diagnostics
+      .error(format!("undefined reference to `{}`", key.0));
 
     None
   }

@@ -22,6 +22,7 @@ pub fn match_token(identifier: &str) -> Option<token::Token> {
     "break" => token::Token::KeywordBreak,
     "continue" => token::Token::KeywordContinue,
     "unsafe" => token::Token::KeywordUnsafe,
+    "enum" => token::Token::KeywordEnum,
     "i16" => token::Token::TypeInt16,
     "i32" => token::Token::TypeInt32,
     "i64" => token::Token::TypeInt64,

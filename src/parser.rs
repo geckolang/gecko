@@ -400,6 +400,7 @@ impl<'a> Parser<'a> {
     Ok(match token.unwrap() {
       token::Token::KeywordFn => ast::Node::Definition(self.parse_function()?),
       token::Token::KeywordExtern => ast::Node::Definition(self.parse_extern()?),
+      token::Token::KeywordEnum => ast::Node::Enum(self.parse_enum()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -461,8 +462,8 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::VariableOrParameter,
-      key: self.context.create_definition_key(),
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::LetStmt(let_stmt))),
+      key: self.context.create_definition_key(),
     })
   }
 
@@ -806,6 +807,32 @@ impl<'a> Parser<'a> {
       value,
       definition_key: None,
     })
+  }
+
+  fn parse_enum(&mut self) -> ParserResult<ast::Enum> {
+    skip_past!(self, token::Token::KeywordEnum);
+
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolBraceL);
+
+    let mut variants = vec![];
+
+    while !self.is_eof() && !self.is(token::Token::SymbolBraceR) {
+      variants.push(self.parse_name()?);
+
+      // TODO: Iron out case for lonely comma.
+      if self.is(token::Token::SymbolComma) {
+        self.skip();
+      }
+    }
+
+    // TODO: What if we reach `EOF` before closing brace?
+
+    // Skip the closing brace symbol.
+    self.skip();
+
+    Ok(ast::Enum { name, variants })
   }
 }
 
