@@ -72,7 +72,7 @@ impl Resolvable for ast::ArrayAssignStmt {
   }
 }
 
-impl Resolvable for ast::UnsafeBlock {
+impl Resolvable for ast::UnsafeBlockStmt {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.0.declare(resolver, context);
   }
@@ -233,7 +233,7 @@ impl Resolvable for ast::FunctionCall {
   }
 }
 
-impl Resolvable for ast::ExprWrapperStmt {
+impl Resolvable for ast::ExprStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.expr.resolve(resolver, context);
   }

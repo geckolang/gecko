@@ -4,6 +4,7 @@ pub mod ast;
 pub mod context;
 pub mod diagnostic;
 pub mod lexer;
+pub mod lint;
 pub mod llvm_lowering;
 pub mod name_resolution;
 pub mod parser;

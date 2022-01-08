@@ -74,7 +74,7 @@ impl TypeCheck for ast::ArrayValue {
   // TODO: Implement. Ensure all values are of the same type.
 }
 
-impl TypeCheck for ast::UnsafeBlock {
+impl TypeCheck for ast::UnsafeBlockStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     // TODO: To avoid problems with nested cases, save a buffer here, then restore?
     type_context.in_unsafe_block = true;
@@ -206,7 +206,7 @@ impl TypeCheck for ast::Definition {
   }
 }
 
-impl TypeCheck for ast::ExprWrapperStmt {
+impl TypeCheck for ast::ExprStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     self.expr.type_check(type_context, context);
   }

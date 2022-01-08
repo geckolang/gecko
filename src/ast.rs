@@ -59,6 +59,8 @@ pub enum PrimitiveType {
 pub enum Type {
   Array(Box<Type>, u32),
   PrimitiveType(PrimitiveType),
+  // FIXME: Parameters aren't being reached by visitors (because they're encapsulated by a type).
+  // TODO: Consider making `Prototype` a `Node` and using `Prototype(Prototype)` as a type here.
   Prototype(Vec<Definition>, Option<Box<Type>>, bool),
 }
 
@@ -74,14 +76,14 @@ pub enum Node {
   FunctionCall(FunctionCall),
   BreakStmt(BreakStmt),
   ContinueStmt(ContinueStmt),
-  ExprWrapperStmt(ExprWrapperStmt),
+  ExprWrapperStmt(ExprStmt),
   ArrayAssignStmt(ArrayAssignStmt),
   Definition(Definition),
   VariableRef(VariableRef),
   VariableAssignStmt(VariableAssignStmt),
   BinaryExpr(BinaryExpr),
   Parameter(Parameter),
-  UnsafeBlock(UnsafeBlock),
+  UnsafeBlock(UnsafeBlockStmt),
   ArrayValue(ArrayValue),
   ArrayIndexing(ArrayIndexing),
   Enum(Enum),
@@ -112,7 +114,7 @@ pub struct ArrayValue {
   pub explicit_type: Option<Type>,
 }
 
-pub struct UnsafeBlock(pub Block);
+pub struct UnsafeBlockStmt(pub Block);
 
 pub struct VariableRef {
   pub name: String,
@@ -139,6 +141,7 @@ pub struct Extern {
 
 pub struct Function {
   pub name: String,
+  // TODO: Make `prototype` its own type.
   pub prototype: Type,
   pub body: Block,
 }
@@ -172,7 +175,7 @@ pub struct WhileStmt {
   pub body: Block,
 }
 
-pub struct ExprWrapperStmt {
+pub struct ExprStmt {
   pub expr: Box<Node>,
 }
 

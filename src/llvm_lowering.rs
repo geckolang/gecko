@@ -207,7 +207,7 @@ impl Lower for ast::ArrayAssignStmt {
   }
 }
 
-impl Lower for ast::UnsafeBlock {
+impl Lower for ast::UnsafeBlockStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -768,7 +768,7 @@ impl Lower for ast::Definition {
   }
 }
 
-impl Lower for ast::ExprWrapperStmt {
+impl Lower for ast::ExprStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,

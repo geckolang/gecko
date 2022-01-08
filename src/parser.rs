@@ -177,7 +177,7 @@ impl<'a> Parser<'a> {
           ast::Node::VariableRef(self.parse_variable_ref()?)
         }
         _ => {
-          let result = ast::Node::ExprWrapperStmt(ast::ExprWrapperStmt {
+          let result = ast::Node::ExprWrapperStmt(ast::ExprStmt {
             expr: Box::new(self.parse_expr()?),
           });
 
@@ -517,10 +517,10 @@ impl<'a> Parser<'a> {
   }
 
   // unsafe %block
-  fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlock> {
+  fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlockStmt> {
     skip_past!(self, token::Token::KeywordUnsafe);
 
-    Ok(ast::UnsafeBlock(self.parse_block()?))
+    Ok(ast::UnsafeBlockStmt(self.parse_block()?))
   }
 
   fn parse_array_assign_stmt(&mut self) -> ParserResult<ast::ArrayAssignStmt> {
