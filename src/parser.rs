@@ -717,7 +717,7 @@ impl<'a> Parser<'a> {
       token::Token::SymbolSlash => ast::OperatorKind::Divide,
       token::Token::SymbolLessThan => ast::OperatorKind::LessThan,
       token::Token::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
-      token::Token::SymbolAmpersand => ast::OperatorKind::Reference,
+      token::Token::SymbolAmpersand => ast::OperatorKind::AddressOf,
       // TODO: Implement logic for GTE & LTE.
       _ => {
         return Err(diagnostic::Diagnostic {

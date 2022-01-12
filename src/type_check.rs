@@ -74,7 +74,7 @@ impl TypeCheck for ast::UnaryExpr {
             .error("can only negate integers or float expressions".to_string());
         }
       }
-      ast::OperatorKind::Reference => {
+      ast::OperatorKind::AddressOf => {
         // TODO: Implement.
       }
       _ => unreachable!(),

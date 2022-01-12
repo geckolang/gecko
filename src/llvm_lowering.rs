@@ -548,9 +548,13 @@ impl Lower for ast::Function {
     let llvm_function_type = generator
       .lower_type(&self.prototype)
       .into_pointer_type()
-      .get_element_type();
+      .get_element_type()
+      .into_function_type();
 
-    assert!(llvm_function_type.is_function_type());
+    // TODO: Investigate whether this is enough. What about nested pointer types (`**`, etc.)?
+    if let Some(return_type) = llvm_function_type.get_return_type() {
+      generator.return_expects_rvalue = !return_type.is_pointer_type();
+    }
 
     let is_main = self.name == "main";
 
@@ -573,7 +577,7 @@ impl Lower for ast::Function {
 
     let llvm_function = generator.llvm_module.add_function(
       llvm_function_name.as_str(),
-      llvm_function_type.into_function_type(),
+      llvm_function_type,
       Some(if is_main {
         inkwell::module::Linkage::External
       } else {
@@ -677,7 +681,23 @@ impl Lower for ast::ReturnStmt {
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_return_value = if let Some(return_value) = &self.value {
-      Some(return_value.lower(generator, context))
+      let llvm_value = return_value.lower(generator, context);
+
+      // Perform an implicit dereference if applicable.
+      let llvm_final_value =
+        if generator.return_expects_rvalue && llvm_value.get_type().is_pointer_type() {
+          generator
+            .llvm_builder
+            // TODO: Is the value always going to be a pointer value?
+            .build_load(
+              llvm_value.into_pointer_value(),
+              "implicit_rvalue_dereference",
+            )
+        } else {
+          llvm_value
+        };
+
+      Some(llvm_final_value)
     } else {
       None
     };
@@ -718,7 +738,7 @@ impl Lower for ast::UnaryExpr {
             .as_basic_value_enum()
         }
       }
-      ast::OperatorKind::Reference => {
+      ast::OperatorKind::AddressOf => {
         // FIXME: Also, have to verify lifetimes. This isn't nearly started.
         // FIXME: Cannot bind references to temporary values. Must only be to existing definitions. This should be enforced during type-checking.
 
@@ -837,6 +857,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   definitions:
     std::collections::HashMap<context::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
   next_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
+  return_expects_rvalue: bool,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -853,6 +874,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_function_buffer: None,
       definitions: std::collections::HashMap::new(),
       next_block: None,
+      return_expects_rvalue: false,
     }
   }
 
