@@ -3,12 +3,11 @@ use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
 pub trait Lower {
-  // TODO: Make return type `Option<inkwell::values::BasicValueEnum<'ctx>>`.
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx>;
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>>;
 }
 
 impl Lower for ast::Node {
@@ -16,7 +15,7 @@ impl Lower for ast::Node {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     dispatch!(self, Lower::lower, generator, context)
   }
 }
@@ -26,7 +25,7 @@ impl Lower for ast::Enum {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for (index, name) in self.variants.iter().enumerate() {
       let llvm_variant_global = generator.llvm_module.add_global(
         generator.llvm_context.i32_type(),
@@ -42,7 +41,7 @@ impl Lower for ast::Enum {
       );
     }
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -51,8 +50,8 @@ impl Lower for ast::VariableAssignStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_value = self.value.lower(generator, context);
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let llvm_value = self.value.lower(generator, context).unwrap();
     let definition_key = self.definition_key.unwrap();
 
     // TODO: Here we should only be retrieving, no memoization should be done by this point (variables are declared top-down).
@@ -86,7 +85,7 @@ impl Lower for ast::VariableAssignStmt {
       .definitions
       .insert(definition_key, llvm_new_variable_ptr.as_basic_value_enum());
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -95,12 +94,12 @@ impl Lower for ast::ContinueStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     generator
       .llvm_builder
       .build_unconditional_branch(generator.get_current_block());
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -109,8 +108,13 @@ impl Lower for ast::ArrayIndexing {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let _llvm_index = self.index.lower(generator, context).into_int_value();
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let _llvm_index = self
+      .index
+      .lower(generator, context)
+      .unwrap()
+      .into_int_value();
+
     let _llvm_target_array = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
 
     // TODO: Implement.
@@ -131,13 +135,13 @@ impl Lower for ast::ArrayValue {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let mut llvm_values = Vec::new();
 
     llvm_values.reserve(self.elements.len());
 
     for element in &self.elements {
-      llvm_values.push(element.lower(generator, context));
+      llvm_values.push(element.lower(generator, context).unwrap());
     }
 
     // TODO: Is this cast (usize -> u32) safe?
@@ -168,7 +172,7 @@ impl Lower for ast::ArrayValue {
       );
     }
 
-    llvm_array_ref.as_basic_value_enum()
+    Some(llvm_array_ref.as_basic_value_enum())
   }
 }
 
@@ -177,13 +181,15 @@ impl Lower for ast::Parameter {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: In the future, consider having an `alloca` per parameter, for simpler tracking of them.
-    generator
-      .llvm_function_buffer
-      .unwrap()
-      .get_nth_param(self.2)
-      .unwrap()
+    Some(
+      generator
+        .llvm_function_buffer
+        .unwrap()
+        .get_nth_param(self.2)
+        .unwrap(),
+    )
   }
 }
 
@@ -192,18 +198,18 @@ impl Lower for ast::ArrayAssignStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // FIXME: This only works when assigning full arrays (not elements on their indexes them).
 
     let llvm_array_variable = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
-    let llvm_value = self.value.lower(generator, context);
+    let llvm_value = self.value.lower(generator, context).unwrap();
 
     // TODO: What if the array variable is a not a pointer value? This must be enforced by the type-checker.
     generator
       .llvm_builder
       .build_store(llvm_array_variable.into_pointer_value(), llvm_value);
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -212,8 +218,10 @@ impl Lower for ast::UnsafeBlockStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    self.0.lower(generator, context)
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    self.0.lower(generator, context).unwrap();
+
+    None
   }
 }
 
@@ -222,9 +230,9 @@ impl Lower for ast::BinaryExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_left_value = self.left.lower(generator, context);
-    let llvm_right_value = self.right.lower(generator, context);
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let llvm_left_value = self.left.lower(generator, context).unwrap();
+    let llvm_right_value = self.right.lower(generator, context).unwrap();
 
     // NOTE: By this point, we assume that both values are of the same type.
     let is_int_values = llvm_left_value.is_int_value();
@@ -232,7 +240,7 @@ impl Lower for ast::BinaryExpr {
     // TODO: Make use of.
     // let is_signed = llvm_left_value.into_int_value().get_sign_extended_constant();
 
-    match self.operator {
+    Some(match self.operator {
       ast::OperatorKind::Add if is_int_values => generator
         .llvm_builder
         .build_int_add(
@@ -375,7 +383,7 @@ impl Lower for ast::BinaryExpr {
         .as_basic_value_enum(),
       // TODO: Support for all operators.
       _ => todo!(),
-    }
+    })
   }
 }
 
@@ -384,8 +392,8 @@ impl Lower for ast::VariableRef {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    generator.memoize_or_retrieve(self.definition_key.unwrap(), context)
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    Some(generator.memoize_or_retrieve(self.definition_key.unwrap(), context))
 
     // TODO: This removes ability to use pointers at all. For this reason, it was commented out.
     // TODO: This logic is here to make up for parameters not being pointer values. Is this okay?
@@ -405,9 +413,13 @@ impl Lower for ast::WhileStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
-    let llvm_condition = self.condition.lower(generator, context).into_int_value();
+    let llvm_condition = self
+      .condition
+      .lower(generator, context)
+      .unwrap()
+      .into_int_value();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
 
     let llvm_then_block = generator
@@ -441,7 +453,7 @@ impl Lower for ast::WhileStmt {
 
     generator.llvm_builder.position_at_end(llvm_after_block);
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -450,10 +462,10 @@ impl Lower for ast::IfStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: Add logic for the `else` branch.
 
-    let llvm_condition = self.condition.lower(generator, context);
+    let llvm_condition = self.condition.lower(generator, context).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
 
     let llvm_then_block = generator
@@ -483,7 +495,7 @@ impl Lower for ast::IfStmt {
 
     generator.llvm_builder.position_at_end(llvm_after_block);
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -491,9 +503,9 @@ impl Lower for ast::Literal {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    _: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    match self {
+    _context: &mut context::Context,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    Some(match self {
       ast::Literal::Int(value, integer_kind) => {
         let llvm_int_type = generator
           .llvm_context
@@ -535,7 +547,7 @@ impl Lower for ast::Literal {
         .llvm_builder
         .build_global_string_ptr(value.as_str(), "string_literal")
         .as_basic_value_enum(),
-    }
+    })
   }
 }
 
@@ -544,7 +556,7 @@ impl Lower for ast::Function {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator
       .lower_type(&self.prototype)
       .into_pointer_type()
@@ -570,9 +582,11 @@ impl Lower for ast::Function {
       .llvm_module
       .get_function(llvm_function_name.as_str())
     {
-      return llvm_existing_function
-        .as_global_value()
-        .as_basic_value_enum();
+      return Some(
+        llvm_existing_function
+          .as_global_value()
+          .as_basic_value_enum(),
+      );
     }
 
     let llvm_function = generator.llvm_module.add_function(
@@ -626,7 +640,7 @@ impl Lower for ast::Function {
     // Verify the LLVM function to be well-formed.
     assert!(llvm_function.verify(false));
 
-    llvm_function.as_global_value().as_basic_value_enum()
+    Some(llvm_function.as_global_value().as_basic_value_enum())
   }
 }
 
@@ -635,7 +649,7 @@ impl Lower for ast::Extern {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator
       .lower_type(&self.prototype)
       .into_pointer_type()
@@ -649,9 +663,11 @@ impl Lower for ast::Extern {
 
     assert!(llvm_external_function.verify(false));
 
-    llvm_external_function
-      .as_global_value()
-      .as_basic_value_enum()
+    Some(
+      llvm_external_function
+        .as_global_value()
+        .as_basic_value_enum(),
+    )
   }
 }
 
@@ -660,7 +676,7 @@ impl Lower for ast::Block {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for statement in &self.statements {
       statement.lower(generator, context);
 
@@ -670,7 +686,7 @@ impl Lower for ast::Block {
       }
     }
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -679,10 +695,11 @@ impl Lower for ast::ReturnStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_return_value = if let Some(return_value) = &self.value {
-      let llvm_value = return_value.lower(generator, context);
+      let llvm_value = return_value.lower(generator, context).unwrap();
 
+      // TODO: Should this only apply for return statements? What about variable declarations or assignments?
       // Perform an implicit dereference if applicable.
       let llvm_final_value =
         if generator.return_expects_rvalue && llvm_value.get_type().is_pointer_type() {
@@ -704,7 +721,7 @@ impl Lower for ast::ReturnStmt {
 
     generator.build_return(llvm_return_value);
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -713,10 +730,10 @@ impl Lower for ast::UnaryExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_value = self.expr.lower(generator, context);
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let llvm_value = self.expr.lower(generator, context).unwrap();
 
-    match self.operator {
+    Some(match self.operator {
       ast::OperatorKind::Not => {
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
         generator
@@ -752,7 +769,7 @@ impl Lower for ast::UnaryExpr {
         .llvm_builder
         .build_load(llvm_value.into_pointer_value(), "dereference"),
       _ => unreachable!(),
-    }
+    })
   }
 }
 
@@ -761,21 +778,21 @@ impl Lower for ast::LetStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_type = generator.lower_type(&self.ty);
 
     let llvm_alloca_ptr = generator
       .llvm_builder
       .build_alloca(llvm_type, self.name.as_str());
 
-    let llvm_value = self.value.lower(generator, context);
+    let llvm_value = self.value.lower(generator, context).unwrap();
 
     // TODO: Shouldn't there be a load instruction first?
     generator
       .llvm_builder
       .build_store(llvm_alloca_ptr, llvm_value);
 
-    llvm_alloca_ptr.as_basic_value_enum()
+    Some(llvm_alloca_ptr.as_basic_value_enum())
   }
 }
 
@@ -784,11 +801,11 @@ impl Lower for ast::FunctionCall {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_arguments = self
       .arguments
       .iter()
-      .map(|argument| argument.lower(generator, context).into())
+      .map(|argument| argument.lower(generator, context).unwrap().into())
       .collect::<Vec<_>>();
 
     let llvm_target_function = generator
@@ -804,9 +821,9 @@ impl Lower for ast::FunctionCall {
     let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();
 
     if llvm_call_basic_value_result.is_left() {
-      llvm_call_basic_value_result.left().unwrap()
+      Some(llvm_call_basic_value_result.left().unwrap())
     } else {
-      generator.make_unit_value()
+      None
     }
   }
 }
@@ -816,14 +833,14 @@ impl Lower for ast::BreakStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: What happens if there are nested loops? Will the buffer be overwritten?
     // NOTE: By this point, we assume that whether we're actually in a loop was handled by the type-checker.
     generator
       .llvm_builder
       .build_unconditional_branch(generator.next_block.unwrap());
 
-    generator.make_unit_value()
+    None
   }
 }
 
@@ -832,8 +849,8 @@ impl Lower for ast::Definition {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    generator.memoize_or_retrieve(self.key, context)
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    Some(generator.memoize_or_retrieve(self.key, context))
   }
 }
 
@@ -842,8 +859,8 @@ impl Lower for ast::ExprStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    self.expr.lower(generator, context)
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    Some(self.expr.lower(generator, context).unwrap())
   }
 }
 
@@ -948,11 +965,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
-  fn make_unit_value(&self) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO: In our case, this might not be ideal.
-    self.llvm_context.bool_type().const_int(0, false).into()
-  }
-
   fn get_current_block(&self) -> inkwell::basic_block::BasicBlock<'ctx> {
     self.llvm_builder.get_insert_block().unwrap()
   }
@@ -983,7 +995,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       // This retrieval will panic in case of a logic error (internal error).
       let result = std::rc::Rc::clone(context.declarations.get_mut(&definition_key).unwrap())
         .borrow_mut()
-        .lower(self, context);
+        .lower(self, context)
+        .unwrap();
 
       // TODO: Should we be inserting the definition key here?
       self.definitions.insert(definition_key, result);
