@@ -269,6 +269,11 @@ impl<'a> Parser<'a> {
         Ok(ast::Type::PrimitiveType(ast::PrimitiveType::String))
       }
       token::Token::SymbolBracketL => self.parse_array_type(),
+      token::Token::SymbolAsterisk => {
+        self.skip();
+
+        Ok(ast::Type::Pointer(Box::new(self.parse_type()?)))
+      }
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -689,6 +694,10 @@ impl<'a> Parser<'a> {
           ast::Node::VariableRef(self.parse_variable_ref()?)
         }
       }
+      token::Token::SymbolMinus
+      | token::Token::SymbolBang
+      | token::Token::SymbolAmpersand
+      | token::Token::SymbolAsterisk => ast::Node::UnaryExpr(self.parse_unary_expr()?),
       token::Token::SymbolBracketL => ast::Node::ArrayValue(self.parse_array_value()?),
       // Default to a literal if nothing else matched.
       _ => ast::Node::Literal(self.parse_literal()?),
@@ -703,11 +712,12 @@ impl<'a> Parser<'a> {
     let operator = match current_token {
       token::Token::SymbolBang => ast::OperatorKind::Not,
       token::Token::SymbolPlus => ast::OperatorKind::Add,
-      token::Token::SymbolMinus => ast::OperatorKind::Subtract,
-      token::Token::SymbolAsterisk => ast::OperatorKind::Multiply,
+      token::Token::SymbolMinus => ast::OperatorKind::SubtractOrNegate,
+      token::Token::SymbolAsterisk => ast::OperatorKind::MultiplyOrDereference,
       token::Token::SymbolSlash => ast::OperatorKind::Divide,
       token::Token::SymbolLessThan => ast::OperatorKind::LessThan,
       token::Token::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
+      token::Token::SymbolAmpersand => ast::OperatorKind::Reference,
       // TODO: Implement logic for GTE & LTE.
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -746,6 +756,13 @@ impl<'a> Parser<'a> {
     }
 
     Ok(result)
+  }
+
+  fn parse_unary_expr(&mut self) -> ParserResult<ast::UnaryExpr> {
+    let operator = self.parse_operator()?;
+    let expr = Box::new(self.parse_primary_expr()?);
+
+    Ok(ast::UnaryExpr { operator, expr })
   }
 
   // TODO: Better naming and/or positioning for logic.

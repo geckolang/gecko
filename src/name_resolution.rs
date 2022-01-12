@@ -26,6 +26,12 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::UnaryExpr {
+  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.expr.resolve(resolver, context);
+  }
+}
+
 impl Resolvable for ast::Enum {
   //
 }

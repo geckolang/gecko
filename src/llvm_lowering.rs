@@ -249,7 +249,7 @@ impl Lower for ast::BinaryExpr {
           "float_add_op",
         )
         .as_basic_value_enum(),
-      ast::OperatorKind::Subtract if is_int_values => generator
+      ast::OperatorKind::SubtractOrNegate if is_int_values => generator
         .llvm_builder
         .build_int_sub(
           llvm_left_value.into_int_value(),
@@ -257,7 +257,7 @@ impl Lower for ast::BinaryExpr {
           "int_subtract_op",
         )
         .as_basic_value_enum(),
-      ast::OperatorKind::Subtract => generator
+      ast::OperatorKind::SubtractOrNegate => generator
         .llvm_builder
         .build_float_sub(
           llvm_left_value.into_float_value(),
@@ -265,7 +265,7 @@ impl Lower for ast::BinaryExpr {
           "float_subtract_op",
         )
         .as_basic_value_enum(),
-      ast::OperatorKind::Multiply if is_int_values => generator
+      ast::OperatorKind::MultiplyOrDereference if is_int_values => generator
         .llvm_builder
         .build_int_mul(
           llvm_left_value.into_int_value(),
@@ -273,7 +273,7 @@ impl Lower for ast::BinaryExpr {
           "int_multiply_op",
         )
         .as_basic_value_enum(),
-      ast::OperatorKind::Multiply => generator
+      ast::OperatorKind::MultiplyOrDereference => generator
         .llvm_builder
         .build_float_mul(
           llvm_left_value.into_float_value(),
@@ -385,17 +385,18 @@ impl Lower for ast::VariableRef {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let llvm_variable = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
+    generator.memoize_or_retrieve(self.definition_key.unwrap(), context)
 
+    // TODO: This removes ability to use pointers at all. For this reason, it was commented out.
     // TODO: This logic is here to make up for parameters not being pointer values. Is this okay?
-    if llvm_variable.is_pointer_value() {
-      generator.llvm_builder.build_load(
-        llvm_variable.into_pointer_value(),
-        format!("{}.load", self.name).as_str(),
-      )
-    } else {
-      llvm_variable
-    }
+    // if llvm_variable.is_pointer_value() {
+    //   generator.llvm_builder.build_load(
+    //     llvm_variable.into_pointer_value(),
+    //     format!("{}.load", self.name).as_str(),
+    //   )
+    // } else {
+    //   llvm_variable
+    // }
   }
 }
 
@@ -687,6 +688,54 @@ impl Lower for ast::ReturnStmt {
   }
 }
 
+impl Lower for ast::UnaryExpr {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    let llvm_value = self.expr.lower(generator, context);
+
+    match self.operator {
+      ast::OperatorKind::Not => {
+        // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
+        generator
+          .llvm_builder
+          .build_not(llvm_value.into_int_value(), "not")
+          .as_basic_value_enum()
+      }
+      ast::OperatorKind::SubtractOrNegate => {
+        // NOTE: We expect the value to be an integer or float. This should be enforced during type-checking.
+        if llvm_value.is_int_value() {
+          generator
+            .llvm_builder
+            .build_int_neg(llvm_value.into_int_value(), "negate")
+            .as_basic_value_enum()
+        } else {
+          generator
+            .llvm_builder
+            .build_float_neg(llvm_value.into_float_value(), "negate")
+            .as_basic_value_enum()
+        }
+      }
+      ast::OperatorKind::Reference => {
+        // FIXME: Also, have to verify lifetimes. This isn't nearly started.
+        // FIXME: Cannot bind references to temporary values. Must only be to existing definitions. This should be enforced during type-checking.
+
+        // TODO: Hot-fix for avoiding temporary values.
+        assert!(llvm_value.is_pointer_value());
+
+        llvm_value
+      }
+      // FIXME: Type-checker must verify this action, since it is assumed that the value is a pointer.
+      ast::OperatorKind::MultiplyOrDereference => generator
+        .llvm_builder
+        .build_load(llvm_value.into_pointer_value(), "dereference"),
+      _ => unreachable!(),
+    }
+  }
+}
+
 impl Lower for ast::LetStmt {
   fn lower<'a, 'ctx>(
     &self,
@@ -695,7 +744,7 @@ impl Lower for ast::LetStmt {
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     let llvm_type = generator.lower_type(&self.ty);
 
-    let llvm_alloca_inst_ptr = generator
+    let llvm_alloca_ptr = generator
       .llvm_builder
       .build_alloca(llvm_type, self.name.as_str());
 
@@ -704,9 +753,9 @@ impl Lower for ast::LetStmt {
     // TODO: Shouldn't there be a load instruction first?
     generator
       .llvm_builder
-      .build_store(llvm_alloca_inst_ptr, llvm_value);
+      .build_store(llvm_alloca_ptr, llvm_value);
 
-    llvm_alloca_inst_ptr.as_basic_value_enum()
+    llvm_alloca_ptr.as_basic_value_enum()
   }
 }
 
@@ -831,8 +880,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum(),
       },
-      ast::Type::Array(_element_type, size) => self
-        .lower_type(&_element_type)
+      ast::Type::Array(element_type, size) => self
+        .lower_type(&element_type)
         .array_type(size.clone())
         .as_basic_type_enum(),
       ast::Type::Prototype(parameter_types, return_type_result, is_variadic) => {
@@ -870,6 +919,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
             .as_basic_type_enum()
         }
       }
+      ast::Type::Pointer(pointee_type) => self
+        .lower_type(&pointee_type)
+        .ptr_type(inkwell::AddressSpace::Generic)
+        .as_basic_type_enum(),
     }
   }
 

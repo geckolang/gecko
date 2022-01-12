@@ -44,6 +44,48 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::UnaryExpr {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    match self.operator {
+      ast::OperatorKind::MultiplyOrDereference => {
+        if !type_context.in_unsafe_block {
+          type_context
+            .diagnostics
+            .error("can only dereference inside an unsafe block".to_string());
+        }
+      }
+      ast::OperatorKind::Not => {
+        let expr_type = self.expr.infer_type(context);
+
+        if expr_type != Some(ast::PrimitiveType::Bool) {
+          type_context
+            .diagnostics
+            .error("can only negate boolean expressions".to_string());
+        }
+      }
+      ast::OperatorKind::SubtractOrNegate => {
+        let expr_type = self.expr.infer_type(context);
+
+        // TODO: Include floats.
+        if !matches!(expr_type, Some(ast::PrimitiveType::Int(_))) {
+          // TODO: Error message too similar to the boolean negation case.
+          type_context
+            .diagnostics
+            .error("can only negate integers or float expressions".to_string());
+        }
+      }
+      ast::OperatorKind::Reference => {
+        // TODO: Implement.
+      }
+      _ => unreachable!(),
+    };
+  }
+
+  fn infer_type(&self, context: &context::Context) -> Option<ast::PrimitiveType> {
+    self.expr.infer_type(context)
+  }
+}
+
 impl TypeCheck for ast::Enum {
   //
 }
@@ -172,8 +214,8 @@ impl TypeCheck for ast::BinaryExpr {
     // NOTE: By this point, it is assumed that both operands are of the same type.
     match self.operator {
       ast::OperatorKind::Add
-      | ast::OperatorKind::Subtract
-      | ast::OperatorKind::Multiply
+      | ast::OperatorKind::SubtractOrNegate
+      | ast::OperatorKind::MultiplyOrDereference
       | ast::OperatorKind::Divide
       | ast::OperatorKind::LessThan
       | ast::OperatorKind::GreaterThan => {
@@ -241,7 +283,7 @@ impl TypeCheck for ast::LetStmt {
 }
 
 impl TypeCheck for ast::ReturnStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     if type_context.does_function_return && self.value.is_none() {
       type_context
         .diagnostics
@@ -250,6 +292,10 @@ impl TypeCheck for ast::ReturnStmt {
       type_context
         .diagnostics
         .error("return statement must not have a value".to_string());
+    }
+
+    if let Some(value) = &self.value {
+      value.type_check(type_context, context);
     }
   }
 }

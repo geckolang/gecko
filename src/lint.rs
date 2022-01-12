@@ -26,8 +26,9 @@ impl LintContext {
     for (function_key, ref_count) in &self.function_references {
       let function_node = context.declarations[&function_key].as_ref().borrow();
 
-      let function = match &*function_node {
-        ast::Node::Function(function) => function,
+      let name = match &*function_node {
+        ast::Node::Function(function) => &function.name,
+        ast::Node::Extern(extern_) => &extern_.name,
         _ => unreachable!(),
       };
 
@@ -35,7 +36,7 @@ impl LintContext {
       if *ref_count == 0 {
         self
           .diagnostics
-          .warning(format!("function `{}` is never called", function.name));
+          .warning(format!("function `{}` is never called", name));
       }
     }
   }
@@ -67,6 +68,12 @@ impl LintContext {
 impl Lint for ast::Node {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
     crate::dispatch!(self, Lint::lint, context, lint_context);
+  }
+}
+
+impl Lint for ast::UnaryExpr {
+  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+    self.expr.lint(context, lint_context);
   }
 }
 

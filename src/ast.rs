@@ -21,6 +21,7 @@ macro_rules! dispatch {
       $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableAssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::UnsafeBlock(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
@@ -62,6 +63,7 @@ pub enum Type {
   // FIXME: Parameters aren't being reached by visitors (because they're encapsulated by a type).
   // TODO: Consider making `Prototype` a `Node` and using `Prototype(Prototype)` as a type here.
   Prototype(Vec<Definition>, Option<Box<Type>>, bool),
+  Pointer(Box<Type>),
 }
 
 pub enum Node {
@@ -82,6 +84,7 @@ pub enum Node {
   VariableRef(VariableRef),
   VariableAssignStmt(VariableAssignStmt),
   BinaryExpr(BinaryExpr),
+  UnaryExpr(UnaryExpr),
   Parameter(Parameter),
   UnsafeBlock(UnsafeBlockStmt),
   ArrayValue(ArrayValue),
@@ -187,9 +190,10 @@ pub struct FunctionCall {
 
 pub enum OperatorKind {
   Not,
+  Reference,
   Add,
-  Subtract,
-  Multiply,
+  SubtractOrNegate,
+  MultiplyOrDereference,
   Divide,
   LessThan,
   GreaterThan,
@@ -201,6 +205,11 @@ pub enum OperatorKind {
 pub struct BinaryExpr {
   pub left: Box<Node>,
   pub right: Box<Node>,
+  pub operator: OperatorKind,
+}
+
+pub struct UnaryExpr {
+  pub expr: Box<Node>,
   pub operator: OperatorKind,
 }
 
