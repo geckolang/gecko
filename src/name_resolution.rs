@@ -40,7 +40,6 @@ impl Resolvable for ast::VariableAssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.value.resolve(resolver, context);
 
-    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.definition_key =
       resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
@@ -54,7 +53,6 @@ impl Resolvable for ast::ArrayIndexing {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.index.resolve(resolver, context);
 
-    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.definition_key =
       resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
