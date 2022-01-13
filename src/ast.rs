@@ -190,7 +190,7 @@ pub struct FunctionCall {
 
 pub enum OperatorKind {
   Not,
-  Reference,
+  AddressOf,
   Add,
   SubtractOrNegate,
   MultiplyOrDereference,
