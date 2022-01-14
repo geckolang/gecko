@@ -9,8 +9,8 @@ pub trait Lint {
 pub struct LintContext {
   pub diagnostics: diagnostic::DiagnosticBuilder,
   block_depth: usize,
-  // TODO: No need to count references, with a single one it should be enough.
-  function_references: std::collections::HashMap<context::DefinitionKey, usize>,
+  function_references: std::collections::HashMap<context::DefinitionKey, bool>,
+  variable_references: std::collections::HashMap<context::DefinitionKey, bool>,
 }
 
 impl LintContext {
@@ -19,11 +19,17 @@ impl LintContext {
       diagnostics: diagnostic::DiagnosticBuilder::new(),
       block_depth: 0,
       function_references: std::collections::HashMap::new(),
+      variable_references: std::collections::HashMap::new(),
     }
   }
 
   pub fn finalize(&mut self, context: &context::Context) {
-    for (function_key, ref_count) in &self.function_references {
+    for (function_key, was_called) in &self.function_references {
+      // TODO: Dereferencing value.
+      if *was_called {
+        continue;
+      }
+
       let function_node = context.declarations[&function_key].as_ref().borrow();
 
       let name = match &*function_node {
@@ -32,19 +38,28 @@ impl LintContext {
         _ => unreachable!(),
       };
 
-      // TODO: Dereferencing count.
-      if *ref_count == 0 {
-        self
-          .diagnostics
-          .warning(format!("function `{}` is never called", name));
-      }
+      self
+        .diagnostics
+        .warning(format!("function `{}` is never called", name));
     }
-  }
 
-  fn increment_function_ref(&mut self, key: context::DefinitionKey) {
-    let count = self.function_references.entry(key).or_insert(0);
+    for (variable_def_key, was_used) in &self.variable_references {
+      // TODO: Dereferencing value.
+      if *was_used {
+        continue;
+      }
 
-    *count += 1;
+      let variable_def_node = context.declarations[&variable_def_key].as_ref().borrow();
+
+      let name = match &*variable_def_node {
+        ast::Node::LetStmt(let_stmt) => &let_stmt.name,
+        _ => unreachable!(),
+      };
+
+      self
+        .diagnostics
+        .warning(format!("variable `{}` is never used", name));
+    }
   }
 
   fn lint_name(&mut self, subject: &str, name: &str, case: convert_case::Case) {
@@ -157,9 +172,16 @@ impl Lint for ast::Definition {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
     let node = &*self.node.borrow();
 
-    if matches!(node, ast::Node::Function(_)) {
-      lint_context.function_references.insert(self.key, 0);
-    }
+    match node {
+      ast::Node::Function(_) => {
+        lint_context.function_references.insert(self.key, false);
+      }
+      ast::Node::LetStmt(_) => {
+        lint_context.variable_references.insert(self.key, false);
+      }
+      // TODO: Lint other definitions.
+      _ => {}
+    };
 
     node.lint(context, lint_context);
   }
@@ -221,7 +243,9 @@ impl Lint for ast::Function {
 
 impl Lint for ast::FunctionCall {
   fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.increment_function_ref(self.callee_definition_key.unwrap());
+    lint_context
+      .function_references
+      .insert(self.callee_definition_key.unwrap(), true);
   }
 }
 

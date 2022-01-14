@@ -57,37 +57,37 @@ fn main(argc: i32, argv: i32[]) ~ i32 {
 
 ### Project roadmap
 
-*🔨 &mdash; Work in progress.* *✔️ &mdash; Completed.*
-| Feature            | Note(s)                                                    | Status  |
+_🔨 &mdash; Work in progress._ _✔️ &mdash; Completed._
+| Feature | Note(s) | Status |
 |--------------------|------------------------------------------------------------|---------|
-| Functions          | -                                                          | ✔️      |
-| Externs            | -                                                          | ✔️      |
-| Function calls     | -                                                          | ✔️      |
-| Structs            | Definition, declaration & accessing of structs.            | 🔨      |
-| Global variables   | -                                                          | 🔨      |
-| Modules            | -                                                          | 🔨      |
-| Generics           | -                                                          | 🔨      |
-| `if` statement     | Includes the `else` statement as well.                     | 🔨      |
-| `return` statement | -                                                          | ✔️      |
-| Variables          | Declaration, assignment, and reference of variables.       | ✔️      |
-| Casting            | -                                                          | 🔨      |
-| Binary expressions | -                                                          | 🔨      |
-| Literals           | Includes string, integer, character, and boolean literals. | ✔️      |
-| Types              | Intrinsic types such as `bool`, `i32`, `str`, etc.         | ✔️      |
-| Arrays             | -                                                          | 🔨      |
+| Functions | - | ✔️ |
+| Externs | - | ✔️ |
+| Function calls | - | ✔️ |
+| Structs | Definition, declaration & accessing of structs. | 🔨 |
+| Global variables | - | 🔨 |
+| Modules | - | 🔨 |
+| Generics | - | 🔨 |
+| `if` statement | Includes the `else` statement as well. | 🔨 |
+| `return` statement | - | ✔️ |
+| Variables | Declaration, assignment, and reference of variables. | ✔️ |
+| Casting | - | 🔨 |
+| Binary expressions | - | 🔨 |
+| Literals | Includes string, integer, character, and boolean literals. | ✔️ |
+| Types | Intrinsic types such as `bool`, `i32`, `str`, etc. | ✔️ |
+| Arrays | - | 🔨 |
 
 ### Directory structure
 
-| Path             | Description                                                                                           |
-|------------------|-------------------------------------------------------------------------------------------------------|
-| `.github/`       | Contains GitHub configuration files. For example, the GitHub actions workflow file `rust.yml`.        |
-| `src/`           | The root directory for the project's source files.                                                    |
-| `tests/`         | Root directory for integration tests.                                                                 |
-| `.gitignore`     | Configuration file to specify paths ignored by Git.                                                   |
-| `Cargo.lock`     | Cargo configuration file.                                                                             |
-| `Cargo.toml`     | Cargo configuration file.                                                                             |
-| `LICENSE`        | The license file.                                                                                     |
-| `README.md`      | Information about the project.                                                                        |
+| Path         | Description                                                                                    |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| `.github/`   | Contains GitHub configuration files. For example, the GitHub actions workflow file `rust.yml`. |
+| `src/`       | The root directory for the project's source files.                                             |
+| `tests/`     | Root directory for integration tests.                                                          |
+| `.gitignore` | Configuration file to specify paths ignored by Git.                                            |
+| `Cargo.lock` | Cargo configuration file.                                                                      |
+| `Cargo.toml` | Cargo configuration file.                                                                      |
+| `LICENSE`    | The license file.                                                                              |
+| `README.md`  | Information about the project.                                                                 |
 
 ### Language specification
 
@@ -101,9 +101,9 @@ Here is the exact regular expression rule for names:
 ^([_a-zA-Z]+[\w]*)
 ```
 
-[*🔗test this regular expression*](https://regex101.com/r/KDIWdL/1)
+[_🔗test this regular expression_](https://regex101.com/r/KDIWdL/1)
 
-Name mangling affects functions, structs, and globals. Names of any entities defined on the global environment (under the lack of a module definition) are *not* name mangled. In other words, only entities under module are affected by name mangling. Externs are never name mangled, even if declared under a module.
+Name mangling affects functions, structs, and globals. Names of any entities defined on the global environment (under the lack of a module definition) are _not_ name mangled. In other words, only entities under module are affected by name mangling. Externs are never name mangled, even if declared under a module.
 
 #### 1.2 &mdash; Comments
 
@@ -118,7 +118,7 @@ Only single-line comments are available for simplicity. All comments start with 
 Several intrinsic types are defined by the compiler. It is intended for the intrinsic types to be bare-bones, and to have the standard library expand upon them, this allows for easier refactoring of type-specific functions, without having to modify the compiler's source code.
 
 | Definition | Description                                                                                                         |
-|------------|---------------------------------------------------------------------------------------------------------------------|
+| ---------- | ------------------------------------------------------------------------------------------------------------------- |
 | `bool`     | Boolean type. Its value can either be `true` or `false`.                                                            |
 | `i8`       | Integer type with bit-size 8. Can be used to define characters, as well as strings as a pointer.                    |
 | `i16`      | Integer type with bit-size 16. Equivalent to a `short int` on other languages.                                      |
@@ -230,6 +230,21 @@ $ sudo dnf -y install llvm llvm-devel
 ```
 
 You won't need to set any environment variables. Additionally, avoid using the `llvmenv` crate, since it's barely maintained and may lead you to issues.
+
+After installing, you can verify you're running the correct LLVM version by using the `llvm-config` command:
+
+```bash
+$ llvm-config --version
+13.0.0
+```
+
+If, after installing `llvm-devel` and restarting your shell session you're still having problems with the `inkwell` crate not being able to find the LLVM installation, try setting the `LLVM_SYS_130_PREFIX` environment variable manually:
+
+```bash
+$ export LLVM_SYS_130_PREFIX=${llvm-config --prefix}
+```
+
+That should fix the problem, then try running `cargo build` once more.
 
 #### 1.3 &mdash; Windows
 
