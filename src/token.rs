@@ -21,6 +21,7 @@ pub enum Token {
   KeywordContinue,
   KeywordUnsafe,
   KeywordEnum,
+  KeywordStruct,
   TypeInt16,
   TypeInt32,
   TypeInt64,

@@ -71,6 +71,10 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::StructDef {
+  // TODO: Implement.
+}
+
 impl Lint for ast::UnaryExpr {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
     self.expr.lint(context, lint_context);

@@ -27,6 +27,7 @@ macro_rules! dispatch {
       $crate::ast::Node::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Enum(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::StructDef(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -59,11 +60,12 @@ pub enum PrimitiveType {
 #[derive(Clone)]
 pub enum Type {
   Array(Box<Type>, u32),
-  PrimitiveType(PrimitiveType),
+  Primitive(PrimitiveType),
   // FIXME: Parameters aren't being reached by visitors (because they're encapsulated by a type).
   // TODO: Consider making `Prototype` a `Node` and using `Prototype(Prototype)` as a type here.
   Prototype(Vec<Definition>, Option<Box<Type>>, bool),
   Pointer(Box<Type>),
+  Struct(StructDef),
 }
 
 pub enum Node {
@@ -90,6 +92,7 @@ pub enum Node {
   ArrayValue(ArrayValue),
   ArrayIndexing(ArrayIndexing),
   Enum(Enum),
+  StructDef(StructDef),
 }
 
 pub struct Enum {
@@ -186,6 +189,12 @@ pub struct FunctionCall {
   pub callee_name: String,
   pub callee_definition_key: Option<context::DefinitionKey>,
   pub arguments: Vec<Node>,
+}
+
+#[derive(Clone)]
+pub struct StructDef {
+  pub name: String,
+  pub fields: std::collections::HashMap<String, Type>,
 }
 
 pub enum OperatorKind {

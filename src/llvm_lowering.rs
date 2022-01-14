@@ -20,6 +20,16 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::StructDef {
+  fn lower<'a, 'ctx>(
+    &self,
+    _generator: &mut LlvmGenerator<'a, 'ctx>,
+    _context: &mut context::Context,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    None
+  }
+}
+
 impl Lower for ast::Enum {
   fn lower<'a, 'ctx>(
     &self,
@@ -850,6 +860,7 @@ impl Lower for ast::Definition {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // FIXME: This will error for structs, since they are types.
     Some(generator.memoize_or_retrieve(self.key, context))
   }
 }
@@ -897,7 +908,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   fn lower_type(&self, ty: &ast::Type) -> inkwell::types::BasicTypeEnum<'ctx> {
     match ty {
-      ast::Type::PrimitiveType(primitive_type) => match primitive_type {
+      ast::Type::Primitive(primitive_type) => match primitive_type {
         ast::PrimitiveType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
         ast::PrimitiveType::Int(size) => {
           // TODO: Should we handle unsigned integers here?
@@ -962,6 +973,18 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .lower_type(&pointee_type)
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
+      ast::Type::Struct(struct_def) => {
+        let llvm_field_types = struct_def
+          .fields
+          .iter()
+          .map(|field| self.lower_type(&field.1))
+          .collect::<Vec<_>>();
+
+        self
+          .llvm_context
+          .struct_type(llvm_field_types.as_slice(), false)
+          .as_basic_type_enum()
+      }
     }
   }
 
@@ -1011,7 +1034,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       return result;
     }
 
-    // FIXME: Is this actually the case?
     // NOTE: The LLVM value is not copied, but rather the reference to it.
     self.definitions.get(&definition_key).unwrap().clone()
   }
