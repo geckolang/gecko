@@ -44,6 +44,10 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::StructDef {
+  // TODO: Implement.
+}
+
 impl TypeCheck for ast::UnaryExpr {
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     match self.operator {
@@ -76,6 +80,7 @@ impl TypeCheck for ast::UnaryExpr {
       }
       ast::OperatorKind::AddressOf => {
         // TODO: Implement.
+        todo!();
       }
       _ => unreachable!(),
     };
@@ -158,7 +163,7 @@ impl TypeCheck for ast::VariableRef {
     };
 
     Some(match variable_type {
-      ast::Type::PrimitiveType(primitive_type) => primitive_type.clone(),
+      ast::Type::Primitive(primitive_type) => primitive_type.clone(),
       _ => unreachable!(),
     })
   }
@@ -265,7 +270,7 @@ impl TypeCheck for ast::LetStmt {
     self.value.type_check(type_context, context);
 
     let self_type = Some(match &self.ty {
-      ast::Type::PrimitiveType(primitive_type) => primitive_type.clone(),
+      ast::Type::Primitive(primitive_type) => primitive_type.clone(),
       // TODO: Array types support?
       // FIXME: Temporary, for debugging purposes.
       _ => return,
@@ -337,7 +342,7 @@ impl TypeCheck for ast::FunctionCall {
           return None;
         } else {
           match return_type.as_ref().unwrap().as_ref() {
-            ast::Type::PrimitiveType(primitive_type) => primitive_type.clone(),
+            ast::Type::Primitive(primitive_type) => primitive_type.clone(),
             _ => unreachable!(),
           }
         }

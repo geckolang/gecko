@@ -35,6 +35,8 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
   }
 }
 
+/// Determine whether the given token is considered a valid binary
+/// operator.
 fn is_binary_operator(token: &token::Token) -> bool {
   match token {
     token::Token::SymbolPlus
@@ -83,6 +85,9 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  /// Compare the current token to the given token.
+  ///
+  /// If `EOF` has been reached, `false` will always be returned.
   fn is(&self, token: token::Token) -> bool {
     if self.index >= self.tokens.len() {
       return false;
@@ -91,6 +96,10 @@ impl<'a> Parser<'a> {
     self.tokens[self.index] == token
   }
 
+  /// Attempt to reposition the index to the next token (if any).
+  ///
+  /// Returns whether the index was repositioned. If false, it indicates
+  /// that the end of file was reached (`EOF`).
   fn skip(&mut self) -> bool {
     // FIXME: Address out of bounds problem (if any at this state).
     if self.index + 1 >= self.tokens.len() {
@@ -102,6 +111,7 @@ impl<'a> Parser<'a> {
     true
   }
 
+  /// Retrieve the upcoming token (if any).
   fn peek(&self) -> Option<&token::Token> {
     match self.tokens.get(self.index + 1) {
       Some(value) => Some(value),
@@ -109,6 +119,7 @@ impl<'a> Parser<'a> {
     }
   }
 
+  /// Compare the upcoming token to the given token.
   fn peek_is(&self, token: token::Token) -> bool {
     let next_token = self.peek();
 
@@ -127,7 +138,7 @@ impl<'a> Parser<'a> {
     self.tokens.is_empty() || self.index == self.tokens.len() - 1
   }
 
-  /// %name
+  /// %identifier
   fn parse_name(&mut self) -> ParserResult<String> {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
 
@@ -216,14 +227,15 @@ impl<'a> Parser<'a> {
 
     self.skip();
 
-    Ok(ast::Type::PrimitiveType(ast::PrimitiveType::Int(size)))
+    Ok(ast::Type::Primitive(ast::PrimitiveType::Int(size)))
   }
 
+  // TODO: Merge with the `parse_type` function (too small).
   /// bool
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
     skip_past!(self, token::Token::TypeBool);
 
-    Ok(ast::Type::PrimitiveType(ast::PrimitiveType::Bool))
+    Ok(ast::Type::Primitive(ast::PrimitiveType::Bool))
   }
 
   /// '[' %type, 0-9+ ']'
@@ -266,7 +278,7 @@ impl<'a> Parser<'a> {
       token::Token::TypeString => {
         self.skip();
 
-        Ok(ast::Type::PrimitiveType(ast::PrimitiveType::String))
+        Ok(ast::Type::Primitive(ast::PrimitiveType::String))
       }
       token::Token::SymbolBracketL => self.parse_array_type(),
       token::Token::SymbolAsterisk => {
@@ -392,6 +404,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// {%function | %extern | %enum | %struct}
   fn parse_top_level_node(&mut self) -> ParserResult<ast::Node> {
     let token = self.tokens.get(self.index);
 
@@ -405,7 +418,8 @@ impl<'a> Parser<'a> {
     Ok(match token.unwrap() {
       token::Token::KeywordFn => ast::Node::Definition(self.parse_function()?),
       token::Token::KeywordExtern => ast::Node::Definition(self.parse_extern()?),
-      token::Token::KeywordEnum => ast::Node::Enum(self.parse_enum()?),
+      token::Token::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
+      token::Token::KeywordStruct => ast::Node::Definition(self.parse_struct_def()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -732,7 +746,12 @@ impl<'a> Parser<'a> {
     Ok(operator)
   }
 
-  fn parse_bin_expr(&mut self, left: ast::Node, min_precedence: usize) -> ParserResult<ast::Node> {
+  /// %expr %operator %expr
+  fn parse_binary_expr(
+    &mut self,
+    left: ast::Node,
+    min_precedence: usize,
+  ) -> ParserResult<ast::Node> {
     let mut token = &self.tokens[self.index];
     let precedence = get_token_precedence(&token);
     let mut result = left;
@@ -744,7 +763,7 @@ impl<'a> Parser<'a> {
       token = &self.tokens[self.index];
 
       while is_binary_operator(&token) && get_token_precedence(&token) > precedence {
-        right = self.parse_bin_expr(right, precedence + 1)?;
+        right = self.parse_binary_expr(right, precedence + 1)?;
         token = &self.tokens[self.index];
       }
 
@@ -758,6 +777,7 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  /// %operator %expr
   fn parse_unary_expr(&mut self) -> ParserResult<ast::UnaryExpr> {
     let operator = self.parse_operator()?;
     let expr = Box::new(self.parse_primary_expr()?);
@@ -772,7 +792,7 @@ impl<'a> Parser<'a> {
     let left = self.parse_primary_expr()?;
 
     // TODO: Should the precedence be zero here?
-    Ok(self.parse_bin_expr(left, 0)?)
+    Ok(self.parse_binary_expr(left, 0)?)
   }
 
   /// %name '(' (%expr (,))* ')'
@@ -800,7 +820,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  // %name
+  /// %name
   fn parse_variable_ref(&mut self) -> ParserResult<ast::VariableRef> {
     let name = self.parse_name()?;
 
@@ -810,6 +830,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// %name '=' %expr ';'
   fn parse_variable_assign_stmt(&mut self) -> ParserResult<ast::VariableAssignStmt> {
     let name = self.parse_name()?;
 
@@ -826,7 +847,8 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_enum(&mut self) -> ParserResult<ast::Enum> {
+  /// enum %name '{' (%name (','))* '}'
+  fn parse_enum(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, token::Token::KeywordEnum);
 
     let name = self.parse_name()?;
@@ -849,7 +871,54 @@ impl<'a> Parser<'a> {
     // Skip the closing brace symbol.
     self.skip();
 
-    Ok(ast::Enum { name, variants })
+    let enum_ = ast::Enum {
+      name: name.clone(),
+      variants,
+    };
+
+    Ok(ast::Definition {
+      name,
+      symbol_kind: name_resolution::SymbolKind::Type,
+      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Enum(enum_))),
+      key: self.context.create_definition_key(),
+    })
+  }
+
+  /// struct %name '{' (%name ':' %type ';')* '}'
+  fn parse_struct_def(&mut self) -> ParserResult<ast::Definition> {
+    skip_past!(self, token::Token::KeywordStruct);
+
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::Token::SymbolBraceL);
+
+    let mut fields = std::collections::HashMap::new();
+
+    while !self.is_eof() && !self.is(token::Token::SymbolBraceR) {
+      let field_name = self.parse_name()?;
+
+      skip_past!(self, token::Token::SymbolColon);
+
+      let field_type = self.parse_type()?;
+
+      skip_past!(self, token::Token::SymbolSemiColon);
+      fields.insert(field_name, field_type);
+    }
+
+    // Skip the closing brace symbol.
+    self.skip();
+
+    let struct_def = ast::StructDef {
+      name: name.clone(),
+      fields,
+    };
+
+    Ok(ast::Definition {
+      name,
+      symbol_kind: name_resolution::SymbolKind::Type,
+      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::StructDef(struct_def))),
+      key: self.context.create_definition_key(),
+    })
   }
 }
 

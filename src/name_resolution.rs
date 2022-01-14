@@ -4,6 +4,8 @@ use crate::{ast, context, diagnostic};
 pub enum SymbolKind {
   VariableOrParameter,
   FunctionOrExtern,
+  // A global type. Can be a struct, or enum.
+  Type,
 }
 
 pub trait Resolvable {
@@ -23,6 +25,18 @@ impl Resolvable for ast::Node {
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     crate::dispatch!(self, Resolvable::resolve, resolver, context);
+  }
+}
+
+impl Resolvable for ast::StructDef {
+  fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
+    // TODO: Continue implementation.
+    // self.fields.iter().for_each(|field| field.1.)
+  }
+
+  fn resolve(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
+    // TODO: Implement.
+    todo!();
   }
 }
 
@@ -186,6 +200,7 @@ impl Resolvable for ast::Function {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    // TODO: Do parameters actually need to be resolved?
     // TODO: Simplify this process.
     match &mut self.prototype {
       ast::Type::Prototype(parameters, _, _) => {
@@ -206,8 +221,6 @@ impl Resolvable for ast::Extern {
 
 impl Resolvable for ast::Definition {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO: Proper naming for keys.
-
     // Register the node on the context for lowering lookup.
     context
       .declarations
