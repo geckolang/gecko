@@ -154,11 +154,11 @@ impl Lower for ast::ArrayValue {
 
     let llvm_array_alloca = generator
       .llvm_builder
-      .build_alloca(llvm_array_type, "array_value");
+      .build_alloca(llvm_array_type, "array.value");
 
     let llvm_array_ref = generator
       .llvm_builder
-      .build_load(llvm_array_alloca, "array_load")
+      .build_load(llvm_array_alloca, "array.load")
       .into_array_value();
 
     // TODO: Double loop is redundant (adds complexity). With a single one should be fine. Re-implement.
@@ -420,6 +420,7 @@ impl Lower for ast::WhileStmt {
       .lower(generator, context)
       .unwrap()
       .into_int_value();
+
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
 
     let llvm_then_block = generator
@@ -637,6 +638,7 @@ impl Lower for ast::Function {
       generator.llvm_builder.build_return(None);
     }
 
+    // TODO: Is this necessary when we're already verifying the LLVM module?
     // Verify the LLVM function to be well-formed.
     assert!(llvm_function.verify(false));
 
