@@ -1,4 +1,4 @@
-use crate::{ast, context, diagnostic};
+use crate::{ast, context, diagnostic, llvm_lowering};
 
 pub trait Lint {
   fn lint(&self, _context: &mut context::Context, _lint_context: &mut LintContext) {
@@ -56,9 +56,11 @@ impl LintContext {
         _ => unreachable!(),
       };
 
-      self
-        .diagnostics
-        .warning(format!("variable `{}` is never used", name));
+      if name != llvm_lowering::MAIN_NAME {
+        self
+          .diagnostics
+          .warning(format!("variable `{}` is never used", name));
+      }
     }
   }
 

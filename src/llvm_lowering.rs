@@ -2,6 +2,8 @@ use crate::{ast, context, dispatch};
 use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
+pub const MAIN_NAME: &str = "main";
+
 pub trait Lower {
   fn lower<'a, 'ctx>(
     &self,
@@ -578,7 +580,7 @@ impl Lower for ast::Function {
       generator.return_expects_rvalue = !return_type.is_pointer_type();
     }
 
-    let is_main = self.name == "main";
+    let is_main = self.name == MAIN_NAME;
 
     let llvm_function_name = if is_main {
       // TODO: Name being cloned. Is this okay?
