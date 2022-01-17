@@ -138,6 +138,18 @@ impl<'a> Parser<'a> {
     self.tokens.is_empty() || self.index == self.tokens.len() - 1
   }
 
+  fn parse_scope_qualifier(&mut self) -> ParserResult<ast::ScopeQualifier> {
+    let base_name = self.parse_name()?;
+    let mut scope = Vec::new();
+
+    while !self.is_eof() && self.is(token::Token::SymbolColon) {
+      self.skip();
+      scope.push(self.parse_name()?);
+    }
+
+    Ok(ast::ScopeQualifier(base_name, scope))
+  }
+
   /// %identifier
   fn parse_name(&mut self) -> ParserResult<String> {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
@@ -797,7 +809,7 @@ impl<'a> Parser<'a> {
 
   /// %name '(' (%expr (,))* ')'
   fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
-    let callee_name = self.parse_name()?;
+    let callee_id = self.parse_scope_qualifier()?;
 
     skip_past!(self, token::Token::SymbolParenthesesL);
 
@@ -814,8 +826,8 @@ impl<'a> Parser<'a> {
     skip_past!(self, token::Token::SymbolParenthesesR);
 
     Ok(ast::FunctionCall {
-      callee_name,
-      callee_definition_key: None,
+      callee_id,
+      callee_key: None,
       arguments,
     })
   }

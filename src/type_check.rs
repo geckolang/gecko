@@ -324,7 +324,7 @@ impl TypeCheck for ast::FunctionCall {
     // TODO: Is this cloning? Simplify this messy code section.
     let function_or_extern = &*context
       .declarations
-      .get(&self.callee_definition_key.unwrap())
+      .get(&self.callee_key.unwrap())
       .unwrap()
       .as_ref()
       .borrow();
@@ -357,7 +357,7 @@ impl TypeCheck for ast::FunctionCall {
 
     let callee = context
       .declarations
-      .get(self.callee_definition_key.as_ref().unwrap())
+      .get(self.callee_key.as_ref().unwrap())
       .unwrap();
 
     // TODO: Continue implementation.

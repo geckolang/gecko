@@ -241,8 +241,9 @@ impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.callee_definition_key =
-      resolver.lookup_or_error(&(self.callee_name.clone(), SymbolKind::FunctionOrExtern));
+    // TODO: Only the base name is being used from `callee_id`.
+    self.callee_key =
+      resolver.lookup_or_error(&(self.callee_id.0.clone(), SymbolKind::FunctionOrExtern));
 
     for argument in &mut self.arguments {
       argument.resolve(resolver, context);

@@ -95,6 +95,28 @@ pub enum Node {
   StructDef(StructDef),
 }
 
+pub struct ScopeQualifier(pub String, pub Vec<String>);
+
+impl ScopeQualifier {
+  pub fn new(name: String) -> Self {
+    ScopeQualifier(name, vec![])
+  }
+}
+
+impl ToString for ScopeQualifier {
+  fn to_string(&self) -> String {
+    let mut result = self.0.clone();
+
+    for scope in &self.1 {
+      // FIXME: Verify that these characters are allowed in LLVM identifiers.
+      result.push_str("::");
+      result.push_str(scope);
+    }
+
+    result
+  }
+}
+
 pub struct Enum {
   pub name: String,
   pub variants: Vec<String>,
@@ -186,8 +208,8 @@ pub struct ExprStmt {
 }
 
 pub struct FunctionCall {
-  pub callee_name: String,
-  pub callee_definition_key: Option<context::DefinitionKey>,
+  pub callee_id: ScopeQualifier,
+  pub callee_key: Option<context::DefinitionKey>,
   pub arguments: Vec<Node>,
 }
 

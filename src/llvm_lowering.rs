@@ -821,13 +821,13 @@ impl Lower for ast::FunctionCall {
       .collect::<Vec<_>>();
 
     let llvm_target_function = generator
-      .memoize_or_retrieve(self.callee_definition_key.unwrap(), context)
+      .memoize_or_retrieve(self.callee_key.unwrap(), context)
       .into_pointer_value();
 
     let llvm_call_value = generator.llvm_builder.build_call(
       inkwell::values::CallableValue::try_from(llvm_target_function).unwrap(),
       llvm_arguments.as_slice(),
-      format!("{}.call", self.callee_name).as_str(),
+      format!("{}.call", self.callee_id.to_string()).as_str(),
     );
 
     let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();

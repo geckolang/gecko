@@ -245,7 +245,7 @@ impl Lint for ast::FunctionCall {
   fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
     lint_context
       .function_references
-      .insert(self.callee_definition_key.unwrap(), true);
+      .insert(self.callee_key.unwrap(), true);
   }
 }
 
