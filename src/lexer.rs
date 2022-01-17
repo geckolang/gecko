@@ -113,6 +113,11 @@ impl Lexer {
     Ok(tokens)
   }
 
+  fn get_location(&self) -> Option<diagnostic::Location> {
+    // TODO: Maybe it should be just `index..index`?
+    Some(self.index..self.index + 1)
+  }
+
   /// Determine if the current character is unset, and therefore
   /// signifies the end of the input string.
   fn is_eof(&self) -> bool {
@@ -148,6 +153,7 @@ impl Lexer {
       return Err(diagnostic::Diagnostic {
         message: "number might be too large or invalid".to_string(),
         severity: diagnostic::Severity::Error,
+        location: self.get_location(),
       });
     }
 
@@ -188,6 +194,7 @@ impl Lexer {
       return Err(diagnostic::Diagnostic {
         message: "unexpected end of input, expected character".to_string(),
         severity: diagnostic::Severity::Error,
+        location: self.get_location(),
       });
     }
 

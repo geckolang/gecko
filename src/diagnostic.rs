@@ -1,4 +1,5 @@
 #[macro_export]
+// TODO: Replace this with an `expect` method (under `Lexer).
 macro_rules! diagnostic_assert {
   ($condition:expr) => {
     match $condition {
@@ -7,6 +8,8 @@ macro_rules! diagnostic_assert {
         return Err(diagnostic::Diagnostic {
           message: format!("assertion failed: `{}`", stringify!($condition)),
           severity: diagnostic::Severity::Internal,
+          // TODO: No location.
+          location: None,
         });
       }
     }
@@ -20,10 +23,13 @@ pub enum Severity {
   Internal,
 }
 
+pub type Location = std::ops::Range<usize>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Diagnostic {
   pub message: String,
   pub severity: Severity,
+  pub location: Option<Location>,
 }
 
 impl Diagnostic {
@@ -52,6 +58,7 @@ impl DiagnosticBuilder {
     self.diagnostics.push(Diagnostic {
       message,
       severity: Severity::Error,
+      location: None,
     });
   }
 
@@ -59,6 +66,7 @@ impl DiagnosticBuilder {
     self.diagnostics.push(Diagnostic {
       message,
       severity: Severity::Warning,
+      location: None,
     });
   }
 }
@@ -66,13 +74,6 @@ impl DiagnosticBuilder {
 impl Into<Vec<Diagnostic>> for DiagnosticBuilder {
   fn into(self) -> Vec<Diagnostic> {
     self.diagnostics
-  }
-}
-
-pub fn unreachable() -> Diagnostic {
-  Diagnostic {
-    message: "unreachable point reached".to_string(),
-    severity: Severity::Internal,
   }
 }
 

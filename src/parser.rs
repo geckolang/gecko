@@ -9,6 +9,8 @@ macro_rules! skip_past {
           $token, $self.tokens[$self.index]
         ),
         severity: diagnostic::Severity::Error,
+        // TODO: No location provided.
+        location: None,
       });
     }
 
@@ -85,6 +87,11 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  fn get_location(&self) -> Option<diagnostic::Location> {
+    // TODO: Maybe it should just be `index..index`?
+    Some(self.index..self.index + 1)
+  }
+
   /// Compare the current token to the given token.
   ///
   /// If `EOF` has been reached, `false` will always be returned.
@@ -154,8 +161,8 @@ impl<'a> Parser<'a> {
   fn parse_name(&mut self) -> ParserResult<String> {
     // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
 
-    // TODO: Wrong error message.
-    crate::diagnostic_assert!(matches!(
+    // TODO: Wrong error message. Create an `expect` method.
+    assert!(matches!(
       self.tokens[self.index],
       token::Token::Identifier(_)
     ));
@@ -233,6 +240,7 @@ impl<'a> Parser<'a> {
             current_token
           ),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         })
       }
     };
@@ -267,6 +275,7 @@ impl<'a> Parser<'a> {
         return Err(diagnostic::Diagnostic {
           message: format!("unexpected token `{}`, expected array size", current_token),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         });
       }
     };
@@ -302,10 +311,11 @@ impl<'a> Parser<'a> {
         return Err(diagnostic::Diagnostic {
           message: format!(
             "unexpected token `{:?}`, expected type",
-            // TODO: Check if the index is valid?
+            // TODO: Check if the index is valid? This may be unsafe.
             self.tokens[self.index]
           ),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         });
       }
     }
@@ -424,6 +434,7 @@ impl<'a> Parser<'a> {
       return Err(diagnostic::Diagnostic {
         message: "expected top-level construct but got end of file".to_string(),
         severity: diagnostic::Severity::Error,
+        location: self.get_location(),
       });
     }
 
@@ -439,6 +450,7 @@ impl<'a> Parser<'a> {
             token.unwrap()
           ),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         })
       }
     })
@@ -590,6 +602,7 @@ impl<'a> Parser<'a> {
         return Err(diagnostic::Diagnostic {
           message: "unexpected token, expected boolean literal".to_string(),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         })
       }
     })
@@ -617,6 +630,7 @@ impl<'a> Parser<'a> {
         return Err(diagnostic::Diagnostic {
           message: "expected integer literal but got end of file".to_string(),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         })
       }
     })
@@ -631,6 +645,7 @@ impl<'a> Parser<'a> {
         return Err(diagnostic::Diagnostic {
           message: "expected string literal but got end of file".to_string(),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         })
       }
     };
@@ -703,6 +718,7 @@ impl<'a> Parser<'a> {
           // TODO: Show the actual token.
           message: format!("unexpected token `{}`, expected literal", current_token),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         });
       }
     })
@@ -749,6 +765,7 @@ impl<'a> Parser<'a> {
         return Err(diagnostic::Diagnostic {
           message: format!("unexpected token `{}`, expected operator", current_token),
           severity: diagnostic::Severity::Error,
+          location: self.get_location(),
         })
       }
     };

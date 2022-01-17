@@ -292,11 +292,11 @@ impl TypeCheck for ast::ReturnStmt {
     if type_context.does_function_return && self.value.is_none() {
       type_context
         .diagnostics
-        .error("return statement must have a value".to_string());
+        .error("return statement must return a value".to_string());
     } else if !type_context.does_function_return && self.value.is_some() {
       type_context
         .diagnostics
-        .error("return statement must not have a value".to_string());
+        .error("return statement must not return a value".to_string());
     }
 
     if let Some(value) = &self.value {
