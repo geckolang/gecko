@@ -212,10 +212,7 @@ impl<'a> Parser<'a> {
         token::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
         token::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
         token::TokenKind::Identifier(_) if self.peek_is(token::TokenKind::SymbolEqual) => {
-          ast::Node::VariableAssignStmt(self.parse_variable_assign_stmt()?)
-        }
-        token::TokenKind::Identifier(_) if self.peek_is(token::TokenKind::SymbolBracketL) => {
-          ast::Node::ArrayAssignStmt(self.parse_array_assign_stmt()?)
+          ast::Node::VariableAssignStmt(self.parse_lvalue_assign_stmt()?)
         }
         token::TokenKind::Identifier(_) if !self.peek_is(token::TokenKind::SymbolParenthesesL) => {
           ast::Node::VariableRef(self.parse_variable_ref()?)
@@ -354,7 +351,7 @@ impl<'a> Parser<'a> {
   }
 
   /// '(' {%parameter* (,)} (+) ')' '~' %type_group
-  fn parse_prototype(&mut self) -> ParserResult<ast::Type> {
+  fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
     skip_past!(self, token::TokenKind::SymbolParenthesesL);
 
     // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
@@ -387,10 +384,14 @@ impl<'a> Parser<'a> {
 
     if self.is(token::TokenKind::SymbolTilde) {
       self.skip();
-      return_type = Some(Box::new(self.parse_type()?));
+      return_type = Some(self.parse_type()?);
     }
 
-    Ok(ast::Type::Prototype(parameters, return_type, is_variadic))
+    Ok(ast::Prototype {
+      parameters,
+      return_type,
+      is_variadic,
+    })
   }
 
   /// fn %prototype %block
@@ -576,28 +577,6 @@ impl<'a> Parser<'a> {
     skip_past!(self, token::TokenKind::KeywordUnsafe);
 
     Ok(ast::UnsafeBlockStmt(self.parse_block()?))
-  }
-
-  fn parse_array_assign_stmt(&mut self) -> ParserResult<ast::ArrayAssignStmt> {
-    let name = self.parse_name()?;
-
-    skip_past!(self, token::TokenKind::SymbolBracketL);
-
-    let index = Box::new(self.parse_expr()?);
-
-    skip_past!(self, token::TokenKind::SymbolBracketR);
-    skip_past!(self, token::TokenKind::SymbolEqual);
-
-    let value = Box::new(self.parse_expr()?);
-
-    skip_past!(self, token::TokenKind::SymbolSemiColon);
-
-    Ok(ast::ArrayAssignStmt {
-      name,
-      index,
-      value,
-      definition_key: None,
-    })
   }
 
   /// {true | false}
@@ -872,8 +851,8 @@ impl<'a> Parser<'a> {
   }
 
   /// %name '=' %expr ';'
-  fn parse_variable_assign_stmt(&mut self) -> ParserResult<ast::VariableAssignStmt> {
-    let name = self.parse_name()?;
+  fn parse_lvalue_assign_stmt(&mut self) -> ParserResult<ast::LValueAssignStmt> {
+    let lvalue_expr = Box::new(self.parse_expr()?);
 
     skip_past!(self, token::TokenKind::SymbolEqual);
 
@@ -881,11 +860,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, token::TokenKind::SymbolSemiColon);
 
-    Ok(ast::VariableAssignStmt {
-      name,
-      value,
-      definition_key: None,
-    })
+    Ok(ast::LValueAssignStmt { lvalue_expr, value })
   }
 
   /// enum %name '{' (%name (','))* '}'

@@ -16,7 +16,6 @@ macro_rules! dispatch {
       $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::ArrayAssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableAssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
@@ -57,13 +56,10 @@ pub enum PrimitiveType {
   String,
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 pub enum Type {
   Array(Box<Type>, u32),
   Primitive(PrimitiveType),
-  // FIXME: Parameters aren't being reached by visitors (because they're encapsulated by a type).
-  // TODO: Consider making `Prototype` a `Node` and using `Prototype(Prototype)` as a type here.
-  Prototype(Vec<Definition>, Option<Box<Type>>, bool),
   Pointer(Box<Type>),
   Struct(StructDef),
 }
@@ -81,10 +77,9 @@ pub enum Node {
   BreakStmt(BreakStmt),
   ContinueStmt(ContinueStmt),
   ExprWrapperStmt(ExprStmt),
-  ArrayAssignStmt(ArrayAssignStmt),
   Definition(Definition),
   VariableRef(VariableRef),
-  VariableAssignStmt(VariableAssignStmt),
+  VariableAssignStmt(LValueAssignStmt),
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
   Parameter(Parameter),
@@ -130,13 +125,6 @@ pub struct ArrayIndexing {
   pub definition_key: Option<context::DefinitionKey>,
 }
 
-pub struct ArrayAssignStmt {
-  pub name: String,
-  pub index: Box<Node>,
-  pub value: Box<Node>,
-  pub definition_key: Option<context::DefinitionKey>,
-}
-
 pub struct ArrayValue {
   pub elements: Vec<Node>,
   pub explicit_type: Option<Type>,
@@ -149,10 +137,9 @@ pub struct VariableRef {
   pub definition_key: Option<context::DefinitionKey>,
 }
 
-pub struct VariableAssignStmt {
-  pub name: String,
+pub struct LValueAssignStmt {
+  pub lvalue_expr: Box<Node>,
   pub value: Box<Node>,
-  pub definition_key: Option<context::DefinitionKey>,
 }
 
 pub enum Literal {
@@ -162,15 +149,20 @@ pub enum Literal {
   String(String),
 }
 
+pub struct Prototype {
+  pub parameters: Vec<Parameter>,
+  pub return_type: Option<Type>,
+  pub is_variadic: bool,
+}
+
 pub struct Extern {
   pub name: String,
-  pub prototype: Type,
+  pub prototype: Prototype,
 }
 
 pub struct Function {
   pub name: String,
-  // TODO: Make `prototype` its own type.
-  pub prototype: Type,
+  pub prototype: Prototype,
   pub body: Block,
 }
 
@@ -213,7 +205,7 @@ pub struct FunctionCall {
   pub arguments: Vec<Node>,
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 pub struct StructDef {
   pub name: String,
   pub fields: std::collections::HashMap<String, Type>,

@@ -2,6 +2,8 @@ use crate::{ast, context, dispatch};
 use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
+pub const MAIN_FUNCTION_NAME: &str = "main";
+
 pub trait Lower {
   fn lower<'a, 'ctx>(
     &self,
@@ -55,30 +57,25 @@ impl Lower for ast::Enum {
   }
 }
 
-impl Lower for ast::VariableAssignStmt {
+impl Lower for ast::LValueAssignStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.value.lower(generator, context).unwrap();
-    let definition_key = self.definition_key.unwrap();
 
     // TODO: Here we should only be retrieving, no memoization should be done by this point (variables are declared top-down).
-    let llvm_variable = generator.memoize_or_retrieve(definition_key, context);
+    let llvm_target = self.lvalue_expr.lower(generator, context).unwrap();
 
-    let llvm_new_variable = generator.llvm_builder.build_alloca(
-      llvm_variable.get_type(),
-      format!("{}.assign", self.name).as_str(),
-    );
+    let llvm_new_variable = generator
+      .llvm_builder
+      .build_alloca(llvm_target.get_type(), "assign");
 
     // FIXME: This part is causing problems (segfault).
     let llvm_new_variable_ptr = generator
       .llvm_builder
-      .build_load(
-        llvm_new_variable,
-        format!("{}.assign.ptr", self.name).as_str(),
-      )
+      .build_load(llvm_new_variable, "assign.ptr")
       .into_pointer_value();
 
     generator
@@ -86,14 +83,16 @@ impl Lower for ast::VariableAssignStmt {
       .build_store(llvm_new_variable_ptr, llvm_value);
 
     // TODO: Shouldn't the declaration be replaced as well? Think this through.
+    // FIXME: Temporarily commented out.
     // Remove the original variable.
-    generator.definitions.remove(&definition_key);
+    // generator.definitions.remove(&definition_key);
 
     // TODO: We're inserting a `load` instruction value here, yet on variable references we insert an `alloca` instruction. Research.
+    // FIXME: Temporarily commented out.
     // Replace it with the new one.
-    generator
-      .definitions
-      .insert(definition_key, llvm_new_variable_ptr.as_basic_value_enum());
+    // generator
+    //   .definitions
+    //   .insert(definition_key, llvm_new_variable_ptr.as_basic_value_enum());
 
     None
   }
@@ -203,33 +202,13 @@ impl Lower for ast::Parameter {
   }
 }
 
-impl Lower for ast::ArrayAssignStmt {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    context: &mut context::Context,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // FIXME: This only works when assigning full arrays (not elements on their indexes them).
-
-    let llvm_array_variable = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
-    let llvm_value = self.value.lower(generator, context).unwrap();
-
-    // TODO: What if the array variable is a not a pointer value? This must be enforced by the type-checker.
-    generator
-      .llvm_builder
-      .build_store(llvm_array_variable.into_pointer_value(), llvm_value);
-
-    None
-  }
-}
-
 impl Lower for ast::UnsafeBlockStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.0.lower(generator, context).unwrap();
+    self.0.lower(generator, context);
 
     None
   }
@@ -568,18 +547,14 @@ impl Lower for ast::Function {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_function_type = generator
-      .lower_type(&self.prototype)
-      .into_pointer_type()
-      .get_element_type()
-      .into_function_type();
+    let llvm_function_type = generator.lower_prototype(&self.prototype);
 
     // TODO: Investigate whether this is enough. What about nested pointer types (`**`, etc.)?
     if let Some(return_type) = llvm_function_type.get_return_type() {
       generator.return_expects_rvalue = !return_type.is_pointer_type();
     }
 
-    let is_main = self.name == "main";
+    let is_main = self.name == MAIN_FUNCTION_NAME;
 
     let llvm_function_name = if is_main {
       // TODO: Name being cloned. Is this okay?
@@ -612,29 +587,14 @@ impl Lower for ast::Function {
 
     generator.llvm_function_buffer = Some(llvm_function);
 
-    match &self.prototype {
-      ast::Type::Prototype(parameters, _, _) => {
-        // TODO: Find a way to use only one loop to process both local parameters and LLVM's names.
-        for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
-          // TODO: Is this cloning?
-          // TODO: Simplify this process. Maybe via implementing a `From` trait?
-          let parameter_node = &*parameters.get(i).unwrap().node.borrow();
+    // TODO: Use a zipper, along with a chain. Actually, is this necessary?
+    for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
+      // TODO: Ensure safe access.
+      let parameter = &self.prototype.parameters[i];
 
-          let parameter = match parameter_node {
-            ast::Node::Parameter(parameter) => parameter,
-            _ => unreachable!(),
-          };
-
-          parameter.lower(generator, context);
-
-          // TODO: Ensure this access is safe and checked.
-          let (parameter_name, _, _) = parameter;
-
-          llvm_parameter.set_name(parameter_name.as_str());
-        }
-      }
-      _ => unreachable!(),
-    };
+      parameter.lower(generator, context);
+      llvm_parameter.set_name(parameter.0.as_str());
+    }
 
     let llvm_entry_block = generator
       .llvm_context
@@ -662,14 +622,11 @@ impl Lower for ast::Extern {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_function_type = generator
-      .lower_type(&self.prototype)
-      .into_pointer_type()
-      .get_element_type();
+    let llvm_function_type = generator.lower_prototype(&self.prototype);
 
     let llvm_external_function = generator.llvm_module.add_function(
       self.name.as_str(),
-      llvm_function_type.into_function_type(),
+      llvm_function_type,
       Some(inkwell::module::Linkage::External),
     );
 
@@ -873,7 +830,7 @@ impl Lower for ast::ExprStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    Some(self.expr.lower(generator, context).unwrap())
+    self.expr.lower(generator, context)
   }
 }
 
@@ -936,41 +893,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .lower_type(&element_type)
         .array_type(size.clone())
         .as_basic_type_enum(),
-      ast::Type::Prototype(parameter_types, return_type_result, is_variadic) => {
-        let llvm_parameter_types = parameter_types
-          .iter()
-          .map(|parameter_type| {
-            self
-              .lower_type(
-                // TODO: Simplify. Also, is this cloning?
-                &match &*parameter_type.node.borrow() {
-                  ast::Node::Parameter(parameter) => parameter,
-                  _ => unreachable!(),
-                }
-                .1,
-              )
-              .into()
-          })
-          .collect::<Vec<_>>();
-
-        // TODO: Simplify code (find common ground between `void` and `basic` types).
-        if let Some(return_type) = return_type_result {
-          self
-            .lower_type(&return_type)
-            // TODO: Is `is_variadic` being copied?
-            .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
-            .ptr_type(inkwell::AddressSpace::Generic)
-            .into()
-        } else {
-          self
-            .llvm_context
-            .void_type()
-            // TODO: Is `is_variadic` being copied?
-            .fn_type(llvm_parameter_types.as_slice(), *is_variadic)
-            .ptr_type(inkwell::AddressSpace::Generic)
-            .as_basic_type_enum()
-        }
-      }
       ast::Type::Pointer(pointee_type) => self
         .lower_type(&pointee_type)
         .ptr_type(inkwell::AddressSpace::Generic)
@@ -988,6 +910,35 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .as_basic_type_enum()
       }
     }
+  }
+
+  fn lower_prototype(&self, prototype: &ast::Prototype) -> inkwell::types::FunctionType<'ctx> {
+    let llvm_parameter_types = prototype
+      .parameters
+      .iter()
+      .map(|parameter| self.lower_type(&parameter.1).into())
+      .collect::<Vec<_>>();
+
+    // TODO: Simplify code (find common ground between `void` and `basic` types).
+    if let Some(return_type) = prototype.return_type {
+      self
+        .lower_type(&return_type)
+        // TODO: Is `is_variadic` being copied?
+        .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
+        .ptr_type(inkwell::AddressSpace::Generic)
+        .into()
+    } else {
+      self
+        .llvm_context
+        .void_type()
+        // TODO: Is `is_variadic` being copied?
+        .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
+        .ptr_type(inkwell::AddressSpace::Generic)
+        .as_basic_type_enum()
+    }
+    .into_pointer_type()
+    .get_element_type()
+    .into_function_type()
   }
 
   fn get_current_block(&self) -> inkwell::basic_block::BasicBlock<'ctx> {
