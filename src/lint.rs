@@ -64,7 +64,7 @@ impl LintContext {
     }
   }
 
-  fn lint_name(&mut self, subject: &str, name: &str, case: convert_case::Case) {
+  fn lint_name_casing(&mut self, subject: &str, name: &str, case: convert_case::Case) {
     use convert_case::Casing;
 
     let case_name = match case {
@@ -191,14 +191,14 @@ impl Lint for ast::Definition {
 
 impl Lint for ast::Enum {
   fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.lint_name("enum", &self.name, convert_case::Case::Pascal);
+    lint_context.lint_name_casing("enum", &self.name, convert_case::Case::Pascal);
 
     if self.variants.is_empty() {
       lint_context.diagnostics.warning("empty enum".to_string());
     }
 
     for variant in &self.variants {
-      lint_context.lint_name(
+      lint_context.lint_name_casing(
         format!("enum `{}` variant", &self.name).as_str(),
         &variant,
         convert_case::Case::Pascal,
@@ -226,7 +226,7 @@ impl Lint for ast::Extern {
 
 impl Lint for ast::Function {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.lint_name("function", &self.name, convert_case::Case::Snake);
+    lint_context.lint_name_casing("function", &self.name, convert_case::Case::Snake);
 
     match &self.prototype {
       ast::Type::Prototype(parameters, _, _) => {
@@ -271,7 +271,7 @@ impl Lint for ast::IfStmt {
 
 impl Lint for ast::LetStmt {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.lint_name("variable", &self.name, convert_case::Case::Snake);
+    lint_context.lint_name_casing("variable", &self.name, convert_case::Case::Snake);
     self.value.lint(context, lint_context);
   }
 }
@@ -282,7 +282,7 @@ impl Lint for ast::Literal {
 
 impl Lint for ast::Parameter {
   fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.lint_name("parameter", &self.0, convert_case::Case::Snake);
+    lint_context.lint_name_casing("parameter", &self.0, convert_case::Case::Snake);
   }
 }
 
