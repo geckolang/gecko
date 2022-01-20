@@ -44,6 +44,12 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::Prototype {
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+    // TODO: Implement?
+  }
+}
+
 impl TypeCheck for ast::StructDef {
   // TODO: Implement.
 }
@@ -275,7 +281,8 @@ impl TypeCheck for ast::LetStmt {
     let value_type = self.value.infer_type(context);
 
     // TODO: Ensure this comparison works as expected (especially for complex types).
-    if Some(self.ty) != value_type {
+    // TODO: Comparing references?
+    if Some(&self.ty) != value_type.as_ref() {
       type_context
         .diagnostics
         .error("let statement value and type mismatch".to_string());
@@ -345,12 +352,11 @@ impl TypeCheck for ast::FunctionCall {
       .get(self.callee_key.as_ref().unwrap())
       .unwrap();
 
-    let prototype: ast::Prototype;
+    // TODO: Cleanup.
+    let callee_final = &*callee.as_ref().borrow();
 
     // TODO: Better, simpler way of doing this?
-    // Ensure extern functions are only invoked inside unsafe blocks.
-    // Also, retrieve the prototype for further checks.
-    match &*callee.as_ref().borrow() {
+    let prototype: &ast::Prototype = match callee_final {
       ast::Node::Extern(extern_) => {
         if !type_context.in_unsafe_block {
           type_context
@@ -358,11 +364,9 @@ impl TypeCheck for ast::FunctionCall {
             .error("extern function calls may only occur inside an unsafe block".to_string());
         }
 
-        prototype = extern_.prototype;
+        &extern_.prototype
       }
-      ast::Node::Function(function) => {
-        prototype = function.prototype;
-      }
+      ast::Node::Function(function) => &function.prototype,
       _ => unreachable!(),
     };
 

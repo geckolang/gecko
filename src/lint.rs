@@ -90,6 +90,10 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::Prototype {
+  //
+}
+
 impl Lint for ast::StructDef {
   // TODO: Implement.
 }

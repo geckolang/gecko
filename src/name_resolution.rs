@@ -28,6 +28,12 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::Prototype {
+  fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
+    // FIXME: Must declare parameters (they aren't defined as `Definition`s). This issue prevents parameter usage.
+  }
+}
+
 impl Resolvable for ast::StructDef {
   fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
     // TODO: Continue implementation.
@@ -174,18 +180,13 @@ impl Resolvable for ast::Literal {
 
 impl Resolvable for ast::Function {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    for parameter in self.prototype.parameters {
-      parameter.declare(resolver, context);
-    }
-
+    self.prototype.declare(resolver, context);
     self.body.declare(resolver, context);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO: Do parameters actually need to be resolved?
-    for parameter in self.prototype.parameters {
-      parameter.resolve(resolver, context);
-    }
+    // TODO: Is there a need to resolve the prototype?
+    self.prototype.resolve(resolver, context);
 
     self.body.resolve(resolver, context);
   }

@@ -27,6 +27,7 @@ macro_rules! dispatch {
       $crate::ast::Node::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Enum(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::StructDef(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -88,6 +89,7 @@ pub enum Node {
   ArrayIndexing(ArrayIndexing),
   Enum(Enum),
   StructDef(StructDef),
+  Prototype(Prototype),
 }
 
 pub struct ScopeQualifier(pub String, pub Vec<String>);

@@ -7,9 +7,11 @@ pub const MAIN_FUNCTION_NAME: &str = "main";
 pub trait Lower {
   fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    context: &mut context::Context,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>>;
+    _generator: &mut LlvmGenerator<'a, 'ctx>,
+    _context: &mut context::Context,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    None
+  }
 }
 
 impl Lower for ast::Node {
@@ -20,6 +22,10 @@ impl Lower for ast::Node {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     dispatch!(self, Lower::lower, generator, context)
   }
+}
+
+impl Lower for ast::Prototype {
+  //
 }
 
 impl Lower for ast::StructDef {
@@ -920,7 +926,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       .collect::<Vec<_>>();
 
     // TODO: Simplify code (find common ground between `void` and `basic` types).
-    if let Some(return_type) = prototype.return_type {
+    if let Some(return_type) = &prototype.return_type {
       self
         .lower_type(&return_type)
         // TODO: Is `is_variadic` being copied?

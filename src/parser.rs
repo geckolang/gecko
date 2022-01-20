@@ -333,21 +333,14 @@ impl<'a> Parser<'a> {
   }
 
   /// %name ':' %type_group
-  fn parse_parameter(&mut self, index: u32) -> ParserResult<ast::Definition> {
+  fn parse_parameter(&mut self, index: u32) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
     skip_past!(self, token::TokenKind::SymbolColon);
 
     let type_group = self.parse_type()?;
 
-    Ok(ast::Definition {
-      name: name.clone(),
-      symbol_kind: name_resolution::SymbolKind::VariableOrParameter,
-      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Parameter((
-        name, type_group, index,
-      )))),
-      key: self.context.create_definition_key(),
-    })
+    Ok((name, type_group, index))
   }
 
   /// '(' {%parameter* (,)} (+) ')' '~' %type_group
