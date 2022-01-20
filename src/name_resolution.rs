@@ -50,12 +50,10 @@ impl Resolvable for ast::Enum {
   //
 }
 
-impl Resolvable for ast::VariableAssignStmt {
+impl Resolvable for ast::LValueAssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    self.lvalue_expr.resolve(resolver, context);
     self.value.resolve(resolver, context);
-
-    self.definition_key =
-      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
 }
 
@@ -77,16 +75,6 @@ impl Resolvable for ast::ArrayValue {
     for element in &mut self.elements {
       element.resolve(resolver, context);
     }
-  }
-}
-
-impl Resolvable for ast::ArrayAssignStmt {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.value.resolve(resolver, context);
-
-    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.definition_key =
-      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
 }
 
@@ -186,30 +174,18 @@ impl Resolvable for ast::Literal {
 
 impl Resolvable for ast::Function {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    // TODO: Simplify this process.
-    match &mut self.prototype {
-      ast::Type::Prototype(parameters, _, _) => {
-        for parameter in parameters {
-          parameter.declare(resolver, context);
-        }
-      }
-      _ => unreachable!(),
-    };
+    for parameter in self.prototype.parameters {
+      parameter.declare(resolver, context);
+    }
 
     self.body.declare(resolver, context);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: Do parameters actually need to be resolved?
-    // TODO: Simplify this process.
-    match &mut self.prototype {
-      ast::Type::Prototype(parameters, _, _) => {
-        for parameter in parameters {
-          parameter.resolve(resolver, context);
-        }
-      }
-      _ => unreachable!(),
-    };
+    for parameter in self.prototype.parameters {
+      parameter.resolve(resolver, context);
+    }
 
     self.body.resolve(resolver, context);
   }
@@ -241,8 +217,9 @@ impl Resolvable for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.callee_definition_key =
-      resolver.lookup_or_error(&(self.callee_name.clone(), SymbolKind::FunctionOrExtern));
+    // TODO: Only the base name is being used from `callee_id`.
+    self.callee_key =
+      resolver.lookup_or_error(&(self.callee_id.0.clone(), SymbolKind::FunctionOrExtern));
 
     for argument in &mut self.arguments {
       argument.resolve(resolver, context);

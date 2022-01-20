@@ -1,5 +1,7 @@
+pub type Token = (TokenKind, usize);
+
 #[derive(PartialEq, Debug, Clone)]
-pub enum Token {
+pub enum TokenKind {
   /// A special token emitted when there are no more tokens to lex.
   EOF,
   Illegal(char),
@@ -48,7 +50,7 @@ pub enum Token {
   SymbolBracketR,
 }
 
-impl std::fmt::Display for Token {
+impl std::fmt::Display for TokenKind {
   fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(formatter, "{:?}", self)
   }

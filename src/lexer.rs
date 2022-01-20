@@ -10,27 +10,27 @@ pub struct Lexer {
   current_char: Option<char>,
 }
 
-pub fn match_token(identifier: &str) -> Option<token::Token> {
+pub fn match_token(identifier: &str) -> Option<token::TokenKind> {
   Some(match identifier {
-    "fn" => token::Token::KeywordFn,
-    "extern" => token::Token::KeywordExtern,
-    "let" => token::Token::KeywordLet,
-    "return" => token::Token::KeywordReturn,
-    "if" => token::Token::KeywordIf,
-    "else" => token::Token::KeywordElse,
-    "while" => token::Token::KeywordWhile,
-    "break" => token::Token::KeywordBreak,
-    "continue" => token::Token::KeywordContinue,
-    "unsafe" => token::Token::KeywordUnsafe,
-    "enum" => token::Token::KeywordEnum,
-    "struct" => token::Token::KeywordStruct,
-    "i16" => token::Token::TypeInt16,
-    "i32" => token::Token::TypeInt32,
-    "i64" => token::Token::TypeInt64,
-    "bool" => token::Token::TypeBool,
-    "str" => token::Token::TypeString,
-    "true" => token::Token::LiteralBool(true),
-    "false" => token::Token::LiteralBool(false),
+    "fn" => token::TokenKind::KeywordFn,
+    "extern" => token::TokenKind::KeywordExtern,
+    "let" => token::TokenKind::KeywordLet,
+    "return" => token::TokenKind::KeywordReturn,
+    "if" => token::TokenKind::KeywordIf,
+    "else" => token::TokenKind::KeywordElse,
+    "while" => token::TokenKind::KeywordWhile,
+    "break" => token::TokenKind::KeywordBreak,
+    "continue" => token::TokenKind::KeywordContinue,
+    "unsafe" => token::TokenKind::KeywordUnsafe,
+    "enum" => token::TokenKind::KeywordEnum,
+    "struct" => token::TokenKind::KeywordStruct,
+    "i16" => token::TokenKind::TypeInt16,
+    "i32" => token::TokenKind::TypeInt32,
+    "i64" => token::TokenKind::TypeInt64,
+    "bool" => token::TokenKind::TypeBool,
+    "str" => token::TokenKind::TypeString,
+    "true" => token::TokenKind::LiteralBool(true),
+    "false" => token::TokenKind::LiteralBool(false),
     _ => return None,
   })
 }
@@ -101,16 +101,21 @@ impl Lexer {
     let mut tokens = Vec::new();
 
     loop {
+      let start_position = self.index;
       let token = self.lex_token()?;
 
-      if token == token::Token::EOF {
+      if token == token::TokenKind::EOF {
         break;
       }
 
-      tokens.push(token);
+      tokens.push((token, start_position));
     }
 
     Ok(tokens)
+  }
+
+  fn get_location(&self) -> Option<diagnostic::Location> {
+    Some(self.index..self.index)
   }
 
   /// Determine if the current character is unset, and therefore
@@ -148,6 +153,7 @@ impl Lexer {
       return Err(diagnostic::Diagnostic {
         message: "number might be too large or invalid".to_string(),
         severity: diagnostic::Severity::Error,
+        location: self.get_location(),
       });
     }
 
@@ -188,6 +194,7 @@ impl Lexer {
       return Err(diagnostic::Diagnostic {
         message: "unexpected end of input, expected character".to_string(),
         severity: diagnostic::Severity::Error,
+        location: self.get_location(),
       });
     }
 
@@ -200,39 +207,39 @@ impl Lexer {
   /// returned. If the current character is neither an identifier nor a
   /// digit, an [`Illegal`] token with the encountered character as its
   /// value will be returned.
-  fn lex_token(&mut self) -> Result<token::Token, diagnostic::Diagnostic> {
+  fn lex_token(&mut self) -> Result<token::TokenKind, diagnostic::Diagnostic> {
     if self.is_eof() {
-      return Ok(token::Token::EOF);
+      return Ok(token::TokenKind::EOF);
     }
 
     let current_char = self.current_char.unwrap();
 
-    let token: token::Token = if is_whitespace(current_char) {
-      token::Token::Whitespace(self.read_whitespace())
+    let token = if is_whitespace(current_char) {
+      token::TokenKind::Whitespace(self.read_whitespace())
     } else {
       let final_token = match current_char {
-        '#' => token::Token::Comment(self.read_comment()),
-        '"' => token::Token::LiteralString(self.read_string()),
-        '\'' => token::Token::LiteralChar(self.read_character()?),
-        '{' => token::Token::SymbolBraceL,
-        '}' => token::Token::SymbolBraceR,
-        '(' => token::Token::SymbolParenthesesL,
-        ')' => token::Token::SymbolParenthesesR,
-        '~' => token::Token::SymbolTilde,
-        ':' => token::Token::SymbolColon,
-        '&' => token::Token::SymbolAmpersand,
-        ',' => token::Token::SymbolComma,
-        '+' => token::Token::SymbolPlus,
-        '-' => token::Token::SymbolMinus,
-        '*' => token::Token::SymbolAsterisk,
-        '/' => token::Token::SymbolSlash,
-        '!' => token::Token::SymbolBang,
-        '=' => token::Token::SymbolEqual,
-        ';' => token::Token::SymbolSemiColon,
-        '<' => token::Token::SymbolLessThan,
-        '>' => token::Token::SymbolGreaterThan,
-        '[' => token::Token::SymbolBracketL,
-        ']' => token::Token::SymbolBracketR,
+        '#' => token::TokenKind::Comment(self.read_comment()),
+        '"' => token::TokenKind::LiteralString(self.read_string()),
+        '\'' => token::TokenKind::LiteralChar(self.read_character()?),
+        '{' => token::TokenKind::SymbolBraceL,
+        '}' => token::TokenKind::SymbolBraceR,
+        '(' => token::TokenKind::SymbolParenthesesL,
+        ')' => token::TokenKind::SymbolParenthesesR,
+        '~' => token::TokenKind::SymbolTilde,
+        ':' => token::TokenKind::SymbolColon,
+        '&' => token::TokenKind::SymbolAmpersand,
+        ',' => token::TokenKind::SymbolComma,
+        '+' => token::TokenKind::SymbolPlus,
+        '-' => token::TokenKind::SymbolMinus,
+        '*' => token::TokenKind::SymbolAsterisk,
+        '/' => token::TokenKind::SymbolSlash,
+        '!' => token::TokenKind::SymbolBang,
+        '=' => token::TokenKind::SymbolEqual,
+        ';' => token::TokenKind::SymbolSemiColon,
+        '<' => token::TokenKind::SymbolLessThan,
+        '>' => token::TokenKind::SymbolGreaterThan,
+        '[' => token::TokenKind::SymbolBracketL,
+        ']' => token::TokenKind::SymbolBracketR,
         _ => {
           // NOTE: Identifiers will never start with a digit.
           return if current_char == '_' || is_letter(current_char) {
@@ -240,16 +247,16 @@ impl Lexer {
 
             match match_token(identifier.as_str()) {
               Some(keyword_token) => Ok(keyword_token),
-              None => Ok(token::Token::Identifier(identifier)),
+              None => Ok(token::TokenKind::Identifier(identifier)),
             }
           } else if is_digit(current_char) {
-            Ok(token::Token::LiteralInt(self.read_number()?))
+            Ok(token::TokenKind::LiteralInt(self.read_number()?))
           } else {
             let illegal_char = current_char;
 
             self.read_char();
 
-            Ok(token::Token::Illegal(illegal_char))
+            Ok(token::TokenKind::Illegal(illegal_char))
           };
         }
       };
@@ -304,7 +311,7 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(
-      Ok(token::Token::Identifier("a".to_string())),
+      Ok(token::TokenKind::Identifier("a".to_string())),
       lexer.lex_token()
     );
   }
@@ -316,7 +323,7 @@ mod tests {
     assert_eq!(true, lexer.lex_token().is_ok());
 
     assert_eq!(
-      Ok(token::Token::Identifier("abc".to_string())),
+      Ok(token::TokenKind::Identifier("abc".to_string())),
       lexer.lex_token()
     );
   }
@@ -326,7 +333,7 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a', 'b', 'c']);
 
     assert_eq!(
-      Ok(token::Token::Identifier("abc".to_string())),
+      Ok(token::TokenKind::Identifier("abc".to_string())),
       lexer.lex_token()
     );
   }
@@ -336,21 +343,21 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(true, lexer.lex_token().is_ok());
-    assert_eq!(Ok(token::Token::EOF), lexer.lex_token());
+    assert_eq!(Ok(token::TokenKind::EOF), lexer.lex_token());
   }
 
   #[test]
   fn lex_empty() {
     let mut lexer = Lexer::new(vec![]);
 
-    assert_eq!(Ok(token::Token::EOF), lexer.lex_token());
+    assert_eq!(Ok(token::TokenKind::EOF), lexer.lex_token());
   }
 
   #[test]
   fn lex_illegal() {
     let mut lexer = Lexer::new(vec!['?']);
 
-    assert_eq!(Ok(token::Token::Illegal('?')), lexer.lex_token());
+    assert_eq!(Ok(token::TokenKind::Illegal('?')), lexer.lex_token());
   }
 
   #[test]
@@ -387,7 +394,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#test");
 
     assert_eq!(
-      Ok(token::Token::Comment("test".to_string())),
+      Ok(token::TokenKind::Comment("test".to_string())),
       lexer.lex_token()
     );
   }
@@ -397,7 +404,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#hello world");
 
     assert_eq!(
-      Ok(token::Token::Comment("hello world".to_string())),
+      Ok(token::TokenKind::Comment("hello world".to_string())),
       lexer.lex_token()
     );
   }
@@ -407,7 +414,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#hello\n world");
 
     assert_eq!(
-      Ok(token::Token::Comment("hello".to_string())),
+      Ok(token::TokenKind::Comment("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -419,7 +426,7 @@ mod tests {
     assert_eq!(true, lexer.lex_token().is_ok());
 
     assert_eq!(
-      Ok(token::Token::Comment("hello".to_string())),
+      Ok(token::TokenKind::Comment("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -429,7 +436,7 @@ mod tests {
     let mut lexer = Lexer::from_str("\"hello\"");
 
     assert_eq!(
-      Ok(token::Token::LiteralString("hello".to_string())),
+      Ok(token::TokenKind::LiteralString("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -438,14 +445,14 @@ mod tests {
   fn lex_number_single_digit() {
     let mut lexer = Lexer::from_str("1");
 
-    assert_eq!(Ok(token::Token::LiteralInt(1)), lexer.lex_token());
+    assert_eq!(Ok(token::TokenKind::LiteralInt(1)), lexer.lex_token());
   }
 
   #[test]
   fn lex_number() {
     let mut lexer = Lexer::from_str("123");
 
-    assert_eq!(Ok(token::Token::LiteralInt(123)), lexer.lex_token());
+    assert_eq!(Ok(token::TokenKind::LiteralInt(123)), lexer.lex_token());
   }
 
   #[test]

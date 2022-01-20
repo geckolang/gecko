@@ -38,9 +38,11 @@ impl LintContext {
         _ => unreachable!(),
       };
 
-      self
-        .diagnostics
-        .warning(format!("function `{}` is never called", name));
+      if name != llvm_lowering::MAIN_FUNCTION_NAME {
+        self
+          .diagnostics
+          .warning(format!("function `{}` is never called", name));
+      }
     }
 
     for (variable_def_key, was_used) in &self.variable_references {
@@ -56,7 +58,7 @@ impl LintContext {
         _ => unreachable!(),
       };
 
-      if name != llvm_lowering::MAIN_NAME {
+      if name != llvm_lowering::MAIN_FUNCTION_NAME {
         self
           .diagnostics
           .warning(format!("variable `{}` is never used", name));
@@ -95,12 +97,6 @@ impl Lint for ast::StructDef {
 impl Lint for ast::UnaryExpr {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
     self.expr.lint(context, lint_context);
-  }
-}
-
-impl Lint for ast::ArrayAssignStmt {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    self.value.lint(context, lint_context);
   }
 }
 
@@ -228,16 +224,11 @@ impl Lint for ast::Function {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
     lint_context.lint_name_casing("function", &self.name, convert_case::Case::Snake);
 
-    match &self.prototype {
-      ast::Type::Prototype(parameters, _, _) => {
-        if parameters.len() > 4 {
-          lint_context
-            .diagnostics
-            .warning("function has more than 4 parameters".to_string());
-        }
-      }
-      _ => unreachable!(),
-    };
+    if self.prototype.parameters.len() > 4 {
+      lint_context
+        .diagnostics
+        .warning("function has more than 4 parameters".to_string());
+    }
 
     self.body.lint(context, lint_context);
   }
@@ -247,7 +238,7 @@ impl Lint for ast::FunctionCall {
   fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
     lint_context
       .function_references
-      .insert(self.callee_definition_key.unwrap(), true);
+      .insert(self.callee_key.unwrap(), true);
   }
 }
 
@@ -300,7 +291,7 @@ impl Lint for ast::UnsafeBlockStmt {
   }
 }
 
-impl Lint for ast::VariableAssignStmt {
+impl Lint for ast::LValueAssignStmt {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
     self.value.lint(context, lint_context);
   }
