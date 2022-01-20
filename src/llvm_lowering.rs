@@ -63,7 +63,7 @@ impl Lower for ast::Enum {
   }
 }
 
-impl Lower for ast::LValueAssignStmt {
+impl Lower for ast::AssignStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -171,6 +171,7 @@ impl Lower for ast::ArrayValue {
       .llvm_builder
       .build_alloca(llvm_array_type, "array.value");
 
+    // TODO: Might not need to load the array in order to initialize it.
     let llvm_array_ref = generator
       .llvm_builder
       .build_load(llvm_array_alloca, "array.load")
@@ -826,7 +827,7 @@ impl Lower for ast::Definition {
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // FIXME: This will error for structs, since they are types.
-    Some(generator.memoize_or_retrieve(self.key, context))
+    Some(generator.memoize_or_retrieve(self.definition_key, context))
   }
 }
 

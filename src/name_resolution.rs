@@ -56,7 +56,7 @@ impl Resolvable for ast::Enum {
   //
 }
 
-impl Resolvable for ast::LValueAssignStmt {
+impl Resolvable for ast::AssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.lvalue_expr.resolve(resolver, context);
     self.value.resolve(resolver, context);
@@ -198,13 +198,24 @@ impl Resolvable for ast::Extern {
 
 impl Resolvable for ast::Definition {
   fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    let symbol_key = (self.name.clone(), self.symbol_kind.clone());
+
+    // Check for existing definitions.
+    if resolver.contains(&symbol_key) {
+      resolver
+        .diagnostics
+        .error(format!("re-definition of `{}`", self.name));
+
+      return;
+    }
+
     // Register the node on the context for lowering lookup.
     context
       .declarations
-      .insert(self.key, std::rc::Rc::clone(&self.node));
+      .insert(self.definition_key, std::rc::Rc::clone(&self.node));
 
     // Bind the symbol to the current scope for name resolution lookup.
-    resolver.bind((self.name.clone(), self.symbol_kind.clone()), self.key);
+    resolver.bind(symbol_key, self.definition_key);
 
     self.node.as_ref().borrow_mut().declare(resolver, context);
   }
@@ -309,6 +320,10 @@ impl NameResolver {
       .error(format!("undefined reference to `{}`", key.0));
 
     None
+  }
+
+  fn contains(&self, key: &(String, SymbolKind)) -> bool {
+    self.lookup(key).is_some()
   }
 }
 

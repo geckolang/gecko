@@ -67,7 +67,7 @@ impl TypeCheck for ast::UnaryExpr {
       ast::OperatorKind::Not => {
         let expr_type = self.expr.infer_type(context);
 
-        if expr_type != Some(ast::Type::Primitive(ast::PrimitiveType::Bool)) {
+        if !unify_with_primitive(expr_type, ast::PrimitiveType::Bool) {
           type_context
             .diagnostics
             .error("can only negate boolean expressions".to_string());
@@ -104,8 +104,10 @@ impl TypeCheck for ast::Enum {
   //
 }
 
-impl TypeCheck for ast::LValueAssignStmt {
+impl TypeCheck for ast::AssignStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    // TODO: Need to unify the value and the target's type, as well as ensuring that the target is mutable.
+
     let lvalue_type = self.lvalue_expr.infer_type(context);
 
     if !matches!(lvalue_type, Some(ast::Type::Pointer(_))) {
@@ -135,7 +137,24 @@ impl TypeCheck for ast::ArrayIndexing {
 }
 
 impl TypeCheck for ast::ArrayValue {
-  // TODO: Implement. Ensure all values are of the same type.
+  fn infer_type(&self, _context: &context::Context) -> Option<ast::Type> {
+    // FIXME: Here, we assume that `explicit_type` is always `Some(_)`.
+    self.explicit_type.clone()
+  }
+
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+    // FIXME: Here, we assume that `explicit_type` is always `Some(_)`. Currently, that might not be the case until type inference is implemented.
+
+    for element in &self.elements {
+      if element.infer_type(context) != self.explicit_type {
+        type_context
+          .diagnostics
+          .error("array elements must all have the same type".to_string());
+      }
+
+      element.type_check(type_context, context);
+    }
+  }
 }
 
 impl TypeCheck for ast::UnsafeBlockStmt {
@@ -165,6 +184,7 @@ impl TypeCheck for ast::Block {
 
 impl TypeCheck for ast::VariableRef {
   fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+    // TODO: Simplify.
     let target_variable = &*context
       .declarations
       .get(&self.definition_key.unwrap())
@@ -172,7 +192,6 @@ impl TypeCheck for ast::VariableRef {
       .as_ref()
       .borrow();
 
-    // TODO: Simplify code.
     let variable_type = match target_variable {
       ast::Node::LetStmt(let_stmt) => &let_stmt.ty,
       ast::Node::Parameter(parameter) => &parameter.1,
@@ -196,7 +215,7 @@ impl TypeCheck for ast::Literal {
 
 impl TypeCheck for ast::IfStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
-    if self.condition.infer_type(context) != Some(ast::Type::Primitive(ast::PrimitiveType::Bool)) {
+    if !unify_with_primitive(self.condition.infer_type(context), ast::PrimitiveType::Bool) {
       type_context
         .diagnostics
         .error("if statement condition must evaluate to a boolean".to_string());
@@ -217,6 +236,7 @@ impl TypeCheck for ast::BinaryExpr {
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
     // FIXME: Does this equality check work as expected? Research & ensure.
+    // TODO: If we require both operands to  be of the same type, then operator overloading isn't possible with mixed operands as parameters.
     if left_type != right_type {
       type_context
         .diagnostics
@@ -225,7 +245,7 @@ impl TypeCheck for ast::BinaryExpr {
       return;
     }
 
-    // TODO: Check for mixed operators that don't make sense (ex. addition, then a comparison operator).
+    // TODO: Check for mixed operators that don't make sense (ex. addition, then a comparison operator)?
 
     // NOTE: By this point, it is assumed that both operands are of the same type.
     match self.operator {
@@ -403,16 +423,21 @@ impl TypeCheck for ast::FunctionCall {
 
 impl TypeCheck for ast::WhileStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
-    if self.condition.infer_type(context) != Some(ast::Type::Primitive(ast::PrimitiveType::Bool)) {
+    if !unify_with_primitive(self.condition.infer_type(context), ast::PrimitiveType::Bool) {
       type_context
         .diagnostics
         .error("while statement condition must evaluate to a boolean".to_string());
     }
 
-    // TODO: To avoid problems with nested cases, save a buffer here, then restore.
+    // TODO: To avoid problems with nested cases, save a buffer here, then restore?
     type_context.in_loop = true;
     self.condition.type_check(type_context, context);
     self.body.type_check(type_context, context);
     type_context.in_loop = false;
   }
+}
+
+/// Shortcut for unifying a result with a primitive type.
+pub fn unify_with_primitive(ty: Option<ast::Type>, primitive: ast::PrimitiveType) -> bool {
+  ty == Some(ast::Type::Primitive(primitive))
 }

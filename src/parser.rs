@@ -405,7 +405,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
-      key: self.context.create_definition_key(),
+      definition_key: self.context.create_definition_key(),
     })
   }
 
@@ -430,7 +430,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Extern(extern_node))),
-      key: self.context.create_definition_key(),
+      definition_key: self.context.create_definition_key(),
     })
   }
 
@@ -512,7 +512,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::VariableOrParameter,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::LetStmt(let_stmt))),
-      key: self.context.create_definition_key(),
+      definition_key: self.context.create_definition_key(),
     })
   }
 
@@ -844,7 +844,7 @@ impl<'a> Parser<'a> {
   }
 
   /// %name '=' %expr ';'
-  fn parse_lvalue_assign_stmt(&mut self) -> ParserResult<ast::LValueAssignStmt> {
+  fn parse_lvalue_assign_stmt(&mut self) -> ParserResult<ast::AssignStmt> {
     let lvalue_expr = Box::new(self.parse_expr()?);
 
     skip_past!(self, token::TokenKind::SymbolEqual);
@@ -853,7 +853,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, token::TokenKind::SymbolSemiColon);
 
-    Ok(ast::LValueAssignStmt { lvalue_expr, value })
+    Ok(ast::AssignStmt { lvalue_expr, value })
   }
 
   /// enum %name '{' (%name (','))* '}'
@@ -889,7 +889,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Enum(enum_))),
-      key: self.context.create_definition_key(),
+      definition_key: self.context.create_definition_key(),
     })
   }
 
@@ -926,7 +926,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::StructDef(struct_def))),
-      key: self.context.create_definition_key(),
+      definition_key: self.context.create_definition_key(),
     })
   }
 }

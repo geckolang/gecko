@@ -80,7 +80,7 @@ pub enum Node {
   ExprWrapperStmt(ExprStmt),
   Definition(Definition),
   VariableRef(VariableRef),
-  VariableAssignStmt(LValueAssignStmt),
+  VariableAssignStmt(AssignStmt),
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
   Parameter(Parameter),
@@ -139,7 +139,7 @@ pub struct VariableRef {
   pub definition_key: Option<context::DefinitionKey>,
 }
 
-pub struct LValueAssignStmt {
+pub struct AssignStmt {
   pub lvalue_expr: Box<Node>,
   pub value: Box<Node>,
 }
@@ -243,5 +243,5 @@ pub struct Definition {
   pub name: String,
   pub symbol_kind: name_resolution::SymbolKind,
   pub node: std::rc::Rc<std::cell::RefCell<Node>>,
-  pub key: context::DefinitionKey,
+  pub definition_key: context::DefinitionKey,
 }

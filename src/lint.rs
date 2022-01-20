@@ -176,10 +176,10 @@ impl Lint for ast::Definition {
 
     match node {
       ast::Node::Function(_) => {
-        lint_context.function_references.insert(self.key, false);
+        lint_context.function_references.insert(self.definition_key, false);
       }
       ast::Node::LetStmt(_) => {
-        lint_context.variable_references.insert(self.key, false);
+        lint_context.variable_references.insert(self.definition_key, false);
       }
       // TODO: Lint other definitions.
       _ => {}
@@ -295,7 +295,7 @@ impl Lint for ast::UnsafeBlockStmt {
   }
 }
 
-impl Lint for ast::LValueAssignStmt {
+impl Lint for ast::AssignStmt {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
     self.value.lint(context, lint_context);
   }
