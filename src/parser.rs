@@ -853,7 +853,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, token::TokenKind::SymbolSemiColon);
 
-    Ok(ast::AssignStmt { lvalue_expr, value })
+    Ok(ast::AssignStmt { assignee_expr: lvalue_expr, value })
   }
 
   /// enum %name '{' (%name (','))* '}'

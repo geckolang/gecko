@@ -140,7 +140,7 @@ pub struct VariableRef {
 }
 
 pub struct AssignStmt {
-  pub lvalue_expr: Box<Node>,
+  pub assignee_expr: Box<Node>,
   pub value: Box<Node>,
 }
 

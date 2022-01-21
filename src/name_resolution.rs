@@ -58,7 +58,7 @@ impl Resolvable for ast::Enum {
 
 impl Resolvable for ast::AssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.lvalue_expr.resolve(resolver, context);
+    self.assignee_expr.resolve(resolver, context);
     self.value.resolve(resolver, context);
   }
 }

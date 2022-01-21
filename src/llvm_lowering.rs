@@ -72,7 +72,7 @@ impl Lower for ast::AssignStmt {
     let llvm_value = self.value.lower(generator, context).unwrap();
 
     // TODO: Here we should only be retrieving, no memoization should be done by this point (variables are declared top-down).
-    let llvm_target = self.lvalue_expr.lower(generator, context).unwrap();
+    let llvm_target = self.assignee_expr.lower(generator, context).unwrap();
 
     let llvm_new_variable = generator
       .llvm_builder

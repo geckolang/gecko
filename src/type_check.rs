@@ -108,12 +108,18 @@ impl TypeCheck for ast::AssignStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     // TODO: Need to unify the value and the target's type, as well as ensuring that the target is mutable.
 
-    let lvalue_type = self.lvalue_expr.infer_type(context);
+    let assignee_type = self.assignee_expr.infer_type(context);
+    let is_pointer_or_ref_expr = matches!(assignee_type, Some(ast::Type::Pointer(_)));
+    let is_variable_ref = matches!(self.assignee_expr.as_ref(), ast::Node::VariableRef(_));
+    let is_array_indexing = matches!(self.assignee_expr.as_ref(), ast::Node::ArrayIndexing(_));
 
-    if !matches!(lvalue_type, Some(ast::Type::Pointer(_))) {
+    // TODO: Missing member access (struct fields) support.
+    // NOTE: The assignee expression may only be an expression of type `Pointer`
+    // or `Reference`, a variable reference, or an array indexing.
+    if !is_pointer_or_ref_expr && !is_variable_ref && !is_array_indexing {
       type_context
         .diagnostics
-        .error("assignment lvalue must be a pointer".to_string());
+        .error("assignment assignee must be an expression of pointer or reference type, a variable reference, or an array indexing".to_string());
     }
   }
 }
