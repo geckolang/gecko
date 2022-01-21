@@ -58,11 +58,9 @@ impl LintContext {
         _ => unreachable!(),
       };
 
-      if name != llvm_lowering::MAIN_FUNCTION_NAME {
-        self
-          .diagnostics
-          .warning(format!("variable `{}` is never used", name));
-      }
+      self
+        .diagnostics
+        .warning(format!("variable `{}` is never used", name));
     }
   }
 
@@ -176,10 +174,14 @@ impl Lint for ast::Definition {
 
     match node {
       ast::Node::Function(_) => {
-        lint_context.function_references.insert(self.definition_key, false);
+        lint_context
+          .function_references
+          .insert(self.definition_key, false);
       }
       ast::Node::LetStmt(_) => {
-        lint_context.variable_references.insert(self.definition_key, false);
+        lint_context
+          .variable_references
+          .insert(self.definition_key, false);
       }
       // TODO: Lint other definitions.
       _ => {}
@@ -302,7 +304,11 @@ impl Lint for ast::AssignStmt {
 }
 
 impl Lint for ast::VariableRef {
-  //
+  fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
+    lint_context
+      .variable_references
+      .insert(self.definition_key.unwrap(), true);
+  }
 }
 
 impl Lint for ast::WhileStmt {

@@ -74,31 +74,9 @@ impl Lower for ast::AssignStmt {
     // TODO: Here we should only be retrieving, no memoization should be done by this point (variables are declared top-down).
     let llvm_target = self.assignee_expr.lower(generator, context).unwrap();
 
-    let llvm_new_variable = generator
-      .llvm_builder
-      .build_alloca(llvm_target.get_type(), "assign");
-
-    // FIXME: This part is causing problems (segfault).
-    let llvm_new_variable_ptr = generator
-      .llvm_builder
-      .build_load(llvm_new_variable, "assign.ptr")
-      .into_pointer_value();
-
     generator
       .llvm_builder
-      .build_store(llvm_new_variable_ptr, llvm_value);
-
-    // TODO: Shouldn't the declaration be replaced as well? Think this through.
-    // FIXME: Temporarily commented out.
-    // Remove the original variable.
-    // generator.definitions.remove(&definition_key);
-
-    // TODO: We're inserting a `load` instruction value here, yet on variable references we insert an `alloca` instruction. Research.
-    // FIXME: Temporarily commented out.
-    // Replace it with the new one.
-    // generator
-    //   .definitions
-    //   .insert(definition_key, llvm_new_variable_ptr.as_basic_value_enum());
+      .build_store(llvm_target.into_pointer_value(), llvm_value);
 
     None
   }

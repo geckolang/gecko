@@ -418,6 +418,7 @@ impl TypeCheck for ast::FunctionCall {
       let argument_type = argument.infer_type(context);
 
       if argument_type != parameter_type {
+        // TODO: Include callee name in the error message.
         type_context.diagnostics.error(format!(
           "function call argument and parameter `{}` type mismatch",
           parameter.0
