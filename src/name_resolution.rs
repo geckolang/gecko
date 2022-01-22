@@ -28,21 +28,33 @@ impl Resolvable for ast::Node {
   }
 }
 
+impl Resolvable for ast::UserDefinedType {
+  fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
+    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+  }
+}
+
+impl Resolvable for ast::StructValue {
+  fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
+    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+  }
+}
+
 impl Resolvable for ast::Prototype {
   fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
     // FIXME: Must declare parameters (they aren't defined as `Definition`s). This issue prevents parameter usage.
   }
 }
 
-impl Resolvable for ast::StructDef {
+impl Resolvable for ast::StructType {
   fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
-    // TODO: Continue implementation.
-    // self.fields.iter().for_each(|field| field.1.)
+    // TODO: Implement.
   }
 
   fn resolve(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
-    // TODO: Implement.
-    todo!();
+    // TODO: Implement?
   }
 }
 
@@ -71,7 +83,7 @@ impl Resolvable for ast::ArrayIndexing {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
     self.index.resolve(resolver, context);
 
-    self.definition_key =
+    self.target_key =
       resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
 }
@@ -101,7 +113,7 @@ impl Resolvable for ast::Parameter {
 impl Resolvable for ast::VariableRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.definition_key =
+    self.target_key =
       resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
   }
 }
@@ -138,6 +150,8 @@ impl Resolvable for ast::IfStmt {
 
 impl Resolvable for ast::LetStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+    // FIXME: How to resolve `UserDefined` types?
+
     self.value.resolve(resolver, context);
   }
 }
@@ -230,7 +244,7 @@ impl Resolvable for ast::FunctionCall {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     // TODO: Only the base name is being used from `callee_id`.
-    self.callee_key =
+    self.target_key =
       resolver.lookup_or_error(&(self.callee_id.0.clone(), SymbolKind::FunctionOrExtern));
 
     for argument in &mut self.arguments {
@@ -271,6 +285,35 @@ impl NameResolver {
       scopes: vec![std::collections::HashMap::new()],
       global_scope: std::collections::HashMap::new(),
     }
+  }
+
+  // TODO: Incomplete (cannot access `self` as `&Node`).
+  fn _define(
+    &mut self,
+    definition_key: context::DefinitionKey,
+    symbol_key: (String, SymbolKind),
+    _context: &mut context::Context,
+    _node: &ast::Node,
+  ) -> bool {
+    // Check for existing definitions.
+    if self.contains(&symbol_key) {
+      self
+        .diagnostics
+        .error(format!("re-definition of `{}`", symbol_key.0));
+
+      return false;
+    }
+
+    // Register the node on the context for lowering lookup.
+    // TODO:
+    // context
+    //   .declarations
+    //   .insert(definition_key, std::rc::Rc::clone(node));
+
+    // Bind the symbol to the current scope for name resolution lookup.
+    self.bind(symbol_key, definition_key);
+
+    true
   }
 
   // TODO: Consider returning the pushed scope? Unless it's not actually used.

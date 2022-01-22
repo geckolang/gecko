@@ -24,6 +24,8 @@ pub enum TokenKind {
   KeywordUnsafe,
   KeywordEnum,
   KeywordStruct,
+  KeywordMut,
+  KeywordNew,
   TypeInt16,
   TypeInt32,
   TypeInt64,

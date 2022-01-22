@@ -318,6 +318,7 @@ impl<'a> Parser<'a> {
 
         Ok(ast::Type::Pointer(Box::new(self.parse_type()?)))
       }
+      token::TokenKind::Identifier(_) => self.parse_user_defined_type(),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -330,6 +331,15 @@ impl<'a> Parser<'a> {
         });
       }
     }
+  }
+
+  fn parse_user_defined_type(&mut self) -> ParserResult<ast::Type> {
+    let name = self.parse_name()?;
+
+    Ok(ast::Type::UserDefined(ast::UserDefinedType {
+      name,
+      target_key: None,
+    }))
   }
 
   /// %name ':' %type_group
@@ -448,10 +458,11 @@ impl<'a> Parser<'a> {
     let token = self.get();
 
     Ok(match token {
+      // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
       token::TokenKind::KeywordFn => ast::Node::Definition(self.parse_function()?),
       token::TokenKind::KeywordExtern => ast::Node::Definition(self.parse_extern()?),
       token::TokenKind::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
-      token::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_def()?),
+      token::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_type()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!("unexpected token `{}`, expected top-level construct", token),
@@ -482,6 +493,13 @@ impl<'a> Parser<'a> {
   fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, token::TokenKind::KeywordLet);
 
+    let mut is_mutable = false;
+
+    if self.is(token::TokenKind::KeywordMut) {
+      self.skip();
+      is_mutable = true;
+    }
+
     let name = self.parse_name()?;
     let mut ty = None;
 
@@ -502,10 +520,12 @@ impl<'a> Parser<'a> {
       todo!();
     }
 
+    // TODO: Is mutable.
     let let_stmt = ast::LetStmt {
       name: name.clone(),
       ty: ty.unwrap(),
       value: Box::new(value),
+      is_mutable,
     };
 
     Ok(ast::Definition {
@@ -687,7 +707,7 @@ impl<'a> Parser<'a> {
     Ok(ast::ArrayIndexing {
       name,
       index,
-      definition_key: None,
+      target_key: None,
     })
   }
 
@@ -726,6 +746,7 @@ impl<'a> Parser<'a> {
       | token::TokenKind::SymbolAmpersand
       | token::TokenKind::SymbolAsterisk => ast::Node::UnaryExpr(self.parse_unary_expr()?),
       token::TokenKind::SymbolBracketL => ast::Node::ArrayValue(self.parse_array_value()?),
+      token::TokenKind::KeywordNew => ast::Node::StructValue(self.parse_struct_value()?),
       // Default to a literal if nothing else matched.
       _ => ast::Node::Literal(self.parse_literal()?),
     })
@@ -829,7 +850,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::FunctionCall {
       callee_id,
-      callee_key: None,
+      target_key: None,
       arguments,
     })
   }
@@ -840,7 +861,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::VariableRef {
       name,
-      definition_key: None,
+      target_key: None,
     })
   }
 
@@ -898,7 +919,7 @@ impl<'a> Parser<'a> {
   }
 
   /// struct %name '{' (%name ':' %type ';')* '}'
-  fn parse_struct_def(&mut self) -> ParserResult<ast::Definition> {
+  fn parse_struct_type(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, token::TokenKind::KeywordStruct);
 
     let name = self.parse_name()?;
@@ -921,7 +942,7 @@ impl<'a> Parser<'a> {
     // Skip the closing brace symbol.
     self.skip();
 
-    let struct_def = ast::StructDef {
+    let struct_type = ast::StructType {
       name: name.clone(),
       fields,
     };
@@ -929,8 +950,39 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
-      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::StructDef(struct_def))),
+      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::StructType(struct_type))),
       definition_key: self.context.create_definition_key(),
+    })
+  }
+
+  fn parse_struct_value(&mut self) -> ParserResult<ast::StructValue> {
+    skip_past!(self, token::TokenKind::KeywordNew);
+
+    // TODO: Shouldn't it be `ScopeQualifier`?
+    let name = self.parse_name()?;
+
+    skip_past!(self, token::TokenKind::SymbolBraceL);
+
+    let mut fields = Vec::new();
+
+    while !self.is_eof() && !self.is(token::TokenKind::SymbolBraceR) {
+      let field = self.parse_expr()?;
+
+      fields.push(field);
+
+      // TODO: Disallow trailing comma.
+      if self.is(token::TokenKind::SymbolComma) {
+        self.skip();
+      }
+    }
+
+    // Skip the closing brace symbol.
+    self.skip();
+
+    Ok(ast::StructValue {
+      name,
+      fields,
+      target_key: None,
     })
   }
 }

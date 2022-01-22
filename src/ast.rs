@@ -26,8 +26,9 @@ macro_rules! dispatch {
       $crate::ast::Node::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Enum(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::StructDef(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::StructType(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -62,9 +63,12 @@ pub enum Type {
   Array(Box<Type>, u32),
   Primitive(PrimitiveType),
   Pointer(Box<Type>),
-  Struct(StructDef),
+  // TODO: Isn't this incompatible with `UserDefined`?
+  Struct(StructType),
+  UserDefined(UserDefinedType),
 }
 
+// TODO: Write a macro that both defines this and `as_x_node()` (which alternatively yields `unreachable!()`) methods.
 pub enum Node {
   Literal(Literal),
   Extern(Extern),
@@ -88,8 +92,9 @@ pub enum Node {
   ArrayValue(ArrayValue),
   ArrayIndexing(ArrayIndexing),
   Enum(Enum),
-  StructDef(StructDef),
+  StructType(StructType),
   Prototype(Prototype),
+  StructValue(StructValue),
 }
 
 pub struct ScopeQualifier(pub String, pub Vec<String>);
@@ -114,6 +119,18 @@ impl ToString for ScopeQualifier {
   }
 }
 
+#[derive(PartialEq, Clone)]
+pub struct UserDefinedType {
+  pub name: String,
+  pub target_key: Option<context::DefinitionKey>,
+}
+
+pub struct StructValue {
+  pub name: String,
+  pub fields: Vec<Node>,
+  pub target_key: Option<context::DefinitionKey>,
+}
+
 pub struct Enum {
   pub name: String,
   pub variants: Vec<String>,
@@ -124,7 +141,7 @@ pub struct ContinueStmt;
 pub struct ArrayIndexing {
   pub name: String,
   pub index: Box<Node>,
-  pub definition_key: Option<context::DefinitionKey>,
+  pub target_key: Option<context::DefinitionKey>,
 }
 
 pub struct ArrayValue {
@@ -137,7 +154,7 @@ pub struct UnsafeBlockStmt(pub Block);
 
 pub struct VariableRef {
   pub name: String,
-  pub definition_key: Option<context::DefinitionKey>,
+  pub target_key: Option<context::DefinitionKey>,
 }
 
 pub struct AssignStmt {
@@ -185,6 +202,7 @@ pub struct LetStmt {
   pub name: String,
   pub ty: Type,
   pub value: Box<Node>,
+  pub is_mutable: bool,
 }
 
 pub struct IfStmt {
@@ -204,12 +222,12 @@ pub struct ExprStmt {
 
 pub struct FunctionCall {
   pub callee_id: ScopeQualifier,
-  pub callee_key: Option<context::DefinitionKey>,
+  pub target_key: Option<context::DefinitionKey>,
   pub arguments: Vec<Node>,
 }
 
 #[derive(PartialEq, Clone)]
-pub struct StructDef {
+pub struct StructType {
   pub name: String,
   pub fields: std::collections::HashMap<String, Type>,
 }

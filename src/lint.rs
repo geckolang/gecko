@@ -88,11 +88,15 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::StructValue {
+  //
+}
+
 impl Lint for ast::Prototype {
   //
 }
 
-impl Lint for ast::StructDef {
+impl Lint for ast::StructType {
   // TODO: Implement.
 }
 
@@ -106,7 +110,7 @@ impl Lint for ast::ArrayIndexing {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
     lint_context
       .variable_references
-      .insert(self.definition_key.unwrap(), true);
+      .insert(self.target_key.unwrap(), true);
 
     self.index.lint(context, lint_context);
   }
@@ -248,7 +252,7 @@ impl Lint for ast::FunctionCall {
   fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
     lint_context
       .function_references
-      .insert(self.callee_key.unwrap(), true);
+      .insert(self.target_key.unwrap(), true);
   }
 }
 
@@ -311,7 +315,7 @@ impl Lint for ast::VariableRef {
   fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
     lint_context
       .variable_references
-      .insert(self.definition_key.unwrap(), true);
+      .insert(self.target_key.unwrap(), true);
   }
 }
 

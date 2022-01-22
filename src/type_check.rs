@@ -44,13 +44,32 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::StructValue {
+  fn infer_type(&self, _context: &context::Context) -> Option<ast::Type> {
+    let struct_type_node = _context
+      .declarations
+      .get(&self.target_key.unwrap())
+      .unwrap()
+      .as_ref()
+      .borrow();
+
+    let struct_type = match &*struct_type_node {
+      ast::Node::StructType(struct_type) => struct_type,
+      _ => unreachable!(),
+    };
+
+    // TODO: Is this the correct type? We might need this one in order to unify with the original struct type.
+    Some(ast::Type::Struct(struct_type.clone()))
+  }
+}
+
 impl TypeCheck for ast::Prototype {
   fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut context::Context) {
     // TODO: Implement?
   }
 }
 
-impl TypeCheck for ast::StructDef {
+impl TypeCheck for ast::StructType {
   // TODO: Implement.
 }
 
@@ -119,7 +138,30 @@ impl TypeCheck for ast::AssignStmt {
     if !is_pointer_or_ref_expr && !is_variable_ref && !is_array_indexing {
       type_context
         .diagnostics
-        .error("assignment assignee must be an expression of pointer or reference type, a variable reference, or an array indexing".to_string());
+        .error("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing".to_string());
+    } else if is_variable_ref {
+      // If the assignee is a variable reference, ensure that the variable is mutable.
+      match self.assignee_expr.as_ref() {
+        ast::Node::VariableRef(variable_ref) => {
+          let declaration = context
+            .declarations
+            .get(&variable_ref.target_key.unwrap())
+            .unwrap()
+            .as_ref()
+            .borrow();
+
+          match &*declaration {
+            ast::Node::LetStmt(let_stmt) if !let_stmt.is_mutable => {
+              type_context
+                .diagnostics
+                .error("assignee is immutable".to_string());
+            }
+            // TODO: Parameters should be immutable by default.
+            _ => {}
+          };
+        }
+        _ => unreachable!(),
+      };
     }
   }
 }
@@ -138,7 +180,7 @@ impl TypeCheck for ast::ArrayIndexing {
   fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
     let target_array_variable = &*context
       .declarations
-      .get(&self.definition_key.unwrap())
+      .get(&self.target_key.unwrap())
       .unwrap()
       .as_ref()
       .borrow();
@@ -235,7 +277,7 @@ impl TypeCheck for ast::VariableRef {
     // TODO: Simplify.
     let target_variable = &*context
       .declarations
-      .get(&self.definition_key.unwrap())
+      .get(&self.target_key.unwrap())
       .unwrap()
       .as_ref()
       .borrow();
@@ -397,7 +439,7 @@ impl TypeCheck for ast::FunctionCall {
     // TODO: Is this cloning? Simplify this messy code section.
     let function_or_extern = &*context
       .declarations
-      .get(&self.callee_key.unwrap())
+      .get(&self.target_key.unwrap())
       .unwrap()
       .as_ref()
       .borrow();
@@ -417,7 +459,7 @@ impl TypeCheck for ast::FunctionCall {
 
     let callee = context
       .declarations
-      .get(self.callee_key.as_ref().unwrap())
+      .get(self.target_key.as_ref().unwrap())
       .unwrap();
 
     // TODO: Cleanup.

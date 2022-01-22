@@ -24,6 +24,8 @@ pub fn match_token(identifier: &str) -> Option<token::TokenKind> {
     "unsafe" => token::TokenKind::KeywordUnsafe,
     "enum" => token::TokenKind::KeywordEnum,
     "struct" => token::TokenKind::KeywordStruct,
+    "mut" => token::TokenKind::KeywordMut,
+    "new" => token::TokenKind::KeywordNew,
     "i16" => token::TokenKind::TypeInt16,
     "i32" => token::TokenKind::TypeInt32,
     "i64" => token::TokenKind::TypeInt64,

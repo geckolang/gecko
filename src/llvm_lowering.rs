@@ -24,18 +24,38 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::StructValue {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    context: &mut context::Context,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let struct_type = context
+      .declarations
+      .get(&self.target_key.unwrap())
+      .unwrap()
+      .as_ref()
+      .borrow();
+
+    let llvm_struct_type = match &*struct_type {
+      ast::Node::StructType(struct_type) => generator.lower_struct_type(struct_type, context),
+      _ => unreachable!(),
+    };
+
+    let llvm_alloca = generator
+      .llvm_builder
+      .build_alloca(llvm_struct_type, "struct.alloca");
+
+    Some(llvm_alloca.as_basic_value_enum())
+  }
+}
+
 impl Lower for ast::Prototype {
   //
 }
 
-impl Lower for ast::StructDef {
-  fn lower<'a, 'ctx>(
-    &self,
-    _generator: &mut LlvmGenerator<'a, 'ctx>,
-    _context: &mut context::Context,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    None
-  }
+impl Lower for ast::StructType {
+  //
 }
 
 impl Lower for ast::Enum {
@@ -106,7 +126,7 @@ impl Lower for ast::ArrayIndexing {
       .unwrap()
       .into_int_value();
 
-    let llvm_target_array = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
+    let llvm_target_array = generator.memoize_or_retrieve(self.target_key.unwrap(), context);
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
     unsafe {
@@ -144,7 +164,7 @@ impl Lower for ast::ArrayValue {
 
     // TODO: Is this cast (usize -> u32) safe?
     let llvm_array_type = if llvm_values.is_empty() {
-      generator.lower_type(self.explicit_type.as_ref().unwrap())
+      generator.lower_type(self.explicit_type.as_ref().unwrap(), context)
     } else {
       llvm_values.first().unwrap().get_type()
     }
@@ -385,7 +405,7 @@ impl Lower for ast::VariableRef {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    Some(generator.memoize_or_retrieve(self.definition_key.unwrap(), context))
+    Some(generator.memoize_or_retrieve(self.target_key.unwrap(), context))
 
     // TODO: This removes ability to use pointers at all. For this reason, it was commented out.
     // TODO: This logic is here to make up for parameters not being pointer values. Is this okay?
@@ -550,7 +570,7 @@ impl Lower for ast::Function {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_function_type = generator.lower_prototype(&self.prototype);
+    let llvm_function_type = generator.lower_prototype(&self.prototype, context);
 
     // TODO: Investigate whether this is enough. What about nested pointer types (`**`, etc.)?
     if let Some(return_type) = llvm_function_type.get_return_type() {
@@ -619,9 +639,9 @@ impl Lower for ast::Extern {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    _: &mut context::Context,
+    context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_function_type = generator.lower_prototype(&self.prototype);
+    let llvm_function_type = generator.lower_prototype(&self.prototype, context);
 
     let llvm_external_function = generator.llvm_module.add_function(
       self.name.as_str(),
@@ -742,7 +762,7 @@ impl Lower for ast::LetStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_type = generator.lower_type(&self.ty);
+    let llvm_type = generator.lower_type(&self.ty, context);
 
     let llvm_alloca_ptr = generator
       .llvm_builder
@@ -772,7 +792,7 @@ impl Lower for ast::FunctionCall {
       .collect::<Vec<_>>();
 
     let llvm_target_function = generator
-      .memoize_or_retrieve(self.callee_key.unwrap(), context)
+      .memoize_or_retrieve(self.target_key.unwrap(), context)
       .into_pointer_value();
 
     let llvm_call_value = generator.llvm_builder.build_call(
@@ -813,8 +833,12 @@ impl Lower for ast::Definition {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // FIXME: This will error for structs, since they are types.
-    Some(generator.memoize_or_retrieve(self.definition_key, context))
+    // TODO: This might error for other globally-defined types.
+    if !matches!(&*self.node.as_ref().borrow(), ast::Node::StructType(_)) {
+      Some(generator.memoize_or_retrieve(self.definition_key, context))
+    } else {
+      None
+    }
   }
 }
 
@@ -859,7 +883,12 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
-  fn lower_type(&self, ty: &ast::Type) -> inkwell::types::BasicTypeEnum<'ctx> {
+  // TODO: Ensure that this function is tail-recursive.
+  fn lower_type(
+    &self,
+    ty: &ast::Type,
+    context: &context::Context,
+  ) -> inkwell::types::BasicTypeEnum<'ctx> {
     match ty {
       ast::Type::Primitive(primitive_type) => match primitive_type {
         ast::PrimitiveType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
@@ -884,18 +913,19 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .as_basic_type_enum(),
       },
       ast::Type::Array(element_type, size) => self
-        .lower_type(&element_type)
+        .lower_type(&element_type, context)
         .array_type(size.clone())
         .as_basic_type_enum(),
       ast::Type::Pointer(pointee_type) => self
-        .lower_type(&pointee_type)
+        .lower_type(&pointee_type, context)
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
-      ast::Type::Struct(struct_def) => {
-        let llvm_field_types = struct_def
+      // FIXME: Is this redundant (because of `UserDefined`)?
+      ast::Type::Struct(struct_type) => {
+        let llvm_field_types = struct_type
           .fields
           .iter()
-          .map(|field| self.lower_type(&field.1))
+          .map(|field| self.lower_type(&field.1, context))
           .collect::<Vec<_>>();
 
         self
@@ -903,20 +933,54 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .struct_type(llvm_field_types.as_slice(), false)
           .as_basic_type_enum()
       }
+      ast::Type::UserDefined(user_defined_type) => {
+        let struct_type = context
+          .declarations
+          .get(&user_defined_type.target_key.unwrap())
+          .unwrap()
+          .as_ref()
+          .borrow();
+
+        // TODO: Investigate.
+        // match &*struct_type {
+        //   ast::Node::StructType(struct_type) => self.lower_type(struct_type, context),
+        //   _ => unreachable!(),
+        // };
+
+        match &*struct_type {
+          ast::Node::StructType(struct_type) => {
+            let llvm_field_types = struct_type
+              .fields
+              .iter()
+              .map(|field| self.lower_type(&field.1, context))
+              .collect::<Vec<_>>();
+
+            self
+              .llvm_context
+              .struct_type(llvm_field_types.as_slice(), false)
+              .as_basic_type_enum()
+          }
+          _ => unreachable!(),
+        }
+      }
     }
   }
 
-  fn lower_prototype(&self, prototype: &ast::Prototype) -> inkwell::types::FunctionType<'ctx> {
+  fn lower_prototype(
+    &self,
+    prototype: &ast::Prototype,
+    context: &context::Context,
+  ) -> inkwell::types::FunctionType<'ctx> {
     let llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|parameter| self.lower_type(&parameter.1).into())
+      .map(|parameter| self.lower_type(&parameter.1, context).into())
       .collect::<Vec<_>>();
 
     // TODO: Simplify code (find common ground between `void` and `basic` types).
     if let Some(return_type) = &prototype.return_type {
       self
-        .lower_type(&return_type)
+        .lower_type(&return_type, context)
         // TODO: Is `is_variadic` being copied?
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)
@@ -933,6 +997,25 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     .into_pointer_type()
     .get_element_type()
     .into_function_type()
+  }
+
+  // TODO: Being repeated in `lower_type`.
+  fn lower_struct_type(
+    &self,
+    struct_type: &ast::StructType,
+    context: &context::Context,
+  ) -> inkwell::types::StructType<'ctx> {
+    let llvm_field_types = struct_type
+      .fields
+      .iter()
+      .map(|field| self.lower_type(&field.1, context))
+      .collect::<Vec<_>>();
+
+    self
+      .llvm_context
+      .struct_type(llvm_field_types.as_slice(), false)
+      .as_basic_type_enum()
+      .into_struct_type()
   }
 
   fn get_current_block(&self) -> inkwell::basic_block::BasicBlock<'ctx> {
