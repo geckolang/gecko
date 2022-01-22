@@ -154,26 +154,37 @@ impl Lower for ast::ArrayValue {
       .llvm_builder
       .build_alloca(llvm_array_type, "array.value");
 
-    // TODO: Might not need to load the array in order to initialize it.
-    let llvm_array_ref = generator
+    // TODO: Two loops in a single function is redundant (adds complexity). With a single one should be fine. Re-implement.
+    for (index, llvm_value) in llvm_values.iter().enumerate() {
+      let first_index = generator.llvm_context.i32_type().const_int(0, false);
+
+      // TODO: Is this conversion safe?
+      let llvm_index = generator
+        .llvm_context
+        .i32_type()
+        .const_int(index as u64, false);
+
+      // FIXME: There is no bounds checking guard being inserted (panic).
+      unsafe {
+        let llvm_gep = generator.llvm_builder.build_gep(
+          llvm_array_alloca,
+          &[first_index, llvm_index],
+          "array.init",
+        );
+
+        generator
+          .llvm_builder
+          .build_store(llvm_gep, llvm_value.clone());
+      }
+    }
+
+    // TODO: Might not need to load the array in order to initialize it, but to return it?
+    let llvm_array_ptr = generator
       .llvm_builder
       .build_load(llvm_array_alloca, "array.load")
       .into_array_value();
 
-    // TODO: Two loops in a single function is redundant (adds complexity). With a single one should be fine. Re-implement.
-    for (index, llvm_value) in llvm_values.iter().enumerate() {
-      // FIXME: The `insertvalue` inst returns the aggregated value. In other words, nothing is being modified.
-      // instead, build GEPs and store the values (might need a load inst too).
-      generator.llvm_builder.build_insert_value(
-        llvm_array_ref,
-        llvm_value.clone(),
-        // TODO: Is this cast safe?
-        index as u32,
-        "array.init",
-      );
-    }
-
-    Some(llvm_array_ref.as_basic_value_enum())
+    Some(llvm_array_ptr.as_basic_value_enum())
   }
 }
 
