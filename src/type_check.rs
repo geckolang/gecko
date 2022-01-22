@@ -135,7 +135,27 @@ impl TypeCheck for ast::ContinueStmt {
 }
 
 impl TypeCheck for ast::ArrayIndexing {
-  // TODO: Infer type.
+  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+    let target_array_variable = &*context
+      .declarations
+      .get(&self.definition_key.unwrap())
+      .unwrap()
+      .as_ref()
+      .borrow();
+
+    let array_type = match target_array_variable {
+      ast::Node::LetStmt(let_stmt) => &let_stmt.ty,
+      ast::Node::Parameter(parameter) => &parameter.1,
+      _ => unreachable!(),
+    };
+
+    let array_element_type = match array_type {
+      ast::Type::Array(element_type, _) => element_type.as_ref().clone(),
+      _ => unreachable!(),
+    };
+
+    Some(array_element_type)
+  }
 
   fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut context::Context) {
     // TODO: Implement.
@@ -143,19 +163,41 @@ impl TypeCheck for ast::ArrayIndexing {
 }
 
 impl TypeCheck for ast::ArrayValue {
-  fn infer_type(&self, _context: &context::Context) -> Option<ast::Type> {
-    // FIXME: Here, we assume that `explicit_type` is always `Some(_)`.
-    self.explicit_type.clone()
+  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+    // TODO: Temporary, until type-inference is implemented.
+    // We assume that the length is `0` if the explicit type is provided, otherwise
+    // the array type is determined by the first element.
+    let array_element_type = if let Some(explicit_type) = &self.explicit_type {
+      explicit_type.clone()
+    } else {
+      self.elements.first().unwrap().infer_type(context).unwrap()
+    };
+
+    // TODO: Is the length conversion safe?
+    let array_type = ast::Type::Array(Box::new(array_element_type), self.elements.len() as u32);
+
+    Some(array_type)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
     // FIXME: Here, we assume that `explicit_type` is always `Some(_)`. Currently, that might not be the case until type inference is implemented.
+    let mut mixed_elements_flag = false;
 
+    let expected_element_type = Some(if let Some(explicit_type) = &self.explicit_type {
+      explicit_type.clone()
+    } else {
+      self.elements.first().unwrap().infer_type(context).unwrap()
+    });
+
+    // TODO: Skip the first element during iteration, as it is redundant.
     for element in &self.elements {
-      if element.infer_type(context) != self.explicit_type {
+      // Report this error only once.
+      if !mixed_elements_flag && element.infer_type(context) != expected_element_type {
         type_context
           .diagnostics
-          .error("array elements must all have the same type".to_string());
+          .error("array elements must all be of the same type".to_string());
+
+        mixed_elements_flag = true;
       }
 
       element.type_check(type_context, context);

@@ -70,8 +70,6 @@ impl Lower for ast::AssignStmt {
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.value.lower(generator, context).unwrap();
-
-    // TODO: Here we should only be retrieving, no memoization should be done by this point (variables are declared top-down).
     let llvm_target = self.assignee_expr.lower(generator, context).unwrap();
 
     generator
@@ -102,24 +100,31 @@ impl Lower for ast::ArrayIndexing {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     context: &mut context::Context,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let _llvm_index = self
+    let llvm_index = self
       .index
       .lower(generator, context)
       .unwrap()
       .into_int_value();
 
-    let _llvm_target_array = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
+    let llvm_target_array = generator.memoize_or_retrieve(self.definition_key.unwrap(), context);
 
-    // TODO: Implement.
-    todo!();
-    // generator
-    //   .llvm_builder
-    //   .build_extract_value(
-    //     llvm_target_array.into_array_value(),
-    //     llvm_index,
-    //     "array_indexing",
-    //   )
-    //   .unwrap()
+    // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
+    unsafe {
+      // TODO: Figure out why there's a zero index (may want to look on `https://www.llvm.org/docs/GetElementPtr.html#why-is-the-extra-0-index-required`).
+      let first_index = generator.llvm_context.i32_type().const_int(0, false);
+
+      let llvm_gep_ptr = generator.llvm_builder.build_in_bounds_gep(
+        llvm_target_array.into_pointer_value(),
+        &[first_index, llvm_index],
+        "array.index.gep",
+      );
+
+      let llvm_load_ptr = generator
+        .llvm_builder
+        .build_load(llvm_gep_ptr, "array.index.ptr");
+
+      Some(llvm_load_ptr)
+    }
   }
 }
 
@@ -155,14 +160,16 @@ impl Lower for ast::ArrayValue {
       .build_load(llvm_array_alloca, "array.load")
       .into_array_value();
 
-    // TODO: Double loop is redundant (adds complexity). With a single one should be fine. Re-implement.
+    // TODO: Two loops in a single function is redundant (adds complexity). With a single one should be fine. Re-implement.
     for (index, llvm_value) in llvm_values.iter().enumerate() {
+      // FIXME: The `insertvalue` inst returns the aggregated value. In other words, nothing is being modified.
+      // instead, build GEPs and store the values (might need a load inst too).
       generator.llvm_builder.build_insert_value(
         llvm_array_ref,
         llvm_value.clone(),
         // TODO: Is this cast safe?
         index as u32,
-        "array_init",
+        "array.init",
       );
     }
 
@@ -593,10 +600,6 @@ impl Lower for ast::Function {
       generator.llvm_builder.build_return(None);
     }
 
-    // TODO: Is this necessary when we're already verifying the LLVM module?
-    // Verify the LLVM function to be well-formed.
-    assert!(llvm_function.verify(false));
-
     Some(llvm_function.as_global_value().as_basic_value_enum())
   }
 }
@@ -614,8 +617,6 @@ impl Lower for ast::Extern {
       llvm_function_type,
       Some(inkwell::module::Linkage::External),
     );
-
-    assert!(llvm_external_function.verify(false));
 
     Some(
       llvm_external_function
@@ -660,10 +661,7 @@ impl Lower for ast::ReturnStmt {
           generator
             .llvm_builder
             // TODO: Is the value always going to be a pointer value?
-            .build_load(
-              llvm_value.into_pointer_value(),
-              "implicit_rvalue_dereference",
-            )
+            .build_load(llvm_value.into_pointer_value(), "implicit.dereference")
         } else {
           llvm_value
         };

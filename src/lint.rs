@@ -104,6 +104,10 @@ impl Lint for ast::UnaryExpr {
 
 impl Lint for ast::ArrayIndexing {
   fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+    lint_context
+      .variable_references
+      .insert(self.definition_key.unwrap(), true);
+
     self.index.lint(context, lint_context);
   }
 }

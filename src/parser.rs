@@ -663,6 +663,7 @@ impl<'a> Parser<'a> {
 
     let mut explicit_type = None;
 
+    // TODO: In the future, the type of an empty array will be inferred.
     if elements.is_empty() {
       explicit_type = Some(self.parse_type()?);
     }
@@ -853,7 +854,10 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, token::TokenKind::SymbolSemiColon);
 
-    Ok(ast::AssignStmt { assignee_expr: lvalue_expr, value })
+    Ok(ast::AssignStmt {
+      assignee_expr: lvalue_expr,
+      value,
+    })
   }
 
   /// enum %name '{' (%name (','))* '}'

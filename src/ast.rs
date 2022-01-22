@@ -129,6 +129,7 @@ pub struct ArrayIndexing {
 
 pub struct ArrayValue {
   pub elements: Vec<Node>,
+  /// Holds the type of the array, in case it is an empty array.
   pub explicit_type: Option<Type>,
 }
 
