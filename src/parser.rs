@@ -1,4 +1,4 @@
-use crate::{ast, context, diagnostic, name_resolution, token};
+use crate::{ast, cache, diagnostic, name_resolution, token};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -62,11 +62,11 @@ type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 pub struct Parser<'a> {
   tokens: Vec<token::Token>,
   index: usize,
-  context: &'a mut context::Context,
+  context: &'a mut cache::Cache,
 }
 
 impl<'a> Parser<'a> {
-  pub fn new(tokens: Vec<token::Token>, context: &'a mut context::Context) -> Self {
+  pub fn new(tokens: Vec<token::Token>, context: &'a mut cache::Cache) -> Self {
     Self {
       tokens,
       index: 0,
@@ -74,10 +74,7 @@ impl<'a> Parser<'a> {
     }
   }
 
-  pub fn from_tokens(
-    token_kinds: Vec<token::TokenKind>,
-    context: &'a mut context::Context,
-  ) -> Self {
+  pub fn from_tokens(token_kinds: Vec<token::TokenKind>, context: &'a mut cache::Cache) -> Self {
     let tokens = token_kinds
       .iter()
       .map(|kind| (kind.to_owned(), 0 as usize))
@@ -99,6 +96,11 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  fn until(&self, token: &token::TokenKind) -> ParserResult<bool> {
+    // TODO: Handle `EOF` case here.
+    return Ok(!self.is_eof() && !self.is(token));
+  }
+
   fn get(&self) -> &token::TokenKind {
     &self.tokens[self.index].0
   }
@@ -112,12 +114,12 @@ impl<'a> Parser<'a> {
   /// Compare the current token to the given token.
   ///
   /// If `EOF` has been reached, `false` will always be returned.
-  fn is(&self, token: token::TokenKind) -> bool {
+  fn is(&self, token: &token::TokenKind) -> bool {
     if self.index >= self.tokens.len() {
       return false;
     }
 
-    self.get().clone() == token
+    self.get() == token
   }
 
   /// Attempt to reposition the index to the next token (if any).
@@ -144,14 +146,14 @@ impl<'a> Parser<'a> {
   }
 
   /// Compare the upcoming token to the given token.
-  fn peek_is(&self, token: token::TokenKind) -> bool {
+  fn peek_is(&self, token: &token::TokenKind) -> bool {
     let next_token = self.peek();
 
     if next_token.is_none() {
       return false;
     }
 
-    token == *next_token.unwrap()
+    token == next_token.unwrap()
   }
 
   /// Whether the parser has reached the end of the input.
@@ -166,7 +168,7 @@ impl<'a> Parser<'a> {
     let base_name = self.parse_name()?;
     let mut scope = Vec::new();
 
-    while !self.is_eof() && self.is(token::TokenKind::SymbolColon) {
+    while !self.is_eof() && self.is(&token::TokenKind::SymbolColon) {
       self.skip();
       scope.push(self.parse_name()?);
     }
@@ -176,16 +178,14 @@ impl<'a> Parser<'a> {
 
   /// %identifier
   fn parse_name(&mut self) -> ParserResult<String> {
-    // TODO: Illegal/unrecognized tokens are also represented under 'Identifier'.
+    // TODO: Illegal/unrecognized tokens MAY also be represented under 'Identifier'?
 
     // TODO: Wrong error message. Create an `expect` method.
     assert!(matches!(self.get(), token::TokenKind::Identifier(_)));
 
-    let name = {
-      match self.get() {
-        token::TokenKind::Identifier(value) => Some(value.clone()),
-        _ => None,
-      }
+    let name = match self.get() {
+      token::TokenKind::Identifier(value) => Some(value.clone()),
+      _ => None,
     };
 
     crate::diagnostic_assert!(name.is_some());
@@ -198,11 +198,11 @@ impl<'a> Parser<'a> {
   fn parse_block(&mut self) -> ParserResult<ast::Block> {
     // TODO: Have a symbol table for blocks, and check for re-declarations here?
 
-    skip_past!(self, token::TokenKind::SymbolBraceL);
+    skip_past!(self, &token::TokenKind::SymbolBraceL);
 
     let mut statements = vec![];
 
-    while !self.is(token::TokenKind::SymbolBraceR) && !self.is_eof() {
+    while !self.is(&token::TokenKind::SymbolBraceR) && !self.is_eof() {
       statements.push(Box::new(match self.get() {
         token::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
         token::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
@@ -211,10 +211,10 @@ impl<'a> Parser<'a> {
         token::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
         token::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
         token::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
-        token::TokenKind::Identifier(_) if self.peek_is(token::TokenKind::SymbolEqual) => {
+        token::TokenKind::Identifier(_) if self.peek_is(&token::TokenKind::SymbolEqual) => {
           ast::Node::VariableAssignStmt(self.parse_lvalue_assign_stmt()?)
         }
-        token::TokenKind::Identifier(_) if !self.peek_is(token::TokenKind::SymbolParenthesesL) => {
+        token::TokenKind::Identifier(_) if !self.peek_is(&token::TokenKind::SymbolParenthesesL) => {
           ast::Node::VariableRef(self.parse_variable_ref()?)
         }
         _ => {
@@ -222,14 +222,14 @@ impl<'a> Parser<'a> {
             expr: Box::new(self.parse_expr()?),
           });
 
-          skip_past!(self, token::TokenKind::SymbolSemiColon);
+          skip_past!(self, &token::TokenKind::SymbolSemiColon);
 
           result
         }
       }));
     }
 
-    skip_past!(self, token::TokenKind::SymbolBraceR);
+    skip_past!(self, &token::TokenKind::SymbolBraceR);
 
     Ok(ast::Block { statements })
   }
@@ -264,18 +264,18 @@ impl<'a> Parser<'a> {
   // TODO: Merge with the `parse_type` function (too small).
   /// bool
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
-    skip_past!(self, token::TokenKind::TypeBool);
+    skip_past!(self, &token::TokenKind::TypeBool);
 
     Ok(ast::Type::Primitive(ast::PrimitiveType::Bool))
   }
 
   /// '[' %type, 0-9+ ']'
   fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
-    skip_past!(self, token::TokenKind::SymbolBracketL);
+    skip_past!(self, &token::TokenKind::SymbolBracketL);
 
     let element_type = self.parse_type()?;
 
-    skip_past!(self, token::TokenKind::SymbolComma);
+    skip_past!(self, &token::TokenKind::SymbolComma);
 
     // TODO: Cloning token.
     let current_token = self.get().clone();
@@ -292,7 +292,7 @@ impl<'a> Parser<'a> {
     };
 
     self.skip();
-    skip_past!(self, token::TokenKind::SymbolBracketR);
+    skip_past!(self, &token::TokenKind::SymbolBracketR);
 
     Ok(ast::Type::Array(Box::new(element_type), size.clone()))
   }
@@ -346,7 +346,7 @@ impl<'a> Parser<'a> {
   fn parse_parameter(&mut self, index: u32) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
-    skip_past!(self, token::TokenKind::SymbolColon);
+    skip_past!(self, &token::TokenKind::SymbolColon);
 
     let type_group = self.parse_type()?;
 
@@ -355,7 +355,7 @@ impl<'a> Parser<'a> {
 
   /// '(' {%parameter* (,)} (+) ')' '~' %type_group
   fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
-    skip_past!(self, token::TokenKind::SymbolParenthesesL);
+    skip_past!(self, &token::TokenKind::SymbolParenthesesL);
 
     // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
     let mut parameters = vec![];
@@ -363,8 +363,8 @@ impl<'a> Parser<'a> {
     let mut parameter_index_counter = 0;
 
     // TODO: Analyze, and remove possibility of lonely comma.
-    while !self.is(token::TokenKind::SymbolParenthesesR) && !self.is_eof() {
-      if self.is(token::TokenKind::SymbolPlus) {
+    while !self.is(&token::TokenKind::SymbolParenthesesR) && !self.is_eof() {
+      if self.is(&token::TokenKind::SymbolPlus) {
         is_variadic = true;
         self.skip();
 
@@ -374,18 +374,18 @@ impl<'a> Parser<'a> {
       parameters.push(self.parse_parameter(parameter_index_counter)?);
       parameter_index_counter += 1;
 
-      if !self.is(token::TokenKind::SymbolComma) {
+      if !self.is(&token::TokenKind::SymbolComma) {
         break;
       }
 
       self.skip();
     }
 
-    skip_past!(self, token::TokenKind::SymbolParenthesesR);
+    skip_past!(self, &token::TokenKind::SymbolParenthesesR);
 
     let mut return_type = None;
 
-    if self.is(token::TokenKind::SymbolTilde) {
+    if self.is(&token::TokenKind::SymbolTilde) {
       self.skip();
       return_type = Some(self.parse_type()?);
     }
@@ -399,7 +399,7 @@ impl<'a> Parser<'a> {
 
   /// fn %prototype %block
   fn parse_function(&mut self) -> ParserResult<ast::Definition> {
-    skip_past!(self, token::TokenKind::KeywordFn);
+    skip_past!(self, &token::TokenKind::KeywordFn);
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
@@ -423,13 +423,13 @@ impl<'a> Parser<'a> {
   fn parse_extern(&mut self) -> ParserResult<ast::Definition> {
     // TODO: Support for visibility.
 
-    skip_past!(self, token::TokenKind::KeywordExtern);
-    skip_past!(self, token::TokenKind::KeywordFn);
+    skip_past!(self, &token::TokenKind::KeywordExtern);
+    skip_past!(self, &token::TokenKind::KeywordFn);
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
 
-    skip_past!(self, token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &token::TokenKind::SymbolSemiColon);
 
     let extern_node = ast::Extern {
       name: name.clone(),
@@ -444,6 +444,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  // TODO: Why not build the `Definition` node here? We might require access to the `name` and `symbol_kind`, however.
   /// {%function | %extern | %enum | %struct}
   fn parse_top_level_node(&mut self) -> ParserResult<ast::Node> {
     // TODO: Why not move this check into the `get()` method?
@@ -457,7 +458,7 @@ impl<'a> Parser<'a> {
 
     let token = self.get();
 
-    Ok(match token {
+    let definition = match token {
       // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
       token::TokenKind::KeywordFn => ast::Node::Definition(self.parse_function()?),
       token::TokenKind::KeywordExtern => ast::Node::Definition(self.parse_extern()?),
@@ -470,32 +471,34 @@ impl<'a> Parser<'a> {
           location: self.get_location(),
         })
       }
-    })
+    };
+
+    Ok(definition)
   }
 
   /// return (%expr)
   fn parse_return_stmt(&mut self) -> ParserResult<ast::ReturnStmt> {
-    skip_past!(self, token::TokenKind::KeywordReturn);
+    skip_past!(self, &token::TokenKind::KeywordReturn);
 
     let mut value = None;
 
     // TODO: Does this cover all cases?
-    if !self.is(token::TokenKind::SymbolSemiColon) {
+    if !self.is(&token::TokenKind::SymbolSemiColon) {
       value = Some(Box::new(self.parse_expr()?));
     }
 
-    skip_past!(self, token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &token::TokenKind::SymbolSemiColon);
 
     Ok(ast::ReturnStmt { value })
   }
 
   /// let %name (':' %type_group) '=' %expr ';'
   fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
-    skip_past!(self, token::TokenKind::KeywordLet);
+    skip_past!(self, &token::TokenKind::KeywordLet);
 
     let mut is_mutable = false;
 
-    if self.is(token::TokenKind::KeywordMut) {
+    if self.is(&token::TokenKind::KeywordMut) {
       self.skip();
       is_mutable = true;
     }
@@ -503,16 +506,16 @@ impl<'a> Parser<'a> {
     let name = self.parse_name()?;
     let mut ty = None;
 
-    if self.is(token::TokenKind::SymbolColon) {
+    if self.is(&token::TokenKind::SymbolColon) {
       self.skip();
       ty = Some(self.parse_type()?);
     }
 
-    skip_past!(self, token::TokenKind::SymbolEqual);
+    skip_past!(self, &token::TokenKind::SymbolEqual);
 
     let value = self.parse_expr()?;
 
-    skip_past!(self, token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &token::TokenKind::SymbolSemiColon);
 
     // Infer the type based on the value.
     if ty.is_none() {
@@ -538,13 +541,13 @@ impl<'a> Parser<'a> {
 
   /// if %expr %block (else %block)
   fn parse_if_stmt(&mut self) -> ParserResult<ast::IfStmt> {
-    skip_past!(self, token::TokenKind::KeywordIf);
+    skip_past!(self, &token::TokenKind::KeywordIf);
 
     let condition = self.parse_expr()?;
     let then_block = self.parse_block()?;
     let mut else_block = None;
 
-    if self.is(token::TokenKind::KeywordElse) {
+    if self.is(&token::TokenKind::KeywordElse) {
       self.skip();
       else_block = Some(self.parse_block()?);
     }
@@ -558,7 +561,7 @@ impl<'a> Parser<'a> {
 
   /// while %expr %block
   fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt> {
-    skip_past!(self, token::TokenKind::KeywordWhile);
+    skip_past!(self, &token::TokenKind::KeywordWhile);
 
     let condition = self.parse_expr()?;
     let body = self.parse_block()?;
@@ -571,23 +574,23 @@ impl<'a> Parser<'a> {
 
   /// break ';'
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
-    skip_past!(self, token::TokenKind::KeywordBreak);
-    skip_past!(self, token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &token::TokenKind::KeywordBreak);
+    skip_past!(self, &token::TokenKind::SymbolSemiColon);
 
     Ok(ast::BreakStmt {})
   }
 
   /// continue ';'
   fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
-    skip_past!(self, token::TokenKind::KeywordContinue);
-    skip_past!(self, token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &token::TokenKind::KeywordContinue);
+    skip_past!(self, &token::TokenKind::SymbolSemiColon);
 
     Ok(ast::ContinueStmt)
   }
 
   // unsafe %block
   fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlockStmt> {
-    skip_past!(self, token::TokenKind::KeywordUnsafe);
+    skip_past!(self, &token::TokenKind::KeywordUnsafe);
 
     Ok(ast::UnsafeBlockStmt(self.parse_block()?))
   }
@@ -663,17 +666,12 @@ impl<'a> Parser<'a> {
   fn parse_array_value(&mut self) -> ParserResult<ast::ArrayValue> {
     let mut elements = Vec::new();
 
-    skip_past!(self, token::TokenKind::SymbolBracketL);
+    skip_past!(self, &token::TokenKind::SymbolBracketL);
 
-    loop {
-      if self.is(token::TokenKind::SymbolBracketR) {
-        break;
-      }
-
+    while self.until(&token::TokenKind::SymbolBracketR)? {
       elements.push(self.parse_expr()?);
 
-      // TODO: Make sure there isn't space for lonely commas.
-      if self.is(token::TokenKind::SymbolComma) {
+      if self.is(&token::TokenKind::SymbolComma) {
         self.skip();
       }
     }
@@ -681,12 +679,12 @@ impl<'a> Parser<'a> {
     // Skip the closing bracket.
     self.skip();
 
-    let mut explicit_type = None;
-
     // TODO: In the future, the type of an empty array will be inferred.
-    if elements.is_empty() {
-      explicit_type = Some(self.parse_type()?);
-    }
+    let explicit_type = if elements.is_empty() {
+      Some(self.parse_type()?)
+    } else {
+      None
+    };
 
     Ok(ast::ArrayValue {
       elements,
@@ -698,11 +696,11 @@ impl<'a> Parser<'a> {
   fn parse_array_indexing(&mut self) -> ParserResult<ast::ArrayIndexing> {
     let name = self.parse_name()?;
 
-    skip_past!(self, token::TokenKind::SymbolBracketL);
+    skip_past!(self, &token::TokenKind::SymbolBracketL);
 
     let index = Box::new(self.parse_expr()?);
 
-    skip_past!(self, token::TokenKind::SymbolBracketR);
+    skip_past!(self, &token::TokenKind::SymbolBracketR);
 
     Ok(ast::ArrayIndexing {
       name,
@@ -733,9 +731,9 @@ impl<'a> Parser<'a> {
     // TODO: Might need to revisit. Might need to make room for other cases in the future (binary/unary operators, etc).
     Ok(match self.get() {
       token::TokenKind::Identifier(_) => {
-        if self.peek_is(token::TokenKind::SymbolParenthesesL) {
+        if self.peek_is(&token::TokenKind::SymbolParenthesesL) {
           ast::Node::FunctionCall(self.parse_function_call()?)
-        } else if self.peek_is(token::TokenKind::SymbolBracketL) {
+        } else if self.peek_is(&token::TokenKind::SymbolBracketL) {
           ast::Node::ArrayIndexing(self.parse_array_indexing()?)
         } else {
           ast::Node::VariableRef(self.parse_variable_ref()?)
@@ -834,19 +832,19 @@ impl<'a> Parser<'a> {
   fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
     let callee_id = self.parse_scope_qualifier()?;
 
-    skip_past!(self, token::TokenKind::SymbolParenthesesL);
+    skip_past!(self, &token::TokenKind::SymbolParenthesesL);
 
     let mut arguments = vec![];
 
-    while !self.is_eof() && !self.is(token::TokenKind::SymbolParenthesesR) {
+    while !self.is_eof() && !self.is(&token::TokenKind::SymbolParenthesesR) {
       arguments.push(self.parse_expr()?);
 
-      if self.is(token::TokenKind::SymbolComma) {
+      if self.is(&token::TokenKind::SymbolComma) {
         self.skip();
       }
     }
 
-    skip_past!(self, token::TokenKind::SymbolParenthesesR);
+    skip_past!(self, &token::TokenKind::SymbolParenthesesR);
 
     Ok(ast::FunctionCall {
       callee_id,
@@ -869,11 +867,11 @@ impl<'a> Parser<'a> {
   fn parse_lvalue_assign_stmt(&mut self) -> ParserResult<ast::AssignStmt> {
     let lvalue_expr = Box::new(self.parse_expr()?);
 
-    skip_past!(self, token::TokenKind::SymbolEqual);
+    skip_past!(self, &token::TokenKind::SymbolEqual);
 
     let value = Box::new(self.parse_expr()?);
 
-    skip_past!(self, token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &token::TokenKind::SymbolSemiColon);
 
     Ok(ast::AssignStmt {
       assignee_expr: lvalue_expr,
@@ -883,19 +881,19 @@ impl<'a> Parser<'a> {
 
   /// enum %name '{' (%name (','))* '}'
   fn parse_enum(&mut self) -> ParserResult<ast::Definition> {
-    skip_past!(self, token::TokenKind::KeywordEnum);
+    skip_past!(self, &token::TokenKind::KeywordEnum);
 
     let name = self.parse_name()?;
 
-    skip_past!(self, token::TokenKind::SymbolBraceL);
+    skip_past!(self, &token::TokenKind::SymbolBraceL);
 
     let mut variants = vec![];
 
-    while !self.is_eof() && !self.is(token::TokenKind::SymbolBraceR) {
+    while !self.is_eof() && !self.is(&token::TokenKind::SymbolBraceR) {
       variants.push(self.parse_name()?);
 
       // TODO: Iron out case for lonely comma.
-      if self.is(token::TokenKind::SymbolComma) {
+      if self.is(&token::TokenKind::SymbolComma) {
         self.skip();
       }
     }
@@ -920,22 +918,22 @@ impl<'a> Parser<'a> {
 
   /// struct %name '{' (%name ':' %type ';')* '}'
   fn parse_struct_type(&mut self) -> ParserResult<ast::Definition> {
-    skip_past!(self, token::TokenKind::KeywordStruct);
+    skip_past!(self, &token::TokenKind::KeywordStruct);
 
     let name = self.parse_name()?;
 
-    skip_past!(self, token::TokenKind::SymbolBraceL);
+    skip_past!(self, &token::TokenKind::SymbolBraceL);
 
     let mut fields = std::collections::HashMap::new();
 
-    while !self.is_eof() && !self.is(token::TokenKind::SymbolBraceR) {
+    while !self.is_eof() && !self.is(&token::TokenKind::SymbolBraceR) {
       let field_name = self.parse_name()?;
 
-      skip_past!(self, token::TokenKind::SymbolColon);
+      skip_past!(self, &token::TokenKind::SymbolColon);
 
       let field_type = self.parse_type()?;
 
-      skip_past!(self, token::TokenKind::SymbolSemiColon);
+      skip_past!(self, &token::TokenKind::SymbolSemiColon);
       fields.insert(field_name, field_type);
     }
 
@@ -956,22 +954,22 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_struct_value(&mut self) -> ParserResult<ast::StructValue> {
-    skip_past!(self, token::TokenKind::KeywordNew);
+    skip_past!(self, &token::TokenKind::KeywordNew);
 
     // TODO: Shouldn't it be `ScopeQualifier`?
     let name = self.parse_name()?;
 
-    skip_past!(self, token::TokenKind::SymbolBraceL);
+    skip_past!(self, &token::TokenKind::SymbolBraceL);
 
     let mut fields = Vec::new();
 
-    while !self.is_eof() && !self.is(token::TokenKind::SymbolBraceR) {
+    while !self.is_eof() && !self.is(&token::TokenKind::SymbolBraceR) {
       let field = self.parse_expr()?;
 
       fields.push(field);
 
       // TODO: Disallow trailing comma.
-      if self.is(token::TokenKind::SymbolComma) {
+      if self.is(&token::TokenKind::SymbolComma) {
         self.skip();
       }
     }
@@ -993,7 +991,7 @@ mod tests {
 
   #[test]
   fn proper_initial_values() {
-    let mut context = context::Context::new();
+    let mut context = cache::Cache::new();
     let parser = Parser::new(vec![], &mut context);
 
     assert_eq!(0, parser.index);
@@ -1001,23 +999,23 @@ mod tests {
 
   #[test]
   fn is() {
-    let mut context = context::Context::new();
+    let mut context = cache::Cache::new();
     let parser = Parser::from_tokens(vec![token::TokenKind::KeywordFn], &mut context);
 
-    assert_eq!(true, parser.is(token::TokenKind::KeywordFn));
+    assert_eq!(true, parser.is(&token::TokenKind::KeywordFn));
   }
 
   #[test]
   fn is_empty() {
-    let mut context = context::Context::new();
+    let mut context = cache::Cache::new();
     let parser = Parser::new(vec![], &mut context);
 
-    assert_eq!(false, parser.is(token::TokenKind::KeywordFn));
+    assert_eq!(false, parser.is(&token::TokenKind::KeywordFn));
   }
 
   #[test]
   fn skip() {
-    let mut context = context::Context::new();
+    let mut context = cache::Cache::new();
 
     let mut parser = Parser::from_tokens(
       vec![token::TokenKind::KeywordFn, token::TokenKind::KeywordFn],
@@ -1030,7 +1028,7 @@ mod tests {
 
   #[test]
   fn skip_out_of_bounds() {
-    let mut context = context::Context::new();
+    let mut context = cache::Cache::new();
     let mut parser = Parser::from_tokens(vec![token::TokenKind::KeywordFn], &mut context);
 
     parser.skip();
@@ -1039,7 +1037,7 @@ mod tests {
 
   #[test]
   fn is_eof() {
-    let mut context = context::Context::new();
+    let mut context = cache::Cache::new();
     let mut parser = Parser::new(vec![], &mut context);
 
     assert_eq!(true, parser.is_eof());

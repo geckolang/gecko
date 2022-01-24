@@ -1,4 +1,4 @@
-use crate::{context, name_resolution};
+use crate::{cache, name_resolution};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -122,13 +122,13 @@ impl ToString for ScopeQualifier {
 #[derive(PartialEq, Clone)]
 pub struct UserDefinedType {
   pub name: String,
-  pub target_key: Option<context::DefinitionKey>,
+  pub target_key: Option<cache::DefinitionKey>,
 }
 
 pub struct StructValue {
   pub name: String,
   pub fields: Vec<Node>,
-  pub target_key: Option<context::DefinitionKey>,
+  pub target_key: Option<cache::DefinitionKey>,
 }
 
 pub struct Enum {
@@ -141,7 +141,7 @@ pub struct ContinueStmt;
 pub struct ArrayIndexing {
   pub name: String,
   pub index: Box<Node>,
-  pub target_key: Option<context::DefinitionKey>,
+  pub target_key: Option<cache::DefinitionKey>,
 }
 
 pub struct ArrayValue {
@@ -154,7 +154,7 @@ pub struct UnsafeBlockStmt(pub Block);
 
 pub struct VariableRef {
   pub name: String,
-  pub target_key: Option<context::DefinitionKey>,
+  pub target_key: Option<cache::DefinitionKey>,
 }
 
 pub struct AssignStmt {
@@ -222,7 +222,7 @@ pub struct ExprStmt {
 
 pub struct FunctionCall {
   pub callee_id: ScopeQualifier,
-  pub target_key: Option<context::DefinitionKey>,
+  pub target_key: Option<cache::DefinitionKey>,
   pub arguments: Vec<Node>,
 }
 
@@ -262,5 +262,5 @@ pub struct Definition {
   pub name: String,
   pub symbol_kind: name_resolution::SymbolKind,
   pub node: std::rc::Rc<std::cell::RefCell<Node>>,
-  pub definition_key: context::DefinitionKey,
+  pub definition_key: cache::DefinitionKey,
 }

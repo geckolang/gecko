@@ -1,4 +1,4 @@
-use crate::{ast, context, diagnostic};
+use crate::{ast, cache, diagnostic};
 
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub enum SymbolKind {
@@ -9,58 +9,58 @@ pub enum SymbolKind {
 }
 
 pub trait Resolvable {
-  fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
+  fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     //
   }
 
-  fn resolve(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
+  fn resolve(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     //
   }
 }
 
 impl Resolvable for ast::Node {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    crate::dispatch!(self, Resolvable::declare, resolver, context);
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    crate::dispatch!(self, Resolvable::declare, resolver, cache);
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    crate::dispatch!(self, Resolvable::resolve, resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    crate::dispatch!(self, Resolvable::resolve, resolver, cache);
   }
 }
 
 impl Resolvable for ast::UserDefinedType {
-  fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
 impl Resolvable for ast::StructValue {
-  fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
 impl Resolvable for ast::Prototype {
-  fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
+  fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // FIXME: Must declare parameters (they aren't defined as `Definition`s). This issue prevents parameter usage.
   }
 }
 
 impl Resolvable for ast::StructType {
-  fn declare(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
+  fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: Implement.
   }
 
-  fn resolve(&mut self, _resolver: &mut NameResolver, _context: &mut context::Context) {
+  fn resolve(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: Implement?
   }
 }
 
 impl Resolvable for ast::UnaryExpr {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.expr.resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.expr.resolve(resolver, cache);
   }
 }
 
@@ -69,9 +69,9 @@ impl Resolvable for ast::Enum {
 }
 
 impl Resolvable for ast::AssignStmt {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.assignee_expr.resolve(resolver, context);
-    self.value.resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.assignee_expr.resolve(resolver, cache);
+    self.value.resolve(resolver, cache);
   }
 }
 
@@ -80,8 +80,8 @@ impl Resolvable for ast::ContinueStmt {
 }
 
 impl Resolvable for ast::ArrayIndexing {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.index.resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.index.resolve(resolver, cache);
 
     self.target_key =
       resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
@@ -89,20 +89,20 @@ impl Resolvable for ast::ArrayIndexing {
 }
 
 impl Resolvable for ast::ArrayValue {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for element in &mut self.elements {
-      element.resolve(resolver, context);
+      element.resolve(resolver, cache);
     }
   }
 }
 
 impl Resolvable for ast::UnsafeBlockStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.0.declare(resolver, context);
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.0.declare(resolver, cache);
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.0.resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.0.resolve(resolver, cache);
   }
 }
 
@@ -111,7 +111,7 @@ impl Resolvable for ast::Parameter {
 }
 
 impl Resolvable for ast::VariableRef {
-  fn resolve(&mut self, resolver: &mut NameResolver, _context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_key =
       resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
@@ -123,65 +123,65 @@ impl Resolvable for ast::BreakStmt {
 }
 
 impl Resolvable for ast::WhileStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.condition.declare(resolver, context);
-    self.body.declare(resolver, context);
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.condition.declare(resolver, cache);
+    self.body.declare(resolver, cache);
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.condition.resolve(resolver, context);
-    self.body.resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.condition.resolve(resolver, cache);
+    self.body.resolve(resolver, cache);
   }
 }
 
 impl Resolvable for ast::IfStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.condition.declare(resolver, context);
-    self.then_block.declare(resolver, context);
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.condition.declare(resolver, cache);
+    self.then_block.declare(resolver, cache);
     // TODO: `else` block.
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.condition.resolve(resolver, context);
-    self.then_block.resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.condition.resolve(resolver, cache);
+    self.then_block.resolve(resolver, cache);
     // TODO: `else` block.
   }
 }
 
 impl Resolvable for ast::LetStmt {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // FIXME: How to resolve `UserDefined` types?
 
-    self.value.resolve(resolver, context);
+    self.value.resolve(resolver, cache);
   }
 }
 
 impl Resolvable for ast::ReturnStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(value) = &mut self.value {
-      value.declare(resolver, context);
+      value.declare(resolver, cache);
     }
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(value) = &mut self.value {
-      value.resolve(resolver, context);
+      value.resolve(resolver, cache);
     }
   }
 }
 
 impl Resolvable for ast::Block {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for statement in &mut self.statements {
-      statement.declare(resolver, context);
+      statement.declare(resolver, cache);
     }
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     resolver.push_scope();
 
     for statement in &mut self.statements {
-      statement.resolve(resolver, context);
+      statement.resolve(resolver, cache);
     }
 
     resolver.pop_scope();
@@ -193,16 +193,16 @@ impl Resolvable for ast::Literal {
 }
 
 impl Resolvable for ast::Function {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.prototype.declare(resolver, context);
-    self.body.declare(resolver, context);
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.prototype.declare(resolver, cache);
+    self.body.declare(resolver, cache);
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: Is there a need to resolve the prototype?
-    self.prototype.resolve(resolver, context);
+    self.prototype.resolve(resolver, cache);
 
-    self.body.resolve(resolver, context);
+    self.body.resolve(resolver, cache);
   }
 }
 
@@ -211,7 +211,7 @@ impl Resolvable for ast::Extern {
 }
 
 impl Resolvable for ast::Definition {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     let symbol_key = (self.name.clone(), self.symbol_kind.clone());
 
     // Check for existing definitions.
@@ -224,23 +224,23 @@ impl Resolvable for ast::Definition {
     }
 
     // Register the node on the context for lowering lookup.
-    context
+    cache
       .declarations
       .insert(self.definition_key, std::rc::Rc::clone(&self.node));
 
     // Bind the symbol to the current scope for name resolution lookup.
     resolver.bind(symbol_key, self.definition_key);
 
-    self.node.as_ref().borrow_mut().declare(resolver, context);
+    self.node.as_ref().borrow_mut().declare(resolver, cache);
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.node.as_ref().borrow_mut().resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.node.as_ref().borrow_mut().resolve(resolver, cache);
   }
 }
 
 impl Resolvable for ast::FunctionCall {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     // TODO: Only the base name is being used from `callee_id`.
@@ -248,34 +248,34 @@ impl Resolvable for ast::FunctionCall {
       resolver.lookup_or_error(&(self.callee_id.0.clone(), SymbolKind::FunctionOrExtern));
 
     for argument in &mut self.arguments {
-      argument.resolve(resolver, context);
+      argument.resolve(resolver, cache);
     }
   }
 }
 
 impl Resolvable for ast::ExprStmt {
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.expr.resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.expr.resolve(resolver, cache);
   }
 }
 
 impl Resolvable for ast::BinaryExpr {
-  fn declare(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.left.declare(resolver, context);
-    self.right.declare(resolver, context);
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.left.declare(resolver, cache);
+    self.right.declare(resolver, cache);
   }
 
-  fn resolve(&mut self, resolver: &mut NameResolver, context: &mut context::Context) {
-    self.left.resolve(resolver, context);
-    self.right.resolve(resolver, context);
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.left.resolve(resolver, cache);
+    self.right.resolve(resolver, cache);
   }
 }
 
 pub struct NameResolver {
   pub diagnostics: diagnostic::DiagnosticBuilder,
   // TODO: Should this be on `context::Context` instead? Something's missing. We might need to link the context to the resolver.
-  scopes: Vec<std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>>,
-  global_scope: std::collections::HashMap<(String, SymbolKind), context::DefinitionKey>,
+  scopes: Vec<std::collections::HashMap<(String, SymbolKind), cache::DefinitionKey>>,
+  global_scope: std::collections::HashMap<(String, SymbolKind), cache::DefinitionKey>,
 }
 
 impl NameResolver {
@@ -290,9 +290,9 @@ impl NameResolver {
   // TODO: Incomplete (cannot access `self` as `&Node`).
   fn _define(
     &mut self,
-    definition_key: context::DefinitionKey,
+    definition_key: cache::DefinitionKey,
     symbol_key: (String, SymbolKind),
-    _context: &mut context::Context,
+    _cache: &mut cache::Cache,
     _node: &ast::Node,
   ) -> bool {
     // Check for existing definitions.
@@ -328,7 +328,7 @@ impl NameResolver {
   /// Register a name on the last scope for name resolution lookups.
   ///
   /// If there are no relative scopes, the symbol is registered on the global scope.
-  fn bind(&mut self, key: (String, SymbolKind), definition_key: context::DefinitionKey) {
+  fn bind(&mut self, key: (String, SymbolKind), definition_key: cache::DefinitionKey) {
     if self.scopes.is_empty() {
       self.global_scope.insert(key, definition_key);
     } else {
@@ -337,7 +337,7 @@ impl NameResolver {
   }
 
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope.
-  fn lookup(&self, key: &(String, SymbolKind)) -> Option<&context::DefinitionKey> {
+  fn lookup(&self, key: &(String, SymbolKind)) -> Option<&cache::DefinitionKey> {
     // First, look on relative scopes.
     for scope in self.scopes.iter().rev() {
       if let Some(definition_key) = scope.get(&key) {
@@ -353,7 +353,7 @@ impl NameResolver {
     None
   }
 
-  fn lookup_or_error(&mut self, key: &(String, SymbolKind)) -> Option<context::DefinitionKey> {
+  fn lookup_or_error(&mut self, key: &(String, SymbolKind)) -> Option<cache::DefinitionKey> {
     if let Some(definition_key) = self.lookup(key).cloned() {
       return Some(definition_key);
     }

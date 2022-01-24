@@ -1,4 +1,4 @@
-use crate::{ast, context, diagnostic, dispatch};
+use crate::{ast, cache, diagnostic, dispatch};
 
 pub type TypeCheckResult = Option<Vec<diagnostic::Diagnostic>>;
 
@@ -25,27 +25,27 @@ impl TypeCheckContext {
 }
 
 pub trait TypeCheck {
-  fn infer_type(&self, _context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, _context: &cache::Cache) -> Option<ast::Type> {
     None
   }
 
-  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut cache::Cache) {
     //
   }
 }
 
 impl TypeCheck for ast::Node {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     dispatch!(self, TypeCheck::type_check, type_context, context);
   }
 
-  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, context: &cache::Cache) -> Option<ast::Type> {
     dispatch!(self, TypeCheck::infer_type, context)
   }
 }
 
 impl TypeCheck for ast::StructValue {
-  fn infer_type(&self, _context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, _context: &cache::Cache) -> Option<ast::Type> {
     let struct_type_node = _context
       .declarations
       .get(&self.target_key.unwrap())
@@ -64,7 +64,7 @@ impl TypeCheck for ast::StructValue {
 }
 
 impl TypeCheck for ast::Prototype {
-  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut cache::Cache) {
     // TODO: Implement?
   }
 }
@@ -74,7 +74,7 @@ impl TypeCheck for ast::StructType {
 }
 
 impl TypeCheck for ast::UnaryExpr {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
         if !type_context.in_unsafe_block {
@@ -114,7 +114,7 @@ impl TypeCheck for ast::UnaryExpr {
     };
   }
 
-  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, context: &cache::Cache) -> Option<ast::Type> {
     self.expr.infer_type(context)
   }
 }
@@ -124,7 +124,7 @@ impl TypeCheck for ast::Enum {
 }
 
 impl TypeCheck for ast::AssignStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     // TODO: Need to unify the value and the target's type, as well as ensuring that the target is mutable.
 
     let assignee_type = self.assignee_expr.infer_type(context);
@@ -167,7 +167,7 @@ impl TypeCheck for ast::AssignStmt {
 }
 
 impl TypeCheck for ast::ContinueStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, _context: &mut cache::Cache) {
     if !type_context.in_loop {
       type_context
         .diagnostics
@@ -177,7 +177,7 @@ impl TypeCheck for ast::ContinueStmt {
 }
 
 impl TypeCheck for ast::ArrayIndexing {
-  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, context: &cache::Cache) -> Option<ast::Type> {
     let target_array_variable = &*context
       .declarations
       .get(&self.target_key.unwrap())
@@ -199,13 +199,13 @@ impl TypeCheck for ast::ArrayIndexing {
     Some(array_element_type)
   }
 
-  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _context: &mut cache::Cache) {
     // TODO: Implement.
   }
 }
 
 impl TypeCheck for ast::ArrayValue {
-  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, context: &cache::Cache) -> Option<ast::Type> {
     // TODO: Temporary, until type-inference is implemented.
     // We assume that the length is `0` if the explicit type is provided, otherwise
     // the array type is determined by the first element.
@@ -221,7 +221,7 @@ impl TypeCheck for ast::ArrayValue {
     Some(array_type)
   }
 
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     // FIXME: Here, we assume that `explicit_type` is always `Some(_)`. Currently, that might not be the case until type inference is implemented.
     let mut mixed_elements_flag = false;
 
@@ -248,7 +248,7 @@ impl TypeCheck for ast::ArrayValue {
 }
 
 impl TypeCheck for ast::UnsafeBlockStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     // TODO: To avoid problems with nested cases, save a buffer here, then restore?
     type_context.in_unsafe_block = true;
     self.0.type_check(type_context, context);
@@ -265,7 +265,7 @@ impl TypeCheck for ast::Parameter {
 }
 
 impl TypeCheck for ast::Block {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     for statement in &self.statements {
       statement.type_check(type_context, context);
     }
@@ -273,7 +273,7 @@ impl TypeCheck for ast::Block {
 }
 
 impl TypeCheck for ast::VariableRef {
-  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, context: &cache::Cache) -> Option<ast::Type> {
     // TODO: Simplify.
     let target_variable = &*context
       .declarations
@@ -293,7 +293,7 @@ impl TypeCheck for ast::VariableRef {
 }
 
 impl TypeCheck for ast::Literal {
-  fn infer_type(&self, _context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, _context: &cache::Cache) -> Option<ast::Type> {
     Some(ast::Type::Primitive(match self {
       ast::Literal::Bool(_) => ast::PrimitiveType::Bool,
       ast::Literal::Char(_) => ast::PrimitiveType::Char,
@@ -304,7 +304,7 @@ impl TypeCheck for ast::Literal {
 }
 
 impl TypeCheck for ast::IfStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     if !unify_with_primitive(self.condition.infer_type(context), ast::PrimitiveType::Bool) {
       type_context
         .diagnostics
@@ -314,18 +314,17 @@ impl TypeCheck for ast::IfStmt {
 }
 
 impl TypeCheck for ast::BinaryExpr {
-  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, context: &cache::Cache) -> Option<ast::Type> {
     // TODO: What if the binary expression is comparing? Then it would be bool, not the type of the left arm.
     self.left.infer_type(context)
   }
 
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     let left_type = self.left.infer_type(context);
     let right_type = self.right.infer_type(context);
 
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
-    // FIXME: Does this equality check work as expected? Research & ensure.
     // TODO: If we require both operands to  be of the same type, then operator overloading isn't possible with mixed operands as parameters.
     if left_type != right_type {
       type_context
@@ -365,7 +364,7 @@ impl TypeCheck for ast::BinaryExpr {
 }
 
 impl TypeCheck for ast::BreakStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, _context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, _context: &mut cache::Cache) {
     if !type_context.in_loop {
       type_context
         .diagnostics
@@ -375,19 +374,19 @@ impl TypeCheck for ast::BreakStmt {
 }
 
 impl TypeCheck for ast::Definition {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     self.node.borrow().type_check(type_context, context);
   }
 }
 
 impl TypeCheck for ast::ExprStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     self.expr.type_check(type_context, context);
   }
 }
 
 impl TypeCheck for ast::LetStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     let value_type = self.value.infer_type(context);
 
     // TODO: Ensure this comparison works as expected (especially for complex types).
@@ -403,7 +402,7 @@ impl TypeCheck for ast::LetStmt {
 }
 
 impl TypeCheck for ast::ReturnStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     if type_context.does_function_return && self.value.is_none() {
       type_context
         .diagnostics
@@ -423,7 +422,7 @@ impl TypeCheck for ast::ReturnStmt {
 }
 
 impl TypeCheck for ast::Function {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     type_context.does_function_return = self.prototype.return_type.is_some();
 
     // NOTE: No need to type-check parameters.
@@ -435,7 +434,7 @@ impl TypeCheck for ast::Function {
 }
 
 impl TypeCheck for ast::FunctionCall {
-  fn infer_type(&self, context: &context::Context) -> Option<ast::Type> {
+  fn infer_type(&self, context: &cache::Cache) -> Option<ast::Type> {
     // TODO: Is this cloning? Simplify this messy code section.
     let function_or_extern = &*context
       .declarations
@@ -453,7 +452,7 @@ impl TypeCheck for ast::FunctionCall {
     prototype.return_type.clone()
   }
 
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     // TODO: Need access to the current function.
     // TODO: Ensure externs and unsafe function are only called from unsafe functions.
 
@@ -513,7 +512,7 @@ impl TypeCheck for ast::FunctionCall {
 }
 
 impl TypeCheck for ast::WhileStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut context::Context) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, context: &mut cache::Cache) {
     if !unify_with_primitive(self.condition.infer_type(context), ast::PrimitiveType::Bool) {
       type_context
         .diagnostics

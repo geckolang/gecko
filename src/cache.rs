@@ -6,17 +6,20 @@ pub struct DefinitionInfo {
   pub name: String,
 }
 
-pub struct Context {
+pub struct Cache {
   pub key_counter: usize,
   pub declarations:
     std::collections::HashMap<DefinitionKey, std::rc::Rc<std::cell::RefCell<ast::Node>>>,
+  pub user_defined_types:
+    std::collections::HashMap<DefinitionKey, std::rc::Rc<std::cell::RefCell<ast::Type>>>,
 }
 
-impl Context {
+impl Cache {
   pub fn new() -> Self {
-    Context {
+    Cache {
       key_counter: 0,
       declarations: std::collections::HashMap::new(),
+      user_defined_types: std::collections::HashMap::new(),
     }
   }
 

@@ -1,7 +1,7 @@
-use crate::{ast, context, diagnostic, llvm_lowering};
+use crate::{ast, cache, diagnostic, llvm_lowering};
 
 pub trait Lint {
-  fn lint(&self, _context: &mut context::Context, _lint_context: &mut LintContext) {
+  fn lint(&self, _cache: &mut cache::Cache, _context: &mut LintContext) {
     //
   }
 }
@@ -9,8 +9,8 @@ pub trait Lint {
 pub struct LintContext {
   pub diagnostics: diagnostic::DiagnosticBuilder,
   block_depth: usize,
-  function_references: std::collections::HashMap<context::DefinitionKey, bool>,
-  variable_references: std::collections::HashMap<context::DefinitionKey, bool>,
+  function_references: std::collections::HashMap<cache::DefinitionKey, bool>,
+  variable_references: std::collections::HashMap<cache::DefinitionKey, bool>,
 }
 
 impl LintContext {
@@ -23,14 +23,14 @@ impl LintContext {
     }
   }
 
-  pub fn finalize(&mut self, context: &context::Context) {
+  pub fn finalize(&mut self, cache: &cache::Cache) {
     for (function_key, was_called) in &self.function_references {
       // TODO: Dereferencing value.
       if *was_called {
         continue;
       }
 
-      let function_node = context.declarations[&function_key].as_ref().borrow();
+      let function_node = cache.declarations[&function_key].as_ref().borrow();
 
       let name = match &*function_node {
         ast::Node::Function(function) => &function.name,
@@ -51,7 +51,7 @@ impl LintContext {
         continue;
       }
 
-      let variable_def_node = context.declarations[&variable_def_key].as_ref().borrow();
+      let variable_def_node = cache.declarations[&variable_def_key].as_ref().borrow();
 
       let name = match &*variable_def_node {
         ast::Node::LetStmt(let_stmt) => &let_stmt.name,
@@ -83,7 +83,7 @@ impl LintContext {
 }
 
 impl Lint for ast::Node {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+  fn lint(&self, context: &mut cache::Cache, lint_context: &mut LintContext) {
     crate::dispatch!(self, Lint::lint, context, lint_context);
   }
 }
@@ -101,56 +101,56 @@ impl Lint for ast::StructType {
 }
 
 impl Lint for ast::UnaryExpr {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    self.expr.lint(context, lint_context);
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
+    self.expr.lint(cache, context);
   }
 }
 
 impl Lint for ast::ArrayIndexing {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
+    context
       .variable_references
       .insert(self.target_key.unwrap(), true);
 
-    self.index.lint(context, lint_context);
+    self.index.lint(cache, context);
   }
 }
 
 impl Lint for ast::ArrayValue {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     for element in &self.elements {
-      element.lint(context, lint_context);
+      element.lint(cache, context);
     }
   }
 }
 
 impl Lint for ast::BinaryExpr {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    self.left.lint(context, lint_context);
-    self.right.lint(context, lint_context);
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
+    self.left.lint(cache, context);
+    self.right.lint(cache, context);
   }
 }
 
 impl Lint for ast::Block {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     let mut did_return = false;
 
     if self.statements.is_empty() {
-      lint_context.diagnostics.warning("empty block".to_string());
+      context.diagnostics.warning("empty block".to_string());
     }
 
     // TODO: Might be repetitive for subsequent nested blocks.
-    if lint_context.block_depth > 4 {
-      lint_context
+    if context.block_depth > 4 {
+      context
         .diagnostics
         .warning("block depth is deeper than 4".to_string());
     }
 
-    lint_context.block_depth += 1;
+    context.block_depth += 1;
 
     for statement in &self.statements {
       if did_return {
-        lint_context
+        context
           .diagnostics
           .warning("unreachable code after return statement".to_string());
 
@@ -161,10 +161,10 @@ impl Lint for ast::Block {
         did_return = true;
       }
 
-      statement.lint(context, lint_context);
+      statement.lint(cache, context);
     }
 
-    lint_context.block_depth -= 1;
+    context.block_depth -= 1;
   }
 }
 
@@ -177,17 +177,17 @@ impl Lint for ast::ContinueStmt {
 }
 
 impl Lint for ast::Definition {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     let node = &*self.node.borrow();
 
     match node {
       ast::Node::Function(_) => {
-        lint_context
+        context
           .function_references
           .insert(self.definition_key, false);
       }
       ast::Node::LetStmt(_) => {
-        lint_context
+        context
           .variable_references
           .insert(self.definition_key, false);
       }
@@ -195,20 +195,20 @@ impl Lint for ast::Definition {
       _ => {}
     };
 
-    node.lint(context, lint_context);
+    node.lint(cache, context);
   }
 }
 
 impl Lint for ast::Enum {
-  fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.lint_name_casing("enum", &self.name, convert_case::Case::Pascal);
+  fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
+    context.lint_name_casing("enum", &self.name, convert_case::Case::Pascal);
 
     if self.variants.is_empty() {
-      lint_context.diagnostics.warning("empty enum".to_string());
+      context.diagnostics.warning("empty enum".to_string());
     }
 
     for variant in &self.variants {
-      lint_context.lint_name_casing(
+      context.lint_name_casing(
         format!("enum `{}` variant", &self.name).as_str(),
         &variant,
         convert_case::Case::Pascal,
@@ -218,15 +218,15 @@ impl Lint for ast::Enum {
 }
 
 impl Lint for ast::ExprStmt {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     match self.expr.as_ref() {
       ast::Node::FunctionCall(_) => {}
-      _ => lint_context
+      _ => context
         .diagnostics
         .warning("expression may be redundant".to_string()),
     };
 
-    self.expr.lint(context, lint_context);
+    self.expr.lint(cache, context);
   }
 }
 
@@ -235,49 +235,49 @@ impl Lint for ast::Extern {
 }
 
 impl Lint for ast::Function {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.lint_name_casing("function", &self.name, convert_case::Case::Snake);
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
+    context.lint_name_casing("function", &self.name, convert_case::Case::Snake);
 
     if self.prototype.parameters.len() > 4 {
-      lint_context
+      context
         .diagnostics
         .warning("function has more than 4 parameters".to_string());
     }
 
-    self.body.lint(context, lint_context);
+    self.body.lint(cache, context);
   }
 }
 
 impl Lint for ast::FunctionCall {
-  fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context
+  fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
+    context
       .function_references
       .insert(self.target_key.unwrap(), true);
   }
 }
 
 impl Lint for ast::IfStmt {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     if matches!(self.condition.as_ref(), ast::Node::Literal(_)) {
-      lint_context
+      context
         .diagnostics
         .warning("if condition is constant".to_string());
     }
 
     if let Some(else_block) = &self.else_block {
-      else_block.lint(context, lint_context);
+      else_block.lint(cache, context);
     }
 
-    self.condition.lint(context, lint_context);
-    self.then_block.lint(context, lint_context);
+    self.condition.lint(cache, context);
+    self.then_block.lint(cache, context);
   }
 }
 
 impl Lint for ast::LetStmt {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.lint_name_casing("variable", &self.name, convert_case::Case::Snake);
-    self.value.lint(context, lint_context);
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
+    context.lint_name_casing("variable", &self.name, convert_case::Case::Snake);
+    self.value.lint(cache, context);
   }
 }
 
@@ -286,42 +286,42 @@ impl Lint for ast::Literal {
 }
 
 impl Lint for ast::Parameter {
-  fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context.lint_name_casing("parameter", &self.0, convert_case::Case::Snake);
+  fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
+    context.lint_name_casing("parameter", &self.0, convert_case::Case::Snake);
   }
 }
 
 impl Lint for ast::ReturnStmt {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     if let Some(value) = &self.value {
-      value.lint(context, lint_context);
+      value.lint(cache, context);
     }
   }
 }
 
 impl Lint for ast::UnsafeBlockStmt {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    self.0.lint(context, lint_context);
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
+    self.0.lint(cache, context);
   }
 }
 
 impl Lint for ast::AssignStmt {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    self.value.lint(context, lint_context);
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
+    self.value.lint(cache, context);
   }
 }
 
 impl Lint for ast::VariableRef {
-  fn lint(&self, _context: &mut context::Context, lint_context: &mut LintContext) {
-    lint_context
+  fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
+    context
       .variable_references
       .insert(self.target_key.unwrap(), true);
   }
 }
 
 impl Lint for ast::WhileStmt {
-  fn lint(&self, context: &mut context::Context, lint_context: &mut LintContext) {
-    self.condition.lint(context, lint_context);
-    self.body.lint(context, lint_context);
+  fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
+    self.condition.lint(cache, context);
+    self.body.lint(cache, context);
   }
 }
