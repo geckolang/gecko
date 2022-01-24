@@ -150,7 +150,13 @@ impl Resolvable for ast::IfStmt {
 
 impl Resolvable for ast::LetStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // FIXME: How to resolve `UserDefined` types?
+    // TODO: Interesting. `UserDefinedType` is not a `Node`, yet we can still call the `resolve` method on it.
+    match &mut self.ty {
+      ast::Type::UserDefined(user_defined_type) => {
+        user_defined_type.resolve(resolver, cache);
+      }
+      _ => {}
+    };
 
     self.value.resolve(resolver, cache);
   }

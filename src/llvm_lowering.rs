@@ -30,23 +30,28 @@ impl Lower for ast::StructValue {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &mut cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let struct_type = cache
-      .declarations
-      .get(&self.target_key.unwrap())
-      .unwrap()
-      .as_ref()
-      .borrow();
+    // TODO: If possible and practical, find a way to remove reliance on the generator's state.
 
-    let llvm_struct_type = match &*struct_type {
-      ast::Node::StructType(struct_type) => generator.lower_struct_type(struct_type, cache),
-      _ => unreachable!(),
-    };
+    // FIXME: This is invalid. Struct value might be used in a different context (non-declaration).
+    let struct_alloca_ptr = generator.let_stmt_allocation.unwrap().clone();
 
-    let llvm_alloca = generator
-      .llvm_builder
-      .build_alloca(llvm_struct_type, "struct.alloca");
+    // Populate struct fields.
+    for (index, field) in self.fields.iter().enumerate() {
+      let struct_field_gep = generator
+        .llvm_builder
+        // TODO: Is this conversion safe?
+        .build_struct_gep(struct_alloca_ptr, index as u32, "struct.field.gep")
+        .unwrap();
 
-    Some(llvm_alloca.as_basic_value_enum())
+      let llvm_field_value = field.lower(generator, cache).unwrap();
+
+      generator
+        .llvm_builder
+        // FIXME: For nested structs, they will return `None`.
+        .build_store(struct_field_gep, llvm_field_value);
+    }
+
+    None
   }
 }
 
@@ -764,12 +769,18 @@ impl Lower for ast::LetStmt {
       .llvm_builder
       .build_alloca(llvm_type, self.name.as_str());
 
-    let llvm_value = self.value.lower(generator, cache).unwrap();
+    generator.let_stmt_allocation = Some(llvm_alloca_ptr);
 
-    // TODO: Shouldn't there be a load instruction first?
-    generator
-      .llvm_builder
-      .build_store(llvm_alloca_ptr, llvm_value);
+    let llvm_value = self.value.lower(generator, cache);
+
+    generator.let_stmt_allocation = None;
+
+    // NOTE: Some values (such as `StructValue`) work on the allocated type, and do not produce any value.
+    if let Some(llvm_value) = llvm_value {
+      generator
+        .llvm_builder
+        .build_store(llvm_alloca_ptr, llvm_value);
+    }
 
     Some(llvm_alloca_ptr.as_basic_value_enum())
   }
@@ -861,6 +872,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
     std::collections::HashMap<cache::DefinitionKey, inkwell::types::BasicTypeEnum<'ctx>>,
   next_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   return_expects_rvalue: bool,
+  let_stmt_allocation: Option<inkwell::values::PointerValue<'ctx>>,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -879,6 +891,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_cached_types: std::collections::HashMap::new(),
       next_block: None,
       return_expects_rvalue: false,
+      let_stmt_allocation: None,
     }
   }
 
