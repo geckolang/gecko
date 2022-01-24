@@ -120,11 +120,7 @@ impl Lower for ast::ArrayIndexing {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &mut cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_index = self
-      .index
-      .lower(generator, cache)
-      .unwrap()
-      .into_int_value();
+    let llvm_index = self.index.lower(generator, cache).unwrap().into_int_value();
 
     let llvm_target_array = generator.memoize_or_retrieve(self.target_key.unwrap(), cache);
 
@@ -936,14 +932,18 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         }
 
         // Otherwise, lower and cache the target type.
-        let cached_type = cache
-          .user_defined_types
+        let cached_type_node = cache
+          .declarations
           .get(&target_key)
           .unwrap()
           .as_ref()
           .borrow();
 
-        let llvm_type = self.lower_type(&*cached_type, cache);
+        let llvm_type = match &*cached_type_node {
+          ast::Node::StructType(struct_type) => self.lower_struct_type(struct_type, cache),
+          _ => unreachable!(),
+        }
+        .as_basic_type_enum();
 
         self.llvm_cached_types.insert(target_key, llvm_type.clone());
 

@@ -2,16 +2,10 @@ use crate::ast;
 
 pub type DefinitionKey = usize;
 
-pub struct DefinitionInfo {
-  pub name: String,
-}
-
 pub struct Cache {
-  pub key_counter: usize,
+  key_counter: usize,
   pub declarations:
     std::collections::HashMap<DefinitionKey, std::rc::Rc<std::cell::RefCell<ast::Node>>>,
-  pub user_defined_types:
-    std::collections::HashMap<DefinitionKey, std::rc::Rc<std::cell::RefCell<ast::Type>>>,
 }
 
 impl Cache {
@@ -19,7 +13,6 @@ impl Cache {
     Cache {
       key_counter: 0,
       declarations: std::collections::HashMap::new(),
-      user_defined_types: std::collections::HashMap::new(),
     }
   }
 

@@ -62,25 +62,25 @@ type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 pub struct Parser<'a> {
   tokens: Vec<token::Token>,
   index: usize,
-  context: &'a mut cache::Cache,
+  cache: &'a mut cache::Cache,
 }
 
 impl<'a> Parser<'a> {
-  pub fn new(tokens: Vec<token::Token>, context: &'a mut cache::Cache) -> Self {
+  pub fn new(tokens: Vec<token::Token>, cache: &'a mut cache::Cache) -> Self {
     Self {
       tokens,
       index: 0,
-      context,
+      cache,
     }
   }
 
-  pub fn from_tokens(token_kinds: Vec<token::TokenKind>, context: &'a mut cache::Cache) -> Self {
+  pub fn from_tokens(token_kinds: Vec<token::TokenKind>, cache: &'a mut cache::Cache) -> Self {
     let tokens = token_kinds
       .iter()
       .map(|kind| (kind.to_owned(), 0 as usize))
       .collect::<Vec<_>>();
 
-    Self::new(tokens, context)
+    Self::new(tokens, cache)
   }
 
   /// Parse all top-level definitions.
@@ -415,7 +415,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
-      definition_key: self.context.create_definition_key(),
+      definition_key: self.cache.create_definition_key(),
     })
   }
 
@@ -440,7 +440,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Extern(extern_node))),
-      definition_key: self.context.create_definition_key(),
+      definition_key: self.cache.create_definition_key(),
     })
   }
 
@@ -535,7 +535,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::VariableOrParameter,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::LetStmt(let_stmt))),
-      definition_key: self.context.create_definition_key(),
+      definition_key: self.cache.create_definition_key(),
     })
   }
 
@@ -912,7 +912,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Enum(enum_))),
-      definition_key: self.context.create_definition_key(),
+      definition_key: self.cache.create_definition_key(),
     })
   }
 
@@ -949,7 +949,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::StructType(struct_type))),
-      definition_key: self.context.create_definition_key(),
+      definition_key: self.cache.create_definition_key(),
     })
   }
 
