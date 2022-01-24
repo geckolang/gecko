@@ -1010,6 +1010,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       .map(|field| self.lower_type(&field.1, cache))
       .collect::<Vec<_>>();
 
+    // TODO: Consider caching the struct type here?
+
     self
       .llvm_context
       .struct_type(llvm_field_types.as_slice(), false)
