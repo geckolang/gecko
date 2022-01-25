@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, name_resolution, token};
+use crate::{ast, cache, diagnostic, lexer, name_resolution};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -39,20 +39,20 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
 
 /// Determine whether the given token is considered a valid binary
 /// operator.
-fn is_binary_operator(token: &token::TokenKind) -> bool {
+fn is_binary_operator(token: &lexer::TokenKind) -> bool {
   match token {
-    token::TokenKind::SymbolPlus
-    | token::TokenKind::SymbolMinus
-    | token::TokenKind::SymbolAsterisk
-    | token::TokenKind::SymbolSlash => true,
+    lexer::TokenKind::SymbolPlus
+    | lexer::TokenKind::SymbolMinus
+    | lexer::TokenKind::SymbolAsterisk
+    | lexer::TokenKind::SymbolSlash => true,
     _ => false,
   }
 }
 
-fn get_token_precedence(token: &token::TokenKind) -> usize {
+fn get_token_precedence(token: &lexer::TokenKind) -> usize {
   match token {
-    token::TokenKind::SymbolPlus | token::TokenKind::SymbolMinus => 1,
-    token::TokenKind::SymbolAsterisk | token::TokenKind::SymbolSlash => 2,
+    lexer::TokenKind::SymbolPlus | lexer::TokenKind::SymbolMinus => 1,
+    lexer::TokenKind::SymbolAsterisk | lexer::TokenKind::SymbolSlash => 2,
     _ => 0,
   }
 }
@@ -60,13 +60,13 @@ fn get_token_precedence(token: &token::TokenKind) -> usize {
 type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
 
 pub struct Parser<'a> {
-  tokens: Vec<token::Token>,
+  tokens: Vec<lexer::Token>,
   index: usize,
   cache: &'a mut cache::Cache,
 }
 
 impl<'a> Parser<'a> {
-  pub fn new(tokens: Vec<token::Token>, cache: &'a mut cache::Cache) -> Self {
+  pub fn new(tokens: Vec<lexer::Token>, cache: &'a mut cache::Cache) -> Self {
     Self {
       tokens,
       index: 0,
@@ -74,7 +74,7 @@ impl<'a> Parser<'a> {
     }
   }
 
-  pub fn from_tokens(token_kinds: Vec<token::TokenKind>, cache: &'a mut cache::Cache) -> Self {
+  pub fn from_tokens(token_kinds: Vec<lexer::TokenKind>, cache: &'a mut cache::Cache) -> Self {
     let tokens = token_kinds
       .iter()
       .map(|kind| (kind.to_owned(), 0 as usize))
@@ -96,12 +96,12 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
-  fn until(&self, token: &token::TokenKind) -> ParserResult<bool> {
+  fn until(&self, token: &lexer::TokenKind) -> ParserResult<bool> {
     // TODO: Handle `EOF` case here.
     return Ok(!self.is_eof() && !self.is(token));
   }
 
-  fn get(&self) -> &token::TokenKind {
+  fn get(&self) -> &lexer::TokenKind {
     &self.tokens[self.index].0
   }
 
@@ -114,7 +114,7 @@ impl<'a> Parser<'a> {
   /// Compare the current token to the given token.
   ///
   /// If `EOF` has been reached, `false` will always be returned.
-  fn is(&self, token: &token::TokenKind) -> bool {
+  fn is(&self, token: &lexer::TokenKind) -> bool {
     if self.index >= self.tokens.len() {
       return false;
     }
@@ -138,7 +138,7 @@ impl<'a> Parser<'a> {
   }
 
   /// Retrieve the upcoming token (if any).
-  fn peek(&self) -> Option<&token::TokenKind> {
+  fn peek(&self) -> Option<&lexer::TokenKind> {
     match self.tokens.get(self.index + 1) {
       Some(value) => Some(&value.0),
       None => None,
@@ -146,7 +146,7 @@ impl<'a> Parser<'a> {
   }
 
   /// Compare the upcoming token to the given token.
-  fn peek_is(&self, token: &token::TokenKind) -> bool {
+  fn peek_is(&self, token: &lexer::TokenKind) -> bool {
     let next_token = self.peek();
 
     if next_token.is_none() {
@@ -168,7 +168,7 @@ impl<'a> Parser<'a> {
     let base_name = self.parse_name()?;
     let mut scope = Vec::new();
 
-    while !self.is_eof() && self.is(&token::TokenKind::SymbolColon) {
+    while !self.is_eof() && self.is(&lexer::TokenKind::SymbolColon) {
       self.skip();
       scope.push(self.parse_name()?);
     }
@@ -181,10 +181,10 @@ impl<'a> Parser<'a> {
     // TODO: Illegal/unrecognized tokens MAY also be represented under 'Identifier'?
 
     // TODO: Wrong error message. Create an `expect` method.
-    assert!(matches!(self.get(), token::TokenKind::Identifier(_)));
+    assert!(matches!(self.get(), lexer::TokenKind::Identifier(_)));
 
     let name = match self.get() {
-      token::TokenKind::Identifier(value) => Some(value.clone()),
+      lexer::TokenKind::Identifier(value) => Some(value.clone()),
       _ => None,
     };
 
@@ -198,23 +198,23 @@ impl<'a> Parser<'a> {
   fn parse_block(&mut self) -> ParserResult<ast::Block> {
     // TODO: Have a symbol table for blocks, and check for re-declarations here?
 
-    skip_past!(self, &token::TokenKind::SymbolBraceL);
+    skip_past!(self, &lexer::TokenKind::SymbolBraceL);
 
     let mut statements = vec![];
 
-    while !self.is(&token::TokenKind::SymbolBraceR) && !self.is_eof() {
+    while !self.is(&lexer::TokenKind::SymbolBraceR) && !self.is_eof() {
       statements.push(Box::new(match self.get() {
-        token::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
-        token::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
-        token::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
-        token::TokenKind::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
-        token::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
-        token::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
-        token::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
-        token::TokenKind::Identifier(_) if self.peek_is(&token::TokenKind::SymbolEqual) => {
+        lexer::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
+        lexer::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
+        lexer::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
+        lexer::TokenKind::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
+        lexer::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
+        lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
+        lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
+        lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolEqual) => {
           ast::Node::VariableAssignStmt(self.parse_lvalue_assign_stmt()?)
         }
-        token::TokenKind::Identifier(_) if !self.peek_is(&token::TokenKind::SymbolParenthesesL) => {
+        lexer::TokenKind::Identifier(_) if !self.peek_is(&lexer::TokenKind::SymbolParenthesesL) => {
           ast::Node::VariableRef(self.parse_variable_ref()?)
         }
         _ => {
@@ -222,14 +222,14 @@ impl<'a> Parser<'a> {
             expr: Box::new(self.parse_expr()?),
           });
 
-          skip_past!(self, &token::TokenKind::SymbolSemiColon);
+          skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
           result
         }
       }));
     }
 
-    skip_past!(self, &token::TokenKind::SymbolBraceR);
+    skip_past!(self, &lexer::TokenKind::SymbolBraceR);
 
     Ok(ast::Block { statements })
   }
@@ -240,9 +240,9 @@ impl<'a> Parser<'a> {
     let current_token = self.get();
 
     let size = match current_token {
-      token::TokenKind::TypeInt16 => ast::IntSize::I16,
-      token::TokenKind::TypeInt32 => ast::IntSize::I32,
-      token::TokenKind::TypeInt64 => ast::IntSize::I64,
+      lexer::TokenKind::TypeInt16 => ast::IntSize::I16,
+      lexer::TokenKind::TypeInt32 => ast::IntSize::I32,
+      lexer::TokenKind::TypeInt64 => ast::IntSize::I64,
       // TODO: Add unsigned type tokens.
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -264,24 +264,24 @@ impl<'a> Parser<'a> {
   // TODO: Merge with the `parse_type` function (too small).
   /// bool
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
-    skip_past!(self, &token::TokenKind::TypeBool);
+    skip_past!(self, &lexer::TokenKind::TypeBool);
 
     Ok(ast::Type::Primitive(ast::PrimitiveType::Bool))
   }
 
   /// '[' %type, 0-9+ ']'
   fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
-    skip_past!(self, &token::TokenKind::SymbolBracketL);
+    skip_past!(self, &lexer::TokenKind::SymbolBracketL);
 
     let element_type = self.parse_type()?;
 
-    skip_past!(self, &token::TokenKind::SymbolComma);
+    skip_past!(self, &lexer::TokenKind::SymbolComma);
 
     // TODO: Cloning token.
     let current_token = self.get().clone();
 
     let size = match current_token {
-      token::TokenKind::LiteralInt(value) => value as u32,
+      lexer::TokenKind::LiteralInt(value) => value as u32,
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!("unexpected token `{}`, expected array size", current_token),
@@ -292,7 +292,7 @@ impl<'a> Parser<'a> {
     };
 
     self.skip();
-    skip_past!(self, &token::TokenKind::SymbolBracketR);
+    skip_past!(self, &lexer::TokenKind::SymbolBracketR);
 
     Ok(ast::Type::Array(Box::new(element_type), size.clone()))
   }
@@ -303,22 +303,22 @@ impl<'a> Parser<'a> {
     // TODO: Support for more types.
     match self.get() {
       // TODO: Other types as well.
-      token::TokenKind::TypeInt16 | token::TokenKind::TypeInt32 | token::TokenKind::TypeInt64 => {
+      lexer::TokenKind::TypeInt16 | lexer::TokenKind::TypeInt32 | lexer::TokenKind::TypeInt64 => {
         self.parse_int_type()
       }
-      token::TokenKind::TypeBool => self.parse_bool_type(),
-      token::TokenKind::TypeString => {
+      lexer::TokenKind::TypeBool => self.parse_bool_type(),
+      lexer::TokenKind::TypeString => {
         self.skip();
 
         Ok(ast::Type::Primitive(ast::PrimitiveType::String))
       }
-      token::TokenKind::SymbolBracketL => self.parse_array_type(),
-      token::TokenKind::SymbolAsterisk => {
+      lexer::TokenKind::SymbolBracketL => self.parse_array_type(),
+      lexer::TokenKind::SymbolAsterisk => {
         self.skip();
 
         Ok(ast::Type::Pointer(Box::new(self.parse_type()?)))
       }
-      token::TokenKind::Identifier(_) => self.parse_user_defined_type(),
+      lexer::TokenKind::Identifier(_) => self.parse_user_defined_type(),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!(
@@ -346,7 +346,7 @@ impl<'a> Parser<'a> {
   fn parse_parameter(&mut self, index: u32) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
-    skip_past!(self, &token::TokenKind::SymbolColon);
+    skip_past!(self, &lexer::TokenKind::SymbolColon);
 
     let type_group = self.parse_type()?;
 
@@ -355,7 +355,7 @@ impl<'a> Parser<'a> {
 
   /// '(' {%parameter* (,)} (+) ')' '~' %type_group
   fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
-    skip_past!(self, &token::TokenKind::SymbolParenthesesL);
+    skip_past!(self, &lexer::TokenKind::SymbolParenthesesL);
 
     // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
     let mut parameters = vec![];
@@ -363,8 +363,8 @@ impl<'a> Parser<'a> {
     let mut parameter_index_counter = 0;
 
     // TODO: Analyze, and remove possibility of lonely comma.
-    while !self.is(&token::TokenKind::SymbolParenthesesR) && !self.is_eof() {
-      if self.is(&token::TokenKind::SymbolPlus) {
+    while !self.is(&lexer::TokenKind::SymbolParenthesesR) && !self.is_eof() {
+      if self.is(&lexer::TokenKind::SymbolPlus) {
         is_variadic = true;
         self.skip();
 
@@ -374,18 +374,18 @@ impl<'a> Parser<'a> {
       parameters.push(self.parse_parameter(parameter_index_counter)?);
       parameter_index_counter += 1;
 
-      if !self.is(&token::TokenKind::SymbolComma) {
+      if !self.is(&lexer::TokenKind::SymbolComma) {
         break;
       }
 
       self.skip();
     }
 
-    skip_past!(self, &token::TokenKind::SymbolParenthesesR);
+    skip_past!(self, &lexer::TokenKind::SymbolParenthesesR);
 
     let mut return_type = None;
 
-    if self.is(&token::TokenKind::SymbolTilde) {
+    if self.is(&lexer::TokenKind::SymbolTilde) {
       self.skip();
       return_type = Some(self.parse_type()?);
     }
@@ -399,7 +399,7 @@ impl<'a> Parser<'a> {
 
   /// fn %prototype %block
   fn parse_function(&mut self) -> ParserResult<ast::Definition> {
-    skip_past!(self, &token::TokenKind::KeywordFn);
+    skip_past!(self, &lexer::TokenKind::KeywordFn);
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
@@ -423,13 +423,13 @@ impl<'a> Parser<'a> {
   fn parse_extern(&mut self) -> ParserResult<ast::Definition> {
     // TODO: Support for visibility.
 
-    skip_past!(self, &token::TokenKind::KeywordExtern);
-    skip_past!(self, &token::TokenKind::KeywordFn);
+    skip_past!(self, &lexer::TokenKind::KeywordExtern);
+    skip_past!(self, &lexer::TokenKind::KeywordFn);
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
 
-    skip_past!(self, &token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     let extern_node = ast::Extern {
       name: name.clone(),
@@ -460,10 +460,10 @@ impl<'a> Parser<'a> {
 
     let definition = match token {
       // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
-      token::TokenKind::KeywordFn => ast::Node::Definition(self.parse_function()?),
-      token::TokenKind::KeywordExtern => ast::Node::Definition(self.parse_extern()?),
-      token::TokenKind::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
-      token::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_type()?),
+      lexer::TokenKind::KeywordFn => ast::Node::Definition(self.parse_function()?),
+      lexer::TokenKind::KeywordExtern => ast::Node::Definition(self.parse_extern()?),
+      lexer::TokenKind::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
+      lexer::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_type()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!("unexpected token `{}`, expected top-level construct", token),
@@ -478,27 +478,27 @@ impl<'a> Parser<'a> {
 
   /// return (%expr)
   fn parse_return_stmt(&mut self) -> ParserResult<ast::ReturnStmt> {
-    skip_past!(self, &token::TokenKind::KeywordReturn);
+    skip_past!(self, &lexer::TokenKind::KeywordReturn);
 
     let mut value = None;
 
     // TODO: Does this cover all cases?
-    if !self.is(&token::TokenKind::SymbolSemiColon) {
+    if !self.is(&lexer::TokenKind::SymbolSemiColon) {
       value = Some(Box::new(self.parse_expr()?));
     }
 
-    skip_past!(self, &token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     Ok(ast::ReturnStmt { value })
   }
 
   /// let %name (':' %type_group) '=' %expr ';'
   fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
-    skip_past!(self, &token::TokenKind::KeywordLet);
+    skip_past!(self, &lexer::TokenKind::KeywordLet);
 
     let mut is_mutable = false;
 
-    if self.is(&token::TokenKind::KeywordMut) {
+    if self.is(&lexer::TokenKind::KeywordMut) {
       self.skip();
       is_mutable = true;
     }
@@ -506,16 +506,16 @@ impl<'a> Parser<'a> {
     let name = self.parse_name()?;
     let mut ty = None;
 
-    if self.is(&token::TokenKind::SymbolColon) {
+    if self.is(&lexer::TokenKind::SymbolColon) {
       self.skip();
       ty = Some(self.parse_type()?);
     }
 
-    skip_past!(self, &token::TokenKind::SymbolEqual);
+    skip_past!(self, &lexer::TokenKind::SymbolEqual);
 
     let value = self.parse_expr()?;
 
-    skip_past!(self, &token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     // Infer the type based on the value.
     if ty.is_none() {
@@ -541,13 +541,13 @@ impl<'a> Parser<'a> {
 
   /// if %expr %block (else %block)
   fn parse_if_stmt(&mut self) -> ParserResult<ast::IfStmt> {
-    skip_past!(self, &token::TokenKind::KeywordIf);
+    skip_past!(self, &lexer::TokenKind::KeywordIf);
 
     let condition = self.parse_expr()?;
     let then_block = self.parse_block()?;
     let mut else_block = None;
 
-    if self.is(&token::TokenKind::KeywordElse) {
+    if self.is(&lexer::TokenKind::KeywordElse) {
       self.skip();
       else_block = Some(self.parse_block()?);
     }
@@ -561,7 +561,7 @@ impl<'a> Parser<'a> {
 
   /// while %expr %block
   fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt> {
-    skip_past!(self, &token::TokenKind::KeywordWhile);
+    skip_past!(self, &lexer::TokenKind::KeywordWhile);
 
     let condition = self.parse_expr()?;
     let body = self.parse_block()?;
@@ -574,23 +574,23 @@ impl<'a> Parser<'a> {
 
   /// break ';'
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
-    skip_past!(self, &token::TokenKind::KeywordBreak);
-    skip_past!(self, &token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &lexer::TokenKind::KeywordBreak);
+    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     Ok(ast::BreakStmt {})
   }
 
   /// continue ';'
   fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
-    skip_past!(self, &token::TokenKind::KeywordContinue);
-    skip_past!(self, &token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &lexer::TokenKind::KeywordContinue);
+    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     Ok(ast::ContinueStmt)
   }
 
   // unsafe %block
   fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlockStmt> {
-    skip_past!(self, &token::TokenKind::KeywordUnsafe);
+    skip_past!(self, &lexer::TokenKind::KeywordUnsafe);
 
     Ok(ast::UnsafeBlockStmt(self.parse_block()?))
   }
@@ -599,7 +599,7 @@ impl<'a> Parser<'a> {
   fn parse_bool_literal(&mut self) -> ParserResult<ast::Literal> {
     // TODO: Accessing tokens like this is unsafe/unchecked.
     Ok(match self.get().clone() {
-      token::TokenKind::LiteralBool(value) => {
+      lexer::TokenKind::LiteralBool(value) => {
         self.skip();
 
         ast::Literal::Bool(value)
@@ -620,7 +620,7 @@ impl<'a> Parser<'a> {
     // TODO: Accessing tokens like this is unsafe/unchecked.
     // TODO: Possibly cloning value.
     Ok(match self.get().clone() {
-      token::TokenKind::LiteralInt(value) => {
+      lexer::TokenKind::LiteralInt(value) => {
         self.skip();
 
         let mut size = minimum_int_size_of(&value);
@@ -647,7 +647,7 @@ impl<'a> Parser<'a> {
   fn parse_string_literal(&mut self) -> ParserResult<ast::Literal> {
     // TODO: Accessing tokens like this is unsafe/unchecked.
     let result = match self.get() {
-      token::TokenKind::LiteralString(value) => ast::Literal::String(value.clone()),
+      lexer::TokenKind::LiteralString(value) => ast::Literal::String(value.clone()),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: "expected string literal but got end of file".to_string(),
@@ -666,12 +666,12 @@ impl<'a> Parser<'a> {
   fn parse_array_value(&mut self) -> ParserResult<ast::ArrayValue> {
     let mut elements = Vec::new();
 
-    skip_past!(self, &token::TokenKind::SymbolBracketL);
+    skip_past!(self, &lexer::TokenKind::SymbolBracketL);
 
-    while self.until(&token::TokenKind::SymbolBracketR)? {
+    while self.until(&lexer::TokenKind::SymbolBracketR)? {
       elements.push(self.parse_expr()?);
 
-      if self.is(&token::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::SymbolComma) {
         self.skip();
       }
     }
@@ -696,11 +696,11 @@ impl<'a> Parser<'a> {
   fn parse_array_indexing(&mut self) -> ParserResult<ast::ArrayIndexing> {
     let name = self.parse_name()?;
 
-    skip_past!(self, &token::TokenKind::SymbolBracketL);
+    skip_past!(self, &lexer::TokenKind::SymbolBracketL);
 
     let index = Box::new(self.parse_expr()?);
 
-    skip_past!(self, &token::TokenKind::SymbolBracketR);
+    skip_past!(self, &lexer::TokenKind::SymbolBracketR);
 
     Ok(ast::ArrayIndexing {
       name,
@@ -713,9 +713,9 @@ impl<'a> Parser<'a> {
     let current_token = self.get();
 
     Ok(match current_token {
-      token::TokenKind::LiteralBool(_) => self.parse_bool_literal()?,
-      token::TokenKind::LiteralInt(_) => self.parse_int_literal()?,
-      token::TokenKind::LiteralString(_) => self.parse_string_literal()?,
+      lexer::TokenKind::LiteralBool(_) => self.parse_bool_literal()?,
+      lexer::TokenKind::LiteralInt(_) => self.parse_int_literal()?,
+      lexer::TokenKind::LiteralString(_) => self.parse_string_literal()?,
       _ => {
         return Err(diagnostic::Diagnostic {
           // TODO: Show the actual token.
@@ -730,21 +730,21 @@ impl<'a> Parser<'a> {
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     // TODO: Might need to revisit. Might need to make room for other cases in the future (binary/unary operators, etc).
     Ok(match self.get() {
-      token::TokenKind::Identifier(_) => {
-        if self.peek_is(&token::TokenKind::SymbolParenthesesL) {
+      lexer::TokenKind::Identifier(_) => {
+        if self.peek_is(&lexer::TokenKind::SymbolParenthesesL) {
           ast::Node::FunctionCall(self.parse_function_call()?)
-        } else if self.peek_is(&token::TokenKind::SymbolBracketL) {
+        } else if self.peek_is(&lexer::TokenKind::SymbolBracketL) {
           ast::Node::ArrayIndexing(self.parse_array_indexing()?)
         } else {
           ast::Node::VariableRef(self.parse_variable_ref()?)
         }
       }
-      token::TokenKind::SymbolMinus
-      | token::TokenKind::SymbolBang
-      | token::TokenKind::SymbolAmpersand
-      | token::TokenKind::SymbolAsterisk => ast::Node::UnaryExpr(self.parse_unary_expr()?),
-      token::TokenKind::SymbolBracketL => ast::Node::ArrayValue(self.parse_array_value()?),
-      token::TokenKind::KeywordNew => ast::Node::StructValue(self.parse_struct_value()?),
+      lexer::TokenKind::SymbolMinus
+      | lexer::TokenKind::SymbolBang
+      | lexer::TokenKind::SymbolAmpersand
+      | lexer::TokenKind::SymbolAsterisk => ast::Node::UnaryExpr(self.parse_unary_expr()?),
+      lexer::TokenKind::SymbolBracketL => ast::Node::ArrayValue(self.parse_array_value()?),
+      lexer::TokenKind::KeywordNew => ast::Node::StructValue(self.parse_struct_value()?),
       // Default to a literal if nothing else matched.
       _ => ast::Node::Literal(self.parse_literal()?),
     })
@@ -756,14 +756,14 @@ impl<'a> Parser<'a> {
     let current_token = self.get().clone();
 
     let operator = match current_token {
-      token::TokenKind::SymbolBang => ast::OperatorKind::Not,
-      token::TokenKind::SymbolPlus => ast::OperatorKind::Add,
-      token::TokenKind::SymbolMinus => ast::OperatorKind::SubtractOrNegate,
-      token::TokenKind::SymbolAsterisk => ast::OperatorKind::MultiplyOrDereference,
-      token::TokenKind::SymbolSlash => ast::OperatorKind::Divide,
-      token::TokenKind::SymbolLessThan => ast::OperatorKind::LessThan,
-      token::TokenKind::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
-      token::TokenKind::SymbolAmpersand => ast::OperatorKind::AddressOf,
+      lexer::TokenKind::SymbolBang => ast::OperatorKind::Not,
+      lexer::TokenKind::SymbolPlus => ast::OperatorKind::Add,
+      lexer::TokenKind::SymbolMinus => ast::OperatorKind::SubtractOrNegate,
+      lexer::TokenKind::SymbolAsterisk => ast::OperatorKind::MultiplyOrDereference,
+      lexer::TokenKind::SymbolSlash => ast::OperatorKind::Divide,
+      lexer::TokenKind::SymbolLessThan => ast::OperatorKind::LessThan,
+      lexer::TokenKind::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
+      lexer::TokenKind::SymbolAmpersand => ast::OperatorKind::AddressOf,
       // TODO: Implement logic for GTE & LTE.
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -832,19 +832,19 @@ impl<'a> Parser<'a> {
   fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
     let callee_id = self.parse_scope_qualifier()?;
 
-    skip_past!(self, &token::TokenKind::SymbolParenthesesL);
+    skip_past!(self, &lexer::TokenKind::SymbolParenthesesL);
 
     let mut arguments = vec![];
 
-    while !self.is_eof() && !self.is(&token::TokenKind::SymbolParenthesesR) {
+    while !self.is_eof() && !self.is(&lexer::TokenKind::SymbolParenthesesR) {
       arguments.push(self.parse_expr()?);
 
-      if self.is(&token::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::SymbolComma) {
         self.skip();
       }
     }
 
-    skip_past!(self, &token::TokenKind::SymbolParenthesesR);
+    skip_past!(self, &lexer::TokenKind::SymbolParenthesesR);
 
     Ok(ast::FunctionCall {
       callee_id,
@@ -867,11 +867,11 @@ impl<'a> Parser<'a> {
   fn parse_lvalue_assign_stmt(&mut self) -> ParserResult<ast::AssignStmt> {
     let lvalue_expr = Box::new(self.parse_expr()?);
 
-    skip_past!(self, &token::TokenKind::SymbolEqual);
+    skip_past!(self, &lexer::TokenKind::SymbolEqual);
 
     let value = Box::new(self.parse_expr()?);
 
-    skip_past!(self, &token::TokenKind::SymbolSemiColon);
+    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     Ok(ast::AssignStmt {
       assignee_expr: lvalue_expr,
@@ -881,19 +881,19 @@ impl<'a> Parser<'a> {
 
   /// enum %name '{' (%name (','))* '}'
   fn parse_enum(&mut self) -> ParserResult<ast::Definition> {
-    skip_past!(self, &token::TokenKind::KeywordEnum);
+    skip_past!(self, &lexer::TokenKind::KeywordEnum);
 
     let name = self.parse_name()?;
 
-    skip_past!(self, &token::TokenKind::SymbolBraceL);
+    skip_past!(self, &lexer::TokenKind::SymbolBraceL);
 
     let mut variants = vec![];
 
-    while !self.is_eof() && !self.is(&token::TokenKind::SymbolBraceR) {
+    while !self.is_eof() && !self.is(&lexer::TokenKind::SymbolBraceR) {
       variants.push(self.parse_name()?);
 
       // TODO: Iron out case for lonely comma.
-      if self.is(&token::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::SymbolComma) {
         self.skip();
       }
     }
@@ -918,22 +918,22 @@ impl<'a> Parser<'a> {
 
   /// struct %name '{' (%name ':' %type ';')* '}'
   fn parse_struct_type(&mut self) -> ParserResult<ast::Definition> {
-    skip_past!(self, &token::TokenKind::KeywordStruct);
+    skip_past!(self, &lexer::TokenKind::KeywordStruct);
 
     let name = self.parse_name()?;
 
-    skip_past!(self, &token::TokenKind::SymbolBraceL);
+    skip_past!(self, &lexer::TokenKind::SymbolBraceL);
 
     let mut fields = std::collections::HashMap::new();
 
-    while !self.is_eof() && !self.is(&token::TokenKind::SymbolBraceR) {
+    while !self.is_eof() && !self.is(&lexer::TokenKind::SymbolBraceR) {
       let field_name = self.parse_name()?;
 
-      skip_past!(self, &token::TokenKind::SymbolColon);
+      skip_past!(self, &lexer::TokenKind::SymbolColon);
 
       let field_type = self.parse_type()?;
 
-      skip_past!(self, &token::TokenKind::SymbolSemiColon);
+      skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
       fields.insert(field_name, field_type);
     }
 
@@ -954,22 +954,22 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_struct_value(&mut self) -> ParserResult<ast::StructValue> {
-    skip_past!(self, &token::TokenKind::KeywordNew);
+    skip_past!(self, &lexer::TokenKind::KeywordNew);
 
     // TODO: Shouldn't it be `ScopeQualifier`?
     let name = self.parse_name()?;
 
-    skip_past!(self, &token::TokenKind::SymbolBraceL);
+    skip_past!(self, &lexer::TokenKind::SymbolBraceL);
 
     let mut fields = Vec::new();
 
-    while !self.is_eof() && !self.is(&token::TokenKind::SymbolBraceR) {
+    while !self.is_eof() && !self.is(&lexer::TokenKind::SymbolBraceR) {
       let field = self.parse_expr()?;
 
       fields.push(field);
 
       // TODO: Disallow trailing comma.
-      if self.is(&token::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::SymbolComma) {
         self.skip();
       }
     }
@@ -1000,9 +1000,9 @@ mod tests {
   #[test]
   fn is() {
     let mut context = cache::Cache::new();
-    let parser = Parser::from_tokens(vec![token::TokenKind::KeywordFn], &mut context);
+    let parser = Parser::from_tokens(vec![lexer::TokenKind::KeywordFn], &mut context);
 
-    assert_eq!(true, parser.is(&token::TokenKind::KeywordFn));
+    assert_eq!(true, parser.is(&lexer::TokenKind::KeywordFn));
   }
 
   #[test]
@@ -1010,7 +1010,7 @@ mod tests {
     let mut context = cache::Cache::new();
     let parser = Parser::new(vec![], &mut context);
 
-    assert_eq!(false, parser.is(&token::TokenKind::KeywordFn));
+    assert_eq!(false, parser.is(&lexer::TokenKind::KeywordFn));
   }
 
   #[test]
@@ -1018,7 +1018,7 @@ mod tests {
     let mut context = cache::Cache::new();
 
     let mut parser = Parser::from_tokens(
-      vec![token::TokenKind::KeywordFn, token::TokenKind::KeywordFn],
+      vec![lexer::TokenKind::KeywordFn, lexer::TokenKind::KeywordFn],
       &mut context,
     );
 
@@ -1029,7 +1029,7 @@ mod tests {
   #[test]
   fn skip_out_of_bounds() {
     let mut context = cache::Cache::new();
-    let mut parser = Parser::from_tokens(vec![token::TokenKind::KeywordFn], &mut context);
+    let mut parser = Parser::from_tokens(vec![lexer::TokenKind::KeywordFn], &mut context);
 
     parser.skip();
     assert_eq!(0, parser.index);
@@ -1041,9 +1041,9 @@ mod tests {
     let mut parser = Parser::new(vec![], &mut context);
 
     assert_eq!(true, parser.is_eof());
-    parser.tokens.push((token::TokenKind::KeywordFn, 0));
+    parser.tokens.push((lexer::TokenKind::KeywordFn, 0));
     assert_eq!(true, parser.is_eof());
-    parser.tokens.push((token::TokenKind::KeywordFn, 0));
+    parser.tokens.push((lexer::TokenKind::KeywordFn, 0));
     assert_eq!(false, parser.is_eof());
     parser.skip();
     assert_eq!(true, parser.is_eof());

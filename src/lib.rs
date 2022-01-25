@@ -8,5 +8,4 @@ pub mod lint;
 pub mod llvm_lowering;
 pub mod name_resolution;
 pub mod parser;
-pub mod token;
 pub mod type_check;

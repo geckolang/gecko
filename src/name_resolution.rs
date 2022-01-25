@@ -20,7 +20,20 @@ pub trait Resolvable {
   }
 }
 
+impl Resolvable for ast::Type {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    match self {
+      ast::Type::UserDefined(user_defined_type) => {
+        user_defined_type.resolve(resolver, cache);
+      }
+      _ => {}
+    };
+  }
+}
+
 impl Resolvable for ast::Node {
+  // TODO: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
+
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     crate::dispatch!(self, Resolvable::declare, resolver, cache);
   }
@@ -47,6 +60,12 @@ impl Resolvable for ast::StructValue {
 impl Resolvable for ast::Prototype {
   fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // FIXME: Must declare parameters (they aren't defined as `Definition`s). This issue prevents parameter usage.
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    if let Some(return_type) = &mut self.return_type {
+      return_type.resolve(resolver, cache);
+    }
   }
 }
 
@@ -152,14 +171,7 @@ impl Resolvable for ast::IfStmt {
 
 impl Resolvable for ast::LetStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // TODO: Interesting. `UserDefinedType` is not a `Node`, yet we can still call the `resolve` method on it.
-    match &mut self.ty {
-      ast::Type::UserDefined(user_defined_type) => {
-        user_defined_type.resolve(resolver, cache);
-      }
-      _ => {}
-    };
-
+    self.ty.resolve(resolver, cache);
     self.value.resolve(resolver, cache);
   }
 }
@@ -215,15 +227,15 @@ impl Resolvable for ast::Function {
 }
 
 impl Resolvable for ast::Extern {
-  //
+  // TODO: Might need to call `resolve` on the return type (ex. for `UserDefinedType`)? Actually, invoking `resolve` on the prototype should be enough.
 }
 
 impl Resolvable for ast::Definition {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    let symbol_key = (self.name.clone(), self.symbol_kind.clone());
+    let symbol = (self.name.clone(), self.symbol_kind.clone());
 
     // Check for existing definitions.
-    if resolver.contains(&symbol_key) {
+    if resolver.contains(&symbol) {
       resolver
         .diagnostics
         .error(format!("re-definition of `{}`", self.name));
@@ -235,7 +247,7 @@ impl Resolvable for ast::Definition {
     cache.bind(self.definition_key, std::rc::Rc::clone(&self.node));
 
     // Bind the symbol to the current scope for name resolution lookup.
-    resolver.bind(symbol_key, self.definition_key);
+    resolver.bind(symbol, self.definition_key);
 
     self.node.as_ref().borrow_mut().declare(resolver, cache);
   }
