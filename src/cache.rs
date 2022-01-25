@@ -1,4 +1,5 @@
 use crate::ast;
+use std::cell::Ref;
 
 pub type DefinitionKey = usize;
 
@@ -10,10 +11,18 @@ pub struct Cache {
 
 impl Cache {
   pub fn new() -> Self {
-    Cache {
+    Self {
       key_counter: 0,
       declarations: std::collections::HashMap::new(),
     }
+  }
+
+  pub fn get(&self, key: &DefinitionKey) -> Ref<'_, ast::Node> {
+    self.declarations.get(key).unwrap().as_ref().borrow()
+  }
+
+  pub fn bind(&mut self, key: DefinitionKey, node: std::rc::Rc<std::cell::RefCell<ast::Node>>) {
+    self.declarations.insert(key, node);
   }
 
   pub fn create_definition_key(&mut self) -> DefinitionKey {

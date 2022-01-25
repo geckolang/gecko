@@ -8,6 +8,8 @@ pub enum SymbolKind {
   Type,
 }
 
+type Symbol = (String, SymbolKind);
+
 pub trait Resolvable {
   fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     //
@@ -229,10 +231,8 @@ impl Resolvable for ast::Definition {
       return;
     }
 
-    // Register the node on the context for lowering lookup.
-    cache
-      .declarations
-      .insert(self.definition_key, std::rc::Rc::clone(&self.node));
+    // Register the node on the cache for lowering lookup.
+    cache.bind(self.definition_key, std::rc::Rc::clone(&self.node));
 
     // Bind the symbol to the current scope for name resolution lookup.
     resolver.bind(symbol_key, self.definition_key);
@@ -280,8 +280,8 @@ impl Resolvable for ast::BinaryExpr {
 pub struct NameResolver {
   pub diagnostics: diagnostic::DiagnosticBuilder,
   // TODO: Should this be on `context::Context` instead? Something's missing. We might need to link the context to the resolver.
-  scopes: Vec<std::collections::HashMap<(String, SymbolKind), cache::DefinitionKey>>,
-  global_scope: std::collections::HashMap<(String, SymbolKind), cache::DefinitionKey>,
+  scopes: Vec<std::collections::HashMap<Symbol, cache::DefinitionKey>>,
+  global_scope: std::collections::HashMap<Symbol, cache::DefinitionKey>,
 }
 
 impl NameResolver {
@@ -297,15 +297,15 @@ impl NameResolver {
   fn _define(
     &mut self,
     definition_key: cache::DefinitionKey,
-    symbol_key: (String, SymbolKind),
+    symbol: Symbol,
     _cache: &mut cache::Cache,
     _node: &ast::Node,
   ) -> bool {
     // Check for existing definitions.
-    if self.contains(&symbol_key) {
+    if self.contains(&symbol) {
       self
         .diagnostics
-        .error(format!("re-definition of `{}`", symbol_key.0));
+        .error(format!("re-definition of `{}`", symbol.0));
 
       return false;
     }
@@ -317,7 +317,7 @@ impl NameResolver {
     //   .insert(definition_key, std::rc::Rc::clone(node));
 
     // Bind the symbol to the current scope for name resolution lookup.
-    self.bind(symbol_key, definition_key);
+    self.bind(symbol, definition_key);
 
     true
   }
@@ -334,44 +334,48 @@ impl NameResolver {
   /// Register a name on the last scope for name resolution lookups.
   ///
   /// If there are no relative scopes, the symbol is registered on the global scope.
-  fn bind(&mut self, key: (String, SymbolKind), definition_key: cache::DefinitionKey) {
+  fn bind(&mut self, symbol: Symbol, definition_key: cache::DefinitionKey) {
     if self.scopes.is_empty() {
-      self.global_scope.insert(key, definition_key);
+      self.global_scope.insert(symbol, definition_key);
     } else {
-      self.scopes.last_mut().unwrap().insert(key, definition_key);
+      self
+        .scopes
+        .last_mut()
+        .unwrap()
+        .insert(symbol, definition_key);
     }
   }
 
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope.
-  fn lookup(&self, key: &(String, SymbolKind)) -> Option<&cache::DefinitionKey> {
+  fn lookup(&self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
     // First, look on relative scopes.
     for scope in self.scopes.iter().rev() {
-      if let Some(definition_key) = scope.get(&key) {
+      if let Some(definition_key) = scope.get(&symbol) {
         return Some(definition_key);
       }
     }
 
     // Finally, look in the global scope.
-    if let Some(definition_key) = self.global_scope.get(&key) {
+    if let Some(definition_key) = self.global_scope.get(&symbol) {
       return Some(definition_key);
     }
 
     None
   }
 
-  fn lookup_or_error(&mut self, key: &(String, SymbolKind)) -> Option<cache::DefinitionKey> {
-    if let Some(definition_key) = self.lookup(key).cloned() {
+  fn lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::DefinitionKey> {
+    if let Some(definition_key) = self.lookup(symbol).cloned() {
       return Some(definition_key);
     }
 
     self
       .diagnostics
-      .error(format!("undefined reference to `{}`", key.0));
+      .error(format!("undefined reference to `{}`", symbol.0));
 
     None
   }
 
-  fn contains(&self, key: &(String, SymbolKind)) -> bool {
+  fn contains(&self, key: &Symbol) -> bool {
     self.lookup(key).is_some()
   }
 }

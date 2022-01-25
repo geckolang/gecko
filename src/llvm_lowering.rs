@@ -945,12 +945,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         }
 
         // Otherwise, lower and cache the target type.
-        let cached_type_node = cache
-          .declarations
-          .get(&target_key)
-          .unwrap()
-          .as_ref()
-          .borrow();
+        let cached_type_node = cache.get(&target_key);
 
         let llvm_type = match &*cached_type_node {
           ast::Node::StructType(struct_type) => self.lower_struct_type(struct_type, cache),

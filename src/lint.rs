@@ -30,7 +30,7 @@ impl LintContext {
         continue;
       }
 
-      let function_node = cache.declarations[&function_key].as_ref().borrow();
+      let function_node = cache.get(&function_key);
 
       let name = match &*function_node {
         ast::Node::Function(function) => &function.name,
@@ -51,7 +51,7 @@ impl LintContext {
         continue;
       }
 
-      let variable_def_node = cache.declarations[&variable_def_key].as_ref().borrow();
+      let variable_def_node = cache.get(&variable_def_key);
 
       let name = match &*variable_def_node {
         ast::Node::LetStmt(let_stmt) => &let_stmt.name,
