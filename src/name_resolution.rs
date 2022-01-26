@@ -131,11 +131,14 @@ impl Resolvable for ast::Parameter {
   //
 }
 
-impl Resolvable for ast::VariableRef {
+impl Resolvable for ast::VariableOrMemberRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_key =
-      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
+    // FIXME: Only accessing the base name of the scope qualifier.
+    self.target_key = resolver.lookup_or_error(&(
+      self.scope_qualifier.0.clone(),
+      SymbolKind::VariableOrParameter,
+    ));
   }
 }
 

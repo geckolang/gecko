@@ -17,7 +17,7 @@ macro_rules! dispatch {
       $crate::ast::Node::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::VariableRef(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::VariableOrMemberRef(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableAssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
@@ -83,7 +83,7 @@ pub enum Node {
   ContinueStmt(ContinueStmt),
   ExprWrapperStmt(ExprStmt),
   Definition(Definition),
-  VariableRef(VariableRef),
+  VariableOrMemberRef(VariableOrMemberRef),
   VariableAssignStmt(AssignStmt),
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
@@ -152,8 +152,8 @@ pub struct ArrayValue {
 
 pub struct UnsafeBlockStmt(pub Block);
 
-pub struct VariableRef {
-  pub name: String,
+pub struct VariableOrMemberRef {
+  pub scope_qualifier: ScopeQualifier,
   pub target_key: Option<cache::DefinitionKey>,
 }
 
@@ -263,4 +263,9 @@ pub struct Definition {
   pub symbol_kind: name_resolution::SymbolKind,
   pub node: std::rc::Rc<std::cell::RefCell<Node>>,
   pub definition_key: cache::DefinitionKey,
+}
+
+pub struct MemberAccess {
+  pub scope_qualifier: ScopeQualifier,
+  pub target_key: Option<cache::DefinitionKey>,
 }

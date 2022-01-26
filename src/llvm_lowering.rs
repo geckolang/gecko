@@ -95,7 +95,13 @@ impl Lower for ast::AssignStmt {
     cache: &mut cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.value.lower(generator, cache).unwrap();
+
+    generator.assign_flag = true;
+
     let llvm_target = self.assignee_expr.lower(generator, cache).unwrap();
+
+    // NOTE: The assignee might also lower the flag.
+    generator.assign_flag = false;
 
     generator
       .llvm_builder
@@ -140,11 +146,8 @@ impl Lower for ast::ArrayIndexing {
         "array.index.gep",
       );
 
-      let llvm_load_ptr = generator
-        .llvm_builder
-        .build_load(llvm_gep_ptr, "array.index.ptr");
-
-      Some(llvm_load_ptr)
+      // TODO: Should we actually be de-referencing the pointer here?
+      Some(generator.dereference(llvm_gep_ptr))
     }
   }
 }
@@ -171,7 +174,7 @@ impl Lower for ast::ArrayValue {
     }
     .array_type(llvm_values.len() as u32);
 
-    let llvm_array_alloca = generator
+    let llvm_array_ptr = generator
       .llvm_builder
       .build_alloca(llvm_array_type, "array.value");
 
@@ -188,7 +191,7 @@ impl Lower for ast::ArrayValue {
       // FIXME: There is no bounds checking guard being inserted (panic).
       unsafe {
         let llvm_gep = generator.llvm_builder.build_gep(
-          llvm_array_alloca,
+          llvm_array_ptr,
           &[first_index, llvm_index],
           "array.init",
         );
@@ -200,12 +203,12 @@ impl Lower for ast::ArrayValue {
     }
 
     // TODO: Might not need to load the array in order to initialize it, but to return it?
-    let llvm_array_ptr = generator
-      .llvm_builder
-      .build_load(llvm_array_alloca, "array.load")
-      .into_array_value();
+    let llvm_array_value = generator
+      .dereference(llvm_array_ptr)
+      .into_array_value()
+      .as_basic_value_enum();
 
-    Some(llvm_array_ptr.as_basic_value_enum())
+    Some(llvm_array_value)
   }
 }
 
@@ -400,24 +403,26 @@ impl Lower for ast::BinaryExpr {
   }
 }
 
-impl Lower for ast::VariableRef {
+impl Lower for ast::VariableOrMemberRef {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &mut cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    Some(generator.memoize_or_retrieve(self.target_key.unwrap(), cache))
+    let skip_implicit_deref = generator.assign_flag;
+
+    generator.assign_flag = false;
+
+    // FIXME: Will the `assign` flag affect state during the lowering of the value?
+    let llvm_value = generator.memoize_or_retrieve(self.target_key.unwrap(), cache);
 
     // TODO: This removes ability to use pointers at all. For this reason, it was commented out.
     // TODO: This logic is here to make up for parameters not being pointer values. Is this okay?
-    // if llvm_variable.is_pointer_value() {
-    //   generator.llvm_builder.build_load(
-    //     llvm_variable.into_pointer_value(),
-    //     format!("{}.load", self.name).as_str(),
-    //   )
-    // } else {
-    //   llvm_variable
-    // }
+    Some(if !skip_implicit_deref {
+      generator.attempt_dereference(llvm_value)
+    } else {
+      llvm_value
+    })
   }
 }
 
@@ -689,11 +694,9 @@ impl Lower for ast::ReturnStmt {
       // TODO: Should this only apply for return statements? What about variable declarations or assignments?
       // Perform an implicit dereference if applicable.
       let llvm_final_value =
+        // TODO: What if we're dealing with nested pointers? Investigate.
         if generator.return_expects_rvalue && llvm_value.get_type().is_pointer_type() {
-          generator
-            .llvm_builder
-            // TODO: Is the value always going to be a pointer value?
-            .build_load(llvm_value.into_pointer_value(), "implicit.deref")
+          generator.dereference(llvm_value.into_pointer_value())
         } else {
           llvm_value
         };
@@ -748,10 +751,9 @@ impl Lower for ast::UnaryExpr {
 
         llvm_value
       }
-      // FIXME: Type-checker must verify this action, since it is assumed that the value is a pointer.
-      ast::OperatorKind::MultiplyOrDereference => generator
-        .llvm_builder
-        .build_load(llvm_value.into_pointer_value(), "pointer.deref_op"),
+      ast::OperatorKind::MultiplyOrDereference => {
+        generator.dereference(llvm_value.into_pointer_value())
+      }
       _ => unreachable!(),
     })
   }
@@ -873,6 +875,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   next_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   return_expects_rvalue: bool,
   let_stmt_allocation: Option<inkwell::values::PointerValue<'ctx>>,
+  assign_flag: bool,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -892,6 +895,28 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       next_block: None,
       return_expects_rvalue: false,
       let_stmt_allocation: None,
+      assign_flag: false,
+    }
+  }
+
+  fn dereference(
+    &mut self,
+    llvm_value: inkwell::values::PointerValue<'ctx>,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    self
+      .llvm_builder
+      .build_load(llvm_value, "pointer.deref")
+      .as_basic_value_enum()
+  }
+
+  fn attempt_dereference(
+    &mut self,
+    llvm_value: inkwell::values::BasicValueEnum<'ctx>,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    if llvm_value.is_pointer_value() {
+      self.dereference(llvm_value.into_pointer_value())
+    } else {
+      llvm_value
     }
   }
 

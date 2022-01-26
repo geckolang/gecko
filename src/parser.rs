@@ -215,7 +215,7 @@ impl<'a> Parser<'a> {
           ast::Node::VariableAssignStmt(self.parse_lvalue_assign_stmt()?)
         }
         lexer::TokenKind::Identifier(_) if !self.peek_is(&lexer::TokenKind::SymbolParenthesesL) => {
-          ast::Node::VariableRef(self.parse_variable_ref()?)
+          ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
         }
         _ => {
           let result = ast::Node::ExprWrapperStmt(ast::ExprStmt {
@@ -732,14 +732,14 @@ impl<'a> Parser<'a> {
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     // TODO: Might need to revisit. Might need to make room for other cases in the future (binary/unary operators, etc).
     Ok(match self.get() {
+      lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolParenthesesL) => {
+        ast::Node::FunctionCall(self.parse_function_call()?)
+      }
+      lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolBracketL) => {
+        ast::Node::ArrayIndexing(self.parse_array_indexing()?)
+      }
       lexer::TokenKind::Identifier(_) => {
-        if self.peek_is(&lexer::TokenKind::SymbolParenthesesL) {
-          ast::Node::FunctionCall(self.parse_function_call()?)
-        } else if self.peek_is(&lexer::TokenKind::SymbolBracketL) {
-          ast::Node::ArrayIndexing(self.parse_array_indexing()?)
-        } else {
-          ast::Node::VariableRef(self.parse_variable_ref()?)
-        }
+        ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
       }
       lexer::TokenKind::SymbolMinus
       | lexer::TokenKind::SymbolBang
@@ -856,11 +856,11 @@ impl<'a> Parser<'a> {
   }
 
   /// %name
-  fn parse_variable_ref(&mut self) -> ParserResult<ast::VariableRef> {
-    let name = self.parse_name()?;
+  fn parse_variable_or_member_ref(&mut self) -> ParserResult<ast::VariableOrMemberRef> {
+    let scope_qualifier = self.parse_scope_qualifier()?;
 
-    Ok(ast::VariableRef {
-      name,
+    Ok(ast::VariableOrMemberRef {
+      scope_qualifier,
       target_key: None,
     })
   }

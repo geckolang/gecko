@@ -311,7 +311,7 @@ impl Lint for ast::AssignStmt {
   }
 }
 
-impl Lint for ast::VariableRef {
+impl Lint for ast::VariableOrMemberRef {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
     context
       .variable_references

@@ -143,6 +143,8 @@ impl TypeCheck for ast::StructType {
 
 impl TypeCheck for ast::UnaryExpr {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+    let expr_type = self.expr.infer_type(cache);
+
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
         if !type_context.in_unsafe_block {
@@ -150,10 +152,14 @@ impl TypeCheck for ast::UnaryExpr {
             .diagnostics
             .error("can only dereference inside an unsafe block".to_string());
         }
+
+        if !matches!(expr_type, Some(ast::Type::Pointer(_))) {
+          type_context
+            .diagnostics
+            .error("can only dereference pointers".to_string());
+        }
       }
       ast::OperatorKind::Not => {
-        let expr_type = self.expr.infer_type(cache);
-
         if !TypeCheckContext::unify_with_primitive(expr_type, ast::PrimitiveType::Bool) {
           type_context
             .diagnostics
@@ -161,8 +167,6 @@ impl TypeCheck for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::SubtractOrNegate => {
-        let expr_type = self.expr.infer_type(cache);
-
         // TODO: Include floats.
         if !matches!(
           expr_type,
@@ -197,8 +201,12 @@ impl TypeCheck for ast::AssignStmt {
 
     let assignee_type = self.assignee_expr.infer_type(cache);
     let is_pointer_or_ref_expr = matches!(assignee_type, Some(ast::Type::Pointer(_)));
-    let is_variable_ref = matches!(self.assignee_expr.as_ref(), ast::Node::VariableRef(_));
     let is_array_indexing = matches!(self.assignee_expr.as_ref(), ast::Node::ArrayIndexing(_));
+
+    let is_variable_ref = matches!(
+      self.assignee_expr.as_ref(),
+      ast::Node::VariableOrMemberRef(_)
+    );
 
     // TODO: Missing member access (struct fields) support.
     // NOTE: The assignee expression may only be an expression of type `Pointer`
@@ -210,7 +218,7 @@ impl TypeCheck for ast::AssignStmt {
     } else if is_variable_ref {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match self.assignee_expr.as_ref() {
-        ast::Node::VariableRef(variable_ref) => {
+        ast::Node::VariableOrMemberRef(variable_ref) => {
           let declaration = cache.get(&variable_ref.target_key.unwrap());
 
           match &*declaration {
@@ -226,6 +234,8 @@ impl TypeCheck for ast::AssignStmt {
         _ => unreachable!(),
       };
     }
+
+    self.value.type_check(type_context, cache);
   }
 }
 
@@ -330,7 +340,7 @@ impl TypeCheck for ast::Block {
   }
 }
 
-impl TypeCheck for ast::VariableRef {
+impl TypeCheck for ast::VariableOrMemberRef {
   fn infer_type(&self, cache: &cache::Cache) -> Option<ast::Type> {
     // TODO: Simplify.
     let target_variable = &*cache.get(&self.target_key.unwrap());
