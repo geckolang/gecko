@@ -259,7 +259,7 @@ impl Lower for ast::BinaryExpr {
         .build_int_add(
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int_add_op",
+          "int.add_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::Add => generator
@@ -267,7 +267,7 @@ impl Lower for ast::BinaryExpr {
         .build_float_add(
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float_add_op",
+          "float.add_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::SubtractOrNegate if is_int_values => generator
@@ -275,7 +275,7 @@ impl Lower for ast::BinaryExpr {
         .build_int_sub(
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int_subtract_op",
+          "int.subtract_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::SubtractOrNegate => generator
@@ -283,7 +283,7 @@ impl Lower for ast::BinaryExpr {
         .build_float_sub(
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float_subtract_op",
+          "float.subtract_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::MultiplyOrDereference if is_int_values => generator
@@ -291,7 +291,7 @@ impl Lower for ast::BinaryExpr {
         .build_int_mul(
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int_multiply_op",
+          "int.multiply_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::MultiplyOrDereference => generator
@@ -299,7 +299,7 @@ impl Lower for ast::BinaryExpr {
         .build_float_mul(
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float_multiply_op",
+          "float.multiply_op",
         )
         .as_basic_value_enum(),
       // TODO: What if there's division by zero?
@@ -309,7 +309,7 @@ impl Lower for ast::BinaryExpr {
         .build_int_signed_div(
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int_divide_op",
+          "int.divide_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::Divide => generator
@@ -317,7 +317,7 @@ impl Lower for ast::BinaryExpr {
         .build_float_div(
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float_divide_op",
+          "float.divide_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::LessThan if is_int_values => generator
@@ -327,7 +327,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::IntPredicate::SLT,
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int_less_than_op",
+          "int.lt_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::LessThan => generator
@@ -336,7 +336,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::FloatPredicate::OLT,
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float_less_than_op",
+          "float.lt_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::GreaterThan if is_int_values => generator
@@ -346,7 +346,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::IntPredicate::SGT,
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int_greater_than_op",
+          "int.gt_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::GreaterThan => generator
@@ -355,7 +355,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::FloatPredicate::OGT,
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float_greater_than_op",
+          "float.gt_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::LessThanOrEqual if is_int_values => generator
@@ -364,7 +364,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::IntPredicate::SLE,
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int_less_than_or_equal_op",
+          "int.ltoe_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::LessThanOrEqual => generator
@@ -373,7 +373,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::FloatPredicate::OLE,
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float_less_than_or_equal_op",
+          "float.ltoe_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::GreaterThanOrEqual if is_int_values => generator
@@ -382,7 +382,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::IntPredicate::SGE,
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int_greater_than_or_equal_op",
+          "int.gtoe_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::GreaterThanOrEqual => generator
@@ -391,7 +391,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::FloatPredicate::OGE,
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float_greater_than_or_equal_op",
+          "float.gtoe_op",
         )
         .as_basic_value_enum(),
       // TODO: Support for all operators.
@@ -421,18 +421,18 @@ impl Lower for ast::VariableRef {
   }
 }
 
-impl Lower for ast::WhileStmt {
+impl Lower for ast::LoopStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &mut cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
-    let llvm_condition = self
-      .condition
-      .lower(generator, cache)
-      .unwrap()
-      .into_int_value();
+    let llvm_condition = if let Some(condition) = &self.condition {
+      condition.lower(generator, cache).unwrap().into_int_value()
+    } else {
+      generator.llvm_context.bool_type().const_int(1, false)
+    };
 
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
 
@@ -693,7 +693,7 @@ impl Lower for ast::ReturnStmt {
           generator
             .llvm_builder
             // TODO: Is the value always going to be a pointer value?
-            .build_load(llvm_value.into_pointer_value(), "implicit.dereference")
+            .build_load(llvm_value.into_pointer_value(), "implicit.deref")
         } else {
           llvm_value
         };
@@ -722,7 +722,7 @@ impl Lower for ast::UnaryExpr {
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
         generator
           .llvm_builder
-          .build_not(llvm_value.into_int_value(), "not")
+          .build_not(llvm_value.into_int_value(), "not_op")
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
@@ -730,12 +730,12 @@ impl Lower for ast::UnaryExpr {
         if llvm_value.is_int_value() {
           generator
             .llvm_builder
-            .build_int_neg(llvm_value.into_int_value(), "negate")
+            .build_int_neg(llvm_value.into_int_value(), "int.negate_op")
             .as_basic_value_enum()
         } else {
           generator
             .llvm_builder
-            .build_float_neg(llvm_value.into_float_value(), "negate")
+            .build_float_neg(llvm_value.into_float_value(), "float.negate_op")
             .as_basic_value_enum()
         }
       }
@@ -751,7 +751,7 @@ impl Lower for ast::UnaryExpr {
       // FIXME: Type-checker must verify this action, since it is assumed that the value is a pointer.
       ast::OperatorKind::MultiplyOrDereference => generator
         .llvm_builder
-        .build_load(llvm_value.into_pointer_value(), "dereference"),
+        .build_load(llvm_value.into_pointer_value(), "pointer.deref_op"),
       _ => unreachable!(),
     })
   }

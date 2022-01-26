@@ -319,9 +319,12 @@ impl Lint for ast::VariableRef {
   }
 }
 
-impl Lint for ast::WhileStmt {
+impl Lint for ast::LoopStmt {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
-    self.condition.lint(cache, context);
+    if let Some(condition) = &self.condition {
+      condition.lint(cache, context);
+    }
+
     self.body.lint(cache, context);
   }
 }

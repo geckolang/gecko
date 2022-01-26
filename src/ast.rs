@@ -11,7 +11,7 @@ macro_rules! dispatch {
       $crate::ast::Node::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::WhileStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::FunctionCall(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
@@ -77,7 +77,7 @@ pub enum Node {
   ReturnStmt(ReturnStmt),
   LetStmt(LetStmt),
   IfStmt(IfStmt),
-  WhileStmt(WhileStmt),
+  LoopStmt(LoopStmt),
   FunctionCall(FunctionCall),
   BreakStmt(BreakStmt),
   ContinueStmt(ContinueStmt),
@@ -211,8 +211,8 @@ pub struct IfStmt {
   pub else_block: Option<Block>,
 }
 
-pub struct WhileStmt {
-  pub condition: Box<Node>,
+pub struct LoopStmt {
+  pub condition: Option<Box<Node>>,
   pub body: Block,
 }
 

@@ -556,20 +556,23 @@ impl TypeCheck for ast::FunctionCall {
   }
 }
 
-impl TypeCheck for ast::WhileStmt {
+impl TypeCheck for ast::LoopStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
-    if !TypeCheckContext::unify_with_primitive(
-      self.condition.infer_type(cache),
-      ast::PrimitiveType::Bool,
-    ) {
-      type_context
-        .diagnostics
-        .error("while statement condition must evaluate to a boolean".to_string());
+    if let Some(condition) = &self.condition {
+      if !TypeCheckContext::unify_with_primitive(
+        condition.infer_type(cache),
+        ast::PrimitiveType::Bool,
+      ) {
+        type_context
+          .diagnostics
+          .error("loop condition must evaluate to a boolean".to_string());
+      }
+
+      condition.type_check(type_context, cache);
     }
 
     // TODO: To avoid problems with nested cases, save a buffer here, then restore?
     type_context.in_loop = true;
-    self.condition.type_check(type_context, cache);
     self.body.type_check(type_context, cache);
     type_context.in_loop = false;
   }

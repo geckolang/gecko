@@ -207,7 +207,7 @@ impl<'a> Parser<'a> {
         lexer::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
         lexer::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
         lexer::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
-        lexer::TokenKind::KeywordWhile => ast::Node::WhileStmt(self.parse_while_stmt()?),
+        lexer::TokenKind::KeywordLoop => ast::Node::LoopStmt(self.parse_loop_stmt()?),
         lexer::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
         lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
         lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
@@ -559,17 +559,19 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// while %expr %block
-  fn parse_while_stmt(&mut self) -> ParserResult<ast::WhileStmt> {
-    skip_past!(self, &lexer::TokenKind::KeywordWhile);
+  /// loop %expr %block
+  fn parse_loop_stmt(&mut self) -> ParserResult<ast::LoopStmt> {
+    skip_past!(self, &lexer::TokenKind::KeywordLoop);
 
-    let condition = self.parse_expr()?;
+    let condition = if self.is(&lexer::TokenKind::SymbolBraceL) {
+      None
+    } else {
+      Some(Box::new(self.parse_expr()?))
+    };
+
     let body = self.parse_block()?;
 
-    Ok(ast::WhileStmt {
-      condition: Box::new(condition),
-      body,
-    })
+    Ok(ast::LoopStmt { condition, body })
   }
 
   /// break ';'

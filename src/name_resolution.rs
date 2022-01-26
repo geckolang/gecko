@@ -143,14 +143,20 @@ impl Resolvable for ast::BreakStmt {
   //
 }
 
-impl Resolvable for ast::WhileStmt {
+impl Resolvable for ast::LoopStmt {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.condition.declare(resolver, cache);
+    if let Some(condition) = &mut self.condition {
+      condition.declare(resolver, cache);
+    }
+
     self.body.declare(resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.condition.resolve(resolver, cache);
+    if let Some(condition) = &mut self.condition {
+      condition.resolve(resolver, cache);
+    }
+
     self.body.resolve(resolver, cache);
   }
 }
