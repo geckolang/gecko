@@ -381,8 +381,13 @@ impl TypeCheck for ast::IfStmt {
 
 impl TypeCheck for ast::BinaryExpr {
   fn infer_type(&self, cache: &cache::Cache) -> Option<ast::Type> {
-    // TODO: What if the binary expression is comparing? Then it would be bool, not the type of the left arm.
-    self.left.infer_type(cache)
+    // TODO: Support for missing operators (not, negation, etc.).
+    match self.operator {
+      ast::OperatorKind::LessThan
+      | ast::OperatorKind::GreaterThan
+      | ast::OperatorKind::Equality => Some(ast::Type::Primitive(ast::PrimitiveType::Bool)),
+      _ => self.left.infer_type(cache),
+    }
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
@@ -520,7 +525,7 @@ impl TypeCheck for ast::FunctionCall {
     let callee = &*cache.get(self.target_key.as_ref().unwrap());
 
     // TODO: Better, simpler way of doing this?
-    let prototype: &ast::Prototype = match callee {
+    let prototype = match callee {
       ast::Node::Extern(extern_) => {
         if !type_context.in_unsafe_block {
           type_context
@@ -536,33 +541,31 @@ impl TypeCheck for ast::FunctionCall {
 
     let min_arg_count = prototype.parameters.len();
     let actual_arg_count = self.arguments.len();
-    const ARG_COUNT_MISMATCH: &str = "function call argument count mismatch";
 
     // Verify argument count.
-    if !prototype.is_variadic && actual_arg_count != min_arg_count {
+    if (!prototype.is_variadic && actual_arg_count != min_arg_count)
+      || (prototype.is_variadic && actual_arg_count < min_arg_count)
+    {
       type_context
         .diagnostics
-        .error(ARG_COUNT_MISMATCH.to_string());
-    } else if prototype.is_variadic && actual_arg_count < min_arg_count {
-      type_context
-        .diagnostics
-        .error(ARG_COUNT_MISMATCH.to_string());
+        .error("function call argument count mismatch".to_string());
     }
 
+    // FIXME: Straight up broken. Need to re-verify and fix.
     // FIXME: Different amount of arguments and parameters (due to variadic parameters) may affect this.
     // Unify argument and parameter types.
-    for (parameter, argument) in prototype.parameters.iter().zip(self.arguments.iter()) {
-      let parameter_type = parameter.infer_type(cache);
-      let argument_type = argument.infer_type(cache);
+    // for (parameter, argument) in prototype.parameters.iter().zip(self.arguments.iter()) {
+    //   let parameter_type = parameter.infer_type(cache);
+    //   let argument_type = argument.infer_type(cache);
 
-      if argument_type != parameter_type {
-        // TODO: Include callee name in the error message.
-        type_context.diagnostics.error(format!(
-          "function call argument and parameter `{}` type mismatch",
-          parameter.0
-        ));
-      }
-    }
+    //   if !TypeCheckContext::unify_option(parameter_type.as_ref(), argument_type.as_ref(), cache) {
+    //     // TODO: Include callee name in the error message.
+    //     type_context.diagnostics.error(format!(
+    //       "function call argument and parameter `{}` type mismatch",
+    //       parameter.0
+    //     ));
+    //   }
+    // }
   }
 }
 

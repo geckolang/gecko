@@ -243,7 +243,7 @@ pub enum OperatorKind {
   GreaterThan,
   LessThanOrEqual,
   GreaterThanOrEqual,
-  Equal,
+  Equality,
 }
 
 pub struct BinaryExpr {

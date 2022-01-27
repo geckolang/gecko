@@ -256,7 +256,7 @@ impl Lower for ast::BinaryExpr {
     // TODO: Make use of.
     // let is_signed = llvm_left_value.into_int_value().get_sign_extended_constant();
 
-    Some(match self.operator {
+    let llvm_operation = match self.operator {
       ast::OperatorKind::Add if is_int_values => generator
         .llvm_builder
         .build_int_add(
@@ -330,7 +330,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::IntPredicate::SLT,
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int.lt_op",
+          "int.slt_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::LessThan => generator
@@ -339,7 +339,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::FloatPredicate::OLT,
           llvm_left_value.into_float_value(),
           llvm_right_value.into_float_value(),
-          "float.lt_op",
+          "float.slt_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::GreaterThan if is_int_values => generator
@@ -349,7 +349,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::IntPredicate::SGT,
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int.gt_op",
+          "int.sgt_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::GreaterThan => generator
@@ -367,7 +367,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::IntPredicate::SLE,
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int.ltoe_op",
+          "int.sltoe_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::LessThanOrEqual => generator
@@ -385,7 +385,7 @@ impl Lower for ast::BinaryExpr {
           inkwell::IntPredicate::SGE,
           llvm_left_value.into_int_value(),
           llvm_right_value.into_int_value(),
-          "int.gtoe_op",
+          "int.sgtoe_op",
         )
         .as_basic_value_enum(),
       ast::OperatorKind::GreaterThanOrEqual => generator
@@ -397,9 +397,31 @@ impl Lower for ast::BinaryExpr {
           "float.gtoe_op",
         )
         .as_basic_value_enum(),
+      ast::OperatorKind::Equality if is_int_values => generator
+        .llvm_builder
+        .build_int_compare(
+          inkwell::IntPredicate::EQ,
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "int.eq_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Equality => generator
+        .llvm_builder
+        .build_float_compare(
+          inkwell::FloatPredicate::OEQ,
+          llvm_left_value.into_float_value(),
+          llvm_right_value.into_float_value(),
+          "float.eq_op",
+        )
+        .as_basic_value_enum(),
+      // TODO: Support for when comparing equality of pointers/references.
       // TODO: Support for all operators.
       _ => todo!(),
-    })
+    };
+
+    // TODO: Simplify this to obtain the operator/predicate, then lower separately? Maybe not possible.
+    Some(llvm_operation)
   }
 }
 
@@ -413,7 +435,6 @@ impl Lower for ast::VariableOrMemberRef {
 
     generator.assign_flag = false;
 
-    // FIXME: Will the `assign` flag affect state during the lowering of the value?
     let llvm_value = generator.memoize_or_retrieve(self.target_key.unwrap(), cache);
 
     // TODO: This removes ability to use pointers at all. For this reason, it was commented out.
@@ -432,6 +453,7 @@ impl Lower for ast::LoopStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &mut cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // FIXME: The condition needs to be re-lowered per iteration.
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
     let llvm_condition = if let Some(condition) = &self.condition {
       condition.lower(generator, cache).unwrap().into_int_value()
@@ -443,12 +465,13 @@ impl Lower for ast::LoopStmt {
 
     let llvm_then_block = generator
       .llvm_context
-      .append_basic_block(llvm_current_function, "while.then");
+      .append_basic_block(llvm_current_function, "loop.then");
 
     let llvm_after_block = generator
       .llvm_context
-      .append_basic_block(llvm_current_function, "while.after");
+      .append_basic_block(llvm_current_function, "loop.after");
 
+    // Build the initial conditional jump to start the loop.
     generator.llvm_builder.build_conditional_branch(
       llvm_condition,
       llvm_then_block,
@@ -460,9 +483,7 @@ impl Lower for ast::LoopStmt {
     self.body.lower(generator, cache);
 
     // Fallthrough or loop if applicable.
-    if llvm_then_block.get_terminator().is_none() {
-      generator.llvm_builder.position_at_end(llvm_then_block);
-
+    if generator.get_current_block().get_terminator().is_none() {
       generator.llvm_builder.build_conditional_branch(
         llvm_condition,
         llvm_then_block,
@@ -872,6 +893,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
     std::collections::HashMap<cache::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_cached_types:
     std::collections::HashMap<cache::DefinitionKey, inkwell::types::BasicTypeEnum<'ctx>>,
+  /// The next fall-through block (if any).
   next_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   return_expects_rvalue: bool,
   let_stmt_allocation: Option<inkwell::values::PointerValue<'ctx>>,

@@ -37,21 +37,14 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
   }
 }
 
-/// Determine whether the given token is considered a valid binary
-/// operator.
-fn is_binary_operator(token: &lexer::TokenKind) -> bool {
+fn get_token_precedence(token: &lexer::TokenKind) -> usize {
+  // FIXME: What about the `not` operator, and others?
   match token {
     lexer::TokenKind::SymbolPlus
     | lexer::TokenKind::SymbolMinus
-    | lexer::TokenKind::SymbolAsterisk
-    | lexer::TokenKind::SymbolSlash => true,
-    _ => false,
-  }
-}
-
-fn get_token_precedence(token: &lexer::TokenKind) -> usize {
-  match token {
-    lexer::TokenKind::SymbolPlus | lexer::TokenKind::SymbolMinus => 1,
+    | lexer::TokenKind::SymbolEqual
+    | lexer::TokenKind::SymbolLessThan
+    | lexer::TokenKind::SymbolGreaterThan => 1,
     lexer::TokenKind::SymbolAsterisk | lexer::TokenKind::SymbolSlash => 2,
     _ => 0,
   }
@@ -94,6 +87,23 @@ impl<'a> Parser<'a> {
     }
 
     Ok(result)
+  }
+
+  // TODO: Consider removing the `token` parameter, and adjust the binary expression parsing function accordingly.
+  /// Determine whether the given token is considered a valid binary
+  /// operator.
+  fn is_binary_operator(&self, token: &lexer::TokenKind) -> bool {
+    // TODO: Attempt to simplify.
+    // TODO: Support for GTOE and LTOE operators.
+    matches!(
+      token,
+      lexer::TokenKind::SymbolPlus
+        | lexer::TokenKind::SymbolMinus
+        | lexer::TokenKind::SymbolAsterisk
+        | lexer::TokenKind::SymbolSlash
+        | lexer::TokenKind::SymbolLessThan
+        | lexer::TokenKind::SymbolGreaterThan
+    ) || matches!(token, lexer::TokenKind::SymbolEqual if self.peek_is(&lexer::TokenKind::SymbolEqual))
   }
 
   fn until(&self, token: &lexer::TokenKind) -> ParserResult<bool> {
@@ -168,7 +178,7 @@ impl<'a> Parser<'a> {
     let base_name = self.parse_name()?;
     let mut scope = Vec::new();
 
-    while !self.is_eof() && self.is(&lexer::TokenKind::SymbolColon) {
+    while !self.is_eof() && self.is(&lexer::TokenKind::SymbolDot) {
       self.skip();
       scope.push(self.parse_name()?);
     }
@@ -766,6 +776,11 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::SymbolLessThan => ast::OperatorKind::LessThan,
       lexer::TokenKind::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
       lexer::TokenKind::SymbolAmpersand => ast::OperatorKind::AddressOf,
+      lexer::TokenKind::SymbolEqual if self.peek_is(&lexer::TokenKind::SymbolEqual) => {
+        self.skip();
+
+        ast::OperatorKind::Equality
+      }
       // TODO: Implement logic for GTE & LTE.
       _ => {
         return Err(diagnostic::Diagnostic {
@@ -791,13 +806,14 @@ impl<'a> Parser<'a> {
     let precedence = get_token_precedence(&token);
     let mut result = left;
 
-    while is_binary_operator(token) && (precedence > min_precedence) {
+    while self.is_binary_operator(token) && (precedence > min_precedence) {
       let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
 
       token = self.get();
 
-      while is_binary_operator(&token) && get_token_precedence(&token) > precedence {
+      while self.is_binary_operator(&token) && get_token_precedence(&token) > precedence {
+        // TODO: This isn't tail-recursive?
         right = self.parse_binary_expr(right, precedence + 1)?;
         token = self.get();
       }
@@ -822,12 +838,12 @@ impl<'a> Parser<'a> {
 
   // TODO: Better naming and/or positioning for logic.
   fn parse_expr(&mut self) -> ParserResult<ast::Node> {
-    // TODO: Need support for unary expressions (such as `!`, '-', etc.).
+    // TODO: Add support for unary expressions (such as `!`, '-', etc.).
 
-    let left = self.parse_primary_expr()?;
+    let starting_expr = self.parse_primary_expr()?;
 
     // TODO: Should the precedence be zero here?
-    Ok(self.parse_binary_expr(left, 0)?)
+    Ok(self.parse_binary_expr(starting_expr, 0)?)
   }
 
   /// %name '(' (%expr (,))* ')'

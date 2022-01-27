@@ -52,6 +52,7 @@ pub enum TokenKind {
   SymbolGreaterThan,
   SymbolBracketL,
   SymbolBracketR,
+  SymbolDot,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -252,6 +253,7 @@ impl Lexer {
         '>' => TokenKind::SymbolGreaterThan,
         '[' => TokenKind::SymbolBracketL,
         ']' => TokenKind::SymbolBracketR,
+        '.' => TokenKind::SymbolDot,
         _ => {
           // NOTE: Identifiers will never start with a digit.
           return if current_char == '_' || is_letter(current_char) {
