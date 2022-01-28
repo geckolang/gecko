@@ -460,12 +460,11 @@ impl TypeCheck for ast::LetStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
     let value_type = self.value.infer_type(cache);
 
-    // TODO: Ensure this comparison works as expected (especially for complex types).
-    // TODO: Comparing references?
     if !TypeCheckContext::unify_option(Some(&self.ty), value_type.as_ref(), cache) {
-      type_context
-        .diagnostics
-        .error("let statement value and type mismatch".to_string());
+      type_context.diagnostics.error(format!(
+        "variable declaration of `{}` value and type mismatch",
+        self.name
+      ));
     }
 
     self.value.type_check(type_context, cache);
@@ -528,7 +527,6 @@ impl TypeCheck for ast::Function {
 
 impl TypeCheck for ast::FunctionCall {
   fn infer_type(&self, cache: &cache::Cache) -> Option<ast::Type> {
-    // TODO: Is this cloning? Simplify this messy code section.
     let function_or_extern = &*cache.get(&self.target_key.unwrap());
 
     let prototype = match function_or_extern {

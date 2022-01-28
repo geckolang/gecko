@@ -484,8 +484,15 @@ impl Lower for ast::LoopStmt {
 
     // Fallthrough or loop if applicable.
     if generator.get_current_block().get_terminator().is_none() {
+      let llvm_condition_iter = if let Some(condition) = &self.condition {
+        condition.lower(generator, cache).unwrap().into_int_value()
+      } else {
+        generator.llvm_context.bool_type().const_int(1, false)
+      };
+
+      // FIXME: Ensure this logic is correct (investigate).
       generator.llvm_builder.build_conditional_branch(
-        llvm_condition,
+        llvm_condition_iter,
         llvm_then_block,
         llvm_after_block,
       );

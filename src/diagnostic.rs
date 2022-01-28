@@ -76,5 +76,3 @@ impl Into<Vec<Diagnostic>> for DiagnosticBuilder {
     self.diagnostics
   }
 }
-
-pub type DiagnosticResult<T> = Result<T, Diagnostic>;
