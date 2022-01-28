@@ -178,12 +178,19 @@ pub struct Prototype {
 pub struct Extern {
   pub name: String,
   pub prototype: Prototype,
+  pub attributes: Vec<Attribute>,
+}
+
+pub struct Attribute {
+  pub name: String,
+  pub values: Vec<Literal>,
 }
 
 pub struct Function {
   pub name: String,
   pub prototype: Prototype,
   pub body: Block,
+  pub attributes: Vec<Attribute>,
 }
 
 pub struct Block {

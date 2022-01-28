@@ -89,6 +89,14 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  fn expected(&self, expected: &str) -> diagnostic::Diagnostic {
+    diagnostic::Diagnostic {
+      message: format!("expected {}, but got `{}`", expected, self.get()),
+      severity: diagnostic::Severity::Error,
+      location: self.get_location(),
+    }
+  }
+
   // TODO: Consider removing the `token` parameter, and adjust the binary expression parsing function accordingly.
   /// Determine whether the given token is considered a valid binary
   /// operator.
@@ -112,6 +120,7 @@ impl<'a> Parser<'a> {
   }
 
   fn get(&self) -> &lexer::TokenKind {
+    // TODO: Accessing index unsafely.
     &self.tokens[self.index].0
   }
 
@@ -178,6 +187,7 @@ impl<'a> Parser<'a> {
     let base_name = self.parse_name()?;
     let mut scope = Vec::new();
 
+    // TODO: This check might cause problems in edge cases.
     while !self.is_eof() && self.is(&lexer::TokenKind::SymbolDot) {
       self.skip();
       scope.push(self.parse_name()?);
@@ -188,7 +198,7 @@ impl<'a> Parser<'a> {
 
   /// %identifier
   fn parse_name(&mut self) -> ParserResult<String> {
-    // TODO: Illegal/unrecognized tokens MAY also be represented under 'Identifier'?
+    // TODO: Illegal/unrecognized tokens MAY also be represented under 'Identifier'? Is this a problem?
 
     // TODO: Wrong error message. Create an `expect` method.
     assert!(matches!(self.get(), lexer::TokenKind::Identifier(_)));
@@ -212,7 +222,7 @@ impl<'a> Parser<'a> {
 
     let mut statements = vec![];
 
-    while !self.is(&lexer::TokenKind::SymbolBraceR) && !self.is_eof() {
+    while self.until(&lexer::TokenKind::SymbolBraceR)? {
       statements.push(Box::new(match self.get() {
         lexer::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
         lexer::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
@@ -246,7 +256,6 @@ impl<'a> Parser<'a> {
 
   /// {u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64}
   fn parse_int_type(&mut self) -> ParserResult<ast::Type> {
-    // TODO: Accessing index unsafely.
     let current_token = self.get();
 
     let size = match current_token {
@@ -254,16 +263,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::TypeInt32 => ast::IntSize::I32,
       lexer::TokenKind::TypeInt64 => ast::IntSize::I64,
       // TODO: Add unsigned type tokens.
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          message: format!(
-            "unexpected token `{}`, expected integer type",
-            current_token
-          ),
-          severity: diagnostic::Severity::Error,
-          location: self.get_location(),
-        })
-      }
+      _ => return Err(self.expected("integer type")),
     };
 
     self.skip();
@@ -271,7 +271,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Primitive(ast::PrimitiveType::Int(size)))
   }
 
-  // TODO: Merge with the `parse_type` function (too small).
+  // TODO: Merge with the `parse_type` function (too small)?
   /// bool
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
     skip_past!(self, &lexer::TokenKind::TypeBool);
@@ -287,24 +287,15 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, &lexer::TokenKind::SymbolComma);
 
-    // TODO: Cloning token.
-    let current_token = self.get().clone();
-
-    let size = match current_token {
-      lexer::TokenKind::LiteralInt(value) => value as u32,
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          message: format!("unexpected token `{}`, expected array size", current_token),
-          severity: diagnostic::Severity::Error,
-          location: self.get_location(),
-        });
-      }
+    let size = match self.get() {
+      lexer::TokenKind::LiteralInt(value) => value.clone() as u32,
+      _ => return Err(self.expected("array size")),
     };
 
     self.skip();
     skip_past!(self, &lexer::TokenKind::SymbolBracketR);
 
-    Ok(ast::Type::Array(Box::new(element_type), size.clone()))
+    Ok(ast::Type::Array(Box::new(element_type), size))
   }
 
   /// %type
@@ -363,7 +354,7 @@ impl<'a> Parser<'a> {
     Ok((name, type_group, index))
   }
 
-  /// '(' {%parameter* (,)} (+) ')' '~' %type_group
+  /// '(' {%parameter* (,)} (+) ')' ':' %type_group
   fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
     skip_past!(self, &lexer::TokenKind::SymbolParenthesesL);
 
@@ -373,7 +364,7 @@ impl<'a> Parser<'a> {
     let mut parameter_index_counter = 0;
 
     // TODO: Analyze, and remove possibility of lonely comma.
-    while !self.is(&lexer::TokenKind::SymbolParenthesesR) && !self.is_eof() {
+    while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
       if self.is(&lexer::TokenKind::SymbolPlus) {
         is_variadic = true;
         self.skip();
@@ -395,7 +386,7 @@ impl<'a> Parser<'a> {
 
     let mut return_type = None;
 
-    if self.is(&lexer::TokenKind::SymbolTilde) {
+    if self.is(&lexer::TokenKind::SymbolColon) {
       self.skip();
       return_type = Some(self.parse_type()?);
     }
@@ -408,7 +399,9 @@ impl<'a> Parser<'a> {
   }
 
   /// fn %prototype %block
-  fn parse_function(&mut self) -> ParserResult<ast::Definition> {
+  fn parse_function(&mut self, attributes: Vec<ast::Attribute>) -> ParserResult<ast::Definition> {
+    // TODO: Support for visibility.
+
     skip_past!(self, &lexer::TokenKind::KeywordFn);
 
     let name = self.parse_name()?;
@@ -419,6 +412,7 @@ impl<'a> Parser<'a> {
       name: name.clone(),
       prototype,
       body,
+      attributes,
     };
 
     Ok(ast::Definition {
@@ -430,7 +424,7 @@ impl<'a> Parser<'a> {
   }
 
   /// extern fn %prototype ';'
-  fn parse_extern(&mut self) -> ParserResult<ast::Definition> {
+  fn parse_extern(&mut self, attributes: Vec<ast::Attribute>) -> ParserResult<ast::Definition> {
     // TODO: Support for visibility.
 
     skip_past!(self, &lexer::TokenKind::KeywordExtern);
@@ -444,6 +438,7 @@ impl<'a> Parser<'a> {
     let extern_node = ast::Extern {
       name: name.clone(),
       prototype,
+      attributes,
     };
 
     Ok(ast::Definition {
@@ -452,6 +447,32 @@ impl<'a> Parser<'a> {
       node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Extern(extern_node))),
       definition_key: self.cache.create_definition_key(),
     })
+  }
+
+  fn parse_attribute(&mut self) -> ParserResult<ast::Attribute> {
+    skip_past!(self, &lexer::TokenKind::SymbolAt);
+
+    let name = self.parse_name()?;
+    let mut values = Vec::new();
+
+    if self.is(&lexer::TokenKind::SymbolParenthesesL) {
+      self.skip();
+
+      while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
+        values.push(self.parse_literal()?);
+
+        // TODO: Review this comma-skipping system.
+        if !self.is(&lexer::TokenKind::SymbolComma) {
+          break;
+        }
+
+        self.skip();
+      }
+
+      skip_past!(self, &lexer::TokenKind::SymbolParenthesesR);
+    }
+
+    Ok(ast::Attribute { name, values })
   }
 
   // TODO: Why not build the `Definition` node here? We might require access to the `name` and `symbol_kind`, however.
@@ -466,12 +487,45 @@ impl<'a> Parser<'a> {
       });
     }
 
+    let mut attributes: Vec<ast::Attribute> = Vec::new();
+
+    while self.is(&lexer::TokenKind::SymbolAt) {
+      let attribute = self.parse_attribute()?;
+
+      if attributes
+        .iter()
+        .find(|attribute| attribute.name == attribute.name)
+        .is_some()
+      {
+        return Err(diagnostic::Diagnostic {
+          message: format!("duplicate attribute `{}`", attribute.name),
+          severity: diagnostic::Severity::Error,
+          location: self.get_location(),
+        });
+      }
+
+      attributes.push(attribute);
+    }
+
+    let is_attributable = match self.get() {
+      lexer::TokenKind::KeywordFn | lexer::TokenKind::KeywordExtern => true,
+      _ => false,
+    };
+
+    if !attributes.is_empty() && !is_attributable {
+      return Err(diagnostic::Diagnostic {
+        message: "attributes may only be attached to functions or externs".to_string(),
+        severity: diagnostic::Severity::Error,
+        location: self.get_location(),
+      });
+    }
+
     let token = self.get();
 
     let definition = match token {
       // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
-      lexer::TokenKind::KeywordFn => ast::Node::Definition(self.parse_function()?),
-      lexer::TokenKind::KeywordExtern => ast::Node::Definition(self.parse_extern()?),
+      lexer::TokenKind::KeywordFn => ast::Node::Definition(self.parse_function(attributes)?),
+      lexer::TokenKind::KeywordExtern => ast::Node::Definition(self.parse_extern(attributes)?),
       lexer::TokenKind::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
       lexer::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_type()?),
       _ => {
@@ -609,28 +663,18 @@ impl<'a> Parser<'a> {
 
   /// {true | false}
   fn parse_bool_literal(&mut self) -> ParserResult<ast::Literal> {
-    // TODO: Accessing tokens like this is unsafe/unchecked.
     Ok(match self.get().clone() {
       lexer::TokenKind::LiteralBool(value) => {
         self.skip();
 
-        ast::Literal::Bool(value)
+        ast::Literal::Bool(value.clone())
       }
-      // TODO: Better error.
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          message: "unexpected token, expected boolean literal".to_string(),
-          severity: diagnostic::Severity::Error,
-          location: self.get_location(),
-        })
-      }
+      _ => return Err(self.expected("boolean literal")),
     })
   }
 
   /// 0-9+
   fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
-    // TODO: Accessing tokens like this is unsafe/unchecked.
-    // TODO: Possibly cloning value.
     Ok(match self.get().clone() {
       lexer::TokenKind::LiteralInt(value) => {
         self.skip();
@@ -643,30 +687,17 @@ impl<'a> Parser<'a> {
           size = ast::IntSize::I32;
         }
 
-        ast::Literal::Int(value.clone(), size)
+        ast::Literal::Int(value, size)
       }
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          message: "expected integer literal but got end of file".to_string(),
-          severity: diagnostic::Severity::Error,
-          location: self.get_location(),
-        })
-      }
+      _ => return Err(self.expected("integer literal")),
     })
   }
 
   /// '"' [^"]* '"'
   fn parse_string_literal(&mut self) -> ParserResult<ast::Literal> {
-    // TODO: Accessing tokens like this is unsafe/unchecked.
     let result = match self.get() {
       lexer::TokenKind::LiteralString(value) => ast::Literal::String(value.clone()),
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          message: "expected string literal but got end of file".to_string(),
-          severity: diagnostic::Severity::Error,
-          location: self.get_location(),
-        })
-      }
+      _ => return Err(self.expected("string literal")),
     };
 
     self.skip();
@@ -683,6 +714,7 @@ impl<'a> Parser<'a> {
     while self.until(&lexer::TokenKind::SymbolBracketR)? {
       elements.push(self.parse_expr()?);
 
+      // TODO: What if the comma isn't provided?
       if self.is(&lexer::TokenKind::SymbolComma) {
         self.skip();
       }
@@ -728,14 +760,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::LiteralBool(_) => self.parse_bool_literal()?,
       lexer::TokenKind::LiteralInt(_) => self.parse_int_literal()?,
       lexer::TokenKind::LiteralString(_) => self.parse_string_literal()?,
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          // TODO: Show the actual token.
-          message: format!("unexpected token `{}`, expected literal", current_token),
-          severity: diagnostic::Severity::Error,
-          location: self.get_location(),
-        });
-      }
+      _ => return Err(self.expected("literal")),
     })
   }
 
@@ -782,13 +807,7 @@ impl<'a> Parser<'a> {
         ast::OperatorKind::Equality
       }
       // TODO: Implement logic for GTE & LTE.
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          message: format!("unexpected token `{}`, expected operator", current_token),
-          severity: diagnostic::Severity::Error,
-          location: self.get_location(),
-        })
-      }
+      _ => return Err(self.expected("operator")),
     };
 
     self.skip();
@@ -854,9 +873,10 @@ impl<'a> Parser<'a> {
 
     let mut arguments = vec![];
 
-    while !self.is_eof() && !self.is(&lexer::TokenKind::SymbolParenthesesR) {
+    while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
       arguments.push(self.parse_expr()?);
 
+      // TODO: What if the comma is omitted?
       if self.is(&lexer::TokenKind::SymbolComma) {
         self.skip();
       }
@@ -907,7 +927,7 @@ impl<'a> Parser<'a> {
 
     let mut variants = vec![];
 
-    while !self.is_eof() && !self.is(&lexer::TokenKind::SymbolBraceR) {
+    while self.until(&lexer::TokenKind::SymbolBraceR)? {
       variants.push(self.parse_name()?);
 
       // TODO: Iron out case for lonely comma.
@@ -944,7 +964,7 @@ impl<'a> Parser<'a> {
 
     let mut fields = std::collections::HashMap::new();
 
-    while !self.is_eof() && !self.is(&lexer::TokenKind::SymbolBraceR) {
+    while self.until(&lexer::TokenKind::SymbolBraceR)? {
       let field_name = self.parse_name()?;
 
       skip_past!(self, &lexer::TokenKind::SymbolColon);
@@ -981,7 +1001,7 @@ impl<'a> Parser<'a> {
 
     let mut fields = Vec::new();
 
-    while !self.is_eof() && !self.is(&lexer::TokenKind::SymbolBraceR) {
+    while self.until(&lexer::TokenKind::SymbolBraceR)? {
       let field = self.parse_expr()?;
 
       fields.push(field);

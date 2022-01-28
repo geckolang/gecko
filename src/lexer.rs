@@ -53,6 +53,7 @@ pub enum TokenKind {
   SymbolBracketL,
   SymbolBracketR,
   SymbolDot,
+  SymbolAt,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -254,6 +255,7 @@ impl Lexer {
         '[' => TokenKind::SymbolBracketL,
         ']' => TokenKind::SymbolBracketR,
         '.' => TokenKind::SymbolDot,
+        '@' => TokenKind::SymbolAt,
         _ => {
           // NOTE: Identifiers will never start with a digit.
           return if current_char == '_' || is_letter(current_char) {

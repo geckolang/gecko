@@ -496,11 +496,33 @@ impl TypeCheck for ast::Function {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
     type_context.does_function_return = self.prototype.return_type.is_some();
 
-    // NOTE: No need to type-check parameters.
-    self.body.type_check(type_context, cache);
-
     // TODO: Special case for the `main` function. Unify expected signature.
-    // TODO: If it must return value, ensure a value was returned.
+
+    // If applicable, the function body must return a value.
+    if type_context.does_function_return {
+      let mut is_value_returned = false;
+
+      // TODO: If it must return value, ensure all applicable paths return a value.
+      for statement in &self.body.statements {
+        if let ast::Node::ReturnStmt(return_stmt) = statement.as_ref() {
+          if return_stmt.value.is_some() {
+            is_value_returned = true;
+          }
+
+          break;
+        }
+      }
+
+      if !is_value_returned {
+        type_context.diagnostics.error(format!(
+          "function body of `{}` must return a value",
+          self.name
+        ));
+      }
+    }
+
+    self.prototype.type_check(type_context, cache);
+    self.body.type_check(type_context, cache);
   }
 }
 
@@ -519,25 +541,50 @@ impl TypeCheck for ast::FunctionCall {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+    // TODO: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
     // TODO: Need access to the current function.
     // TODO: Ensure externs and unsafe function are only called from unsafe functions.
 
     let callee = &*cache.get(self.target_key.as_ref().unwrap());
 
     // TODO: Better, simpler way of doing this?
-    let prototype = match callee {
+    let name;
+    let prototype;
+    let attributes;
+
+    match callee {
       ast::Node::Extern(extern_) => {
         if !type_context.in_unsafe_block {
-          type_context
-            .diagnostics
-            .error("extern function calls may only occur inside an unsafe block".to_string());
+          type_context.diagnostics.error(format!(
+            "extern function call to `{}` may only occur inside an unsafe block",
+            extern_.name
+          ));
         }
 
-        &extern_.prototype
+        name = &extern_.name;
+        prototype = &extern_.prototype;
+        attributes = &extern_.attributes;
       }
-      ast::Node::Function(function) => &function.prototype,
+      ast::Node::Function(function) => {
+        name = &function.name;
+        prototype = &function.prototype;
+        attributes = &function.attributes;
+      }
       _ => unreachable!(),
     };
+
+    for attribute in attributes {
+      // TODO: Keep it simple for now, but later, we can improve the attribute system.
+      match attribute.name.as_str() {
+        "deprecated" => type_context
+          .diagnostics
+          .warning(format!("function `{}` is deprecated", name)),
+        _ => type_context.diagnostics.warning(format!(
+          "use of unrecognized attribute `{}`",
+          attribute.name
+        )),
+      };
+    }
 
     let min_arg_count = prototype.parameters.len();
     let actual_arg_count = self.arguments.len();
@@ -546,9 +593,10 @@ impl TypeCheck for ast::FunctionCall {
     if (!prototype.is_variadic && actual_arg_count != min_arg_count)
       || (prototype.is_variadic && actual_arg_count < min_arg_count)
     {
-      type_context
-        .diagnostics
-        .error("function call argument count mismatch".to_string());
+      type_context.diagnostics.error(format!(
+        "function call to `{}` has an invalid amount of arguments",
+        name
+      ));
     }
 
     // FIXME: Straight up broken. Need to re-verify and fix.
