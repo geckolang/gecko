@@ -58,8 +58,21 @@ impl Resolvable for ast::StructValue {
 }
 
 impl Resolvable for ast::Prototype {
-  fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
-    // FIXME: Must declare parameters (they aren't defined as `Definition`s). This issue prevents parameter usage.
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    // TODO: This is sort of a hack.
+    for parameter in &mut self.parameters {
+      ast::Definition {
+        name: parameter.0.clone(),
+        symbol_kind: SymbolKind::VariableOrParameter,
+        // TODO: Cloning parameter.
+        node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Parameter(
+          parameter.clone(),
+        ))),
+        // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
+        definition_key: cache.create_definition_key(),
+      }
+      .declare(resolver, cache);
+    }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {

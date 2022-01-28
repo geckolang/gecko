@@ -1097,6 +1097,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       // If the definition is not already memoized, memoize it.
       // This retrieval will panic in case of a logic error (internal error).
       let result = std::rc::Rc::clone(cache.declarations.get_mut(&definition_key).unwrap())
+        // FIXME: Causing `already borrowed: BorrowMutError` panic on recursive function calls.
         .borrow_mut()
         .lower(self, cache)
         .unwrap();
