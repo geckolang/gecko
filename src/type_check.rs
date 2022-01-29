@@ -446,7 +446,7 @@ impl TypeCheck for ast::BreakStmt {
 
 impl TypeCheck for ast::Definition {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
-    self.node.borrow().type_check(type_context, cache);
+    self.node_ref_cell.borrow().type_check(type_context, cache);
   }
 }
 

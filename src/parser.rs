@@ -418,7 +418,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
-      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Function(function))),
+      node_ref_cell: cache::create_cached_node(ast::Node::Function(function)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -444,7 +444,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
-      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Extern(extern_node))),
+      node_ref_cell: cache::create_cached_node(ast::Node::Extern(extern_node)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -598,7 +598,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::VariableOrParameter,
-      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::LetStmt(let_stmt))),
+      node_ref_cell: cache::create_cached_node(ast::Node::LetStmt(let_stmt)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -949,7 +949,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
-      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Enum(enum_))),
+      node_ref_cell: cache::create_cached_node(ast::Node::Enum(enum_)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -986,7 +986,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
-      node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::StructType(struct_type))),
+      node_ref_cell: cache::create_cached_node(ast::Node::StructType(struct_type)),
       definition_key: self.cache.create_definition_key(),
     })
   }

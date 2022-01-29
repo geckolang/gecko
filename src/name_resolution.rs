@@ -65,9 +65,7 @@ impl Resolvable for ast::Prototype {
         name: parameter.0.clone(),
         symbol_kind: SymbolKind::VariableOrParameter,
         // TODO: Cloning parameter.
-        node: std::rc::Rc::new(std::cell::RefCell::new(ast::Node::Parameter(
-          parameter.clone(),
-        ))),
+        node_ref_cell: cache::create_cached_node(ast::Node::Parameter(parameter.clone())),
         // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
         definition_key: cache.create_definition_key(),
       }
@@ -266,16 +264,16 @@ impl Resolvable for ast::Definition {
     }
 
     // Register the node on the cache for lowering lookup.
-    cache.bind(self.definition_key, std::rc::Rc::clone(&self.node));
+    cache.bind(self.definition_key, std::rc::Rc::clone(&self.node_ref_cell));
 
     // Bind the symbol to the current scope for name resolution lookup.
     resolver.bind(symbol, self.definition_key);
 
-    self.node.as_ref().borrow_mut().declare(resolver, cache);
+    self.node_ref_cell.borrow_mut().declare(resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.node.as_ref().borrow_mut().resolve(resolver, cache);
+    self.node_ref_cell.borrow_mut().resolve(resolver, cache);
   }
 }
 

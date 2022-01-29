@@ -3,10 +3,11 @@ use std::cell::Ref;
 
 pub type DefinitionKey = usize;
 
+pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::Node>>;
+
 pub struct Cache {
   key_counter: usize,
-  pub declarations:
-    std::collections::HashMap<DefinitionKey, std::rc::Rc<std::cell::RefCell<ast::Node>>>,
+  pub declarations: std::collections::HashMap<DefinitionKey, CachedNode>,
 }
 
 impl Cache {
@@ -21,7 +22,7 @@ impl Cache {
     self.declarations.get(key).unwrap().as_ref().borrow()
   }
 
-  pub fn bind(&mut self, key: DefinitionKey, node: std::rc::Rc<std::cell::RefCell<ast::Node>>) {
+  pub fn bind(&mut self, key: DefinitionKey, node: CachedNode) {
     self.declarations.insert(key, node);
   }
 
@@ -32,4 +33,8 @@ impl Cache {
 
     key
   }
+}
+
+pub fn create_cached_node(node: ast::Node) -> CachedNode {
+  std::rc::Rc::new(std::cell::RefCell::new(node))
 }

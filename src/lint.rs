@@ -178,7 +178,7 @@ impl Lint for ast::ContinueStmt {
 
 impl Lint for ast::Definition {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
-    let node = &*self.node.borrow();
+    let node = &*self.node_ref_cell.borrow();
 
     match node {
       ast::Node::Function(_) => {

@@ -264,11 +264,10 @@ pub struct UnaryExpr {
   pub operator: OperatorKind,
 }
 
-#[derive(Clone)]
 pub struct Definition {
   pub name: String,
   pub symbol_kind: name_resolution::SymbolKind,
-  pub node: std::rc::Rc<std::cell::RefCell<Node>>,
+  pub node_ref_cell: cache::CachedNode,
   pub definition_key: cache::DefinitionKey,
 }
 

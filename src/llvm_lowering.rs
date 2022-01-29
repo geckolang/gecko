@@ -8,7 +8,7 @@ pub trait Lower {
   fn lower<'a, 'ctx>(
     &self,
     _generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &mut cache::Cache,
+    _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     None
   }
@@ -18,7 +18,7 @@ impl Lower for ast::Node {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     dispatch!(self, Lower::lower, generator, cache)
   }
@@ -28,7 +28,7 @@ impl Lower for ast::StructValue {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: If possible and practical, find a way to remove reliance on the generator's state.
 
@@ -67,7 +67,7 @@ impl Lower for ast::Enum {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &mut cache::Cache,
+    _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for (index, name) in self.variants.iter().enumerate() {
       let llvm_variant_global = generator.llvm_module.add_global(
@@ -92,7 +92,7 @@ impl Lower for ast::AssignStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.value.lower(generator, cache).unwrap();
 
@@ -115,7 +115,7 @@ impl Lower for ast::ContinueStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &mut cache::Cache,
+    _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     generator
       .llvm_builder
@@ -129,7 +129,7 @@ impl Lower for ast::ArrayIndexing {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_index = self.index.lower(generator, cache).unwrap().into_int_value();
 
@@ -156,7 +156,7 @@ impl Lower for ast::ArrayValue {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let mut llvm_values = Vec::new();
 
@@ -216,7 +216,7 @@ impl Lower for ast::Parameter {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &mut cache::Cache,
+    _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: In the future, consider having an `alloca` per parameter, for simpler tracking of them.
     Some(
@@ -233,7 +233,7 @@ impl Lower for ast::UnsafeBlockStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     self.0.lower(generator, cache);
 
@@ -245,7 +245,7 @@ impl Lower for ast::BinaryExpr {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_left_value = self.left.lower(generator, cache).unwrap();
     let llvm_right_value = self.right.lower(generator, cache).unwrap();
@@ -429,7 +429,7 @@ impl Lower for ast::VariableOrMemberRef {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let skip_implicit_deref = generator.assign_flag;
 
@@ -451,7 +451,7 @@ impl Lower for ast::LoopStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // FIXME: The condition needs to be re-lowered per iteration.
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
@@ -508,7 +508,7 @@ impl Lower for ast::IfStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: Add logic for the `else` branch.
 
@@ -550,7 +550,7 @@ impl Lower for ast::Literal {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &mut cache::Cache,
+    _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match self {
       ast::Literal::Int(value, integer_kind) => {
@@ -602,7 +602,7 @@ impl Lower for ast::Function {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
 
@@ -644,6 +644,14 @@ impl Lower for ast::Function {
 
     generator.llvm_function_buffer = Some(llvm_function);
 
+    // Manually cache the function now to allow for recursive function calls.
+    generator.llvm_cached_values.insert(
+      generator.pending_function_definition_key.unwrap(),
+      llvm_function.as_global_value().as_basic_value_enum(),
+    );
+
+    println!("manually cached fn...");
+
     // TODO: Use a zipper, along with a chain. Actually, is this necessary?
     for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
       // TODO: Ensure safe access.
@@ -673,7 +681,7 @@ impl Lower for ast::Extern {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
 
@@ -695,7 +703,7 @@ impl Lower for ast::Block {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for statement in &self.statements {
       statement.lower(generator, cache);
@@ -714,7 +722,7 @@ impl Lower for ast::ReturnStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_return_value = if let Some(return_value) = &self.value {
       let llvm_value = return_value.lower(generator, cache).unwrap();
@@ -744,7 +752,7 @@ impl Lower for ast::UnaryExpr {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.expr.lower(generator, cache).unwrap();
 
@@ -791,7 +799,7 @@ impl Lower for ast::LetStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_type = generator.lower_type(&self.ty, cache);
 
@@ -820,13 +828,15 @@ impl Lower for ast::FunctionCall {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_arguments = self
       .arguments
       .iter()
       .map(|argument| argument.lower(generator, cache).unwrap().into())
       .collect::<Vec<_>>();
+
+    println!("[fn.call] retrieve value next ...");
 
     let llvm_target_function = generator
       .memoize_or_retrieve(self.target_key.unwrap(), cache)
@@ -852,7 +862,7 @@ impl Lower for ast::BreakStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &mut cache::Cache,
+    _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: What happens if there are nested loops? Will the buffer be overwritten?
     // NOTE: By this point, we assume that whether we're actually in a loop was handled by the type-checker.
@@ -868,10 +878,19 @@ impl Lower for ast::Definition {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let node = self.node_ref_cell.borrow();
+
+    // Set the pending function definition key to cache the function early.
+    // This eliminates problems with multi-borrows that may occur when lowering
+    // recursive functions.
+    if matches!(&*node, ast::Node::Function(_)) {
+      generator.pending_function_definition_key = Some(self.definition_key);
+    }
+
     // TODO: This might error for other globally-defined types.
-    if !matches!(&*self.node.as_ref().borrow(), ast::Node::StructType(_)) {
+    if !matches!(&*node, ast::Node::StructType(_)) {
       Some(generator.memoize_or_retrieve(self.definition_key, cache))
     } else {
       None
@@ -883,7 +902,7 @@ impl Lower for ast::ExprStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     self.expr.lower(generator, cache)
   }
@@ -905,6 +924,9 @@ pub struct LlvmGenerator<'a, 'ctx> {
   return_expects_rvalue: bool,
   let_stmt_allocation: Option<inkwell::values::PointerValue<'ctx>>,
   assign_flag: bool,
+  /// The definition key of the function currently being emitted (if any).
+  /// Used to be able to handle recursive calls.
+  pending_function_definition_key: Option<cache::DefinitionKey>,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -925,6 +947,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       return_expects_rvalue: false,
       let_stmt_allocation: None,
       assign_flag: false,
+      pending_function_definition_key: None,
     }
   }
 
@@ -1087,40 +1110,42 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   fn memoize_or_retrieve(
     &mut self,
     definition_key: cache::DefinitionKey,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    if !self.llvm_cached_values.contains_key(&definition_key) {
-      // TODO: Will there be a case where we'd need the buffers to change? If so, take in a flag parameter.
-      let previous_function_buffer = self.llvm_function_buffer;
-      let previous_block = self.llvm_builder.get_insert_block();
-
-      // If the definition is not already memoized, memoize it.
-      // This retrieval will panic in case of a logic error (internal error).
-      let result = std::rc::Rc::clone(cache.declarations.get_mut(&definition_key).unwrap())
-        // FIXME: Causing `already borrowed: BorrowMutError` panic on recursive function calls.
-        .borrow_mut()
-        .lower(self, cache)
-        .unwrap();
-
-      // TODO: Should we be inserting the definition key here?
-      self.llvm_cached_values.insert(definition_key, result);
-
-      // Restore buffers after processing.
-      if let Some(previous_block) = previous_block {
-        self.llvm_builder.position_at_end(previous_block);
-      }
-
-      self.llvm_function_buffer = previous_function_buffer;
-
-      return result;
+    // If the definition has been cached previously, simply retrieve it.
+    if self.llvm_cached_values.contains_key(&definition_key) {
+      // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
+      return self
+        .llvm_cached_values
+        .get(&definition_key)
+        .unwrap()
+        .clone();
     }
 
-    // NOTE: The LLVM value is not copied, but rather the reference to it.
-    self
-      .llvm_cached_values
+    // TODO: Are we missing any buffers to be saved?
+    // TODO: Will there be a case where we'd need the buffers to change? If so, take in a flag parameter.
+    let previous_function_buffer = self.llvm_function_buffer;
+    let previous_insert_block = self.llvm_builder.get_insert_block();
+
+    let llvm_value = cache
+      .declarations
       .get(&definition_key)
       .unwrap()
-      .clone()
+      .borrow()
+      .lower(self, cache)
+      .unwrap();
+
+    self.llvm_cached_values.insert(definition_key, llvm_value);
+
+    // TODO: What if the `previous_block` buffer was `None`?
+    // Restore buffers after processing.
+    if let Some(previous_block) = previous_insert_block {
+      self.llvm_builder.position_at_end(previous_block);
+    }
+
+    self.llvm_function_buffer = previous_function_buffer;
+
+    return llvm_value;
   }
 }
 
