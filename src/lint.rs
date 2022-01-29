@@ -30,9 +30,9 @@ impl LintContext {
         continue;
       }
 
-      let function_node = cache.get(&function_key);
+      let function_or_extern_node = cache.get(&function_key);
 
-      let name = match &*function_node {
+      let name = match &*function_or_extern_node {
         ast::Node::Function(function) => &function.name,
         ast::Node::Extern(extern_) => &extern_.name,
         _ => unreachable!(),
@@ -46,7 +46,6 @@ impl LintContext {
     }
 
     for (variable_def_key, was_used) in &self.variable_references {
-      // TODO: Dereferencing value.
       if *was_used {
         continue;
       }
@@ -180,13 +179,20 @@ impl Lint for ast::Definition {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     let node = &*self.node_ref_cell.borrow();
 
+    // TODO: Simplify. Abstract the map, then process.
     match node {
       ast::Node::Function(_) => {
-        context
+        if !context
           .function_references
-          .insert(self.definition_key, false);
+          .contains_key(&self.definition_key)
+        {
+          context
+            .function_references
+            .insert(self.definition_key, false);
+        }
       }
       ast::Node::LetStmt(_) => {
+        // NOTE: Variable declarations always occur before their usage.
         context
           .variable_references
           .insert(self.definition_key, false);

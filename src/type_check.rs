@@ -4,7 +4,7 @@ pub struct TypeCheckContext {
   pub diagnostics: diagnostic::DiagnosticBuilder,
   in_loop: bool,
   in_unsafe_block: bool,
-  does_function_return: bool,
+  current_function_key: Option<cache::DefinitionKey>,
 }
 
 impl TypeCheckContext {
@@ -13,7 +13,7 @@ impl TypeCheckContext {
       diagnostics: diagnostic::DiagnosticBuilder::new(),
       in_loop: false,
       in_unsafe_block: false,
-      does_function_return: false,
+      current_function_key: None,
     }
   }
 
@@ -66,13 +66,13 @@ pub trait TypeCheck {
     None
   }
 
-  fn type_check(&self, _type_context: &mut TypeCheckContext, _cache: &mut cache::Cache) {
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
     //
   }
 }
 
 impl TypeCheck for ast::Node {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     dispatch!(self, TypeCheck::type_check, type_context, cache);
   }
 
@@ -94,7 +94,7 @@ impl TypeCheck for ast::StructValue {
     Some(ast::Type::Struct(struct_type.clone()))
   }
 
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let struct_type_node = cache.get(&self.target_key.unwrap());
 
     let struct_type = match &*struct_type_node {
@@ -132,7 +132,7 @@ impl TypeCheck for ast::StructValue {
 }
 
 impl TypeCheck for ast::Prototype {
-  fn type_check(&self, _type_context: &mut TypeCheckContext, _cache: &mut cache::Cache) {
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
     // TODO: Implement?
   }
 }
@@ -142,7 +142,7 @@ impl TypeCheck for ast::StructType {
 }
 
 impl TypeCheck for ast::UnaryExpr {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let expr_type = self.expr.infer_type(cache);
 
     match self.operator {
@@ -196,7 +196,7 @@ impl TypeCheck for ast::Enum {
 }
 
 impl TypeCheck for ast::AssignStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: Need to unify the value and the target's type, as well as ensuring that the target is mutable.
 
     let assignee_type = self.assignee_expr.infer_type(cache);
@@ -240,7 +240,7 @@ impl TypeCheck for ast::AssignStmt {
 }
 
 impl TypeCheck for ast::ContinueStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, _cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
     if !type_context.in_loop {
       type_context
         .diagnostics
@@ -267,7 +267,7 @@ impl TypeCheck for ast::ArrayIndexing {
     Some(array_element_type)
   }
 
-  fn type_check(&self, _type_context: &mut TypeCheckContext, _cache: &mut cache::Cache) {
+  fn type_check(&self, _type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
     // TODO: Implement.
   }
 }
@@ -289,7 +289,7 @@ impl TypeCheck for ast::ArrayValue {
     Some(array_type)
   }
 
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // FIXME: Here, we assume that `explicit_type` is always `Some(_)`. Currently, that might not be the case until type inference is implemented.
     let mut mixed_elements_flag = false;
 
@@ -316,7 +316,7 @@ impl TypeCheck for ast::ArrayValue {
 }
 
 impl TypeCheck for ast::UnsafeBlockStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: To avoid problems with nested cases, save a buffer here, then restore?
     type_context.in_unsafe_block = true;
     self.0.type_check(type_context, cache);
@@ -333,7 +333,7 @@ impl TypeCheck for ast::Parameter {
 }
 
 impl TypeCheck for ast::Block {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     for statement in &self.statements {
       statement.type_check(type_context, cache);
     }
@@ -367,7 +367,7 @@ impl TypeCheck for ast::Literal {
 }
 
 impl TypeCheck for ast::IfStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     if !TypeCheckContext::unify_with_primitive(
       self.condition.infer_type(cache),
       ast::PrimitiveType::Bool,
@@ -390,7 +390,7 @@ impl TypeCheck for ast::BinaryExpr {
     }
   }
 
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let left_type = self.left.infer_type(cache);
     let right_type = self.right.infer_type(cache);
 
@@ -435,7 +435,7 @@ impl TypeCheck for ast::BinaryExpr {
 }
 
 impl TypeCheck for ast::BreakStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, _cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
     if !type_context.in_loop {
       type_context
         .diagnostics
@@ -445,19 +445,25 @@ impl TypeCheck for ast::BreakStmt {
 }
 
 impl TypeCheck for ast::Definition {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
-    self.node_ref_cell.borrow().type_check(type_context, cache);
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
+    let node = self.node_ref_cell.borrow();
+
+    if let ast::Node::Function(_) = &*node {
+      type_context.current_function_key = Some(self.definition_key);
+    }
+
+    node.type_check(type_context, cache);
   }
 }
 
 impl TypeCheck for ast::ExprStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     self.expr.type_check(type_context, cache);
   }
 }
 
 impl TypeCheck for ast::LetStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let value_type = self.value.infer_type(cache);
 
     if !TypeCheckContext::unify_option(Some(&self.ty), value_type.as_ref(), cache) {
@@ -472,19 +478,42 @@ impl TypeCheck for ast::LetStmt {
 }
 
 impl TypeCheck for ast::ReturnStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
-    if type_context.does_function_return && self.value.is_none() {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
+    let current_function_node = cache
+      .declarations
+      .get(&type_context.current_function_key.unwrap())
+      .unwrap()
+      .borrow();
+
+    let current_function = match &*current_function_node {
+      ast::Node::Function(function) => function,
+      _ => unreachable!(),
+    };
+
+    // TODO: Whether a function returns is already checked. Limit this to unifying the types only.
+    if current_function.prototype.return_type.is_some() && self.value.is_none() {
       type_context
         .diagnostics
         .error("return statement must return a value".to_string());
-    } else if !type_context.does_function_return && self.value.is_some() {
-      type_context
+    } else if current_function.prototype.return_type.is_none() && self.value.is_some() {
+      return type_context
         .diagnostics
         .error("return statement must not return a value".to_string());
     }
 
     if let Some(value) = &self.value {
-      // TODO: Unify prototype return type with the value's return type.
+      let value_type = value.infer_type(cache);
+
+      if !TypeCheckContext::unify_option(
+        current_function.prototype.return_type.as_ref(),
+        value_type.as_ref(),
+        cache,
+      ) {
+        type_context.diagnostics.error(format!(
+          "return statement value and function return type mismatch for function `{}`",
+          current_function.name
+        ));
+      }
 
       value.type_check(type_context, cache);
     }
@@ -492,13 +521,11 @@ impl TypeCheck for ast::ReturnStmt {
 }
 
 impl TypeCheck for ast::Function {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
-    type_context.does_function_return = self.prototype.return_type.is_some();
-
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: Special case for the `main` function. Unify expected signature.
 
     // If applicable, the function body must return a value.
-    if type_context.does_function_return {
+    if self.prototype.return_type.is_some() {
       let mut is_value_returned = false;
 
       // TODO: If it must return value, ensure all applicable paths return a value.
@@ -538,7 +565,7 @@ impl TypeCheck for ast::FunctionCall {
     prototype.return_type.clone()
   }
 
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
     // TODO: Need access to the current function.
     // TODO: Ensure externs and unsafe function are only called from unsafe functions.
@@ -616,7 +643,7 @@ impl TypeCheck for ast::FunctionCall {
 }
 
 impl TypeCheck for ast::LoopStmt {
-  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &mut cache::Cache) {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
       if !TypeCheckContext::unify_with_primitive(
         condition.infer_type(cache),

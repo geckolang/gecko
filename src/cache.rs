@@ -3,6 +3,7 @@ use std::cell::Ref;
 
 pub type DefinitionKey = usize;
 
+// TODO: For the `Cache` struct, we might not need a `RefCell<>`, since there are no mutable borrows.
 pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::Node>>;
 
 pub struct Cache {
