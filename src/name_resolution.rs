@@ -82,7 +82,7 @@ impl Resolvable for ast::Prototype {
 
 impl Resolvable for ast::StructType {
   fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
-    // TODO: Implement.
+    // TODO: Implement?
   }
 
   fn resolve(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
@@ -403,6 +403,51 @@ impl NameResolver {
     self
       .diagnostics
       .error(format!("undefined reference to `{}`", symbol.0));
+
+    None
+  }
+
+  // FIXME: The current design for this function might be flawed. Review.
+  fn _lookup_member(
+    &self,
+    scope_qualifier: &ast::ScopeQualifier,
+    cache: &cache::Cache,
+  ) -> Option<&cache::DefinitionKey> {
+    let definition_key = self.lookup(&(scope_qualifier.0.clone(), SymbolKind::VariableOrParameter));
+
+    if let Some(definition) = definition_key {
+      let declaration = cache.declarations.get(definition).unwrap().borrow();
+
+      match &*declaration {
+        ast::Node::LetStmt(let_stmt) => {
+          // TODO: Consider resolving/unboxing the type, instead of doing it manually.
+
+          let user_defined_type_target_key = match &let_stmt.ty {
+            ast::Type::UserDefined(ast::UserDefinedType {
+              name: _,
+              target_key,
+            }) => target_key.unwrap(),
+            _ => unreachable!(),
+          };
+
+          let user_defined_type_declaration = cache
+            .declarations
+            .get(&user_defined_type_target_key)
+            .unwrap()
+            .borrow();
+
+          let _struct_type = match &*user_defined_type_declaration {
+            ast::Node::StructType(struct_type) => struct_type,
+            _ => unreachable!(),
+          };
+
+          // FIXME: There IS no definition key for struct members. So what should be do instead? Maybe this should be handled instead during the `declare` step for `LetStmt` (in the case that `LetStmt` declares a resolved-type of struct)?
+        }
+        // TODO: Add logic for parameters.
+        // It must be a variable declaration or parameter, containing a struct.
+        _ => unreachable!(),
+      };
+    }
 
     None
   }

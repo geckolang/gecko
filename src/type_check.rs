@@ -43,7 +43,9 @@ impl TypeCheckContext {
     ty == Some(ast::Type::Primitive(primitive))
   }
 
-  /// Attempt to unbox a user-defined type, to be used for comparison.
+  // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
+  // TODO: A better name might be `resolve_type`, or `unbox_and_resolve_type`?
+  /// Unbox a possible user-defined type, into a more concrete type.
   fn unbox_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
     match ty {
       ast::Type::UserDefined(user_defined_type) => {

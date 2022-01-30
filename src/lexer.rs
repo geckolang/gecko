@@ -28,6 +28,8 @@ pub enum TokenKind {
   KeywordMut,
   KeywordNew,
   KeywordLoop,
+  KeywordAnd,
+  KeywordOr,
   TypeInt16,
   TypeInt32,
   TypeInt64,
@@ -147,7 +149,6 @@ impl Lexer {
       }
 
       result.push(character);
-
       self.read_char();
     }
 
@@ -185,19 +186,54 @@ impl Lexer {
     self.read_while(is_whitespace)
   }
 
-  fn read_string(&mut self) -> String {
+  // TODO: Need tests implemented for this.
+  fn read_string(&mut self) -> Result<String, diagnostic::Diagnostic> {
     // Skip the opening double-quote.
     self.read_char();
 
-    let string = self.read_while(|character| character != '"');
+    let mut string = String::new();
 
-    // FIXME: Need to ensure that EOF was not met (which is a possibility).
+    loop {
+      string += self.read_while(|char| char != '"' && char != '\\').as_str();
 
-    // FIXME: Temporary fix for the closing quote being skipped twice (as a simple token).
-    // Skip the closing quote.
-    // self.read_char();
+      // We've reached the end of the string.
+      if self.current_char == Some('"') {
+        break;
+      }
 
-    string
+      // Otherwise, there is an escape sequence. Skip the escape character.
+      self.read_char();
+
+      string += match self.current_char {
+        Some('n') => "\n",
+        Some('t') => "\t",
+        Some('r') => "\r",
+        Some('\\') => "\\",
+        // TODO: Are we missing any other important escape sequence codes?
+        Some(char) => {
+          return Err(diagnostic::Diagnostic {
+            message: format!("`{}` is not a valid string escape sequence", char),
+            severity: diagnostic::Severity::Error,
+            location: self.get_location(),
+          })
+        }
+        None => {
+          return Err(diagnostic::Diagnostic {
+            message: "unexpected end of input, expected character".to_string(),
+            severity: diagnostic::Severity::Error,
+            location: self.get_location(),
+          })
+        }
+      };
+
+      // Move on from the matched character (if any).
+      self.read_char();
+    }
+
+    // TODO: We SHOULD be skipping the closing double-quote here (independent function).
+    // No need to skip the closing double-quote.
+
+    Ok(string)
   }
 
   fn read_character(&mut self) -> Result<char, diagnostic::Diagnostic> {
@@ -228,12 +264,13 @@ impl Lexer {
 
     let current_char = self.current_char.unwrap();
 
+    // TODO: Simplify this chunk of code.
     let token = if is_whitespace(current_char) {
       TokenKind::Whitespace(self.read_whitespace())
     } else {
       let final_token = match current_char {
         '#' => TokenKind::Comment(self.read_comment()),
-        '"' => TokenKind::LiteralString(self.read_string()),
+        '"' => TokenKind::LiteralString(self.read_string()?),
         '\'' => TokenKind::LiteralChar(self.read_character()?),
         '{' => TokenKind::SymbolBraceL,
         '}' => TokenKind::SymbolBraceR,
@@ -277,8 +314,7 @@ impl Lexer {
         }
       };
 
-      // FIXME: This isn't always the case (for example string's closing quotes).
-      // Skip simple matched token.
+      // Skip simple matched token (or in the case of a string, its closing quote).
       self.read_char();
 
       final_token
@@ -321,6 +357,8 @@ fn match_token(identifier: &str) -> Option<TokenKind> {
     "mut" => TokenKind::KeywordMut,
     "new" => TokenKind::KeywordNew,
     "loop" => TokenKind::KeywordLoop,
+    "and" => TokenKind::KeywordAnd,
+    "or" => TokenKind::KeywordOr,
     "i16" => TokenKind::TypeInt16,
     "i32" => TokenKind::TypeInt32,
     "i64" => TokenKind::TypeInt64,

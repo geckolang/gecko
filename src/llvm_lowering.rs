@@ -650,8 +650,6 @@ impl Lower for ast::Function {
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
-    println!("manually cached fn...");
-
     // TODO: Use a zipper, along with a chain. Actually, is this necessary?
     for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
       // TODO: Ensure safe access.
@@ -835,8 +833,6 @@ impl Lower for ast::FunctionCall {
       .iter()
       .map(|argument| argument.lower(generator, cache).unwrap().into())
       .collect::<Vec<_>>();
-
-    println!("[fn.call] retrieve value next ...");
 
     let llvm_target_function = generator
       .memoize_or_retrieve(self.target_key.unwrap(), cache)
@@ -1070,7 +1066,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     .into_function_type()
   }
 
-  // TODO: Being repeated in `lower_type`.
   fn lower_struct_type(
     &mut self,
     struct_type: &ast::StructType,
@@ -1084,11 +1079,13 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     // TODO: Consider caching the struct type here?
 
-    self
+    let llvm_struct_type = self
       .llvm_context
-      .struct_type(llvm_field_types.as_slice(), false)
-      .as_basic_type_enum()
-      .into_struct_type()
+      .opaque_struct_type(format!("struct.{}", struct_type.name).as_str());
+
+    llvm_struct_type.set_body(llvm_field_types.as_slice(), false);
+
+    llvm_struct_type
   }
 
   fn get_current_block(&self) -> inkwell::basic_block::BasicBlock<'ctx> {

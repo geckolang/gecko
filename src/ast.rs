@@ -107,15 +107,8 @@ impl ScopeQualifier {
 
 impl ToString for ScopeQualifier {
   fn to_string(&self) -> String {
-    let mut result = self.0.clone();
-
-    for scope in &self.1 {
-      // FIXME: Verify that these characters are allowed in LLVM identifiers.
-      result.push_str("::");
-      result.push_str(scope);
-    }
-
-    result
+    // TODO: Hard-coded dot character.
+    self.0.clone() + self.1.join(".").as_str()
   }
 }
 

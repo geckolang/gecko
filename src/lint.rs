@@ -96,7 +96,11 @@ impl Lint for ast::Prototype {
 }
 
 impl Lint for ast::StructType {
-  // TODO: Implement.
+  fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
+    context.lint_name_casing("struct", &self.name, convert_case::Case::Pascal);
+
+    // TODO: Any more linting?
+  }
 }
 
 impl Lint for ast::UnaryExpr {
