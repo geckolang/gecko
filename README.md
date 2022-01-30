@@ -97,9 +97,9 @@ Only single-line comments are available for simplicity. All comments start with 
 # This is a comment.
 ```
 
-It should be noted that string literals take precedence over comments (as one would logically expected):
+It should be noted that string literals take precedence over comments, in the case that they appear before comments (as one would logically expected):
 
-```
+```rs
 "# This is a string literal."
 ```
 
@@ -132,7 +132,7 @@ foo.bar.entity
 
 Function definitions & calls follow conventional norms. They are easy to define and use. The language grammar was designed in a way to have only one way to achieve things, with the idea that limited options remove the problems of different programmers using different methods of accomplishing the same thing (ex. different function declaration syntaxes). This way, whenever you encounter code you know what to expect right away.
 
-Omitting the return type will imply that such function does not return a value (the equivalent to other languages' `void` type). Functions without return types must not return a value, nor are they required to have a `return` statement.
+Omitting the return type will imply that such function does not return a value (the equivalent to other languages' `void` type). Functions without return types may not return a value, nor are they required to have a `return` statement on their bodies.
 
 ```rust
 fn main(argc: i32, argv: i32[]): i32 {

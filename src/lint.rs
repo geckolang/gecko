@@ -34,7 +34,7 @@ impl LintContext {
 
       let name = match &*function_or_extern_node {
         ast::Node::Function(function) => &function.name,
-        ast::Node::Extern(extern_) => &extern_.name,
+        ast::Node::ExternFunction(extern_) => &extern_.name,
         _ => unreachable!(),
       };
 
@@ -84,6 +84,12 @@ impl LintContext {
 impl Lint for ast::Node {
   fn lint(&self, context: &mut cache::Cache, lint_context: &mut LintContext) {
     crate::dispatch!(self, Lint::lint, context, lint_context);
+  }
+}
+
+impl Lint for ast::ExternStatic {
+  fn lint(&self, _cache: &mut cache::Cache, _context: &mut LintContext) {
+    //
   }
 }
 
@@ -240,7 +246,7 @@ impl Lint for ast::ExprStmt {
   }
 }
 
-impl Lint for ast::Extern {
+impl Lint for ast::ExternFunction {
   // NOTE: There are no naming rules for externs.
 }
 

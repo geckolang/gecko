@@ -2,7 +2,7 @@ use crate::{ast, cache, diagnostic};
 
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub enum SymbolKind {
-  VariableOrParameter,
+  StaticOrVariableOrParameter,
   FunctionOrExtern,
   // A global type. Can be a struct, or enum.
   Type,
@@ -10,7 +10,7 @@ pub enum SymbolKind {
 
 type Symbol = (String, SymbolKind);
 
-pub trait Resolvable {
+pub trait Resolve {
   fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     //
   }
@@ -20,50 +20,60 @@ pub trait Resolvable {
   }
 }
 
-impl Resolvable for ast::Type {
+impl Resolve for ast::Type {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     match self {
       ast::Type::UserDefined(user_defined_type) => {
         user_defined_type.resolve(resolver, cache);
       }
+      ast::Type::Pointer(pointee_type) => {
+        pointee_type.resolve(resolver, cache);
+      }
+      // FIXME: What about arrays, etc.?
       _ => {}
     };
   }
 }
 
-impl Resolvable for ast::Node {
+impl Resolve for ast::Node {
   // TODO: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    crate::dispatch!(self, Resolvable::declare, resolver, cache);
+    crate::dispatch!(self, Resolve::declare, resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    crate::dispatch!(self, Resolvable::resolve, resolver, cache);
+    crate::dispatch!(self, Resolve::resolve, resolver, cache);
   }
 }
 
-impl Resolvable for ast::UserDefinedType {
+impl Resolve for ast::ExternStatic {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.1.resolve(resolver, cache);
+  }
+}
+
+impl Resolve for ast::UserDefinedType {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
-impl Resolvable for ast::StructValue {
+impl Resolve for ast::StructValue {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
-impl Resolvable for ast::Prototype {
+impl Resolve for ast::Prototype {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: This is sort of a hack.
     for parameter in &mut self.parameters {
       ast::Definition {
         name: parameter.0.clone(),
-        symbol_kind: SymbolKind::VariableOrParameter,
+        symbol_kind: SymbolKind::StaticOrVariableOrParameter,
         // TODO: Cloning parameter.
         node_ref_cell: cache::create_cached_node(ast::Node::Parameter(parameter.clone())),
         // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
@@ -74,13 +84,17 @@ impl Resolvable for ast::Prototype {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    for parameter in &mut self.parameters {
+      parameter.1.resolve(resolver, cache);
+    }
+
     if let Some(return_type) = &mut self.return_type {
       return_type.resolve(resolver, cache);
     }
   }
 }
 
-impl Resolvable for ast::StructType {
+impl Resolve for ast::StructType {
   fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: Implement?
   }
@@ -90,37 +104,37 @@ impl Resolvable for ast::StructType {
   }
 }
 
-impl Resolvable for ast::UnaryExpr {
+impl Resolve for ast::UnaryExpr {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.expr.resolve(resolver, cache);
   }
 }
 
-impl Resolvable for ast::Enum {
+impl Resolve for ast::Enum {
   //
 }
 
-impl Resolvable for ast::AssignStmt {
+impl Resolve for ast::AssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.assignee_expr.resolve(resolver, cache);
     self.value.resolve(resolver, cache);
   }
 }
 
-impl Resolvable for ast::ContinueStmt {
+impl Resolve for ast::ContinueStmt {
   //
 }
 
-impl Resolvable for ast::ArrayIndexing {
+impl Resolve for ast::ArrayIndexing {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.index.resolve(resolver, cache);
 
     self.target_key =
-      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::VariableOrParameter));
+      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::StaticOrVariableOrParameter));
   }
 }
 
-impl Resolvable for ast::ArrayValue {
+impl Resolve for ast::ArrayValue {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for element in &mut self.elements {
       element.resolve(resolver, cache);
@@ -128,7 +142,7 @@ impl Resolvable for ast::ArrayValue {
   }
 }
 
-impl Resolvable for ast::UnsafeBlockStmt {
+impl Resolve for ast::UnsafeBlockStmt {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.0.declare(resolver, cache);
   }
@@ -138,26 +152,26 @@ impl Resolvable for ast::UnsafeBlockStmt {
   }
 }
 
-impl Resolvable for ast::Parameter {
+impl Resolve for ast::Parameter {
   //
 }
 
-impl Resolvable for ast::VariableOrMemberRef {
+impl Resolve for ast::VariableOrMemberRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     // FIXME: Only accessing the base name of the scope qualifier.
     self.target_key = resolver.lookup_or_error(&(
       self.scope_qualifier.0.clone(),
-      SymbolKind::VariableOrParameter,
+      SymbolKind::StaticOrVariableOrParameter,
     ));
   }
 }
 
-impl Resolvable for ast::BreakStmt {
+impl Resolve for ast::BreakStmt {
   //
 }
 
-impl Resolvable for ast::LoopStmt {
+impl Resolve for ast::LoopStmt {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(condition) = &mut self.condition {
       condition.declare(resolver, cache);
@@ -175,7 +189,7 @@ impl Resolvable for ast::LoopStmt {
   }
 }
 
-impl Resolvable for ast::IfStmt {
+impl Resolve for ast::IfStmt {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.condition.declare(resolver, cache);
     self.then_block.declare(resolver, cache);
@@ -189,14 +203,14 @@ impl Resolvable for ast::IfStmt {
   }
 }
 
-impl Resolvable for ast::LetStmt {
+impl Resolve for ast::LetStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.ty.resolve(resolver, cache);
     self.value.resolve(resolver, cache);
   }
 }
 
-impl Resolvable for ast::ReturnStmt {
+impl Resolve for ast::ReturnStmt {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(value) = &mut self.value {
       value.declare(resolver, cache);
@@ -210,7 +224,7 @@ impl Resolvable for ast::ReturnStmt {
   }
 }
 
-impl Resolvable for ast::Block {
+impl Resolve for ast::Block {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for statement in &mut self.statements {
       statement.declare(resolver, cache);
@@ -228,11 +242,11 @@ impl Resolvable for ast::Block {
   }
 }
 
-impl Resolvable for ast::Literal {
+impl Resolve for ast::Literal {
   //
 }
 
-impl Resolvable for ast::Function {
+impl Resolve for ast::Function {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.prototype.declare(resolver, cache);
     self.body.declare(resolver, cache);
@@ -246,11 +260,13 @@ impl Resolvable for ast::Function {
   }
 }
 
-impl Resolvable for ast::Extern {
-  // TODO: Might need to call `resolve` on the return type (ex. for `UserDefinedType`)? Actually, invoking `resolve` on the prototype should be enough.
+impl Resolve for ast::ExternFunction {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.prototype.resolve(resolver, cache);
+  }
 }
 
-impl Resolvable for ast::Definition {
+impl Resolve for ast::Definition {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     let symbol = (self.name.clone(), self.symbol_kind.clone());
 
@@ -277,7 +293,7 @@ impl Resolvable for ast::Definition {
   }
 }
 
-impl Resolvable for ast::FunctionCall {
+impl Resolve for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
@@ -291,13 +307,13 @@ impl Resolvable for ast::FunctionCall {
   }
 }
 
-impl Resolvable for ast::ExprStmt {
+impl Resolve for ast::ExprStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.expr.resolve(resolver, cache);
   }
 }
 
-impl Resolvable for ast::BinaryExpr {
+impl Resolve for ast::BinaryExpr {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.left.declare(resolver, cache);
     self.right.declare(resolver, cache);
@@ -413,7 +429,10 @@ impl NameResolver {
     scope_qualifier: &ast::ScopeQualifier,
     cache: &cache::Cache,
   ) -> Option<&cache::DefinitionKey> {
-    let definition_key = self.lookup(&(scope_qualifier.0.clone(), SymbolKind::VariableOrParameter));
+    let definition_key = self.lookup(&(
+      scope_qualifier.0.clone(),
+      SymbolKind::StaticOrVariableOrParameter,
+    ));
 
     if let Some(definition) = definition_key {
       let declaration = cache.declarations.get(definition).unwrap().borrow();

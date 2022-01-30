@@ -5,7 +5,8 @@ macro_rules! dispatch {
   ($node:expr, $target_fn:expr $(, $($args:expr),* )? ) => {
     match $node {
       $crate::ast::Node::Literal(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Extern(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::ExternFunction(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::ExternStatic(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Function(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Block(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
@@ -71,7 +72,8 @@ pub enum Type {
 // TODO: Write a macro that both defines this and `as_x_node()` (which alternatively yields `unreachable!()`) methods.
 pub enum Node {
   Literal(Literal),
-  Extern(Extern),
+  ExternFunction(ExternFunction),
+  ExternStatic(ExternStatic),
   Function(Function),
   Block(Block),
   ReturnStmt(ReturnStmt),
@@ -168,11 +170,14 @@ pub struct Prototype {
   pub is_variadic: bool,
 }
 
-pub struct Extern {
+pub struct ExternFunction {
   pub name: String,
   pub prototype: Prototype,
   pub attributes: Vec<Attribute>,
 }
+
+// TODO: What about the type? Do we care?
+pub struct ExternStatic(pub String, pub Type);
 
 pub struct Attribute {
   pub name: String,
@@ -233,6 +238,8 @@ pub struct StructType {
 }
 
 pub enum OperatorKind {
+  And,
+  Or,
   Not,
   AddressOf,
   Add,

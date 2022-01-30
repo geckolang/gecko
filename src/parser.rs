@@ -37,6 +37,7 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
   }
 }
 
+// TODO: Can't we use this to determine whether a token is an operator or not?
 fn get_token_precedence(token: &lexer::TokenKind) -> usize {
   // FIXME: What about the `not` operator, and others?
   match token {
@@ -44,7 +45,9 @@ fn get_token_precedence(token: &lexer::TokenKind) -> usize {
     | lexer::TokenKind::SymbolMinus
     | lexer::TokenKind::SymbolEqual
     | lexer::TokenKind::SymbolLessThan
-    | lexer::TokenKind::SymbolGreaterThan => 1,
+    | lexer::TokenKind::SymbolGreaterThan
+    | lexer::TokenKind::KeywordAnd
+    | lexer::TokenKind::KeywordOr => 1,
     lexer::TokenKind::SymbolAsterisk | lexer::TokenKind::SymbolSlash => 2,
     _ => 0,
   }
@@ -111,6 +114,8 @@ impl<'a> Parser<'a> {
         | lexer::TokenKind::SymbolSlash
         | lexer::TokenKind::SymbolLessThan
         | lexer::TokenKind::SymbolGreaterThan
+        | lexer::TokenKind::KeywordAnd
+        | lexer::TokenKind::KeywordOr
     ) || matches!(token, lexer::TokenKind::SymbolEqual if self.peek_is(&lexer::TokenKind::SymbolEqual))
   }
 
@@ -259,6 +264,7 @@ impl<'a> Parser<'a> {
     let current_token = self.get();
 
     let size = match current_token {
+      lexer::TokenKind::TypeInt8 => ast::IntSize::I8,
       lexer::TokenKind::TypeInt16 => ast::IntSize::I16,
       lexer::TokenKind::TypeInt32 => ast::IntSize::I32,
       lexer::TokenKind::TypeInt64 => ast::IntSize::I64,
@@ -304,9 +310,10 @@ impl<'a> Parser<'a> {
     // TODO: Support for more types.
     match self.get() {
       // TODO: Other types as well.
-      lexer::TokenKind::TypeInt16 | lexer::TokenKind::TypeInt32 | lexer::TokenKind::TypeInt64 => {
-        self.parse_int_type()
-      }
+      lexer::TokenKind::TypeInt8
+      | lexer::TokenKind::TypeInt16
+      | lexer::TokenKind::TypeInt32
+      | lexer::TokenKind::TypeInt64 => self.parse_int_type(),
       lexer::TokenKind::TypeBool => self.parse_bool_type(),
       lexer::TokenKind::TypeString => {
         self.skip();
@@ -424,8 +431,11 @@ impl<'a> Parser<'a> {
   }
 
   /// extern fn %prototype ';'
-  fn parse_extern(&mut self, attributes: Vec<ast::Attribute>) -> ParserResult<ast::Definition> {
-    // TODO: Support for visibility.
+  fn parse_extern_function(
+    &mut self,
+    attributes: Vec<ast::Attribute>,
+  ) -> ParserResult<ast::Definition> {
+    // TODO: Support for visibility?
 
     skip_past!(self, &lexer::TokenKind::KeywordExtern);
     skip_past!(self, &lexer::TokenKind::KeywordFn);
@@ -435,7 +445,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
-    let extern_node = ast::Extern {
+    let extern_function = ast::ExternFunction {
       name: name.clone(),
       prototype,
       attributes,
@@ -444,7 +454,29 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
-      node_ref_cell: cache::create_cached_node(ast::Node::Extern(extern_node)),
+      node_ref_cell: cache::create_cached_node(ast::Node::ExternFunction(extern_function)),
+      definition_key: self.cache.create_definition_key(),
+    })
+  }
+
+  fn parse_extern_static(&mut self) -> ParserResult<ast::Definition> {
+    skip_past!(self, &lexer::TokenKind::KeywordExtern);
+    skip_past!(self, &lexer::TokenKind::KeywordStatic);
+
+    let name = self.parse_name()?;
+
+    skip_past!(self, &lexer::TokenKind::SymbolColon);
+
+    let ty = self.parse_type()?;
+
+    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
+
+    let extern_static = ast::ExternStatic(name.clone(), ty);
+
+    Ok(ast::Definition {
+      name,
+      symbol_kind: name_resolution::SymbolKind::StaticOrVariableOrParameter,
+      node_ref_cell: cache::create_cached_node(ast::Node::ExternStatic(extern_static)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -525,7 +557,12 @@ impl<'a> Parser<'a> {
     let definition = match token {
       // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
       lexer::TokenKind::KeywordFn => ast::Node::Definition(self.parse_function(attributes)?),
-      lexer::TokenKind::KeywordExtern => ast::Node::Definition(self.parse_extern(attributes)?),
+      lexer::TokenKind::KeywordExtern if self.peek_is(&lexer::TokenKind::KeywordFn) => {
+        ast::Node::Definition(self.parse_extern_function(attributes)?)
+      }
+      lexer::TokenKind::KeywordExtern if self.peek_is(&lexer::TokenKind::KeywordStatic) => {
+        ast::Node::Definition(self.parse_extern_static()?)
+      }
       lexer::TokenKind::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
       lexer::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_type()?),
       _ => {
@@ -597,7 +634,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::VariableOrParameter,
+      symbol_kind: name_resolution::SymbolKind::StaticOrVariableOrParameter,
       node_ref_cell: cache::create_cached_node(ast::Node::LetStmt(let_stmt)),
       definition_key: self.cache.create_definition_key(),
     })
@@ -679,12 +716,34 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::LiteralInt(value) => {
         self.skip();
 
+        // TODO: Temporary syntax, until casting is implemented.
+        let int_type = if self.is(&lexer::TokenKind::SymbolParenthesesL) {
+          self.skip();
+
+          let int_type = self.parse_int_type()?;
+
+          skip_past!(self, &lexer::TokenKind::SymbolParenthesesR);
+
+          Some(int_type)
+        } else {
+          None
+        };
+
         let mut size = minimum_int_size_of(&value);
 
         // TODO: Deal with unsigned integers here?
         // Default size to 32 bit-width.
         if size < ast::IntSize::I32 {
           size = ast::IntSize::I32;
+        }
+
+        // TODO: Temporary.
+        if let Some(int_type) = int_type {
+          if let ast::Type::Primitive(ast::PrimitiveType::Int(type_size)) = int_type {
+            size = type_size;
+          } else {
+            unreachable!();
+          }
         }
 
         ast::Literal::Int(value, size)
@@ -793,6 +852,8 @@ impl<'a> Parser<'a> {
     let current_token = self.get().clone();
 
     let operator = match current_token {
+      lexer::TokenKind::KeywordAnd => ast::OperatorKind::And,
+      lexer::TokenKind::KeywordOr => ast::OperatorKind::Or,
       lexer::TokenKind::SymbolBang => ast::OperatorKind::Not,
       lexer::TokenKind::SymbolPlus => ast::OperatorKind::Add,
       lexer::TokenKind::SymbolMinus => ast::OperatorKind::SubtractOrNegate,

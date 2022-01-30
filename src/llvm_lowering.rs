@@ -24,6 +24,21 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::ExternStatic {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let llvm_global_value =
+      generator
+        .llvm_module
+        .add_global(generator.lower_type(&self.1, cache), None, self.0.as_str());
+
+    Some(llvm_global_value.as_basic_value_enum())
+  }
+}
+
 impl Lower for ast::StructValue {
   fn lower<'a, 'ctx>(
     &self,
@@ -96,12 +111,9 @@ impl Lower for ast::AssignStmt {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.value.lower(generator, cache).unwrap();
 
-    generator.assign_flag = true;
-
-    let llvm_target = self.assignee_expr.lower(generator, cache).unwrap();
-
-    // NOTE: The assignee might also lower the flag.
-    generator.assign_flag = false;
+    let llvm_target = generator
+      .lower_without_access(&self.assignee_expr, cache)
+      .unwrap();
 
     generator
       .llvm_builder
@@ -147,7 +159,7 @@ impl Lower for ast::ArrayIndexing {
       );
 
       // TODO: Should we actually be de-referencing the pointer here?
-      Some(generator.dereference(llvm_gep_ptr))
+      Some(generator.access(llvm_gep_ptr))
     }
   }
 }
@@ -204,7 +216,7 @@ impl Lower for ast::ArrayValue {
 
     // TODO: Might not need to load the array in order to initialize it, but to return it?
     let llvm_array_value = generator
-      .dereference(llvm_array_ptr)
+      .access(llvm_array_ptr)
       .into_array_value()
       .as_basic_value_enum();
 
@@ -415,6 +427,22 @@ impl Lower for ast::BinaryExpr {
           "float.eq_op",
         )
         .as_basic_value_enum(),
+      ast::OperatorKind::And => generator
+        .llvm_builder
+        .build_and(
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "and_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Or => generator
+        .llvm_builder
+        .build_or(
+          llvm_left_value.into_int_value(),
+          llvm_right_value.into_int_value(),
+          "or_op",
+        )
+        .as_basic_value_enum(),
       // TODO: Support for when comparing equality of pointers/references.
       // TODO: Support for all operators.
       _ => todo!(),
@@ -431,16 +459,13 @@ impl Lower for ast::VariableOrMemberRef {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let skip_implicit_deref = generator.assign_flag;
+    // FIXME: Verify that the logic for automatic access is correct in this function.
 
-    generator.assign_flag = false;
-
+    // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let llvm_value = generator.memoize_or_retrieve(self.target_key.unwrap(), cache);
 
-    // TODO: This removes ability to use pointers at all. For this reason, it was commented out.
-    // TODO: This logic is here to make up for parameters not being pointer values. Is this okay?
-    Some(if !skip_implicit_deref {
-      generator.attempt_dereference(llvm_value)
+    Some(if generator.expecting_access {
+      generator.attempt_access(llvm_value)
     } else {
       llvm_value
     })
@@ -608,7 +633,7 @@ impl Lower for ast::Function {
 
     // TODO: Investigate whether this is enough. What about nested pointer types (`**`, etc.)?
     if let Some(return_type) = llvm_function_type.get_return_type() {
-      generator.return_expects_rvalue = !return_type.is_pointer_type();
+      generator.return_expects_access = !return_type.is_pointer_type();
     }
 
     let is_main = self.name == MAIN_FUNCTION_NAME;
@@ -675,7 +700,7 @@ impl Lower for ast::Function {
   }
 }
 
-impl Lower for ast::Extern {
+impl Lower for ast::ExternFunction {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -723,19 +748,7 @@ impl Lower for ast::ReturnStmt {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_return_value = if let Some(return_value) = &self.value {
-      let llvm_value = return_value.lower(generator, cache).unwrap();
-
-      // TODO: Should this only apply for return statements? What about variable declarations or assignments?
-      // Perform an implicit dereference if applicable.
-      let llvm_final_value =
-        // TODO: What if we're dealing with nested pointers? Investigate.
-        if generator.return_expects_rvalue && llvm_value.get_type().is_pointer_type() {
-          generator.dereference(llvm_value.into_pointer_value())
-        } else {
-          llvm_value
-        };
-
-      Some(llvm_final_value)
+      Some(return_value.lower(generator, cache).unwrap())
     } else {
       None
     };
@@ -752,10 +765,10 @@ impl Lower for ast::UnaryExpr {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_value = self.expr.lower(generator, cache).unwrap();
-
     Some(match self.operator {
       ast::OperatorKind::Not => {
+        let llvm_value = self.expr.lower(generator, cache).unwrap();
+
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
         generator
           .llvm_builder
@@ -763,6 +776,8 @@ impl Lower for ast::UnaryExpr {
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
+        let llvm_value = self.expr.lower(generator, cache).unwrap();
+
         // NOTE: We expect the value to be an integer or float. This should be enforced during type-checking.
         if llvm_value.is_int_value() {
           generator
@@ -780,13 +795,12 @@ impl Lower for ast::UnaryExpr {
         // FIXME: Also, have to verify lifetimes. This isn't nearly started.
         // FIXME: Cannot bind references to temporary values. Must only be to existing definitions. This should be enforced during type-checking.
 
-        // TODO: Hot-fix for avoiding temporary values.
-        assert!(llvm_value.is_pointer_value());
-
-        llvm_value
+        generator.lower_without_access(&self.expr, cache).unwrap()
       }
       ast::OperatorKind::MultiplyOrDereference => {
-        generator.dereference(llvm_value.into_pointer_value())
+        let llvm_value = self.expr.lower(generator, cache).unwrap();
+
+        generator.access(llvm_value.into_pointer_value())
       }
       _ => unreachable!(),
     })
@@ -803,7 +817,7 @@ impl Lower for ast::LetStmt {
 
     let llvm_alloca_ptr = generator
       .llvm_builder
-      .build_alloca(llvm_type, self.name.as_str());
+      .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
 
     generator.let_stmt_allocation = Some(llvm_alloca_ptr);
 
@@ -841,7 +855,7 @@ impl Lower for ast::FunctionCall {
     let llvm_call_value = generator.llvm_builder.build_call(
       inkwell::values::CallableValue::try_from(llvm_target_function).unwrap(),
       llvm_arguments.as_slice(),
-      format!("{}.call", self.callee_id.to_string()).as_str(),
+      format!("call.{}", self.callee_id.to_string()).as_str(),
     );
 
     let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();
@@ -917,9 +931,13 @@ pub struct LlvmGenerator<'a, 'ctx> {
     std::collections::HashMap<cache::DefinitionKey, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
   next_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
-  return_expects_rvalue: bool,
+  return_expects_access: bool,
   let_stmt_allocation: Option<inkwell::values::PointerValue<'ctx>>,
-  assign_flag: bool,
+  // TODO: Consider merging implicit dereference flags.
+  /// Whether the construct is expecting an implicit `load` instruction.
+  ///
+  /// Will always be `true` by default, unless a construct requires otherwise.
+  expecting_access: bool,
   /// The definition key of the function currently being emitted (if any).
   /// Used to be able to handle recursive calls.
   pending_function_definition_key: Option<cache::DefinitionKey>,
@@ -940,29 +958,48 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_cached_values: std::collections::HashMap::new(),
       llvm_cached_types: std::collections::HashMap::new(),
       next_block: None,
-      return_expects_rvalue: false,
+      return_expects_access: false,
       let_stmt_allocation: None,
-      assign_flag: false,
+      expecting_access: true,
       pending_function_definition_key: None,
     }
   }
 
-  fn dereference(
+  fn lower_without_access(
+    &mut self,
+    node: &ast::Node,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let expecting_access_buffer = self.expecting_access;
+
+    self.expecting_access = false;
+
+    let llvm_value = node.lower(self, cache);
+
+    self.expecting_access = expecting_access_buffer;
+
+    llvm_value
+  }
+
+  /// Insert a `load` instruction for the given LLVM value.
+  ///
+  /// Equivalent to a de-reference of a pointer.
+  fn access(
     &mut self,
     llvm_value: inkwell::values::PointerValue<'ctx>,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     self
       .llvm_builder
-      .build_load(llvm_value, "pointer.deref")
+      .build_load(llvm_value, "access")
       .as_basic_value_enum()
   }
 
-  fn attempt_dereference(
+  fn attempt_access(
     &mut self,
     llvm_value: inkwell::values::BasicValueEnum<'ctx>,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     if llvm_value.is_pointer_value() {
-      self.dereference(llvm_value.into_pointer_value())
+      self.access(llvm_value.into_pointer_value())
     } else {
       llvm_value
     }

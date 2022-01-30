@@ -83,6 +83,10 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::ExternStatic {
+  //
+}
+
 impl TypeCheck for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> Option<ast::Type> {
     let struct_type_node = cache.get(&self.target_key.unwrap());
@@ -182,14 +186,22 @@ impl TypeCheck for ast::UnaryExpr {
       }
       ast::OperatorKind::AddressOf => {
         // TODO: Implement.
-        todo!();
       }
       _ => unreachable!(),
     };
   }
 
   fn infer_type(&self, cache: &cache::Cache) -> Option<ast::Type> {
-    self.expr.infer_type(cache)
+    let expr_type = self.expr.infer_type(cache);
+
+    if let Some(expr_type) = expr_type {
+      return Some(match self.operator {
+        ast::OperatorKind::AddressOf => ast::Type::Pointer(Box::new(expr_type)),
+        _ => expr_type,
+      });
+    }
+
+    None
   }
 }
 
@@ -326,7 +338,7 @@ impl TypeCheck for ast::UnsafeBlockStmt {
   }
 }
 
-impl TypeCheck for ast::Extern {
+impl TypeCheck for ast::ExternFunction {
   //
 }
 
@@ -560,7 +572,7 @@ impl TypeCheck for ast::FunctionCall {
 
     let prototype = match function_or_extern {
       ast::Node::Function(function) => &function.prototype,
-      ast::Node::Extern(extern_) => &extern_.prototype,
+      ast::Node::ExternFunction(extern_) => &extern_.prototype,
       _ => unreachable!(),
     };
 
@@ -580,7 +592,7 @@ impl TypeCheck for ast::FunctionCall {
     let attributes;
 
     match callee {
-      ast::Node::Extern(extern_) => {
+      ast::Node::ExternFunction(extern_) => {
         if !type_context.in_unsafe_block {
           type_context.diagnostics.error(format!(
             "extern function call to `{}` may only occur inside an unsafe block",
