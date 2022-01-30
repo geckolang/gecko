@@ -77,19 +77,17 @@ _🔨 &mdash; Work in progress._ _✔️ &mdash; Completed._
 
 ### Language specification
 
-#### &mdash; Naming & name mangling
+#### &mdash; Identifiers &amp; naming
 
-Naming is straight forward. Whitespace and most special characters are disallowed in names, however the following exceptions exist: `$`, `_`. Names must not start with a number. They must also not be reserved keywords or types.
+Naming is straight forward. Whitespace and most special characters are disallowed in names (with the exception of `_`). Identifiers must not start with a number. They must also not be reserved keywords or types.
 
-Here is the exact regular expression rule for names:
+Here is the exact regular expression rule for identifiers:
 
 ```r
 ^([_a-zA-Z]+[\w]*)
 ```
 
 [_🔗test this regular expression_](https://regex101.com/r/KDIWdL/1)
-
-Name mangling affects functions, structs, and globals. Names of any entities defined on the global environment (under the lack of a module definition) are _not_ name mangled. In other words, only entities under module are affected by name mangling. Externs are never name mangled, even if declared under a module.
 
 #### &mdash; Comments
 
@@ -98,6 +96,14 @@ Only single-line comments are available for simplicity. All comments start with 
 ```py
 # This is a comment.
 ```
+
+It should be noted that string literals take precedence over comments (as one would logically expected):
+
+```
+"# This is a string literal."
+```
+
+Please note that some code examples might include comments using `//`, this is illegal syntax and it is only used for syntax highlighting on this document.
 
 #### &mdash; Types
 
@@ -138,69 +144,56 @@ fn do_nothing() { }
 
 #### &mdash; Variables
 
-Variable declaration, assignment and reference follow straight-forward rules and adhere to common conventions. This makes creating, and using variables easy and most programmers will be familiar with this style. Variable names adhere to the `name` rule.
+Variable declaration, assignment and reference follow straight-forward rules and adhere to common conventions. This makes creating, and using variables easy and most programmers will be familiar with this style. Variable names adhere to the `identifier` rule.
 
 ```rust
-fn double_number(number: i32): i32 {
-  let result: i32 = number * 2;
-
-  return result;
-}
+let product: i32 = 3 * 4;
 ```
 
-For convenience, variables can also be declared without specifying their types by using the `let` keyword for type inference. When inferring type from a literal integer, the preferred type inferred by the compiler will be `i32`, unless the integer cannot fit into `i32`'s bit-size, in which case it will be either `i64` or `i128` depending on the value's required bit-size. For example, a value larger than `2147483647` will be inferred as `i64` because it cannot fit into `i32`.
+For convenience, variables can also be declared without specifying their types by using the `let` keyword for type inference. When inferring type from a literal integer, the preferred type inferred by the compiler will be `i32`, unless the integer cannot fit into `i32`'s bit-size, in which case it will be either `i64` or `i128` depending on the value's required bit-width. For example, a value larger than `2147483647` will be inferred as `i64` because it cannot fit into `i32`.
+
+Variable declarations are _immutable_ by default, unless the `mut` keyword is used.
 
 ```rust
-fn get_one(): i32 {
-  return 1;
-}
-
-fn compute(factor: i32): i32 {
-  let value = get_one();
-
-  return value * factor;
-}
+let five: i32 = 5; // type is explicitly given
+let inferred_three = 3; // inferred type is `i32`
+let big_number_i64 = 2147483647 + 1; // type is inferred to be `i64`
+let mut counter = 0; // can be mutated/re-assigned
 ```
 
-#### &mdash; Statements &amp; loops
+#### &mdash; Loops
 
-The language includes support for conditional statements, variable statements, and loops.
+There is a single loop construct that can be used to emulate while, for, and infinite loops. The loop construct is a _pre-test loop_, meaning its condition is always evaluated before its body is executed.
 
-```rust
-fn loop_example() {
-  let mut number = 1;
+You can use the `continue` and `break` keywords as statements inside the loop body to control the loop.
 
-  number = 2;
+```rs
+loop { } // no condition specified: infinite loop (the condition is assumed to be `true`)
+loop condition { } // pre-test loop with a condition, emulates a while loop
+```
 
-  if true { }
-  else if false { }
-  else { }
+Here's a code example that will iterate 10 times:
 
-  loop { }
+```rs
+let mut counter = 0;
 
-  loop true { break; }
+loop counter < 9 {
+  // .. code ..
 
-  match true {
-    true -> do_work(),
-    false -> do_work(),
-    _ -> do_work()
-  }
-
-  return;
+  counter = counter + 1;
 }
 ```
 
 #### &mdash; Attributes
 
-There are several intrinsic attributes that can be used to modify the behavior of functions. Below is the syntax for attributes:
+Attributes can be used to modify the behavior of functions and externs. They act as metadata, and only exist during compile-time. Below is the syntax for attributes:
 
-```bash
-@attribute_name # no arguments
+```java
+@attribute_name // no arguments, equivalent to `@attribute_name()`
 @example_1(arguments)
 ```
 
-Attribute names must be valid identifiers, and they may optionally contain an argument list. Having duplicate attributes attached
-to a single function will result in an error, as well as the use of an undefined/unrecognized attribute.
+Attribute names must be valid identifiers, and they may optionally contain an argument list. Having duplicate attributes attached to a single function will result in an error, as well as the use of an undefined/unrecognized attribute.
 
 Below is a list of all the intrinsic attributes available:
 
