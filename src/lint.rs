@@ -87,6 +87,10 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::IntrinsicCall {
+  //
+}
+
 impl Lint for ast::ExternStatic {
   fn lint(&self, _cache: &mut cache::Cache, _context: &mut LintContext) {
     //

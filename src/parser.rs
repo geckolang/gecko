@@ -831,6 +831,7 @@ impl<'a> Parser<'a> {
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     // TODO: Might need to revisit. Might need to make room for other cases in the future (binary/unary operators, etc).
     Ok(match self.get() {
+      lexer::TokenKind::SymbolTilde => ast::Node::IntrinsicCall(self.parse_intrinsic_call()?),
       lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolParenthesesL) => {
         ast::Node::FunctionCall(self.parse_function_call()?)
       }
@@ -955,6 +956,32 @@ impl<'a> Parser<'a> {
       target_key: None,
       arguments,
     })
+  }
+
+  fn parse_intrinsic_call(&mut self) -> ParserResult<ast::IntrinsicCall> {
+    skip_past!(self, &lexer::TokenKind::SymbolTilde);
+
+    let kind = match self.parse_name()?.as_str() {
+      "panic" => ast::IntrinsicKind::Panic,
+      _ => return Err(self.expected("valid intrinsic name")),
+    };
+
+    skip_past!(self, &lexer::TokenKind::SymbolParenthesesL);
+
+    let mut arguments = vec![];
+
+    while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
+      arguments.push(self.parse_expr()?);
+
+      // TODO: What if the comma is omitted?
+      if self.is(&lexer::TokenKind::SymbolComma) {
+        self.skip();
+      }
+    }
+
+    skip_past!(self, &lexer::TokenKind::SymbolParenthesesR);
+
+    Ok(ast::IntrinsicCall { kind, arguments })
   }
 
   /// %name

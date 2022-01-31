@@ -47,6 +47,10 @@ impl Resolve for ast::Node {
   }
 }
 
+impl Resolve for ast::IntrinsicCall {
+  //
+}
+
 impl Resolve for ast::ExternStatic {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.1.resolve(resolver, cache);

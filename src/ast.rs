@@ -14,6 +14,7 @@ macro_rules! dispatch {
       $crate::ast::Node::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::FunctionCall(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
@@ -82,6 +83,7 @@ pub enum Node {
   IfStmt(IfStmt),
   LoopStmt(LoopStmt),
   FunctionCall(FunctionCall),
+  IntrinsicCall(IntrinsicCall),
   BreakStmt(BreakStmt),
   ContinueStmt(ContinueStmt),
   ExprWrapperStmt(ExprStmt),
@@ -230,6 +232,15 @@ pub struct ExprStmt {
 pub struct FunctionCall {
   pub callee_id: ScopeQualifier,
   pub target_key: Option<cache::DefinitionKey>,
+  pub arguments: Vec<Node>,
+}
+
+pub enum IntrinsicKind {
+  Panic,
+}
+
+pub struct IntrinsicCall {
+  pub kind: IntrinsicKind,
   pub arguments: Vec<Node>,
 }
 

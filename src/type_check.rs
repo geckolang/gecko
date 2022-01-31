@@ -108,6 +108,10 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::IntrinsicCall {
+  // TODO: Implement.
+}
+
 impl TypeCheck for ast::ExternStatic {
   //
 }

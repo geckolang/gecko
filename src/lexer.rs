@@ -207,6 +207,7 @@ impl Lexer {
       // Otherwise, there is an escape sequence. Skip the escape character.
       self.read_char();
 
+      // TODO: Escape sequences may also occur for chars (single-characters).
       string += match self.current_char {
         Some('n') => "\n",
         Some('t') => "\t",
