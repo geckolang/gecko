@@ -619,6 +619,13 @@ impl Lower for ast::Literal {
         .llvm_builder
         .build_global_string_ptr(value.as_str(), "string_literal")
         .as_basic_value_enum(),
+      ast::Literal::Nullptr => generator
+        .llvm_context
+        // FIXME: The type should be correct. Otherwise, we'll get a type mismatch error when compiling the LLVM IR.
+        .i8_type()
+        .ptr_type(inkwell::AddressSpace::Generic)
+        .const_null()
+        .as_basic_value_enum(),
     })
   }
 }
@@ -1033,6 +1040,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .i8_type()
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum(),
+        // NOTE: The null primitive type is never lowered, only the nullptr value.
+        ast::PrimitiveType::Null => unreachable!(),
       },
       ast::Type::Array(element_type, size) => self
         .lower_type(&element_type, cache)

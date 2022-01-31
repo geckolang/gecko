@@ -819,6 +819,11 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::LiteralBool(_) => self.parse_bool_literal()?,
       lexer::TokenKind::LiteralInt(_) => self.parse_int_literal()?,
       lexer::TokenKind::LiteralString(_) => self.parse_string_literal()?,
+      lexer::TokenKind::LiteralNullptr => {
+        self.skip();
+
+        ast::Literal::Nullptr
+      }
       _ => return Err(self.expected("literal")),
     })
   }

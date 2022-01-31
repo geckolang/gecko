@@ -17,10 +17,30 @@ impl TypeCheckContext {
     }
   }
 
+  fn is_null_pointer_type(ty: &ast::Type) -> bool {
+    match ty {
+      ast::Type::Pointer(ty) => match ty.as_ref() {
+        ast::Type::Primitive(ast::PrimitiveType::Null) => true,
+        _ => false,
+      },
+      _ => false,
+    }
+  }
+
   /// Compare two types for equality.
   fn unify(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
-    let unboxed_type_a = Self::unbox_type(type_a, cache);
-    let unboxed_type_b = Self::unbox_type(type_b, cache);
+    let unboxed_type_a = Self::resolve_type(type_a, cache);
+    let unboxed_type_b = Self::resolve_type(type_b, cache);
+
+    // If both types are pointers, and at least one is a null pointer type, then always unify.
+    // This is because null pointers unify with any pointer type (any pointer can be null).
+    if matches!(unboxed_type_a, ast::Type::Pointer(_))
+      && matches!(unboxed_type_a, ast::Type::Pointer(_))
+      && (Self::is_null_pointer_type(&unboxed_type_a)
+        || Self::is_null_pointer_type(&unboxed_type_b))
+    {
+      return true;
+    }
 
     unboxed_type_a == unboxed_type_b
   }
@@ -38,15 +58,19 @@ impl TypeCheckContext {
     }
   }
 
+  // TODO: This might be redundant or bloat.
   /// Shortcut for unifying an optional type with a primitive type.
-  fn unify_with_primitive(ty: Option<ast::Type>, primitive: ast::PrimitiveType) -> bool {
-    ty == Some(ast::Type::Primitive(primitive))
+  fn unify_with_primitive(
+    ty: Option<ast::Type>,
+    primitive: ast::PrimitiveType,
+    cache: &cache::Cache,
+  ) -> bool {
+    Self::unify_option(ty.as_ref(), Some(&ast::Type::Primitive(primitive)), cache)
   }
 
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
-  // TODO: A better name might be `resolve_type`, or `unbox_and_resolve_type`?
-  /// Unbox a possible user-defined type, into a more concrete type.
-  fn unbox_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
+  /// Resolve a possible user-defined type, so it can be used properly.
+  fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
     match ty {
       ast::Type::UserDefined(user_defined_type) => {
         let target_type = cache.get(&user_defined_type.target_key.unwrap());
@@ -57,6 +81,7 @@ impl TypeCheckContext {
           _ => unreachable!(),
         }
       }
+      // TODO: What if it's a pointer to a user-defined type?
       // TODO: Cloning type on most cases! Inefficient.
       _ => ty.clone(),
     }
@@ -166,7 +191,7 @@ impl TypeCheck for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !TypeCheckContext::unify_with_primitive(expr_type, ast::PrimitiveType::Bool) {
+        if !TypeCheckContext::unify_with_primitive(expr_type, ast::PrimitiveType::Bool, cache) {
           type_context
             .diagnostics
             .error("can only negate boolean expressions".to_string());
@@ -376,6 +401,11 @@ impl TypeCheck for ast::Literal {
       ast::Literal::Char(_) => ast::PrimitiveType::Char,
       ast::Literal::Int(_, size) => ast::PrimitiveType::Int(size.clone()),
       ast::Literal::String(_) => ast::PrimitiveType::String,
+      ast::Literal::Nullptr => {
+        return Some(ast::Type::Pointer(Box::new(ast::Type::Primitive(
+          ast::PrimitiveType::Null,
+        ))))
+      }
     }))
   }
 }
@@ -385,6 +415,7 @@ impl TypeCheck for ast::IfStmt {
     if !TypeCheckContext::unify_with_primitive(
       self.condition.infer_type(cache),
       ast::PrimitiveType::Bool,
+      cache,
     ) {
       type_context
         .diagnostics
@@ -523,10 +554,11 @@ impl TypeCheck for ast::ReturnStmt {
         value_type.as_ref(),
         cache,
       ) {
-        type_context.diagnostics.error(format!(
-          "return statement value and function return type mismatch for function `{}`",
-          current_function.name
-        ));
+        // FIXME: Commented out for debugging.
+        // type_context.diagnostics.error(format!(
+        //   "return statement value and function return type mismatch for function `{}`",
+        //   current_function.name
+        // ));
       }
 
       value.type_check(type_context, cache);
@@ -662,6 +694,7 @@ impl TypeCheck for ast::LoopStmt {
       if !TypeCheckContext::unify_with_primitive(
         condition.infer_type(cache),
         ast::PrimitiveType::Bool,
+        cache,
       ) {
         type_context
           .diagnostics

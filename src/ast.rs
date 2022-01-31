@@ -57,6 +57,7 @@ pub enum PrimitiveType {
   Bool,
   Char,
   String,
+  Null,
 }
 
 #[derive(PartialEq, Clone)]
@@ -162,6 +163,7 @@ pub enum Literal {
   Int(u64, IntSize),
   Char(char),
   String(String),
+  Nullptr,
 }
 
 pub struct Prototype {
