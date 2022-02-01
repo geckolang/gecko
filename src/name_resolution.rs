@@ -56,7 +56,14 @@ impl Resolve for ast::Pattern {
     let symbol = (self.base_name.clone(), self.symbol_kind.clone());
 
     let lookup_result = match self.symbol_kind {
-      SymbolKind::StaticOrVariableOrParameter => resolver.relative_lookup(&symbol),
+      SymbolKind::StaticOrVariableOrParameter => {
+        println!(
+          " -- => performing relative lookup for {} ...",
+          self.base_name
+        );
+
+        resolver.relative_lookup(&symbol)
+      }
       SymbolKind::FunctionOrExtern => resolver.absolute_lookup(self),
       // TODO: What else? Maybe `unreachable!()`?
       _ => todo!(),
@@ -65,6 +72,7 @@ impl Resolve for ast::Pattern {
     if let Some(target_key) = lookup_result {
       self.target_key = Some(target_key.clone());
     } else {
+      println!(" !!! PRODUCED ERROR !!!!");
       resolver.produce_lookup_error(&symbol.0);
     }
   }
@@ -185,10 +193,7 @@ impl Resolve for ast::Parameter {
 
 impl Resolve for ast::VariableOrMemberRef {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.pattern.resolve(resolver, cache);
-
-    // TODO: A bit misleading, since it might still be `None` (if the pattern lookup failed).
-    self.target_key = self.pattern.target_key;
+    self.0.resolve(resolver, cache);
   }
 }
 
@@ -293,6 +298,8 @@ impl Resolve for ast::ExternFunction {
 
 impl Resolve for ast::Definition {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    println!(" ... defining : {}", self.name);
+
     let symbol = (self.name.clone(), self.symbol_kind.clone());
 
     // Check for existing definitions.
@@ -301,6 +308,7 @@ impl Resolve for ast::Definition {
         .diagnostic_builder
         .error(format!("re-definition of `{}`", self.name));
 
+      // TODO: What about calling the child's declare function?
       return;
     }
 
@@ -321,9 +329,6 @@ impl Resolve for ast::Definition {
 impl Resolve for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.callee_pattern.resolve(resolver, cache);
-
-    // TODO: A bit misleading, since it might still be `None` (if the pattern lookup failed).
-    self.target_key = self.callee_pattern.target_key;
 
     for argument in &mut self.arguments {
       argument.resolve(resolver, cache);
@@ -352,9 +357,10 @@ impl Resolve for ast::BinaryExpr {
 pub struct NameResolver {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   current_module_name: Option<String>,
-  /// Contains all declarations of the program, including absolute
-  /// (modules) and relative (variables).
-  scopes: std::collections::HashMap<String, Vec<Scope>>,
+  /// Contains the modules with their respective top-level definitions.
+  global_scopes: std::collections::HashMap<String, Scope>,
+  /// Contains volatile, relative scopes. This is reset when the module changes.
+  relative_scopes: Vec<Scope>,
 }
 
 impl NameResolver {
@@ -362,19 +368,27 @@ impl NameResolver {
     Self {
       diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
       current_module_name: None,
-      scopes: std::collections::HashMap::new(),
+      global_scopes: std::collections::HashMap::new(),
+      relative_scopes: Vec::new(),
     }
   }
 
   /// Set per-file. A new global scope is created per-module.
-  pub fn set_current_module(&mut self, name: String) {
+  pub fn create_module(&mut self, name: String) {
     // TODO: Can the module name possibly collide with an existing one?
 
     self.current_module_name = Some(name.clone());
 
     self
-      .scopes
-      .insert(name, vec![std::collections::HashMap::new()]);
+      .global_scopes
+      .insert(name, std::collections::HashMap::new());
+
+    self.relative_scopes.clear();
+  }
+
+  pub fn set_active_module(&mut self, name: String) {
+    // TODO: Unsafe? No checks.
+    self.current_module_name = Some(name.clone());
   }
 
   // TODO: Incomplete (cannot access `self` as `&Node`).
@@ -406,27 +420,26 @@ impl NameResolver {
     true
   }
 
-  /// Retrieve the scope stack of the current module.
-  fn get_scope_stack(&mut self) -> &mut Vec<Scope> {
-    self
-      .scopes
-      .get_mut(self.current_module_name.as_ref().unwrap())
-      .unwrap()
-  }
-
+  /// Retrieve the last pushed relative scope, or if there are none,
+  /// the global scope of the current module.
   fn get_current_scope(&mut self) -> &mut Scope {
-    self.get_scope_stack().last_mut().unwrap()
+    if self.relative_scopes.is_empty() {
+      self
+        .global_scopes
+        .get_mut(self.current_module_name.as_ref().unwrap())
+        .unwrap()
+    } else {
+      self.relative_scopes.last_mut().unwrap()
+    }
   }
 
   // TODO: Consider returning the pushed scope? Unless it's not actually used.
   fn push_scope(&mut self) {
-    self
-      .get_scope_stack()
-      .push(std::collections::HashMap::new());
+    self.relative_scopes.push(std::collections::HashMap::new());
   }
 
   fn pop_scope(&mut self) {
-    self.get_scope_stack().pop();
+    self.relative_scopes.pop();
   }
 
   /// Register a name on the last scope for name resolution lookups.
@@ -442,6 +455,7 @@ impl NameResolver {
       .error(format!("undefined reference to `{}`", name));
   }
 
+  // Lookup the global scope of the current module.
   fn absolute_lookup(&mut self, pattern: &ast::Pattern) -> Option<&cache::DefinitionKey> {
     // TODO: Consider whether to clone or use references.
     let module_name = pattern
@@ -449,7 +463,7 @@ impl NameResolver {
       .clone()
       .unwrap_or(self.current_module_name.clone().unwrap());
 
-    let global_scope = self.scopes.get(&module_name).unwrap().first().unwrap();
+    let global_scope = self.global_scopes.get(&module_name).unwrap();
     let symbol = (pattern.base_name.clone(), pattern.symbol_kind.clone());
 
     if let Some(definition_key) = global_scope.get(&symbol) {
@@ -459,12 +473,24 @@ impl NameResolver {
     None
   }
 
-  /// Lookup a symbol starting from the nearest scope, all the way to the global scope.
+  /// Lookup a symbol starting from the nearest scope, all the way to the global scope
+  /// of the current module.
   fn relative_lookup(&mut self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
-    for scope in self.get_scope_stack().iter().rev() {
+    // First attempt to find the symbol in the relative scopes.
+    for scope in self.relative_scopes.iter().rev() {
       if let Some(definition_key) = scope.get(&symbol) {
         return Some(definition_key);
       }
+    }
+
+    // Otherwise, attempt to find the symbol in the current module's global scope.
+    let global_scope = self
+      .global_scopes
+      .get(self.current_module_name.as_ref().unwrap())
+      .unwrap();
+
+    if let Some(definition_key) = global_scope.get(&symbol) {
+      return Some(definition_key);
     }
 
     None
@@ -529,6 +555,7 @@ impl NameResolver {
   }
 
   fn contains(&mut self, key: &Symbol) -> bool {
+    println!("-- contains check:");
     self.relative_lookup(key).is_some()
   }
 }

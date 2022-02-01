@@ -260,10 +260,14 @@ impl<'a> Parser<'a> {
         lexer::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
         lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
         lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
-        lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolEqual) => {
+        lexer::TokenKind::Identifier(_)
+          if self.after_pattern_is(&lexer::TokenKind::SymbolEqual) =>
+        {
           ast::Node::VariableAssignStmt(self.parse_assign_stmt()?)
         }
-        lexer::TokenKind::Identifier(_) if !self.peek_is(&lexer::TokenKind::SymbolParenthesesL) => {
+        lexer::TokenKind::Identifier(_)
+          if !self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
+        {
           ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
         }
         _ => {
@@ -853,16 +857,43 @@ impl<'a> Parser<'a> {
     })
   }
 
+  fn after_pattern_is(&self, token: &lexer::TokenKind) -> bool {
+    let mut index = self.index + 1;
+
+    // FIXME: This is hacky code. Fix up.
+    while match self.tokens.get(index) {
+      Some(value) => matches!(
+        value.0,
+        lexer::TokenKind::Identifier(_)
+          | lexer::TokenKind::SymbolDot
+          | lexer::TokenKind::SymbolColon
+      ),
+      None => false,
+    } {
+      index += 1;
+    }
+
+    // TODO: Implement logic to handle this (possible?) edge case.
+    if self.is_eof() {
+      todo!();
+    }
+
+    &self.tokens.get(index).unwrap().0 == token
+  }
+
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
-    // TODO: Might need to revisit. Might need to make room for other cases in the future (binary/unary operators, etc).
     Ok(match self.get() {
       lexer::TokenKind::SymbolTilde => ast::Node::IntrinsicCall(self.parse_intrinsic_call()?),
-      lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolParenthesesL) => {
+      lexer::TokenKind::Identifier(_)
+        if self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
+      {
         ast::Node::FunctionCall(self.parse_function_call()?)
       }
+      // FIXME: Use `after_pattern_is`.
       lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolBracketL) => {
         ast::Node::ArrayIndexing(self.parse_array_indexing()?)
       }
+      // FIXME: Use `after_pattern_is`.
       lexer::TokenKind::Identifier(_) => {
         ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
       }
@@ -978,7 +1009,6 @@ impl<'a> Parser<'a> {
 
     Ok(ast::FunctionCall {
       callee_pattern,
-      target_key: None,
       arguments,
     })
   }
@@ -1013,10 +1043,7 @@ impl<'a> Parser<'a> {
   fn parse_variable_or_member_ref(&mut self) -> ParserResult<ast::VariableOrMemberRef> {
     let pattern = self.parse_pattern(name_resolution::SymbolKind::StaticOrVariableOrParameter)?;
 
-    Ok(ast::VariableOrMemberRef {
-      pattern,
-      target_key: None,
-    })
+    Ok(ast::VariableOrMemberRef(pattern))
   }
 
   /// %name '=' %expr ';'

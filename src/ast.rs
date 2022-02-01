@@ -166,10 +166,7 @@ pub struct ArrayValue {
 
 pub struct UnsafeBlockStmt(pub Block);
 
-pub struct VariableOrMemberRef {
-  pub pattern: Pattern,
-  pub target_key: Option<cache::DefinitionKey>,
-}
+pub struct VariableOrMemberRef(pub Pattern);
 
 pub struct AssignStmt {
   pub assignee_expr: Box<Node>,
@@ -247,7 +244,6 @@ pub struct ExprStmt {
 
 pub struct FunctionCall {
   pub callee_pattern: Pattern,
-  pub target_key: Option<cache::DefinitionKey>,
   pub arguments: Vec<Node>,
 }
 

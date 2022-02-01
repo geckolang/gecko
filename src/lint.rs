@@ -82,13 +82,13 @@ impl LintContext {
 }
 
 impl Lint for ast::Node {
-  fn lint(&self, context: &mut cache::Cache, lint_context: &mut LintContext) {
-    crate::dispatch!(self, Lint::lint, context, lint_context);
+  fn lint(&self, cache: &mut cache::Cache, lint_context: &mut LintContext) {
+    crate::dispatch!(self, Lint::lint, cache, lint_context);
   }
 }
 
 impl Lint for ast::Pattern {
-  fn lint(&self, context: &mut cache::Cache, lint_context: &mut LintContext) {
+  fn lint(&self, _cache: &mut cache::Cache, _lint_context: &mut LintContext) {
     // TODO: Lint name(s).
   }
 }
@@ -280,7 +280,7 @@ impl Lint for ast::FunctionCall {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
     context
       .function_references
-      .insert(self.target_key.unwrap(), true);
+      .insert(self.callee_pattern.target_key.unwrap(), true);
   }
 }
 
@@ -343,7 +343,7 @@ impl Lint for ast::VariableOrMemberRef {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
     context
       .variable_references
-      .insert(self.target_key.unwrap(), true);
+      .insert(self.0.target_key.unwrap(), true);
   }
 }
 

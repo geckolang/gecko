@@ -512,7 +512,7 @@ impl Lower for ast::VariableOrMemberRef {
     // FIXME: Verify that the logic for automatic access is correct in this function.
 
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
-    let llvm_value = generator.memoize_or_retrieve(self.target_key.unwrap(), cache);
+    let llvm_value = generator.memoize_or_retrieve(self.0.target_key.unwrap(), cache);
 
     Some(if generator.expecting_access {
       generator.attempt_access(llvm_value)
@@ -906,7 +906,7 @@ impl Lower for ast::FunctionCall {
       .collect::<Vec<_>>();
 
     let llvm_target_function = generator
-      .memoize_or_retrieve(self.target_key.unwrap(), cache)
+      .memoize_or_retrieve(self.callee_pattern.target_key.unwrap(), cache)
       .into_pointer_value();
 
     let llvm_call_value = generator.llvm_builder.build_call(

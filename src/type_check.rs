@@ -266,7 +266,7 @@ impl TypeCheck for ast::AssignStmt {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match self.assignee_expr.as_ref() {
         ast::Node::VariableOrMemberRef(variable_ref) => {
-          let declaration = cache.get(&variable_ref.target_key.unwrap());
+          let declaration = cache.get(&variable_ref.0.target_key.unwrap());
 
           match &*declaration {
             ast::Node::LetStmt(let_stmt) if !let_stmt.is_mutable => {
@@ -389,9 +389,9 @@ impl TypeCheck for ast::Block {
 
 impl TypeCheck for ast::VariableOrMemberRef {
   fn infer_type(&self, cache: &cache::Cache) -> Option<ast::Type> {
-    // TODO: Simplify.
-    let target_variable = &*cache.get(&self.target_key.unwrap());
+    let target_variable = &*cache.get(&self.0.target_key.unwrap());
 
+    // TODO: Why not infer its type? Is this correct? (Let statement doesn't have type!).
     let variable_type = match target_variable {
       ast::Node::LetStmt(let_stmt) => &let_stmt.ty,
       ast::Node::Parameter(parameter) => &parameter.1,
@@ -608,7 +608,7 @@ impl TypeCheck for ast::Function {
 
 impl TypeCheck for ast::FunctionCall {
   fn infer_type(&self, cache: &cache::Cache) -> Option<ast::Type> {
-    let function_or_extern = &*cache.get(&self.target_key.unwrap());
+    let function_or_extern = &*cache.get(&self.callee_pattern.target_key.unwrap());
 
     let prototype = match function_or_extern {
       ast::Node::Function(function) => &function.prototype,
@@ -624,7 +624,7 @@ impl TypeCheck for ast::FunctionCall {
     // TODO: Need access to the current function.
     // TODO: Ensure externs and unsafe function are only called from unsafe functions.
 
-    let callee = &*cache.get(self.target_key.as_ref().unwrap());
+    let callee = &*cache.get(self.callee_pattern.target_key.as_ref().unwrap());
 
     // TODO: Better, simpler way of doing this?
     let name;
