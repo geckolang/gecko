@@ -56,14 +56,7 @@ impl Resolve for ast::Pattern {
     let symbol = (self.base_name.clone(), self.symbol_kind.clone());
 
     let lookup_result = match self.symbol_kind {
-      SymbolKind::StaticOrVariableOrParameter => {
-        println!(
-          " -- => performing relative lookup for {} ...",
-          self.base_name
-        );
-
-        resolver.relative_lookup(&symbol)
-      }
+      SymbolKind::StaticOrVariableOrParameter => resolver.relative_lookup(&symbol),
       SymbolKind::FunctionOrExtern => resolver.absolute_lookup(self),
       // TODO: What else? Maybe `unreachable!()`?
       _ => todo!(),
@@ -72,6 +65,7 @@ impl Resolve for ast::Pattern {
     if let Some(target_key) = lookup_result {
       self.target_key = Some(target_key.clone());
     } else {
+      // FIXME: Report diagnostics on the driver (grip).
       println!(" !!! PRODUCED ERROR !!!!");
       resolver.produce_lookup_error(&symbol.0);
     }
@@ -455,8 +449,10 @@ impl NameResolver {
       .error(format!("undefined reference to `{}`", name));
   }
 
-  // Lookup the global scope of the current module.
+  // Lookup the global scope of a specific module.
   fn absolute_lookup(&mut self, pattern: &ast::Pattern) -> Option<&cache::DefinitionKey> {
+    // FIXME: Something here might be taking precedence where it shouldn't (bug occurs when two functions with same name on different modules).
+
     // TODO: Consider whether to clone or use references.
     let module_name = pattern
       .module_name

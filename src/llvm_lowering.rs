@@ -699,20 +699,13 @@ impl Lower for ast::Function {
       // TODO: Name being cloned. Is this okay?
       self.name.to_owned()
     } else {
-      mangle_name(&generator.module_name, &self.name)
+      generator.mangle_name(&self.name)
     };
 
-    // FIXME: Function is emitted twice when being called. This is because first the function is lowered when it is invoked, then again during reaching its declaration. This is temporary fix.
-    if let Some(llvm_existing_function) = generator
+    assert!(generator
       .llvm_module
       .get_function(llvm_function_name.as_str())
-    {
-      return Some(
-        llvm_existing_function
-          .as_global_value()
-          .as_basic_value_enum(),
-      );
-    }
+      .is_none());
 
     let llvm_function = generator.llvm_module.add_function(
       llvm_function_name.as_str(),
@@ -949,6 +942,8 @@ impl Lower for ast::Definition {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let node = self.node_ref_cell.borrow();
 
+    println!("::definition: {} ({})", self.name, self.definition_key);
+
     // Set the pending function definition key to cache the function early.
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
@@ -976,7 +971,7 @@ impl Lower for ast::ExprStmt {
 }
 
 pub struct LlvmGenerator<'a, 'ctx> {
-  module_name: String,
+  pub module_name: String,
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
   llvm_builder: inkwell::builder::Builder<'ctx>,
@@ -1000,16 +995,16 @@ pub struct LlvmGenerator<'a, 'ctx> {
   pending_function_definition_key: Option<cache::DefinitionKey>,
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   print_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
+  mangle_counter: usize,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   pub fn new(
-    module_name: String,
     llvm_context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
   ) -> Self {
     Self {
-      module_name,
+      module_name: "unnamed".to_string(),
       llvm_context,
       llvm_module,
       llvm_builder: llvm_context.create_builder(),
@@ -1023,7 +1018,21 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       pending_function_definition_key: None,
       panic_function_cache: None,
       print_function_cache: None,
+      mangle_counter: 0,
     }
+  }
+
+  /// Mangle a name with an unique counter to avoid name collisions.
+  fn mangle_name(&mut self, name: &String) -> String {
+    // TODO: Consider using the `definition_key` instead?
+    // NOTE: The current module name isn't used because it's not guaranteed to be the
+    // active module when the definition is memoized (for example, inter-module function
+    // calls).
+    let mangled_name = format!(".fn{}.{}", self.mangle_counter, name);
+
+    self.mangle_counter += 1;
+
+    mangled_name
   }
 
   fn get_or_insert_panic_function(&mut self) -> inkwell::values::FunctionValue<'ctx> {
@@ -1316,6 +1325,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
+  /// Attempt to retrieve an existing definition, otherwise proceed to
+  /// lowering it and memoizing it under the current module.
   fn memoize_or_retrieve(
     &mut self,
     definition_key: cache::DefinitionKey,
@@ -1356,9 +1367,4 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     return llvm_value;
   }
-}
-
-// TODO: Receive scope path as `std::path::PathBuf` instead?
-fn mangle_name(scope_name: &String, name: &String) -> String {
-  format!(".{}.{}", scope_name, name)
 }
