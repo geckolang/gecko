@@ -106,18 +106,20 @@ pub enum Node {
 
 // TODO: What if we made this a construct to resolve itself (link with the target's key)?
 pub struct Pattern {
-  pub static_path: Vec<String>,
+  pub module_name: Option<String>,
   pub base_name: String,
-  pub path: Vec<String>,
+  pub member_path: Vec<String>,
+  pub symbol_kind: name_resolution::SymbolKind,
   pub target_key: Option<cache::DefinitionKey>,
 }
 
 impl Pattern {
-  pub fn new(base_name: String) -> Self {
+  pub fn new(base_name: String, symbol_kind: name_resolution::SymbolKind) -> Self {
     Pattern {
-      static_path: Vec::new(),
+      module_name: None,
       base_name,
-      path: Vec::new(),
+      member_path: Vec::new(),
+      symbol_kind,
       target_key: None,
     }
   }
@@ -127,7 +129,7 @@ impl ToString for Pattern {
   fn to_string(&self) -> String {
     // TODO: Missing the module name.
     // TODO: Hard-coded character.
-    self.base_name.clone() + self.path.join(".").as_str()
+    self.base_name.clone() + self.member_path.join(".").as_str()
   }
 }
 

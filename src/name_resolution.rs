@@ -49,15 +49,24 @@ impl Resolve for ast::Node {
   }
 }
 
+// TODO: This might be getting too complicated. Maybe we should keep it simple in this case?
 impl Resolve for ast::Pattern {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
-    // let mut scope_buffer = None;
+    // TODO: Consider extending this as a function of `Pattern` (via `impl`).
+    let symbol = (self.base_name.clone(), self.symbol_kind.clone());
 
-    // for static_path_segment in &mut self.static_path {
-    //   // TODO: What about struct static variables?
-    //   // let lookup_result =
-    //   //   resolver.lookup((static_path_segment, SymbolKind::StaticOrVariableOrParameter));
-    // }
+    let lookup_result = match self.symbol_kind {
+      SymbolKind::StaticOrVariableOrParameter => resolver.relative_lookup(&symbol),
+      SymbolKind::FunctionOrExtern => resolver.absolute_lookup(self),
+      // TODO: What else? Maybe `unreachable!()`?
+      _ => todo!(),
+    };
+
+    if let Some(target_key) = lookup_result {
+      self.target_key = Some(target_key.clone());
+    } else {
+      resolver.produce_lookup_error(&symbol.0);
+    }
   }
 }
 
@@ -175,13 +184,11 @@ impl Resolve for ast::Parameter {
 }
 
 impl Resolve for ast::VariableOrMemberRef {
-  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
-    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    // FIXME: Only accessing the base name of the pattern.
-    self.target_key = resolver.lookup_or_error(&(
-      self.pattern.base_name.clone(),
-      SymbolKind::StaticOrVariableOrParameter,
-    ));
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.pattern.resolve(resolver, cache);
+
+    // TODO: A bit misleading, since it might still be `None` (if the pattern lookup failed).
+    self.target_key = self.pattern.target_key;
   }
 }
 
@@ -313,13 +320,10 @@ impl Resolve for ast::Definition {
 
 impl Resolve for ast::FunctionCall {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
-    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    // TODO: Only the base name is being used from `callee_id`.
-    self.target_key = resolver.lookup_or_error(&(
-      self.callee_pattern.base_name.clone(),
-      SymbolKind::FunctionOrExtern,
-    ));
+    self.callee_pattern.resolve(resolver, cache);
+
+    // TODO: A bit misleading, since it might still be `None` (if the pattern lookup failed).
+    self.target_key = self.callee_pattern.target_key;
 
     for argument in &mut self.arguments {
       argument.resolve(resolver, cache);
@@ -402,7 +406,7 @@ impl NameResolver {
     true
   }
 
-  /// Retrieve the global scope of the current module.
+  /// Retrieve the scope stack of the current module.
   fn get_scope_stack(&mut self) -> &mut Vec<Scope> {
     self
       .scopes
@@ -432,8 +436,31 @@ impl NameResolver {
     self.get_current_scope().insert(symbol, definition_key);
   }
 
+  fn produce_lookup_error(&mut self, name: &String) {
+    self
+      .diagnostic_builder
+      .error(format!("undefined reference to `{}`", name));
+  }
+
+  fn absolute_lookup(&mut self, pattern: &ast::Pattern) -> Option<&cache::DefinitionKey> {
+    // TODO: Consider whether to clone or use references.
+    let module_name = pattern
+      .module_name
+      .clone()
+      .unwrap_or(self.current_module_name.clone().unwrap());
+
+    let global_scope = self.scopes.get(&module_name).unwrap().first().unwrap();
+    let symbol = (pattern.base_name.clone(), pattern.symbol_kind.clone());
+
+    if let Some(definition_key) = global_scope.get(&symbol) {
+      return Some(definition_key);
+    }
+
+    None
+  }
+
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope.
-  fn lookup(&mut self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
+  fn relative_lookup(&mut self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
     for scope in self.get_scope_stack().iter().rev() {
       if let Some(definition_key) = scope.get(&symbol) {
         return Some(definition_key);
@@ -444,13 +471,11 @@ impl NameResolver {
   }
 
   fn lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::DefinitionKey> {
-    if let Some(definition_key) = self.lookup(symbol).cloned() {
+    if let Some(definition_key) = self.relative_lookup(symbol).cloned() {
       return Some(definition_key);
     }
 
-    self
-      .diagnostic_builder
-      .error(format!("undefined reference to `{}`", symbol.0));
+    self.produce_lookup_error(&symbol.0);
 
     None
   }
@@ -461,7 +486,7 @@ impl NameResolver {
     pattern: &ast::Pattern,
     cache: &cache::Cache,
   ) -> Option<&cache::DefinitionKey> {
-    let definition_key = self.lookup(&(
+    let definition_key = self.relative_lookup(&(
       pattern.base_name.clone(),
       SymbolKind::StaticOrVariableOrParameter,
     ));
@@ -504,7 +529,7 @@ impl NameResolver {
   }
 
   fn contains(&mut self, key: &Symbol) -> bool {
-    self.lookup(key).is_some()
+    self.relative_lookup(key).is_some()
   }
 }
 

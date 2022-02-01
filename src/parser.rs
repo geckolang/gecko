@@ -189,33 +189,38 @@ impl<'a> Parser<'a> {
     self.tokens.is_empty() || self.index == self.tokens.len() - 1
   }
 
-  fn parse_pattern(&mut self) -> ParserResult<ast::Pattern> {
+  fn parse_pattern(
+    &mut self,
+    symbol_kind: name_resolution::SymbolKind,
+  ) -> ParserResult<ast::Pattern> {
     let starting_name = self.parse_name()?;
-    let mut static_path = Vec::new();
 
-    while self.is(&lexer::TokenKind::SymbolColon) {
+    let module_name = if self.is(&lexer::TokenKind::SymbolColon) {
       self.skip();
-      static_path.push(self.parse_name()?);
-    }
 
-    let mut path = Vec::new();
+      Some(starting_name.clone())
+    } else {
+      None
+    };
+
+    let base_name = if module_name.is_none() {
+      starting_name
+    } else {
+      self.parse_name()?
+    };
+
+    let mut member_path = Vec::new();
 
     while self.is(&lexer::TokenKind::SymbolDot) {
       self.skip();
-      path.push(self.parse_name()?);
+      member_path.push(self.parse_name()?);
     }
 
-    // FIXME: Is this correct? What about the static path? What if there's only a static path (invalid)? We might need to issue a diagnostic in that case?
-    let base_name = if path.is_empty() {
-      starting_name
-    } else {
-      path.last().unwrap().clone()
-    };
-
     Ok(ast::Pattern {
-      static_path,
+      module_name,
       base_name,
-      path,
+      member_path,
+      symbol_kind,
       target_key: None,
     })
   }
@@ -954,7 +959,7 @@ impl<'a> Parser<'a> {
 
   /// %pattern '(' (%expr (,))* ')'
   fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
-    let callee_pattern = self.parse_pattern()?;
+    let callee_pattern = self.parse_pattern(name_resolution::SymbolKind::FunctionOrExtern)?;
 
     skip_past!(self, &lexer::TokenKind::SymbolParenthesesL);
 
@@ -1006,17 +1011,17 @@ impl<'a> Parser<'a> {
 
   /// %name
   fn parse_variable_or_member_ref(&mut self) -> ParserResult<ast::VariableOrMemberRef> {
-    let scope_qualifier = self.parse_pattern()?;
+    let pattern = self.parse_pattern(name_resolution::SymbolKind::StaticOrVariableOrParameter)?;
 
     Ok(ast::VariableOrMemberRef {
-      pattern: scope_qualifier,
+      pattern,
       target_key: None,
     })
   }
 
   /// %name '=' %expr ';'
   fn parse_assign_stmt(&mut self) -> ParserResult<ast::AssignStmt> {
-    let lvalue_expr = Box::new(self.parse_expr()?);
+    let assignee_expr = Box::new(self.parse_expr()?);
 
     skip_past!(self, &lexer::TokenKind::SymbolEqual);
 
@@ -1025,7 +1030,7 @@ impl<'a> Parser<'a> {
     skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     Ok(ast::AssignStmt {
-      assignee_expr: lvalue_expr,
+      assignee_expr,
       value,
     })
   }
