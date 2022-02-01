@@ -7,7 +7,7 @@ pub trait Lint {
 }
 
 pub struct LintContext {
-  pub diagnostics: diagnostic::DiagnosticBuilder,
+  pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   block_depth: usize,
   function_references: std::collections::HashMap<cache::DefinitionKey, bool>,
   variable_references: std::collections::HashMap<cache::DefinitionKey, bool>,
@@ -16,7 +16,7 @@ pub struct LintContext {
 impl LintContext {
   pub fn new() -> Self {
     Self {
-      diagnostics: diagnostic::DiagnosticBuilder::new(),
+      diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
       block_depth: 0,
       function_references: std::collections::HashMap::new(),
       variable_references: std::collections::HashMap::new(),
@@ -40,7 +40,7 @@ impl LintContext {
 
       if name != llvm_lowering::MAIN_FUNCTION_NAME {
         self
-          .diagnostics
+          .diagnostic_builder
           .warning(format!("function `{}` is never called", name));
       }
     }
@@ -58,7 +58,7 @@ impl LintContext {
       };
 
       self
-        .diagnostics
+        .diagnostic_builder
         .warning(format!("variable `{}` is never used", name));
     }
   }
@@ -73,7 +73,7 @@ impl LintContext {
     };
 
     if !name.is_case(case) {
-      self.diagnostics.warning(format!(
+      self.diagnostic_builder.warning(format!(
         "{} name `{}` should be written in {} case",
         subject, name, case_name
       ))
@@ -84,6 +84,12 @@ impl LintContext {
 impl Lint for ast::Node {
   fn lint(&self, context: &mut cache::Cache, lint_context: &mut LintContext) {
     crate::dispatch!(self, Lint::lint, context, lint_context);
+  }
+}
+
+impl Lint for ast::Pattern {
+  fn lint(&self, context: &mut cache::Cache, lint_context: &mut LintContext) {
+    // TODO: Lint name(s).
   }
 }
 
@@ -149,13 +155,15 @@ impl Lint for ast::Block {
     let mut did_return = false;
 
     if self.statements.is_empty() {
-      context.diagnostics.warning("empty block".to_string());
+      context
+        .diagnostic_builder
+        .warning("empty block".to_string());
     }
 
     // TODO: Might be repetitive for subsequent nested blocks.
     if context.block_depth > 4 {
       context
-        .diagnostics
+        .diagnostic_builder
         .warning("block depth is deeper than 4".to_string());
     }
 
@@ -164,7 +172,7 @@ impl Lint for ast::Block {
     for statement in &self.statements {
       if did_return {
         context
-          .diagnostics
+          .diagnostic_builder
           .warning("unreachable code after return statement".to_string());
 
         // TODO: Consider whether we should stop linting the block at this point.
@@ -224,7 +232,7 @@ impl Lint for ast::Enum {
     context.lint_name_casing("enum", &self.name, convert_case::Case::Pascal);
 
     if self.variants.is_empty() {
-      context.diagnostics.warning("empty enum".to_string());
+      context.diagnostic_builder.warning("empty enum".to_string());
     }
 
     for variant in &self.variants {
@@ -242,7 +250,7 @@ impl Lint for ast::ExprStmt {
     match self.expr.as_ref() {
       ast::Node::FunctionCall(_) => {}
       _ => context
-        .diagnostics
+        .diagnostic_builder
         .warning("expression may be redundant".to_string()),
     };
 
@@ -260,7 +268,7 @@ impl Lint for ast::Function {
 
     if self.prototype.parameters.len() > 4 {
       context
-        .diagnostics
+        .diagnostic_builder
         .warning("function has more than 4 parameters".to_string());
     }
 
@@ -281,7 +289,7 @@ impl Lint for ast::IfStmt {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     if matches!(self.condition.as_ref(), ast::Node::Literal(_)) {
       context
-        .diagnostics
+        .diagnostic_builder
         .warning("if condition is constant".to_string());
     }
 

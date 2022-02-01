@@ -31,6 +31,7 @@ macro_rules! dispatch {
       $crate::ast::Node::StructType(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -100,20 +101,33 @@ pub enum Node {
   StructType(StructType),
   Prototype(Prototype),
   StructValue(StructValue),
+  Pattern(Pattern),
 }
 
-pub struct ScopeQualifier(pub String, pub Vec<String>);
+// TODO: What if we made this a construct to resolve itself (link with the target's key)?
+pub struct Pattern {
+  pub static_path: Vec<String>,
+  pub base_name: String,
+  pub path: Vec<String>,
+  pub target_key: Option<cache::DefinitionKey>,
+}
 
-impl ScopeQualifier {
-  pub fn new(name: String) -> Self {
-    ScopeQualifier(name, vec![])
+impl Pattern {
+  pub fn new(base_name: String) -> Self {
+    Pattern {
+      static_path: Vec::new(),
+      base_name,
+      path: Vec::new(),
+      target_key: None,
+    }
   }
 }
 
-impl ToString for ScopeQualifier {
+impl ToString for Pattern {
   fn to_string(&self) -> String {
-    // TODO: Hard-coded dot character.
-    self.0.clone() + self.1.join(".").as_str()
+    // TODO: Missing the module name.
+    // TODO: Hard-coded character.
+    self.base_name.clone() + self.path.join(".").as_str()
   }
 }
 
@@ -151,7 +165,7 @@ pub struct ArrayValue {
 pub struct UnsafeBlockStmt(pub Block);
 
 pub struct VariableOrMemberRef {
-  pub scope_qualifier: ScopeQualifier,
+  pub pattern: Pattern,
   pub target_key: Option<cache::DefinitionKey>,
 }
 
@@ -230,7 +244,7 @@ pub struct ExprStmt {
 }
 
 pub struct FunctionCall {
-  pub callee_id: ScopeQualifier,
+  pub callee_pattern: Pattern,
   pub target_key: Option<cache::DefinitionKey>,
   pub arguments: Vec<Node>,
 }
@@ -285,6 +299,6 @@ pub struct Definition {
 }
 
 pub struct MemberAccess {
-  pub scope_qualifier: ScopeQualifier,
+  pub scope_qualifier: Pattern,
   pub target_key: Option<cache::DefinitionKey>,
 }

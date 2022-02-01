@@ -24,6 +24,10 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::Pattern {
+  //
+}
+
 impl Lower for ast::IntrinsicCall {
   fn lower<'a, 'ctx>(
     &self,
@@ -908,7 +912,7 @@ impl Lower for ast::FunctionCall {
     let llvm_call_value = generator.llvm_builder.build_call(
       inkwell::values::CallableValue::try_from(llvm_target_function).unwrap(),
       llvm_arguments.as_slice(),
-      format!("call.{}", self.callee_id.to_string()).as_str(),
+      format!("call.{}", self.callee_pattern.to_string()).as_str(),
     );
 
     let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();

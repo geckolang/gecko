@@ -10,6 +10,8 @@ pub enum SymbolKind {
 
 type Symbol = (String, SymbolKind);
 
+type Scope = std::collections::HashMap<Symbol, cache::DefinitionKey>;
+
 pub trait Resolve {
   fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     //
@@ -44,6 +46,18 @@ impl Resolve for ast::Node {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     crate::dispatch!(self, Resolve::resolve, resolver, cache);
+  }
+}
+
+impl Resolve for ast::Pattern {
+  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+    // let mut scope_buffer = None;
+
+    // for static_path_segment in &mut self.static_path {
+    //   // TODO: What about struct static variables?
+    //   // let lookup_result =
+    //   //   resolver.lookup((static_path_segment, SymbolKind::StaticOrVariableOrParameter));
+    // }
   }
 }
 
@@ -163,9 +177,9 @@ impl Resolve for ast::Parameter {
 impl Resolve for ast::VariableOrMemberRef {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    // FIXME: Only accessing the base name of the scope qualifier.
+    // FIXME: Only accessing the base name of the pattern.
     self.target_key = resolver.lookup_or_error(&(
-      self.scope_qualifier.0.clone(),
+      self.pattern.base_name.clone(),
       SymbolKind::StaticOrVariableOrParameter,
     ));
   }
@@ -277,7 +291,7 @@ impl Resolve for ast::Definition {
     // Check for existing definitions.
     if resolver.contains(&symbol) {
       resolver
-        .diagnostics
+        .diagnostic_builder
         .error(format!("re-definition of `{}`", self.name));
 
       return;
@@ -302,8 +316,10 @@ impl Resolve for ast::FunctionCall {
     // TODO: This might be simplified to just looking up on the global table, however, we need to take into account support for modules.
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     // TODO: Only the base name is being used from `callee_id`.
-    self.target_key =
-      resolver.lookup_or_error(&(self.callee_id.0.clone(), SymbolKind::FunctionOrExtern));
+    self.target_key = resolver.lookup_or_error(&(
+      self.callee_pattern.base_name.clone(),
+      SymbolKind::FunctionOrExtern,
+    ));
 
     for argument in &mut self.arguments {
       argument.resolve(resolver, cache);
@@ -330,19 +346,31 @@ impl Resolve for ast::BinaryExpr {
 }
 
 pub struct NameResolver {
-  pub diagnostics: diagnostic::DiagnosticBuilder,
-  // TODO: Should this be on `context::Context` instead? Something's missing. We might need to link the context to the resolver.
-  scopes: Vec<std::collections::HashMap<Symbol, cache::DefinitionKey>>,
-  global_scope: std::collections::HashMap<Symbol, cache::DefinitionKey>,
+  pub diagnostic_builder: diagnostic::DiagnosticBuilder,
+  current_module_name: Option<String>,
+  /// Contains all declarations of the program, including absolute
+  /// (modules) and relative (variables).
+  scopes: std::collections::HashMap<String, Vec<Scope>>,
 }
 
 impl NameResolver {
   pub fn new() -> Self {
     Self {
-      diagnostics: diagnostic::DiagnosticBuilder::new(),
-      scopes: vec![std::collections::HashMap::new()],
-      global_scope: std::collections::HashMap::new(),
+      diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
+      current_module_name: None,
+      scopes: std::collections::HashMap::new(),
     }
+  }
+
+  /// Set per-file. A new global scope is created per-module.
+  pub fn set_current_module(&mut self, name: String) {
+    // TODO: Can the module name possibly collide with an existing one?
+
+    self.current_module_name = Some(name.clone());
+
+    self
+      .scopes
+      .insert(name, vec![std::collections::HashMap::new()]);
   }
 
   // TODO: Incomplete (cannot access `self` as `&Node`).
@@ -356,7 +384,7 @@ impl NameResolver {
     // Check for existing definitions.
     if self.contains(&symbol) {
       self
-        .diagnostics
+        .diagnostic_builder
         .error(format!("re-definition of `{}`", symbol.0));
 
       return false;
@@ -374,42 +402,42 @@ impl NameResolver {
     true
   }
 
+  /// Retrieve the global scope of the current module.
+  fn get_scope_stack(&mut self) -> &mut Vec<Scope> {
+    self
+      .scopes
+      .get_mut(self.current_module_name.as_ref().unwrap())
+      .unwrap()
+  }
+
+  fn get_current_scope(&mut self) -> &mut Scope {
+    self.get_scope_stack().last_mut().unwrap()
+  }
+
   // TODO: Consider returning the pushed scope? Unless it's not actually used.
   fn push_scope(&mut self) {
-    self.scopes.push(std::collections::HashMap::new());
+    self
+      .get_scope_stack()
+      .push(std::collections::HashMap::new());
   }
 
   fn pop_scope(&mut self) {
-    self.scopes.pop();
+    self.get_scope_stack().pop();
   }
 
   /// Register a name on the last scope for name resolution lookups.
   ///
-  /// If there are no relative scopes, the symbol is registered on the global scope.
+  /// If there are no relative scopes, the symbol is registered in the global scope.
   fn bind(&mut self, symbol: Symbol, definition_key: cache::DefinitionKey) {
-    if self.scopes.is_empty() {
-      self.global_scope.insert(symbol, definition_key);
-    } else {
-      self
-        .scopes
-        .last_mut()
-        .unwrap()
-        .insert(symbol, definition_key);
-    }
+    self.get_current_scope().insert(symbol, definition_key);
   }
 
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope.
-  fn lookup(&self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
-    // First, look on relative scopes.
-    for scope in self.scopes.iter().rev() {
+  fn lookup(&mut self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
+    for scope in self.get_scope_stack().iter().rev() {
       if let Some(definition_key) = scope.get(&symbol) {
         return Some(definition_key);
       }
-    }
-
-    // Finally, look in the global scope.
-    if let Some(definition_key) = self.global_scope.get(&symbol) {
-      return Some(definition_key);
     }
 
     None
@@ -421,7 +449,7 @@ impl NameResolver {
     }
 
     self
-      .diagnostics
+      .diagnostic_builder
       .error(format!("undefined reference to `{}`", symbol.0));
 
     None
@@ -429,12 +457,12 @@ impl NameResolver {
 
   // FIXME: The current design for this function might be flawed. Review.
   fn _lookup_member(
-    &self,
-    scope_qualifier: &ast::ScopeQualifier,
+    &mut self,
+    pattern: &ast::Pattern,
     cache: &cache::Cache,
   ) -> Option<&cache::DefinitionKey> {
     let definition_key = self.lookup(&(
-      scope_qualifier.0.clone(),
+      pattern.base_name.clone(),
       SymbolKind::StaticOrVariableOrParameter,
     ));
 
@@ -475,7 +503,7 @@ impl NameResolver {
     None
   }
 
-  fn contains(&self, key: &Symbol) -> bool {
+  fn contains(&mut self, key: &Symbol) -> bool {
     self.lookup(key).is_some()
   }
 }

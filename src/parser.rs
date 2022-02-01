@@ -146,13 +146,14 @@ impl<'a> Parser<'a> {
     self.get() == token
   }
 
+  // TODO: Need testing for this function.
   /// Attempt to reposition the index to the next token (if any).
   ///
   /// Returns whether the index was repositioned. If false, it indicates
-  /// that the end of file was reached (`EOF`).
+  /// that the end of file was reached (`EOF`), and the current character
+  /// cannot be skipped-over.
   fn skip(&mut self) -> bool {
-    // FIXME: Address out of bounds problem (if any at this state).
-    if self.index + 1 >= self.tokens.len() {
+    if self.is_eof() {
       return false;
     }
 
@@ -188,17 +189,35 @@ impl<'a> Parser<'a> {
     self.tokens.is_empty() || self.index == self.tokens.len() - 1
   }
 
-  fn parse_scope_qualifier(&mut self) -> ParserResult<ast::ScopeQualifier> {
-    let base_name = self.parse_name()?;
-    let mut scope = Vec::new();
+  fn parse_pattern(&mut self) -> ParserResult<ast::Pattern> {
+    let starting_name = self.parse_name()?;
+    let mut static_path = Vec::new();
 
-    // TODO: This check might cause problems in edge cases.
-    while !self.is_eof() && self.is(&lexer::TokenKind::SymbolDot) {
+    while self.is(&lexer::TokenKind::SymbolColon) {
       self.skip();
-      scope.push(self.parse_name()?);
+      static_path.push(self.parse_name()?);
     }
 
-    Ok(ast::ScopeQualifier(base_name, scope))
+    let mut path = Vec::new();
+
+    while self.is(&lexer::TokenKind::SymbolDot) {
+      self.skip();
+      path.push(self.parse_name()?);
+    }
+
+    // FIXME: Is this correct? What about the static path? What if there's only a static path (invalid)? We might need to issue a diagnostic in that case?
+    let base_name = if path.is_empty() {
+      starting_name
+    } else {
+      path.last().unwrap().clone()
+    };
+
+    Ok(ast::Pattern {
+      static_path,
+      base_name,
+      path,
+      target_key: None,
+    })
   }
 
   /// %identifier
@@ -237,7 +256,7 @@ impl<'a> Parser<'a> {
         lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
         lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
         lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolEqual) => {
-          ast::Node::VariableAssignStmt(self.parse_lvalue_assign_stmt()?)
+          ast::Node::VariableAssignStmt(self.parse_assign_stmt()?)
         }
         lexer::TokenKind::Identifier(_) if !self.peek_is(&lexer::TokenKind::SymbolParenthesesL) => {
           ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
@@ -795,8 +814,9 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// %name '[' %expr ']'
+  /// %pattern '[' %expr ']'
   fn parse_array_indexing(&mut self) -> ParserResult<ast::ArrayIndexing> {
+    // TODO: Work with a pattern instead.
     let name = self.parse_name()?;
 
     skip_past!(self, &lexer::TokenKind::SymbolBracketL);
@@ -932,9 +952,9 @@ impl<'a> Parser<'a> {
     Ok(self.parse_binary_expr(starting_expr, 0)?)
   }
 
-  /// %name '(' (%expr (,))* ')'
+  /// %pattern '(' (%expr (,))* ')'
   fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
-    let callee_id = self.parse_scope_qualifier()?;
+    let callee_pattern = self.parse_pattern()?;
 
     skip_past!(self, &lexer::TokenKind::SymbolParenthesesL);
 
@@ -952,7 +972,7 @@ impl<'a> Parser<'a> {
     skip_past!(self, &lexer::TokenKind::SymbolParenthesesR);
 
     Ok(ast::FunctionCall {
-      callee_id,
+      callee_pattern,
       target_key: None,
       arguments,
     })
@@ -986,16 +1006,16 @@ impl<'a> Parser<'a> {
 
   /// %name
   fn parse_variable_or_member_ref(&mut self) -> ParserResult<ast::VariableOrMemberRef> {
-    let scope_qualifier = self.parse_scope_qualifier()?;
+    let scope_qualifier = self.parse_pattern()?;
 
     Ok(ast::VariableOrMemberRef {
-      scope_qualifier,
+      pattern: scope_qualifier,
       target_key: None,
     })
   }
 
   /// %name '=' %expr ';'
-  fn parse_lvalue_assign_stmt(&mut self) -> ParserResult<ast::AssignStmt> {
+  fn parse_assign_stmt(&mut self) -> ParserResult<ast::AssignStmt> {
     let lvalue_expr = Box::new(self.parse_expr()?);
 
     skip_past!(self, &lexer::TokenKind::SymbolEqual);

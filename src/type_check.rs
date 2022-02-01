@@ -1,7 +1,7 @@
 use crate::{ast, cache, diagnostic, dispatch};
 
 pub struct TypeCheckContext {
-  pub diagnostics: diagnostic::DiagnosticBuilder,
+  pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   in_loop: bool,
   in_unsafe_block: bool,
   current_function_key: Option<cache::DefinitionKey>,
@@ -10,7 +10,7 @@ pub struct TypeCheckContext {
 impl TypeCheckContext {
   pub fn new() -> Self {
     Self {
-      diagnostics: diagnostic::DiagnosticBuilder::new(),
+      diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
       in_loop: false,
       in_unsafe_block: false,
       current_function_key: None,
@@ -108,6 +108,10 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::Pattern {
+  //
+}
+
 impl TypeCheck for ast::IntrinsicCall {
   // TODO: Implement.
 }
@@ -139,7 +143,7 @@ impl TypeCheck for ast::StructValue {
 
     if self.fields.len() != struct_type.fields.len() {
       type_context
-        .diagnostics
+        .diagnostic_builder
         .error("invalid amount of fields in struct value".to_string());
 
       return;
@@ -184,20 +188,20 @@ impl TypeCheck for ast::UnaryExpr {
       ast::OperatorKind::MultiplyOrDereference => {
         if !type_context.in_unsafe_block {
           type_context
-            .diagnostics
+            .diagnostic_builder
             .error("can only dereference inside an unsafe block".to_string());
         }
 
         if !matches!(expr_type, Some(ast::Type::Pointer(_))) {
           type_context
-            .diagnostics
+            .diagnostic_builder
             .error("can only dereference pointers".to_string());
         }
       }
       ast::OperatorKind::Not => {
         if !TypeCheckContext::unify_with_primitive(expr_type, ast::PrimitiveType::Bool, cache) {
           type_context
-            .diagnostics
+            .diagnostic_builder
             .error("can only negate boolean expressions".to_string());
         }
       }
@@ -209,7 +213,7 @@ impl TypeCheck for ast::UnaryExpr {
         ) {
           // TODO: Error message too similar to the boolean negation case.
           type_context
-            .diagnostics
+            .diagnostic_builder
             .error("can only negate integers or float expressions".to_string());
         }
       }
@@ -256,7 +260,7 @@ impl TypeCheck for ast::AssignStmt {
     // or `Reference`, a variable reference, or an array indexing.
     if !is_pointer_or_ref_expr && !is_variable_ref && !is_array_indexing {
       type_context
-        .diagnostics
+        .diagnostic_builder
         .error("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing".to_string());
     } else if is_variable_ref {
       // If the assignee is a variable reference, ensure that the variable is mutable.
@@ -267,7 +271,7 @@ impl TypeCheck for ast::AssignStmt {
           match &*declaration {
             ast::Node::LetStmt(let_stmt) if !let_stmt.is_mutable => {
               type_context
-                .diagnostics
+                .diagnostic_builder
                 .error("assignee is immutable".to_string());
             }
             // TODO: Parameters should be immutable by default.
@@ -286,7 +290,7 @@ impl TypeCheck for ast::ContinueStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
     if !type_context.in_loop {
       type_context
-        .diagnostics
+        .diagnostic_builder
         .error("continue statement may only occur inside loops".to_string());
     }
   }
@@ -347,7 +351,7 @@ impl TypeCheck for ast::ArrayValue {
       // Report this error only once.
       if !mixed_elements_flag && element.infer_type(cache) != expected_element_type {
         type_context
-          .diagnostics
+          .diagnostic_builder
           .error("array elements must all be of the same type".to_string());
 
         mixed_elements_flag = true;
@@ -422,7 +426,7 @@ impl TypeCheck for ast::IfStmt {
       cache,
     ) {
       type_context
-        .diagnostics
+        .diagnostic_builder
         .error("if statement condition must evaluate to a boolean".to_string());
     }
   }
@@ -448,7 +452,7 @@ impl TypeCheck for ast::BinaryExpr {
     // TODO: If we require both operands to  be of the same type, then operator overloading isn't possible with mixed operands as parameters.
     if left_type != right_type {
       type_context
-        .diagnostics
+        .diagnostic_builder
         .error("binary expression operands must be the same type".to_string());
 
       return;
@@ -470,7 +474,7 @@ impl TypeCheck for ast::BinaryExpr {
           Some(ast::Type::Primitive(ast::PrimitiveType::Int(_)))
         ) {
           type_context
-            .diagnostics
+            .diagnostic_builder
             .error("binary expression operands must be both integers".to_string());
         }
       }
@@ -487,7 +491,7 @@ impl TypeCheck for ast::BreakStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
     if !type_context.in_loop {
       type_context
-        .diagnostics
+        .diagnostic_builder
         .error("break statement may only occur inside loops".to_string());
     }
   }
@@ -516,7 +520,7 @@ impl TypeCheck for ast::LetStmt {
     let value_type = self.value.infer_type(cache);
 
     if !TypeCheckContext::unify_option(Some(&self.ty), value_type.as_ref(), cache) {
-      type_context.diagnostics.error(format!(
+      type_context.diagnostic_builder.error(format!(
         "variable declaration of `{}` value and type mismatch",
         self.name
       ));
@@ -542,11 +546,11 @@ impl TypeCheck for ast::ReturnStmt {
     // TODO: Whether a function returns is already checked. Limit this to unifying the types only.
     if current_function.prototype.return_type.is_some() && self.value.is_none() {
       type_context
-        .diagnostics
+        .diagnostic_builder
         .error("return statement must return a value".to_string());
     } else if current_function.prototype.return_type.is_none() && self.value.is_some() {
       return type_context
-        .diagnostics
+        .diagnostic_builder
         .error("return statement must not return a value".to_string());
     }
 
@@ -590,7 +594,7 @@ impl TypeCheck for ast::Function {
       }
 
       if !is_value_returned {
-        type_context.diagnostics.error(format!(
+        type_context.diagnostic_builder.error(format!(
           "function body of `{}` must return a value",
           self.name
         ));
@@ -630,7 +634,7 @@ impl TypeCheck for ast::FunctionCall {
     match callee {
       ast::Node::ExternFunction(extern_) => {
         if !type_context.in_unsafe_block {
-          type_context.diagnostics.error(format!(
+          type_context.diagnostic_builder.error(format!(
             "extern function call to `{}` may only occur inside an unsafe block",
             extern_.name
           ));
@@ -652,9 +656,9 @@ impl TypeCheck for ast::FunctionCall {
       // TODO: Keep it simple for now, but later, we can improve the attribute system.
       match attribute.name.as_str() {
         "deprecated" => type_context
-          .diagnostics
+          .diagnostic_builder
           .warning(format!("function `{}` is deprecated", name)),
-        _ => type_context.diagnostics.warning(format!(
+        _ => type_context.diagnostic_builder.warning(format!(
           "use of unrecognized attribute `{}`",
           attribute.name
         )),
@@ -668,7 +672,7 @@ impl TypeCheck for ast::FunctionCall {
     if (!prototype.is_variadic && actual_arg_count != min_arg_count)
       || (prototype.is_variadic && actual_arg_count < min_arg_count)
     {
-      type_context.diagnostics.error(format!(
+      type_context.diagnostic_builder.error(format!(
         "function call to `{}` has an invalid amount of arguments",
         name
       ));
@@ -701,7 +705,7 @@ impl TypeCheck for ast::LoopStmt {
         cache,
       ) {
         type_context
-          .diagnostics
+          .diagnostic_builder
           .error("loop condition must evaluate to a boolean".to_string());
       }
 
