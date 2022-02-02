@@ -215,13 +215,19 @@ impl Resolve for ast::IfStmt {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.condition.declare(resolver, cache);
     self.then_block.declare(resolver, cache);
-    // TODO: `else` block.
+
+    if let Some(else_block) = &mut self.else_block {
+      else_block.declare(resolver, cache);
+    }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.condition.resolve(resolver, cache);
     self.then_block.resolve(resolver, cache);
-    // TODO: `else` block.
+
+    if let Some(else_block) = &mut self.else_block {
+      else_block.resolve(resolver, cache);
+    }
   }
 }
 

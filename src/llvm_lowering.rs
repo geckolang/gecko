@@ -554,7 +554,7 @@ impl Lower for ast::LoopStmt {
     );
 
     generator.llvm_builder.position_at_end(llvm_then_block);
-    generator.next_block = Some(llvm_after_block);
+    generator.current_loop_block = Some(llvm_after_block);
     self.body.lower(generator, cache);
 
     // Fallthrough or loop if applicable.
@@ -598,16 +598,41 @@ impl Lower for ast::IfStmt {
       .llvm_context
       .append_basic_block(llvm_current_function, "if.after");
 
-    // NOTE: At this point, the condition must be verified to be a boolean by the type-checker.
-    generator.llvm_builder.build_conditional_branch(
-      llvm_condition.into_int_value(),
-      llvm_then_block,
-      llvm_after_block,
-    );
+    // TODO: Simplify (use a buffer for the next block onto build the cond. br. to).
+    if let Some(else_block) = &self.else_block {
+      let llvm_else_block = generator
+        .llvm_context
+        .append_basic_block(llvm_current_function, "if.else");
+
+      generator.llvm_builder.build_conditional_branch(
+        llvm_condition.into_int_value(),
+        llvm_then_block,
+        llvm_else_block,
+      );
+
+      generator.llvm_builder.position_at_end(llvm_else_block);
+      else_block.lower(generator, cache);
+
+      // FIXME: Is this correct? Or should we be using the `else_block` directly here?
+      // Fallthrough if applicable.
+      if generator.get_current_block().get_terminator().is_none() {
+        generator
+          .llvm_builder
+          .build_unconditional_branch(llvm_after_block);
+      }
+    } else {
+      // NOTE: At this point, the condition must be verified to be a boolean by the type-checker.
+      generator.llvm_builder.build_conditional_branch(
+        llvm_condition.into_int_value(),
+        llvm_then_block,
+        llvm_after_block,
+      );
+    }
 
     generator.llvm_builder.position_at_end(llvm_then_block);
     self.then_block.lower(generator, cache);
 
+    // FIXME: Is this correct? Or should we be using `get_current_block()` here?
     // Fallthrough if applicable.
     if llvm_then_block.get_terminator().is_none() {
       generator
@@ -928,7 +953,7 @@ impl Lower for ast::BreakStmt {
     // NOTE: By this point, we assume that whether we're actually in a loop was handled by the type-checker.
     generator
       .llvm_builder
-      .build_unconditional_branch(generator.next_block.unwrap());
+      .build_unconditional_branch(generator.current_loop_block.unwrap());
 
     None
   }
@@ -980,7 +1005,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_cached_types:
     std::collections::HashMap<cache::DefinitionKey, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
-  next_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
+  current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   return_expects_access: bool,
   let_stmt_allocation: Option<inkwell::values::PointerValue<'ctx>>,
   // TODO: Consider merging implicit dereference flags.
@@ -1009,7 +1034,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_function_buffer: None,
       llvm_cached_values: std::collections::HashMap::new(),
       llvm_cached_types: std::collections::HashMap::new(),
-      next_block: None,
+      current_loop_block: None,
       return_expects_access: false,
       let_stmt_allocation: None,
       expecting_access: true,

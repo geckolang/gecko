@@ -594,10 +594,11 @@ impl TypeCheck for ast::Function {
       }
 
       if !is_value_returned {
-        type_context.diagnostic_builder.error(format!(
-          "function body of `{}` must return a value",
-          self.name
-        ));
+        // FIXME: There are some cases where paths of a function can return a value, but the top-level one doesn't. We will need an algorithm for this.
+        // type_context.diagnostic_builder.error(format!(
+        //   "function body of `{}` must return a value",
+        //   self.name
+        // ));
       }
     }
 
