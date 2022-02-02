@@ -942,8 +942,6 @@ impl Lower for ast::Definition {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let node = self.node_ref_cell.borrow();
 
-    println!("::definition: {} ({})", self.name, self.definition_key);
-
     // Set the pending function definition key to cache the function early.
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.

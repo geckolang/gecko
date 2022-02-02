@@ -36,10 +36,7 @@ impl Diagnostic {
   /// Determine whether the error is non-informational, and instead
   /// denotes a problem in either the program or the compiler itself.
   pub fn is_error_like(&self) -> bool {
-    match self.severity {
-      Severity::Error | Severity::Internal => true,
-      _ => false,
-    }
+    matches!(self.severity, Severity::Error | Severity::Internal)
   }
 }
 

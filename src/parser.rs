@@ -243,43 +243,53 @@ impl<'a> Parser<'a> {
     Ok(name.unwrap())
   }
 
+  fn parse_statement(&mut self) -> ParserResult<ast::Node> {
+    Ok(match self.get() {
+      lexer::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
+      lexer::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
+      lexer::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
+      lexer::TokenKind::KeywordLoop => ast::Node::LoopStmt(self.parse_loop_stmt()?),
+      lexer::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
+      lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
+      lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
+      lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::SymbolEqual) => {
+        ast::Node::VariableAssignStmt(self.parse_assign_stmt()?)
+      }
+      lexer::TokenKind::Identifier(_)
+        if !self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
+      {
+        ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
+      }
+      _ => {
+        let result = ast::Node::ExprWrapperStmt(ast::ExprStmt {
+          expr: Box::new(self.parse_expr()?),
+        });
+
+        skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
+
+        result
+      }
+    })
+  }
+
   /// '{' (%statement+) '}'
   fn parse_block(&mut self) -> ParserResult<ast::Block> {
-    // TODO: Have a symbol table for blocks, and check for re-declarations here?
+    // Support for short syntax.
+    if self.is(&lexer::TokenKind::SymbolEqual) {
+      self.skip();
+
+      // TODO: Must ensure a semi-colon always follows (for if statements, loops, etc.)?
+      return Ok(ast::Block {
+        statements: vec![Box::new(self.parse_statement()?)],
+      });
+    }
 
     skip_past!(self, &lexer::TokenKind::SymbolBraceL);
 
     let mut statements = vec![];
 
     while self.until(&lexer::TokenKind::SymbolBraceR)? {
-      statements.push(Box::new(match self.get() {
-        lexer::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
-        lexer::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
-        lexer::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
-        lexer::TokenKind::KeywordLoop => ast::Node::LoopStmt(self.parse_loop_stmt()?),
-        lexer::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
-        lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
-        lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
-        lexer::TokenKind::Identifier(_)
-          if self.after_pattern_is(&lexer::TokenKind::SymbolEqual) =>
-        {
-          ast::Node::VariableAssignStmt(self.parse_assign_stmt()?)
-        }
-        lexer::TokenKind::Identifier(_)
-          if !self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
-        {
-          ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
-        }
-        _ => {
-          let result = ast::Node::ExprWrapperStmt(ast::ExprStmt {
-            expr: Box::new(self.parse_expr()?),
-          });
-
-          skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
-
-          result
-        }
-      }));
+      statements.push(Box::new(self.parse_statement()?));
     }
 
     skip_past!(self, &lexer::TokenKind::SymbolBraceR);
@@ -721,6 +731,8 @@ impl<'a> Parser<'a> {
 
   // unsafe %block
   fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlockStmt> {
+    // TODO: Why not merge this with the normal block, and just have a flag?
+
     skip_past!(self, &lexer::TokenKind::KeywordUnsafe);
 
     Ok(ast::UnsafeBlockStmt(self.parse_block()?))

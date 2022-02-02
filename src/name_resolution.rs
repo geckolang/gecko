@@ -65,8 +65,6 @@ impl Resolve for ast::Pattern {
     if let Some(target_key) = lookup_result {
       self.target_key = Some(target_key.clone());
     } else {
-      // FIXME: Report diagnostics on the driver (grip).
-      println!(" !!! PRODUCED ERROR !!!!");
       resolver.produce_lookup_error(&symbol.0);
     }
   }
@@ -292,8 +290,6 @@ impl Resolve for ast::ExternFunction {
 
 impl Resolve for ast::Definition {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    println!(" ... defining : {}", self.name);
-
     let symbol = (self.name.clone(), self.symbol_kind.clone());
 
     // Check for existing definitions.
@@ -551,7 +547,6 @@ impl NameResolver {
   }
 
   fn contains(&mut self, key: &Symbol) -> bool {
-    println!("-- contains check:");
     self.relative_lookup(key).is_some()
   }
 }
