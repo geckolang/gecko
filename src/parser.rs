@@ -272,7 +272,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// '{' (%statement+) '}'
+  /// {'{' (%statement+) '}' | '=' {%statement | %expr}}
   fn parse_block(&mut self) -> ParserResult<ast::Block> {
     // Support for short syntax.
     if self.is(&lexer::TokenKind::SymbolEqual) {
