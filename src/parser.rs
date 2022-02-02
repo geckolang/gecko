@@ -9,7 +9,6 @@ macro_rules! skip_past {
           $token, $self.tokens[$self.index].0
         ),
         severity: diagnostic::Severity::Error,
-        // TODO: No location provided.
         location: $self.get_location(),
       });
     }
@@ -277,6 +276,7 @@ impl<'a> Parser<'a> {
     // Support for short syntax.
     if self.is(&lexer::TokenKind::SymbolEqual) {
       self.skip();
+      skip_past!(self, &lexer::TokenKind::SymbolGreaterThan);
 
       // TODO: Must ensure a semi-colon always follows (for if statements, loops, etc.)?
       return Ok(ast::Block {
@@ -429,11 +429,11 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, &lexer::TokenKind::SymbolParenthesesR);
 
-    let mut return_type = None;
+    let mut return_type = ast::Type::Unit;
 
     if self.is(&lexer::TokenKind::SymbolColon) {
       self.skip();
-      return_type = Some(self.parse_type()?);
+      return_type = self.parse_type()?;
     }
 
     Ok(ast::Prototype {
@@ -562,11 +562,7 @@ impl<'a> Parser<'a> {
     while self.is(&lexer::TokenKind::SymbolAt) {
       let attribute = self.parse_attribute()?;
 
-      if attributes
-        .iter()
-        .find(|attribute| attribute.name == attribute.name)
-        .is_some()
-      {
+      if attributes.iter().any(|x| x.name == x.name) {
         return Err(diagnostic::Diagnostic {
           message: format!("duplicate attribute `{}`", attribute.name),
           severity: diagnostic::Severity::Error,

@@ -744,6 +744,7 @@ impl Lower for ast::Function {
 
     generator.llvm_function_buffer = Some(llvm_function);
 
+    // FIXME: Still getting stack-overflow errors when using recursive functions (specially multiple of them at the same time). Investigate whether that's caused here or elsewhere.
     // Manually cache the function now to allow for recursive function calls.
     generator.llvm_cached_values.insert(
       generator.pending_function_definition_key.unwrap(),
@@ -1274,6 +1275,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
         llvm_type
       }
+      // NOTE: The unit type will never be lowered.
+      ast::Type::Unit => unreachable!(),
     }
   }
 
@@ -1289,9 +1292,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       .collect::<Vec<_>>();
 
     // TODO: Simplify code (find common ground between `void` and `basic` types).
-    if let Some(return_type) = &prototype.return_type {
+    if !prototype.return_type.is_unit() {
       self
-        .lower_type(&return_type, cache)
+        .lower_type(&prototype.return_type, cache)
         // TODO: Is `is_variadic` being copied?
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)

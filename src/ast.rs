@@ -70,6 +70,13 @@ pub enum Type {
   // TODO: Isn't this incompatible with `UserDefined`?
   Struct(StructType),
   UserDefined(UserDefinedType),
+  Unit,
+}
+
+impl Type {
+  pub fn is_unit(&self) -> bool {
+    matches!(self, Type::Unit)
+  }
 }
 
 // TODO: Write a macro that both defines this and `as_x_node()` (which alternatively yields `unreachable!()`) methods.
@@ -104,7 +111,7 @@ pub enum Node {
   Pattern(Pattern),
 }
 
-// TODO: What if we made this a construct to resolve itself (link with the target's key)?
+// TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
 pub struct Pattern {
   pub module_name: Option<String>,
   pub base_name: String,
@@ -183,7 +190,7 @@ pub enum Literal {
 
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
-  pub return_type: Option<Type>,
+  pub return_type: Type,
   pub is_variadic: bool,
 }
 

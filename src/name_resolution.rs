@@ -115,9 +115,7 @@ impl Resolve for ast::Prototype {
       parameter.1.resolve(resolver, cache);
     }
 
-    if let Some(return_type) = &mut self.return_type {
-      return_type.resolve(resolver, cache);
-    }
+    self.return_type.resolve(resolver, cache);
   }
 }
 
