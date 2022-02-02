@@ -356,6 +356,23 @@ impl TypeCheck for ast::Parameter {
 }
 
 impl TypeCheck for ast::Block {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    // If the last expression is not to be yielded, there are
+    // no statements, or there is a return statement present,
+    // the block will not yield a value.
+    if !self.yield_last_expr
+      || self.statements.is_empty()
+      || self
+        .statements
+        .iter()
+        .any(|x| matches!(x.as_ref(), ast::Node::ReturnStmt(_)))
+    {
+      return ast::Type::Unit;
+    }
+
+    return self.statements.last().unwrap().infer_type(cache);
+  }
+
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     for statement in &self.statements {
       statement.type_check(type_context, cache);
@@ -393,6 +410,24 @@ impl TypeCheck for ast::Literal {
 }
 
 impl TypeCheck for ast::IfStmt {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    // Both branches must be present in order for a value
+    // to possibly evaluate.
+    if self.else_block.is_none() {
+      return ast::Type::Unit;
+    }
+
+    let else_block = self.else_block.as_ref().unwrap();
+    let then_block_type = self.then_block.infer_type(cache);
+
+    // In case of a type-mismatch between branches, simply return the unit type.
+    if !TypeCheckContext::unify(&then_block_type, &else_block.infer_type(cache), cache) {
+      return ast::Type::Unit;
+    }
+
+    then_block_type
+  }
+
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     if !TypeCheckContext::unify(
       &self.condition.infer_type(cache),
@@ -480,7 +515,11 @@ impl TypeCheck for ast::Definition {
   }
 }
 
-impl TypeCheck for ast::ExprStmt {
+impl TypeCheck for ast::InlineExprStmt {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    self.expr.infer_type(cache)
+  }
+
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     self.expr.type_check(type_context, cache);
   }
@@ -547,14 +586,14 @@ impl TypeCheck for ast::Function {
 
     // If applicable, the function's body must return a value.
     if !self.prototype.return_type.is_unit()
-      && self
+      && !self
         .body
         .statements
         .iter()
         .any(|x| matches!(x.as_ref(), ast::Node::ReturnStmt(_)))
     {
       type_context.diagnostic_builder.error(format!(
-        "the main body of function `{}` must return a value",
+        "the body of function `{}` must return a value",
         self.name
       ));
     }

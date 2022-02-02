@@ -246,28 +246,22 @@ impl<'a> Parser<'a> {
     Ok(match self.get() {
       lexer::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
       lexer::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
-      lexer::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_stmt()?),
       lexer::TokenKind::KeywordLoop => ast::Node::LoopStmt(self.parse_loop_stmt()?),
       lexer::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
       lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
       lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::SymbolEqual) => {
-        ast::Node::VariableAssignStmt(self.parse_assign_stmt()?)
+        ast::Node::AssignStmt(self.parse_assign_stmt()?)
       }
       lexer::TokenKind::Identifier(_)
         if !self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
       {
         ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
       }
-      _ => {
-        let result = ast::Node::ExprWrapperStmt(ast::ExprStmt {
-          expr: Box::new(self.parse_expr()?),
-        });
-
-        skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
-
-        result
-      }
+      // Otherwise, assume an in-line expression.
+      _ => ast::Node::InlineExprStmt(ast::InlineExprStmt {
+        expr: Box::new(self.parse_expr()?),
+      }),
     })
   }
 
@@ -278,23 +272,63 @@ impl<'a> Parser<'a> {
       self.skip();
       skip_past!(self, &lexer::TokenKind::SymbolGreaterThan);
 
+      let statement = self.parse_statement()?;
+
+      // FIXME: Is this correct for all cases?
+      let yield_last_expr = if self.is(&lexer::TokenKind::SymbolSemiColon) {
+        self.skip();
+
+        false
+      } else {
+        true
+      };
+
       // TODO: Must ensure a semi-colon always follows (for if statements, loops, etc.)?
       return Ok(ast::Block {
-        statements: vec![Box::new(self.parse_statement()?)],
+        statements: vec![Box::new(statement)],
+        yield_last_expr,
       });
     }
 
     skip_past!(self, &lexer::TokenKind::SymbolBraceL);
 
     let mut statements = vec![];
+    let mut yield_last_expr = false;
 
     while self.until(&lexer::TokenKind::SymbolBraceR)? {
-      statements.push(Box::new(self.parse_statement()?));
+      let statement = self.parse_statement()?;
+      let mut skip_semicolon = true;
+
+      // TODO: Simplify the `skip_semicolon` logic.
+      if let ast::Node::InlineExprStmt(inline_expr_stmt) = &statement {
+        if !matches!(inline_expr_stmt.expr.as_ref(), ast::Node::IfStmt(_)) {
+          skip_semicolon = false;
+        }
+      } else if matches!(
+        statement,
+        ast::Node::LoopStmt(_) | ast::Node::UnsafeBlock(_)
+      ) {
+        skip_semicolon = false;
+      }
+
+      // We're reached the end of the block without a semi-colon.
+      // This means that an expression is to be yielded. Otherwise,
+      // simply skip a semi-colon if applicable.
+      if self.is(&lexer::TokenKind::SymbolBraceR) {
+        yield_last_expr = true;
+      } else if skip_semicolon {
+        skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
+      }
+
+      statements.push(Box::new(statement));
     }
 
     skip_past!(self, &lexer::TokenKind::SymbolBraceR);
 
-    Ok(ast::Block { statements })
+    Ok(ast::Block {
+      statements,
+      yield_last_expr,
+    })
   }
 
   /// {u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64}
@@ -622,8 +656,6 @@ impl<'a> Parser<'a> {
       value = Some(Box::new(self.parse_expr()?));
     }
 
-    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
-
     Ok(ast::ReturnStmt { value })
   }
 
@@ -650,8 +682,6 @@ impl<'a> Parser<'a> {
 
     let value = self.parse_expr()?;
 
-    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
-
     // Infer the type based on the value.
     if ty.is_none() {
       // FIXME: Implement type inference.
@@ -675,7 +705,7 @@ impl<'a> Parser<'a> {
   }
 
   /// if %expr %block (else %block)
-  fn parse_if_stmt(&mut self) -> ParserResult<ast::IfStmt> {
+  fn parse_if_expr(&mut self) -> ParserResult<ast::IfStmt> {
     skip_past!(self, &lexer::TokenKind::KeywordIf);
 
     let condition = self.parse_expr()?;
@@ -712,7 +742,6 @@ impl<'a> Parser<'a> {
   /// break ';'
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
     skip_past!(self, &lexer::TokenKind::KeywordBreak);
-    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     Ok(ast::BreakStmt {})
   }
@@ -720,7 +749,6 @@ impl<'a> Parser<'a> {
   /// continue ';'
   fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
     skip_past!(self, &lexer::TokenKind::KeywordContinue);
-    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     Ok(ast::ContinueStmt)
   }
@@ -891,6 +919,7 @@ impl<'a> Parser<'a> {
 
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     Ok(match self.get() {
+      lexer::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_expr()?),
       lexer::TokenKind::SymbolTilde => ast::Node::IntrinsicCall(self.parse_intrinsic_call()?),
       lexer::TokenKind::Identifier(_)
         if self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>

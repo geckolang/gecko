@@ -330,7 +330,7 @@ impl Resolve for ast::FunctionCall {
   }
 }
 
-impl Resolve for ast::ExprStmt {
+impl Resolve for ast::InlineExprStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.expr.resolve(resolver, cache);
   }

@@ -245,7 +245,7 @@ impl Lint for ast::Enum {
   }
 }
 
-impl Lint for ast::ExprStmt {
+impl Lint for ast::InlineExprStmt {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     match self.expr.as_ref() {
       ast::Node::FunctionCall(_) => {}

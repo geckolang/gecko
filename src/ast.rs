@@ -17,10 +17,10 @@ macro_rules! dispatch {
       $crate::ast::Node::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::ExprWrapperStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::VariableOrMemberRef(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::VariableAssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::AssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
@@ -94,10 +94,10 @@ pub enum Node {
   IntrinsicCall(IntrinsicCall),
   BreakStmt(BreakStmt),
   ContinueStmt(ContinueStmt),
-  ExprWrapperStmt(ExprStmt),
+  InlineExprStmt(InlineExprStmt),
   Definition(Definition),
   VariableOrMemberRef(VariableOrMemberRef),
-  VariableAssignStmt(AssignStmt),
+  AssignStmt(AssignStmt),
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
   Parameter(Parameter),
@@ -217,6 +217,7 @@ pub struct Function {
 
 pub struct Block {
   pub statements: Vec<Box<Node>>,
+  pub yield_last_expr: bool,
 }
 
 pub struct BreakStmt {
@@ -245,7 +246,7 @@ pub struct LoopStmt {
   pub body: Block,
 }
 
-pub struct ExprStmt {
+pub struct InlineExprStmt {
   pub expr: Box<Node>,
 }
 
