@@ -573,11 +573,10 @@ impl TypeCheck for ast::ReturnStmt {
       let value_type = value.infer_type(cache);
 
       if !TypeCheckContext::unify(&current_function.prototype.return_type, &value_type, cache) {
-        // FIXME: Commented out for debugging.
-        // type_context.diagnostics.error(format!(
-        //   "return statement value and function return type mismatch for function `{}`",
-        //   current_function.name
-        // ));
+        type_context.diagnostic_builder.error(format!(
+          "return statement value and function return type mismatch for function `{}`",
+          current_function.name
+        ));
       }
 
       value.type_check(type_context, cache);
@@ -591,11 +590,12 @@ impl TypeCheck for ast::Function {
 
     // If applicable, the function's body must return a value.
     if !self.prototype.return_type.is_unit()
-      && !self
-        .body
-        .statements
-        .iter()
-        .any(|x| matches!(x.as_ref(), ast::Node::ReturnStmt(_)))
+      && !self.body.yield_last_expr
+        & !self
+          .body
+          .statements
+          .iter()
+          .any(|x| matches!(x.as_ref(), ast::Node::ReturnStmt(_)))
     {
       type_context.diagnostic_builder.error(format!(
         "the body of function `{}` must return a value",

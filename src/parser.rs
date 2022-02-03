@@ -303,19 +303,6 @@ impl<'a> Parser<'a> {
 
     while self.until(&lexer::TokenKind::SymbolBraceR)? {
       let statement = self.parse_statement()?;
-      let mut skip_semicolon = true;
-
-      // TODO: Simplify the `skip_semicolon` logic.
-      if let ast::Node::InlineExprStmt(inline_expr_stmt) = &statement {
-        if !matches!(inline_expr_stmt.expr.as_ref(), ast::Node::IfStmt(_)) {
-          skip_semicolon = false;
-        }
-      } else if matches!(
-        statement,
-        ast::Node::LoopStmt(_) | ast::Node::UnsafeBlock(_)
-      ) {
-        skip_semicolon = false;
-      }
 
       // TODO: Is this logic correct?
       // We're reached the end of the block without a semi-colon.
@@ -323,11 +310,7 @@ impl<'a> Parser<'a> {
       // simply skip a semi-colon if applicable.
       if self.is(&lexer::TokenKind::SymbolBraceR) {
         yield_last_expr = true;
-      } else if skip_semicolon {
-        skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
       }
-
-      println!("push stmt =>");
 
       statements.push(Box::new(statement));
     }
@@ -524,8 +507,6 @@ impl<'a> Parser<'a> {
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
 
-    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
-
     let extern_function = ast::ExternFunction {
       name: name.clone(),
       prototype,
@@ -549,8 +530,6 @@ impl<'a> Parser<'a> {
     skip_past!(self, &lexer::TokenKind::SymbolColon);
 
     let ty = self.parse_type()?;
-
-    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
 
     let extern_static = ast::ExternStatic(name.clone(), ty);
 
@@ -663,6 +642,8 @@ impl<'a> Parser<'a> {
     // TODO: Does this cover all cases?
     if !self.is(&lexer::TokenKind::SymbolSemiColon) {
       value = Some(Box::new(self.parse_expr()?));
+    } else {
+      self.skip();
     }
 
     Ok(ast::ReturnStmt { value })
@@ -672,12 +653,13 @@ impl<'a> Parser<'a> {
   fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
     skip_past!(self, &lexer::TokenKind::KeywordLet);
 
-    let mut is_mutable = false;
-
-    if self.is(&lexer::TokenKind::KeywordMut) {
+    let is_mutable = if self.is(&lexer::TokenKind::KeywordMut) {
       self.skip();
-      is_mutable = true;
-    }
+
+      true
+    } else {
+      false
+    };
 
     let name = self.parse_name()?;
     let mut ty = None;
@@ -697,7 +679,6 @@ impl<'a> Parser<'a> {
       todo!();
     }
 
-    // TODO: Is mutable.
     let let_stmt = ast::LetStmt {
       name: name.clone(),
       ty: ty.unwrap(),
@@ -1103,8 +1084,6 @@ impl<'a> Parser<'a> {
 
     let value = Box::new(self.parse_expr()?);
 
-    skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
-
     Ok(ast::AssignStmt {
       assignee_expr,
       value,
@@ -1165,7 +1144,7 @@ impl<'a> Parser<'a> {
 
       let field_type = self.parse_type()?;
 
-      skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
+      skip_past!(self, &lexer::TokenKind::SymbolComma);
       fields.insert(field_name, field_type);
     }
 

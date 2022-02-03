@@ -1,4 +1,4 @@
-use crate::{ast, cache, dispatch};
+use crate::{ast, cache, dispatch, type_check::TypeCheck};
 use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
@@ -184,7 +184,8 @@ impl Lower for ast::ArrayIndexing {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_index = self.index.lower(generator, cache).unwrap().into_int_value();
-    let llvm_target_array = generator.memoize_or_retrieve(self.target_key.unwrap(), cache);
+    // TODO: Here we opted not to forward buffers. Ensure this is correct.
+    let llvm_target_array = generator.memoize_or_retrieve(self.target_key.unwrap(), cache, false);
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
     unsafe {
@@ -534,8 +535,9 @@ impl Lower for ast::VariableOrMemberRef {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // FIXME: Verify that the logic for automatic access is correct in this function.
 
+    // TODO: Here we opted not to forward buffers. Ensure this is correct.
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
-    let llvm_value = generator.memoize_or_retrieve(self.0.target_key.unwrap(), cache);
+    let llvm_value = generator.memoize_or_retrieve(self.0.target_key.unwrap(), cache, false);
 
     Some(if generator.expecting_access {
       generator.attempt_access(llvm_value)
@@ -610,6 +612,20 @@ impl Lower for ast::IfStmt {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_condition = self.condition.lower(generator, cache).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
+    let ty = self.infer_type(cache);
+    let yields_expression = !ty.is_unit();
+    let mut llvm_if_value = None;
+
+    // Allocate the resulting if-value early on, if applicable.
+    if yields_expression {
+      let llvm_if_value_type = generator.lower_type(&ty, cache);
+
+      let llvm_if_value_alloca = generator
+        .llvm_builder
+        .build_alloca(llvm_if_value_type, "if.value");
+
+      llvm_if_value = Some(llvm_if_value_alloca.as_basic_value_enum());
+    }
 
     let llvm_then_block = generator
       .llvm_context
@@ -619,8 +635,8 @@ impl Lower for ast::IfStmt {
       .llvm_context
       .append_basic_block(llvm_current_function, "if.after");
 
-    let mut llvm_else_value = None;
     let mut llvm_else_block_result = None;
+    let mut llvm_else_block_value = None;
 
     // TODO: Simplify (use a buffer for the next block onto build the cond. br. to).
     if let Some(else_block) = &self.else_block {
@@ -637,7 +653,7 @@ impl Lower for ast::IfStmt {
       );
 
       generator.llvm_builder.position_at_end(llvm_else_block);
-      llvm_else_value = else_block.lower(generator, cache);
+      llvm_else_block_value = else_block.lower(generator, cache);
 
       // FIXME: Is this correct? Or should we be using the `else_block` directly here?
       // Fallthrough if applicable.
@@ -657,7 +673,7 @@ impl Lower for ast::IfStmt {
 
     generator.llvm_builder.position_at_end(llvm_then_block);
 
-    let llvm_then_value = self.then_block.lower(generator, cache);
+    let llvm_then_block_value = self.then_block.lower(generator, cache);
 
     // FIXME: Is this correct? Or should we be using `get_current_block()` here? Or maybe this is just a special case to not leave the `then` block without a terminator? Investigate.
     // Fallthrough if applicable.
@@ -667,47 +683,34 @@ impl Lower for ast::IfStmt {
         .build_unconditional_branch(llvm_after_block);
     }
 
+    if yields_expression {
+      // TODO: Is it guaranteed to have a first instruction? Think (at this point both block return a value, correct?).
+      generator
+        .llvm_builder
+        .position_before(&llvm_then_block.get_last_instruction().unwrap());
+
+      generator.llvm_builder.build_store(
+        llvm_if_value.unwrap().into_pointer_value(),
+        llvm_then_block_value.unwrap(),
+      );
+
+      // TODO: Is it guaranteed to have a first instruction? Think (at this point both block return a value, correct?).
+      generator.llvm_builder.position_before(
+        &llvm_else_block_result
+          .unwrap()
+          .get_last_instruction()
+          .unwrap(),
+      );
+
+      generator.llvm_builder.build_store(
+        llvm_if_value.unwrap().into_pointer_value(),
+        llvm_else_block_value.unwrap(),
+      );
+    }
+
     generator.llvm_builder.position_at_end(llvm_after_block);
 
-    // let mut llvm_if_value = None;
-
-    // TODO: Assuming to always return a value. Not enough checks.
-    // if self.else_block.is_some() {
-    //   let llvm_if_value_type = generator.lower_type(&self.then_block.infer_type(cache), cache);
-
-    //   // TODO: Does it matter where this is allocated?
-    //   let llvm_if_value_alloca = generator
-    //     .llvm_builder
-    //     .build_alloca(llvm_if_value_type, "if.value");
-
-    //   llvm_if_value = Some(llvm_if_value_alloca.as_basic_value_enum());
-
-    //   let llvm_temp_builder = generator.llvm_context.create_builder();
-
-    //   if let Some(llvm_then_terminator) = llvm_then_block.get_terminator() {
-    //     llvm_temp_builder.position_before(&llvm_then_terminator);
-    //   } else {
-    //     llvm_temp_builder.position_at_end(llvm_then_block);
-    //   }
-
-    //   llvm_temp_builder.build_store(llvm_if_value_alloca, llvm_then_value.unwrap());
-
-    //   if let Some(llvm_else_terminator) = llvm_else_block_result.unwrap().get_terminator() {
-    //     llvm_temp_builder.position_before(&llvm_else_terminator);
-    //   } else {
-    //     llvm_temp_builder.position_at_end(llvm_else_block_result.unwrap());
-    //   }
-
-    //   llvm_temp_builder.build_store(llvm_if_value_alloca, llvm_else_value.unwrap());
-    // }
-
-    // Some(
-    //   generator
-    //     .llvm_builder
-    //     .build_load(llvm_if_value.unwrap().into_pointer_value(), "if.load")
-    //     .as_basic_value_enum(),
-    // )
-    None
+    llvm_if_value
   }
 }
 
@@ -830,12 +833,10 @@ impl Lower for ast::Function {
       .append_basic_block(llvm_function, "fn.entry");
 
     generator.llvm_builder.position_at_end(llvm_entry_block);
-    self.body.lower(generator, cache);
 
-    // Build return void instruction if the function doesn't return.
-    if generator.get_current_block().get_terminator().is_none() {
-      generator.llvm_builder.build_return(None);
-    }
+    let yielded_result = self.body.lower(generator, cache);
+
+    generator.attempt_build_return(yielded_result);
 
     Some(llvm_function.as_global_value().as_basic_value_enum())
   }
@@ -882,8 +883,7 @@ impl Lower for ast::Block {
       }
     }
 
-    // last_statement_value
-    None
+    last_statement_value
   }
 }
 
@@ -893,19 +893,13 @@ impl Lower for ast::ReturnStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    println!("INVOKE RETURN LOWER +++");
-
     let llvm_return_value = if let Some(return_value) = &self.value {
-      println!("lower return stmt ... value ...");
-
       Some(return_value.lower(generator, cache).unwrap())
     } else {
       None
     };
 
-    println!("lower ret stmt ... general !");
-
-    generator.build_return(llvm_return_value);
+    generator.attempt_build_return(llvm_return_value);
 
     None
   }
@@ -971,7 +965,7 @@ impl Lower for ast::LetStmt {
       .llvm_builder
       .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
 
-    // TODO: Might this affect nested constructs unintentionally? Investigate.
+    // TODO: Might this affect nested constructs unintentionally? Investigate. Also, try to avoid buffers.
     generator.let_stmt_allocation = Some(llvm_alloca_ptr);
 
     let llvm_value = self.value.lower(generator, cache);
@@ -980,9 +974,12 @@ impl Lower for ast::LetStmt {
 
     // NOTE: Some values (such as `StructValue`) work on the allocated type, and do not produce any value.
     if let Some(llvm_value) = llvm_value {
+      // FIXME: This is added to try to form a new base-pointer system, with implicit deref. (access) on assignment. Verify that all instances work (specially with pointers).
+      let llvm_final_value = generator.attempt_access(llvm_value);
+
       generator
         .llvm_builder
-        .build_store(llvm_alloca_ptr, llvm_value);
+        .build_store(llvm_alloca_ptr, llvm_final_value);
     }
 
     Some(llvm_alloca_ptr.as_basic_value_enum())
@@ -1001,8 +998,9 @@ impl Lower for ast::FunctionCall {
       .map(|argument| argument.lower(generator, cache).unwrap().into())
       .collect::<Vec<_>>();
 
+    // TODO: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_function = generator
-      .memoize_or_retrieve(self.callee_pattern.target_key.unwrap(), cache)
+      .memoize_or_retrieve(self.callee_pattern.target_key.unwrap(), cache, false)
       .into_pointer_value();
 
     let llvm_call_value = generator.llvm_builder.build_call(
@@ -1053,8 +1051,9 @@ impl Lower for ast::Definition {
     }
 
     // TODO: This might error for other globally-defined types.
+    // TODO: Forwarding buffers. Is this okay in this instance?
     if !matches!(&*node, ast::Node::StructType(_)) {
-      Some(generator.memoize_or_retrieve(self.definition_key, cache))
+      Some(generator.memoize_or_retrieve(self.definition_key, cache, true))
     } else {
       None
     }
@@ -1416,7 +1415,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     self.llvm_builder.get_insert_block().unwrap()
   }
 
-  fn build_return(&mut self, return_value: Option<inkwell::values::BasicValueEnum<'ctx>>) {
+  fn attempt_build_return(&mut self, return_value: Option<inkwell::values::BasicValueEnum<'ctx>>) {
     // TODO: Consider mixing this with the function's terminator check, for void functions?
     // Only build a single return instruction per block.
     if self.get_current_block().get_terminator().is_some() {
@@ -1434,6 +1433,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     &mut self,
     definition_key: cache::DefinitionKey,
     cache: &cache::Cache,
+    forward_buffers: bool,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // If the definition has been cached previously, simply retrieve it.
     if self.llvm_cached_values.contains_key(&definition_key) {
@@ -1461,12 +1461,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     self.llvm_cached_values.insert(definition_key, llvm_value);
 
     // TODO: What if the `previous_block` buffer was `None`?
-    // Restore buffers after processing.
-    if let Some(previous_block) = previous_insert_block {
-      self.llvm_builder.position_at_end(previous_block);
-    }
+    // Restore buffers after processing, if requested.
+    if !forward_buffers {
+      if let Some(previous_block) = previous_insert_block {
+        self.llvm_builder.position_at_end(previous_block);
+      }
 
-    self.llvm_function_buffer = previous_function_buffer;
+      self.llvm_function_buffer = previous_function_buffer;
+    }
 
     return llvm_value;
   }
