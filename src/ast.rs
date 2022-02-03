@@ -273,6 +273,9 @@ pub struct StructType {
 pub enum OperatorKind {
   And,
   Or,
+  Nand,
+  Nor,
+  Xor,
   Not,
   AddressOf,
   Add,

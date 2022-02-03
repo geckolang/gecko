@@ -447,7 +447,12 @@ impl TypeCheck for ast::BinaryExpr {
     match self.operator {
       ast::OperatorKind::LessThan
       | ast::OperatorKind::GreaterThan
-      | ast::OperatorKind::Equality => ast::Type::Primitive(ast::PrimitiveType::Bool),
+      | ast::OperatorKind::Equality
+      | ast::OperatorKind::And
+      | ast::OperatorKind::Or
+      | ast::OperatorKind::Nand
+      | ast::OperatorKind::Nor
+      | ast::OperatorKind::Xor => ast::Type::Primitive(ast::PrimitiveType::Bool),
       _ => self.left.infer_type(cache),
     }
   }
@@ -459,7 +464,7 @@ impl TypeCheck for ast::BinaryExpr {
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
     // TODO: If we require both operands to  be of the same type, then operator overloading isn't possible with mixed operands as parameters.
-    if left_type != right_type {
+    if !TypeCheckContext::unify(&left_type, &right_type, cache) {
       type_context
         .diagnostic_builder
         .error("binary expression operands must be the same type".to_string());
@@ -484,8 +489,8 @@ impl TypeCheck for ast::BinaryExpr {
             .error("binary expression operands must be both integers".to_string());
         }
       }
-      // TODO: Equality operator, and others?
-      _ => todo!(),
+      // TODO: Equality operator, and others? Implement.
+      _ => {}
     };
 
     self.left.type_check(type_context, cache);

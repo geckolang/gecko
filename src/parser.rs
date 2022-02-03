@@ -46,7 +46,10 @@ fn get_token_precedence(token: &lexer::TokenKind) -> usize {
     | lexer::TokenKind::SymbolLessThan
     | lexer::TokenKind::SymbolGreaterThan
     | lexer::TokenKind::KeywordAnd
-    | lexer::TokenKind::KeywordOr => 1,
+    | lexer::TokenKind::KeywordOr
+    | lexer::TokenKind::KeywordNand
+    | lexer::TokenKind::KeywordNor
+    | lexer::TokenKind::KeywordXor => 1,
     lexer::TokenKind::SymbolAsterisk | lexer::TokenKind::SymbolSlash => 2,
     _ => 0,
   }
@@ -115,6 +118,9 @@ impl<'a> Parser<'a> {
         | lexer::TokenKind::SymbolGreaterThan
         | lexer::TokenKind::KeywordAnd
         | lexer::TokenKind::KeywordOr
+        | lexer::TokenKind::KeywordNand
+        | lexer::TokenKind::KeywordNor
+        | lexer::TokenKind::KeywordXor
     ) || matches!(token, lexer::TokenKind::SymbolEqual if self.peek_is(&lexer::TokenKind::SymbolEqual))
   }
 
@@ -311,6 +317,7 @@ impl<'a> Parser<'a> {
         skip_semicolon = false;
       }
 
+      // TODO: Is this logic correct?
       // We're reached the end of the block without a semi-colon.
       // This means that an expression is to be yielded. Otherwise,
       // simply skip a semi-colon if applicable.
@@ -319,6 +326,8 @@ impl<'a> Parser<'a> {
       } else if skip_semicolon {
         skip_past!(self, &lexer::TokenKind::SymbolSemiColon);
       }
+
+      println!("push stmt =>");
 
       statements.push(Box::new(statement));
     }
@@ -953,6 +962,9 @@ impl<'a> Parser<'a> {
     let operator = match current_token {
       lexer::TokenKind::KeywordAnd => ast::OperatorKind::And,
       lexer::TokenKind::KeywordOr => ast::OperatorKind::Or,
+      lexer::TokenKind::KeywordNand => ast::OperatorKind::Nand,
+      lexer::TokenKind::KeywordNor => ast::OperatorKind::Nor,
+      lexer::TokenKind::KeywordXor => ast::OperatorKind::Xor,
       lexer::TokenKind::SymbolBang => ast::OperatorKind::Not,
       lexer::TokenKind::SymbolPlus => ast::OperatorKind::Add,
       lexer::TokenKind::SymbolMinus => ast::OperatorKind::SubtractOrNegate,

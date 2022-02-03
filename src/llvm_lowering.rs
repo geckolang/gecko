@@ -1,4 +1,4 @@
-use crate::{ast, cache, dispatch, type_check::TypeCheck};
+use crate::{ast, cache, dispatch};
 use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
@@ -493,6 +493,29 @@ impl Lower for ast::BinaryExpr {
           "or_op",
         )
         .as_basic_value_enum(),
+      ast::OperatorKind::Nand => generator
+        .llvm_builder
+        .build_not(
+          generator.llvm_builder.build_and(
+            llvm_left_value.into_int_value(),
+            llvm_right_value.into_int_value(),
+            "",
+          ),
+          "nand_op",
+        )
+        .as_basic_value_enum(),
+      ast::OperatorKind::Nor => generator
+        .llvm_builder
+        .build_not(
+          generator.llvm_builder.build_or(
+            llvm_left_value.into_int_value(),
+            llvm_right_value.into_int_value(),
+            "",
+          ),
+          "nor_op",
+        )
+        .as_basic_value_enum(),
+      // FIXME: Add the `xor` operator.
       // TODO: Support for when comparing equality of pointers/references.
       // TODO: Support for all operators.
       _ => todo!(),
@@ -597,12 +620,15 @@ impl Lower for ast::IfStmt {
       .append_basic_block(llvm_current_function, "if.after");
 
     let mut llvm_else_value = None;
+    let mut llvm_else_block_result = None;
 
     // TODO: Simplify (use a buffer for the next block onto build the cond. br. to).
     if let Some(else_block) = &self.else_block {
       let llvm_else_block = generator
         .llvm_context
         .append_basic_block(llvm_current_function, "if.else");
+
+      llvm_else_block_result = Some(llvm_else_block);
 
       generator.llvm_builder.build_conditional_branch(
         llvm_condition.into_int_value(),
@@ -635,7 +661,7 @@ impl Lower for ast::IfStmt {
 
     // FIXME: Is this correct? Or should we be using `get_current_block()` here? Or maybe this is just a special case to not leave the `then` block without a terminator? Investigate.
     // Fallthrough if applicable.
-    if llvm_then_block.get_terminator().is_none() {
+    if generator.get_current_block().get_terminator().is_none() {
       generator
         .llvm_builder
         .build_unconditional_branch(llvm_after_block);
@@ -643,53 +669,45 @@ impl Lower for ast::IfStmt {
 
     generator.llvm_builder.position_at_end(llvm_after_block);
 
-    let mut llvm_if_value = None;
+    // let mut llvm_if_value = None;
 
     // TODO: Assuming to always return a value. Not enough checks.
-    if self.else_block.is_some() {
-      let llvm_assign_after_block = generator
-        .llvm_context
-        .append_basic_block(llvm_current_function, "if.assign.after");
+    // if self.else_block.is_some() {
+    //   let llvm_if_value_type = generator.lower_type(&self.then_block.infer_type(cache), cache);
 
-      let llvm_if_value_type = generator.lower_type(&self.then_block.infer_type(cache), cache);
+    //   // TODO: Does it matter where this is allocated?
+    //   let llvm_if_value_alloca = generator
+    //     .llvm_builder
+    //     .build_alloca(llvm_if_value_type, "if.value");
 
-      let llvm_if_value_alloca = generator
-        .llvm_builder
-        .build_alloca(llvm_if_value_type, "if.value");
+    //   llvm_if_value = Some(llvm_if_value_alloca.as_basic_value_enum());
 
-      llvm_if_value = Some(llvm_if_value_alloca.as_basic_value_enum());
+    //   let llvm_temp_builder = generator.llvm_context.create_builder();
 
-      let llvm_then_assign_block = generator
-        .llvm_context
-        .append_basic_block(llvm_current_function, "if.assign.then");
+    //   if let Some(llvm_then_terminator) = llvm_then_block.get_terminator() {
+    //     llvm_temp_builder.position_before(&llvm_then_terminator);
+    //   } else {
+    //     llvm_temp_builder.position_at_end(llvm_then_block);
+    //   }
 
-      let llvm_temp_builder = generator.llvm_context.create_builder();
+    //   llvm_temp_builder.build_store(llvm_if_value_alloca, llvm_then_value.unwrap());
 
-      llvm_temp_builder.position_at_end(llvm_then_assign_block);
-      llvm_temp_builder.build_store(llvm_if_value_alloca, llvm_then_value.unwrap());
-      llvm_temp_builder.build_unconditional_branch(llvm_assign_after_block);
+    //   if let Some(llvm_else_terminator) = llvm_else_block_result.unwrap().get_terminator() {
+    //     llvm_temp_builder.position_before(&llvm_else_terminator);
+    //   } else {
+    //     llvm_temp_builder.position_at_end(llvm_else_block_result.unwrap());
+    //   }
 
-      let llvm_else_assign_block = generator
-        .llvm_context
-        .append_basic_block(llvm_current_function, "if.assign.else");
+    //   llvm_temp_builder.build_store(llvm_if_value_alloca, llvm_else_value.unwrap());
+    // }
 
-      llvm_temp_builder.position_at_end(llvm_else_assign_block);
-      llvm_temp_builder.build_store(llvm_if_value_alloca, llvm_else_value.unwrap());
-      llvm_temp_builder.build_unconditional_branch(llvm_assign_after_block);
-
-      // FIXME: Is it actually okay that we're repeating the condition? Won't we have to cache the previous holder of it?
-      generator.llvm_builder.build_conditional_branch(
-        llvm_condition.into_int_value(),
-        llvm_then_assign_block,
-        llvm_else_assign_block,
-      );
-
-      generator
-        .llvm_builder
-        .position_at_end(llvm_assign_after_block);
-    }
-
-    llvm_if_value
+    // Some(
+    //   generator
+    //     .llvm_builder
+    //     .build_load(llvm_if_value.unwrap().into_pointer_value(), "if.load")
+    //     .as_basic_value_enum(),
+    // )
+    None
   }
 }
 
@@ -864,7 +882,8 @@ impl Lower for ast::Block {
       }
     }
 
-    last_statement_value
+    // last_statement_value
+    None
   }
 }
 
@@ -874,11 +893,17 @@ impl Lower for ast::ReturnStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    println!("INVOKE RETURN LOWER +++");
+
     let llvm_return_value = if let Some(return_value) = &self.value {
+      println!("lower return stmt ... value ...");
+
       Some(return_value.lower(generator, cache).unwrap())
     } else {
       None
     };
+
+    println!("lower ret stmt ... general !");
 
     generator.build_return(llvm_return_value);
 
@@ -946,6 +971,7 @@ impl Lower for ast::LetStmt {
       .llvm_builder
       .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
 
+    // TODO: Might this affect nested constructs unintentionally? Investigate.
     generator.let_stmt_allocation = Some(llvm_alloca_ptr);
 
     let llvm_value = self.value.lower(generator, cache);
