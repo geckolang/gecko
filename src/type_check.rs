@@ -49,12 +49,13 @@ impl TypeCheckContext {
   /// Resolve a possible user-defined type, so it can be used properly.
   fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
     match ty {
-      ast::Type::UserDefined(user_defined_type) => {
+      ast::Type::Stub(user_defined_type) => {
         let target_type = cache.get(&user_defined_type.target_key.unwrap());
 
         match &*target_type {
           // TODO: Cloning struct type.
           ast::Node::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
+          ast::Node::TypeAlias(type_alias) => type_alias.ty.clone(),
           _ => unreachable!(),
         }
       }
@@ -83,6 +84,10 @@ impl TypeCheck for ast::Node {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     dispatch!(self, TypeCheck::infer_type, cache)
   }
+}
+
+impl TypeCheck for ast::TypeAlias {
+  //
 }
 
 impl TypeCheck for ast::Pattern {

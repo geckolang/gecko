@@ -87,6 +87,10 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::TypeAlias {
+  //
+}
+
 impl Lint for ast::Pattern {
   fn lint(&self, _cache: &mut cache::Cache, _lint_context: &mut LintContext) {
     // TODO: Lint name(s).

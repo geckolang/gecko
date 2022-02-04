@@ -27,6 +27,10 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::TypeAlias {
+  //
+}
+
 impl Lower for ast::Pattern {
   //
 }
@@ -1082,7 +1086,7 @@ impl Lower for ast::Definition {
 
     // TODO: This might error for other globally-defined types.
     // TODO: Forwarding buffers. Is this okay in this instance?
-    if !matches!(&*node, ast::Node::StructType(_)) {
+    if !matches!(&*node, ast::Node::StructType(_) | ast::Node::TypeAlias(_)) {
       Some(generator.memoize_or_retrieve(self.definition_key, cache, true))
     } else {
       None
@@ -1340,8 +1344,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::Struct(struct_type) => self
         .lower_struct_type(struct_type, cache)
         .as_basic_type_enum(),
-      ast::Type::UserDefined(user_defined_type) => {
-        let target_key = user_defined_type.target_key.unwrap();
+      ast::Type::Stub(stub_type) => {
+        let target_key = stub_type.target_key.unwrap();
 
         // If the type has been cached previously, simply retrieve it.
         if let Some(llvm_cached_type) = self.llvm_cached_types.get(&target_key) {
@@ -1352,10 +1356,15 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         let cached_type_node = cache.get(&target_key);
 
         let llvm_type = match &*cached_type_node {
-          ast::Node::StructType(struct_type) => self.lower_struct_type(struct_type, cache),
+          ast::Node::StructType(struct_type) => self
+            .lower_struct_type(struct_type, cache)
+            .as_basic_type_enum(),
+          ast::Node::TypeAlias(type_alias) => {
+            // FIXME: Non-tail-recursive recursive call!
+            self.lower_type(&type_alias.ty, cache).as_basic_type_enum()
+          }
           _ => unreachable!(),
-        }
-        .as_basic_type_enum();
+        };
 
         self.llvm_cached_types.insert(target_key, llvm_type.clone());
 

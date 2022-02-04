@@ -1,0 +1,7 @@
+fn single_statement(): i32 => 1
+
+fn single_statement_with_semicolon() => 1;
+
+fn block_yield(): i32 {
+  1
+}

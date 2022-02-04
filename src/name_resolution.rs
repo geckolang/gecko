@@ -25,7 +25,7 @@ pub trait Resolve {
 impl Resolve for ast::Type {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     match self {
-      ast::Type::UserDefined(user_defined_type) => {
+      ast::Type::Stub(user_defined_type) => {
         user_defined_type.resolve(resolver, cache);
       }
       ast::Type::Pointer(pointee_type) => {
@@ -46,6 +46,12 @@ impl Resolve for ast::Node {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     crate::dispatch!(self, Resolve::resolve, resolver, cache);
+  }
+}
+
+impl Resolve for ast::TypeAlias {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.ty.resolve(resolver, cache);
   }
 }
 
@@ -80,7 +86,7 @@ impl Resolve for ast::ExternStatic {
   }
 }
 
-impl Resolve for ast::UserDefinedType {
+impl Resolve for ast::StubType {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
@@ -279,9 +285,7 @@ impl Resolve for ast::Function {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // TODO: Is there a need to resolve the prototype?
     self.prototype.resolve(resolver, cache);
-
     self.body.resolve(resolver, cache);
   }
 }
@@ -521,7 +525,7 @@ impl NameResolver {
           // TODO: Consider resolving/unboxing the type, instead of doing it manually.
 
           let user_defined_type_target_key = match &let_stmt.ty {
-            ast::Type::UserDefined(ast::UserDefinedType {
+            ast::Type::Stub(ast::StubType {
               name: _,
               target_key,
             }) => target_key.unwrap(),

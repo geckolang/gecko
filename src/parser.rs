@@ -416,7 +416,7 @@ impl<'a> Parser<'a> {
   fn parse_user_defined_type(&mut self) -> ParserResult<ast::Type> {
     let name = self.parse_name()?;
 
-    Ok(ast::Type::UserDefined(ast::UserDefinedType {
+    Ok(ast::Type::Stub(ast::StubType {
       name,
       target_key: None,
     }))
@@ -629,6 +629,7 @@ impl<'a> Parser<'a> {
       }
       lexer::TokenKind::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
       lexer::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_type()?),
+      lexer::TokenKind::KeywordType => ast::Node::Definition(self.parse_type_alias()?),
       _ => {
         return Err(diagnostic::Diagnostic {
           message: format!("unexpected token `{}`, expected top-level construct", token),
@@ -639,6 +640,29 @@ impl<'a> Parser<'a> {
     };
 
     Ok(definition)
+  }
+
+  fn parse_type_alias(&mut self) -> ParserResult<ast::Definition> {
+    skip_past!(self, &lexer::TokenKind::KeywordType);
+
+    let name = self.parse_name()?;
+
+    skip_past!(self, &lexer::TokenKind::SymbolEqual);
+
+    // TODO: Ensure that there can't be recursive type aliases.
+    let ty = self.parse_type()?;
+
+    let type_alias = ast::TypeAlias {
+      name: name.clone(),
+      ty,
+    };
+
+    Ok(ast::Definition {
+      name,
+      symbol_kind: name_resolution::SymbolKind::Type,
+      node_ref_cell: cache::create_cached_node(ast::Node::TypeAlias(type_alias)),
+      definition_key: self.cache.create_definition_key(),
+    })
   }
 
   /// return (%expr)
@@ -689,7 +713,9 @@ impl<'a> Parser<'a> {
       // call. We might need to create stubs for later resolution in this case,
       // or investigate for a better solution. Asking on the programming languages
       // Discord is probably the first step to take. Also, make sure to keep the fix
-      // as simple as possible (don't add a whole stub system just for this).
+      // as simple as possible (don't add a whole stub system just for this). For
+      // example, what about having a sort of `StubType`? That might be simple. Think
+      // of ideas.
       let inferred_type = value.infer_type(self.cache);
 
       // Variable declarations cannot be of type unit.

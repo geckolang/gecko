@@ -32,6 +32,7 @@ macro_rules! dispatch {
       $crate::ast::Node::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::Node::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::Node::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -69,7 +70,7 @@ pub enum Type {
   Pointer(Box<Type>),
   // TODO: Isn't this incompatible with `UserDefined`?
   Struct(StructType),
-  UserDefined(UserDefinedType),
+  Stub(StubType),
   Unit,
 }
 
@@ -109,6 +110,7 @@ pub enum Node {
   Prototype(Prototype),
   StructValue(StructValue),
   Pattern(Pattern),
+  TypeAlias(TypeAlias),
 }
 
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
@@ -141,7 +143,7 @@ impl ToString for Pattern {
 }
 
 #[derive(PartialEq, Clone)]
-pub struct UserDefinedType {
+pub struct StubType {
   pub name: String,
   pub target_key: Option<cache::DefinitionKey>,
 }
@@ -268,6 +270,11 @@ pub struct IntrinsicCall {
 pub struct StructType {
   pub name: String,
   pub fields: std::collections::HashMap<String, Type>,
+}
+
+pub struct TypeAlias {
+  pub name: String,
+  pub ty: Type,
 }
 
 pub enum OperatorKind {
