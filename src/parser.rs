@@ -328,10 +328,14 @@ impl<'a> Parser<'a> {
     let current_token = self.get();
 
     let size = match current_token {
-      lexer::TokenKind::TypeInt8 => ast::IntSize::I8,
-      lexer::TokenKind::TypeInt16 => ast::IntSize::I16,
-      lexer::TokenKind::TypeInt32 => ast::IntSize::I32,
-      lexer::TokenKind::TypeInt64 => ast::IntSize::I64,
+      lexer::TokenKind::TypeSignedInt8 => ast::IntSize::I8,
+      lexer::TokenKind::TypeSignedInt16 => ast::IntSize::I16,
+      lexer::TokenKind::TypeSignedInt32 => ast::IntSize::I32,
+      lexer::TokenKind::TypeSignedInt64 => ast::IntSize::I64,
+      lexer::TokenKind::TypeUnsignedInt8 => ast::IntSize::U8,
+      lexer::TokenKind::TypeUnsignedInt16 => ast::IntSize::U16,
+      lexer::TokenKind::TypeUnsignedInt32 => ast::IntSize::U32,
+      lexer::TokenKind::TypeUnsignedInt64 => ast::IntSize::U64,
       // TODO: Add unsigned type tokens.
       _ => return Err(self.expected("integer type")),
     };
@@ -374,10 +378,14 @@ impl<'a> Parser<'a> {
     // TODO: Support for more types.
     match self.get() {
       // TODO: Other types as well.
-      lexer::TokenKind::TypeInt8
-      | lexer::TokenKind::TypeInt16
-      | lexer::TokenKind::TypeInt32
-      | lexer::TokenKind::TypeInt64 => self.parse_int_type(),
+      lexer::TokenKind::TypeSignedInt8
+      | lexer::TokenKind::TypeSignedInt16
+      | lexer::TokenKind::TypeSignedInt32
+      | lexer::TokenKind::TypeSignedInt64
+      | lexer::TokenKind::TypeUnsignedInt8
+      | lexer::TokenKind::TypeUnsignedInt16
+      | lexer::TokenKind::TypeUnsignedInt32
+      | lexer::TokenKind::TypeUnsignedInt64 => self.parse_int_type(),
       lexer::TokenKind::TypeBool => self.parse_bool_type(),
       lexer::TokenKind::TypeString => {
         self.skip();
