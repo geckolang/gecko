@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, lexer, name_resolution};
+use crate::{ast, cache, diagnostic, lexer, name_resolution, type_check::TypeCheck};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -683,8 +683,25 @@ impl<'a> Parser<'a> {
 
     // Infer the type based on the value.
     if ty.is_none() {
-      // FIXME: Implement type inference.
-      todo!();
+      // FIXME: In the case of definition-based types, this will panic. This
+      // is because name resolution has not occurred at this point. An example
+      // that would trigger this bug is when inferring the type of a function
+      // call. We might need to create stubs for later resolution in this case,
+      // or investigate for a better solution. Asking on the programming languages
+      // Discord is probably the first step to take. Also, make sure to keep the fix
+      // as simple as possible (don't add a whole stub system just for this).
+      let inferred_type = value.infer_type(self.cache);
+
+      // Variable declarations cannot be of type unit.
+      if inferred_type.is_unit() {
+        return Err(diagnostic::Diagnostic {
+          message: format!("variable `{}`'s value cannot be of type unit", name),
+          severity: diagnostic::Severity::Error,
+          location: self.get_location(),
+        });
+      }
+
+      ty = Some(inferred_type);
     }
 
     let let_stmt = ast::LetStmt {

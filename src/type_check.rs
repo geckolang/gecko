@@ -17,18 +17,8 @@ impl TypeCheckContext {
     }
   }
 
-  fn is_null_pointer_type(ty: &ast::Type) -> bool {
-    match ty {
-      ast::Type::Pointer(ty) => match ty.as_ref() {
-        ast::Type::Primitive(ast::PrimitiveType::Null) => true,
-        _ => false,
-      },
-      _ => false,
-    }
-  }
-
   /// Compare two types for equality.
-  fn unify(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
+  pub fn unify(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
     let unboxed_type_a = Self::resolve_type(type_a, cache);
     let unboxed_type_b = Self::resolve_type(type_b, cache);
 
@@ -43,6 +33,16 @@ impl TypeCheckContext {
     }
 
     unboxed_type_a == unboxed_type_b
+  }
+
+  fn is_null_pointer_type(ty: &ast::Type) -> bool {
+    match ty {
+      ast::Type::Pointer(ty) => match ty.as_ref() {
+        ast::Type::Primitive(ast::PrimitiveType::Null) => true,
+        _ => false,
+      },
+      _ => false,
+    }
   }
 
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
@@ -352,7 +352,9 @@ impl TypeCheck for ast::ExternFunction {
 }
 
 impl TypeCheck for ast::Parameter {
-  //
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    self.1.clone()
+  }
 }
 
 impl TypeCheck for ast::Block {
@@ -509,6 +511,10 @@ impl TypeCheck for ast::BreakStmt {
 }
 
 impl TypeCheck for ast::Definition {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    self.node_ref_cell.borrow().infer_type(cache)
+  }
+
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let node = self.node_ref_cell.borrow();
 

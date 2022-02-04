@@ -1,4 +1,7 @@
-use crate::{ast, cache, dispatch, type_check::TypeCheck};
+use crate::{
+  ast, cache, dispatch,
+  type_check::{TypeCheck, TypeCheckContext},
+};
 use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
@@ -88,7 +91,7 @@ impl Lower for ast::StructValue {
     // TODO: If possible and practical, find a way to remove reliance on the generator's state.
 
     // FIXME: This is invalid. Struct value might be used in a different context (non-declaration).
-    let struct_alloca_ptr = generator.let_stmt_allocation.unwrap().clone();
+    let struct_alloca_ptr = generator.let_stmt_flag.unwrap().clone();
 
     // Populate struct fields.
     for (index, field) in self.fields.iter().enumerate() {
@@ -150,10 +153,7 @@ impl Lower for ast::AssignStmt {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.value.lower(generator, cache).unwrap();
-
-    let llvm_target = generator
-      .lower_without_access(&self.assignee_expr, cache)
-      .unwrap();
+    let llvm_target = self.assignee_expr.lower(generator, cache).unwrap();
 
     generator
       .llvm_builder
@@ -534,16 +534,31 @@ impl Lower for ast::VariableOrMemberRef {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // FIXME: Verify that the logic for automatic access is correct in this function.
+    // FIXME: When string variables are referenced, they are accessed and demoted to `i8`. This is a bug!
+
+    let target_key = self.0.target_key.unwrap();
+    let value_node = cache.declarations.get(&target_key).unwrap().borrow();
+    let value_node_type = value_node.infer_type(cache);
 
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
-    let llvm_value = generator.memoize_or_retrieve(self.0.target_key.unwrap(), cache, false);
+    let llvm_value = generator.memoize_or_retrieve(target_key, cache, false);
 
-    Some(if generator.expecting_access {
-      generator.attempt_access(llvm_value)
+    // If the value is not a string, proceed to access it.
+    // Strings shouldn't be accessed, otherwise they'd be
+    // demoted to `i8` which is a single character. Instead, they
+    // should stay as `i8*`. This is a special case.
+    if !TypeCheckContext::unify(
+      &value_node_type,
+      &ast::Type::Primitive(ast::PrimitiveType::String),
+      cache,
+    ) {
+      // FIXME: Will this work as expected for strings?
+      // NOTE: Not all values will be LLVM pointer values.
+      Some(generator.attempt_access(llvm_value))
     } else {
-      llvm_value
-    })
+      Some(llvm_value)
+    }
   }
 }
 
@@ -710,7 +725,18 @@ impl Lower for ast::IfStmt {
 
     generator.llvm_builder.position_at_end(llvm_after_block);
 
-    llvm_if_value
+    // If an expression is to be yielded, it must be accessed. A pointer
+    // shouldn't be yielded.
+    if let Some(llvm_if_value) = llvm_if_value {
+      Some(
+        generator
+          .llvm_builder
+          .build_load(llvm_if_value.into_pointer_value(), "if.access")
+          .as_basic_value_enum(),
+      )
+    } else {
+      None
+    }
   }
 }
 
@@ -940,8 +966,12 @@ impl Lower for ast::UnaryExpr {
       ast::OperatorKind::AddressOf => {
         // FIXME: Also, have to verify lifetimes. This isn't nearly started.
         // FIXME: Cannot bind references to temporary values. Must only be to existing definitions. This should be enforced during type-checking.
+        // FIXME: The expression shouldn't be accessed in this case. Find out how to accomplish this.
 
-        generator.lower_without_access(&self.expr, cache).unwrap()
+        // TODO: For the time being, this isn't being returned. This should be the return value.
+        self.expr.lower(generator, cache).unwrap();
+
+        todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
         let llvm_value = self.expr.lower(generator, cache).unwrap();
@@ -965,21 +995,21 @@ impl Lower for ast::LetStmt {
       .llvm_builder
       .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
 
-    // TODO: Might this affect nested constructs unintentionally? Investigate. Also, try to avoid buffers.
-    generator.let_stmt_allocation = Some(llvm_alloca_ptr);
+    // TODO: Might this affect nested constructs unintentionally. Avoid flags, find a better solution.
+    generator.let_stmt_flag = Some(llvm_alloca_ptr);
 
     let llvm_value = self.value.lower(generator, cache);
 
-    generator.let_stmt_allocation = None;
+    generator.let_stmt_flag = None;
 
+    // TODO: Write documentation here about pointer system? Value should choose whether to de-ref. themselves or not. Not the let-statement.
+
+    // FIXME: How about we handle that special case here instead of deferring it else where? Is it possible and practical? Investigate.
     // NOTE: Some values (such as `StructValue`) work on the allocated type, and do not produce any value.
     if let Some(llvm_value) = llvm_value {
-      // FIXME: This is added to try to form a new base-pointer system, with implicit deref. (access) on assignment. Verify that all instances work (specially with pointers).
-      let llvm_final_value = generator.attempt_access(llvm_value);
-
       generator
         .llvm_builder
-        .build_store(llvm_alloca_ptr, llvm_final_value);
+        .build_store(llvm_alloca_ptr, llvm_value);
     }
 
     Some(llvm_alloca_ptr.as_basic_value_enum())
@@ -1084,12 +1114,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   /// The next fall-through block (if any).
   current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   return_expects_access: bool,
-  let_stmt_allocation: Option<inkwell::values::PointerValue<'ctx>>,
-  // TODO: Consider merging implicit dereference flags.
-  /// Whether the construct is expecting an implicit `load` instruction.
-  ///
-  /// Will always be `true` by default, unless a construct requires otherwise.
-  expecting_access: bool,
+  let_stmt_flag: Option<inkwell::values::PointerValue<'ctx>>,
   /// The definition key of the function currently being emitted (if any).
   /// Used to be able to handle recursive calls.
   pending_function_definition_key: Option<cache::DefinitionKey>,
@@ -1113,8 +1138,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_cached_types: std::collections::HashMap::new(),
       current_loop_block: None,
       return_expects_access: false,
-      let_stmt_allocation: None,
-      expecting_access: true,
+      let_stmt_flag: None,
       pending_function_definition_key: None,
       panic_function_cache: None,
       print_function_cache: None,
@@ -1247,22 +1271,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     self.llvm_builder.position_at_end(llvm_next_block);
   }
 
-  fn lower_without_access(
-    &mut self,
-    node: &ast::Node,
-    cache: &cache::Cache,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let expecting_access_buffer = self.expecting_access;
-
-    self.expecting_access = false;
-
-    let llvm_value = node.lower(self, cache);
-
-    self.expecting_access = expecting_access_buffer;
-
-    llvm_value
-  }
-
   /// Insert a `load` instruction for the given LLVM value.
   ///
   /// Equivalent to a de-reference of a pointer.
@@ -1270,6 +1278,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     &mut self,
     llvm_value: inkwell::values::PointerValue<'ctx>,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
+    // TODO: Do we need an assertion here that the `llvm_value` is an LLVM pointer value? Or does it always throw when its not?
+
     self
       .llvm_builder
       .build_load(llvm_value, "access")
@@ -1351,6 +1361,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
         llvm_type
       }
+      // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no.
       // NOTE: The unit type will never be lowered.
       ast::Type::Unit => unreachable!(),
     }
@@ -1427,6 +1438,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
+  // TODO: Accept reference for key?
   /// Attempt to retrieve an existing definition, otherwise proceed to
   /// lowering it and memoizing it under the current module.
   fn memoize_or_retrieve(
