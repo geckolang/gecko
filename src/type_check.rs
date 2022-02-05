@@ -87,7 +87,7 @@ impl TypeCheck for ast::Node {
 }
 
 impl TypeCheck for ast::TypeAlias {
-  //
+  // TODO: Don't we need to implement `infer_type` here? Seems like not. Confirm.
 }
 
 impl TypeCheck for ast::Pattern {
