@@ -49,8 +49,8 @@ impl TypeCheckContext {
   /// Resolve a possible user-defined type, so it can be used properly.
   fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
     match ty {
-      ast::Type::Stub(user_defined_type) => {
-        let target_type = cache.get(&user_defined_type.target_key.unwrap());
+      ast::Type::Stub(stub_type) => {
+        let target_type = cache.get(&stub_type.target_key.unwrap());
 
         match &*target_type {
           // TODO: Cloning struct type.
@@ -284,7 +284,7 @@ impl TypeCheck for ast::ArrayIndexing {
     let target_array_variable = &*cache.get(&self.target_key.unwrap());
 
     let array_type = match target_array_variable {
-      ast::Node::LetStmt(let_stmt) => &let_stmt.ty,
+      ast::Node::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
       ast::Node::Parameter(parameter) => &parameter.1,
       _ => unreachable!(),
     };
@@ -393,7 +393,7 @@ impl TypeCheck for ast::VariableOrMemberRef {
 
     // TODO: Why not infer its type? Is this correct? (Let statement doesn't have type!).
     let variable_type = match target_variable {
-      ast::Node::LetStmt(let_stmt) => &let_stmt.ty,
+      ast::Node::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
       ast::Node::Parameter(parameter) => &parameter.1,
       _ => unreachable!(),
     };
@@ -545,7 +545,7 @@ impl TypeCheck for ast::LetStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let value_type = self.value.infer_type(cache);
 
-    if !TypeCheckContext::unify(&self.ty, &value_type, cache) {
+    if !TypeCheckContext::unify(self.ty.as_ref().unwrap(), &value_type, cache) {
       type_context.diagnostic_builder.error(format!(
         "variable declaration of `{}` value and type mismatch",
         self.name

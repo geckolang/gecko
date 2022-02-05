@@ -70,6 +70,7 @@ pub enum Type {
   Pointer(Box<Type>),
   // TODO: Isn't this incompatible with `UserDefined`?
   Struct(StructType),
+  /// A type that may need to be resolved.
   Stub(StubType),
   Unit,
 }
@@ -232,7 +233,7 @@ pub struct ReturnStmt {
 
 pub struct LetStmt {
   pub name: String,
-  pub ty: Type,
+  pub ty: Option<Type>,
   pub value: Box<Node>,
   pub is_mutable: bool,
 }

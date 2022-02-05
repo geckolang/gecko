@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic};
+use crate::{ast, cache, diagnostic, type_check::TypeCheck};
 
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub enum SymbolKind {
@@ -25,8 +25,8 @@ pub trait Resolve {
 impl Resolve for ast::Type {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     match self {
-      ast::Type::Stub(user_defined_type) => {
-        user_defined_type.resolve(resolver, cache);
+      ast::Type::Stub(stub_type) => {
+        stub_type.resolve(resolver, cache);
       }
       ast::Type::Pointer(pointee_type) => {
         pointee_type.resolve(resolver, cache);
@@ -237,8 +237,15 @@ impl Resolve for ast::IfStmt {
 
 impl Resolve for ast::LetStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.ty.resolve(resolver, cache);
     self.value.resolve(resolver, cache);
+
+    // If the type was explicitly given, proceed to resolve it.
+    // Otherwise, infer the type from the resolved value.
+    if let Some(ty) = &mut self.ty {
+      ty.resolve(resolver, cache);
+    } else {
+      self.ty = Some(self.value.infer_type(cache));
+    }
   }
 }
 
@@ -524,24 +531,24 @@ impl NameResolver {
         ast::Node::LetStmt(let_stmt) => {
           // TODO: Consider resolving/unboxing the type, instead of doing it manually.
 
-          let user_defined_type_target_key = match &let_stmt.ty {
-            ast::Type::Stub(ast::StubType {
-              name: _,
-              target_key,
-            }) => target_key.unwrap(),
-            _ => unreachable!(),
-          };
+          // let stub_type_target_key = match &let_stmt.ty {
+          //   ast::Type::Stub(ast::StubType {
+          //     name: _,
+          //     target_key,
+          //   }) => target_key.unwrap(),
+          //   _ => unreachable!(),
+          // };
 
-          let user_defined_type_declaration = cache
-            .declarations
-            .get(&user_defined_type_target_key)
-            .unwrap()
-            .borrow();
+          // let target_type_declaration = cache
+          //   .declarations
+          //   .get(&stub_type_target_key)
+          //   .unwrap()
+          //   .borrow();
 
-          let _struct_type = match &*user_defined_type_declaration {
-            ast::Node::StructType(struct_type) => struct_type,
-            _ => unreachable!(),
-          };
+          // let _struct_type = match &*target_type_declaration {
+          //   ast::Node::StructType(struct_type) => struct_type,
+          //   _ => unreachable!(),
+          // };
 
           // FIXME: There IS no definition key for struct members. So what should be do instead? Maybe this should be handled instead during the `declare` step for `LetStmt` (in the case that `LetStmt` declares a resolved-type of struct)?
         }

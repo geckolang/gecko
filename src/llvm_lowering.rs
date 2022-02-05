@@ -2,6 +2,7 @@ use crate::{
   ast, cache, dispatch,
   type_check::{TypeCheck, TypeCheckContext},
 };
+
 use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
@@ -993,7 +994,7 @@ impl Lower for ast::LetStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_type = generator.lower_type(&self.ty, cache);
+    let llvm_type = generator.lower_type(self.ty.as_ref().unwrap(), cache);
 
     let llvm_alloca_ptr = generator
       .llvm_builder
