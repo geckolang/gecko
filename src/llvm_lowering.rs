@@ -981,6 +981,9 @@ impl Lower for ast::UnaryExpr {
       ast::OperatorKind::MultiplyOrDereference => {
         let llvm_value = self.expr.lower(generator, cache).unwrap();
 
+        // FIXME: Binary expression is instead re-directing here for some reason. Might be a problem with parsing function calls as an operand.
+        println!("===> Deref");
+
         generator.access(llvm_value.into_pointer_value())
       }
       _ => unreachable!(),

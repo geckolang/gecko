@@ -96,7 +96,7 @@ impl<'a> Parser<'a> {
 
   fn expected(&self, expected: &str) -> diagnostic::Diagnostic {
     diagnostic::Diagnostic {
-      message: format!("expected {}, but got `{}`", expected, self.get()),
+      message: format!("expected {}, but got `{}`", expected, self.force_get()),
       severity: diagnostic::Severity::Error,
       location: self.get_location(),
     }
@@ -124,14 +124,24 @@ impl<'a> Parser<'a> {
     ) || matches!(token, lexer::TokenKind::SymbolEqual if self.peek_is(&lexer::TokenKind::SymbolEqual))
   }
 
+  fn is_unary_operator(&self) -> bool {
+    matches!(
+      self.force_get(),
+      lexer::TokenKind::SymbolMinus
+        | lexer::TokenKind::SymbolBang
+        | lexer::TokenKind::SymbolAmpersand
+        | lexer::TokenKind::SymbolAsterisk
+    )
+  }
+
   fn until(&self, token: &lexer::TokenKind) -> ParserResult<bool> {
     // TODO: Handle `EOF` case here.
     return Ok(!self.is_eof() && !self.is(token));
   }
 
-  fn get(&self) -> &lexer::TokenKind {
+  fn force_get(&self) -> &lexer::TokenKind {
     // TODO: Accessing index unsafely.
-    &self.tokens[self.index].0
+    &self.tokens.get(self.index).unwrap().0
   }
 
   fn get_location(&self) -> Option<diagnostic::Location> {
@@ -148,7 +158,7 @@ impl<'a> Parser<'a> {
       return false;
     }
 
-    self.get() == token
+    self.force_get() == token
   }
 
   // TODO: Need testing for this function.
@@ -176,6 +186,8 @@ impl<'a> Parser<'a> {
   }
 
   /// Compare the upcoming token to the given token.
+  ///
+  /// Will always return false if `EOF` has been reached.
   fn peek_is(&self, token: &lexer::TokenKind) -> bool {
     let next_token = self.peek();
 
@@ -235,9 +247,9 @@ impl<'a> Parser<'a> {
     // TODO: Illegal/unrecognized tokens MAY also be represented under 'Identifier'? Is this a problem?
 
     // TODO: Wrong error message. Create an `expect` method.
-    assert!(matches!(self.get(), lexer::TokenKind::Identifier(_)));
+    assert!(matches!(self.force_get(), lexer::TokenKind::Identifier(_)));
 
-    let name = match self.get() {
+    let name = match self.force_get() {
       lexer::TokenKind::Identifier(value) => Some(value.clone()),
       _ => None,
     };
@@ -249,16 +261,18 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_statement(&mut self) -> ParserResult<ast::Node> {
-    Ok(match self.get() {
+    Ok(match self.force_get() {
       lexer::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
       lexer::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
       lexer::TokenKind::KeywordLoop => ast::Node::LoopStmt(self.parse_loop_stmt()?),
       lexer::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
       lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
       lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
+      // TODO: Ensure pattern matching occurs as expected in this case.
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::SymbolEqual) => {
         ast::Node::AssignStmt(self.parse_assign_stmt()?)
       }
+      // FIXME: Pattern matching is wrong in this case. Here's the example case where it fails: `n * fn()`. The binary expression isn't being parsed.
       lexer::TokenKind::Identifier(_)
         if !self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
       {
@@ -325,7 +339,7 @@ impl<'a> Parser<'a> {
 
   /// {u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64}
   fn parse_int_type(&mut self) -> ParserResult<ast::Type> {
-    let current_token = self.get();
+    let current_token = self.force_get();
 
     let size = match current_token {
       lexer::TokenKind::TypeSignedInt8 => ast::IntSize::I8,
@@ -361,7 +375,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, &lexer::TokenKind::SymbolComma);
 
-    let size = match self.get() {
+    let size = match self.force_get() {
       lexer::TokenKind::LiteralInt(value) => value.clone() as u32,
       _ => return Err(self.expected("array size")),
     };
@@ -376,7 +390,7 @@ impl<'a> Parser<'a> {
   fn parse_type(&mut self) -> ParserResult<ast::Type> {
     // TODO: Check if the index is valid?
     // TODO: Support for more types.
-    match self.get() {
+    match self.force_get() {
       // TODO: Other types as well.
       lexer::TokenKind::TypeSignedInt8
       | lexer::TokenKind::TypeSignedInt16
@@ -603,7 +617,7 @@ impl<'a> Parser<'a> {
       attributes.push(attribute);
     }
 
-    let is_attributable = match self.get() {
+    let is_attributable = match self.force_get() {
       lexer::TokenKind::KeywordFn | lexer::TokenKind::KeywordExtern => true,
       _ => false,
     };
@@ -616,7 +630,7 @@ impl<'a> Parser<'a> {
       });
     }
 
-    let token = self.get();
+    let token = self.force_get();
 
     let definition = match token {
       // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
@@ -780,7 +794,7 @@ impl<'a> Parser<'a> {
 
   /// {true | false}
   fn parse_bool_literal(&mut self) -> ParserResult<ast::Literal> {
-    Ok(match self.get().clone() {
+    Ok(match self.force_get().clone() {
       lexer::TokenKind::LiteralBool(value) => {
         self.skip();
 
@@ -792,7 +806,7 @@ impl<'a> Parser<'a> {
 
   /// 0-9+
   fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
-    Ok(match self.get().clone() {
+    Ok(match self.force_get().clone() {
       lexer::TokenKind::LiteralInt(value) => {
         self.skip();
 
@@ -834,7 +848,7 @@ impl<'a> Parser<'a> {
 
   /// '"' [^"]* '"'
   fn parse_string_literal(&mut self) -> ParserResult<ast::Literal> {
-    let result = match self.get() {
+    let result = match self.force_get() {
       lexer::TokenKind::LiteralString(value) => ast::Literal::String(value.clone()),
       _ => return Err(self.expected("string literal")),
     };
@@ -894,7 +908,7 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_literal(&mut self) -> ParserResult<ast::Literal> {
-    let current_token = self.get();
+    let current_token = self.force_get();
 
     Ok(match current_token {
       lexer::TokenKind::LiteralBool(_) => self.parse_bool_literal()?,
@@ -910,31 +924,32 @@ impl<'a> Parser<'a> {
   }
 
   fn after_pattern_is(&self, token: &lexer::TokenKind) -> bool {
-    let mut index = self.index + 1;
+    let mut index = self.index;
+    let mut delimiter_switch = false;
+    let is_past_eof_at = |index: usize| index >= self.tokens.len();
 
     // FIXME: This is hacky code. Fix up.
-    while match self.tokens.get(index) {
-      Some(value) => matches!(
-        value.0,
-        lexer::TokenKind::Identifier(_)
-          | lexer::TokenKind::SymbolDot
-          | lexer::TokenKind::SymbolColon
-      ),
-      None => false,
-    } {
+    // FIXME: Ensure this works as expected with the modifications done.
+    while !is_past_eof_at(index)
+      && match self.tokens.get(index).unwrap().0 {
+        lexer::TokenKind::SymbolDot | lexer::TokenKind::SymbolColon if delimiter_switch => true,
+        lexer::TokenKind::Identifier(_) if !delimiter_switch => true,
+        _ => false,
+      }
+    {
+      delimiter_switch = !delimiter_switch;
       index += 1;
     }
 
-    // TODO: Implement logic to handle this (possible?) edge case.
-    if self.is_eof() {
-      todo!();
+    if let Some(token_at_index) = self.tokens.get(index) {
+      &token_at_index.0 == token
+    } else {
+      false
     }
-
-    &self.tokens.get(index).unwrap().0 == token
   }
 
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
-    Ok(match self.get() {
+    Ok(match self.force_get() {
       lexer::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_expr()?),
       lexer::TokenKind::SymbolTilde => ast::Node::IntrinsicCall(self.parse_intrinsic_call()?),
       lexer::TokenKind::Identifier(_)
@@ -964,7 +979,7 @@ impl<'a> Parser<'a> {
   /// {'+' | '-' | '*' | '/'}
   fn parse_operator(&mut self) -> ParserResult<ast::OperatorKind> {
     // TODO: Unsafe access. Also, cloning token.
-    let current_token = self.get().clone();
+    let current_token = self.force_get().clone();
 
     let operator = match current_token {
       lexer::TokenKind::KeywordAnd => ast::OperatorKind::And,
@@ -1000,20 +1015,23 @@ impl<'a> Parser<'a> {
     left: ast::Node,
     min_precedence: usize,
   ) -> ParserResult<ast::Node> {
-    let mut token = self.get();
-    let precedence = get_token_precedence(&token);
+    let mut token_buffer = self.force_get();
+    let precedence = get_token_precedence(&token_buffer);
     let mut result = left;
 
-    while self.is_binary_operator(token) && (precedence > min_precedence) {
+    while self.is_binary_operator(token_buffer) && (precedence > min_precedence) {
       let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
 
-      token = self.get();
+      token_buffer = self.force_get();
 
-      while self.is_binary_operator(&token) && get_token_precedence(&token) > precedence {
+      while self.is_binary_operator(&token_buffer)
+        && get_token_precedence(&token_buffer) > precedence
+      {
+        // TODO: Are we adding the correct amount of precedence here? Shouldn't there be a higher difference in precedence?
         // TODO: This isn't tail-recursive?
         right = self.parse_binary_expr(right, precedence + 1)?;
-        token = self.get();
+        token_buffer = self.force_get();
       }
 
       result = ast::Node::BinaryExpr(ast::BinaryExpr {
@@ -1028,6 +1046,10 @@ impl<'a> Parser<'a> {
 
   /// %operator %expr
   fn parse_unary_expr(&mut self) -> ParserResult<ast::UnaryExpr> {
+    if !self.is_unary_operator() {
+      return Err(self.expected("unary operator"));
+    }
+
     let operator = self.parse_operator()?;
     let expr = Box::new(self.parse_primary_expr()?);
 
@@ -1237,9 +1259,14 @@ mod tests {
   #[test]
   fn is() {
     let mut context = cache::Cache::new();
-    let parser = Parser::from_tokens(vec![lexer::TokenKind::KeywordFn], &mut context);
+    let mut parser = Parser::new(Vec::new(), &mut context);
 
-    assert_eq!(true, parser.is(&lexer::TokenKind::KeywordFn));
+    assert!(!parser.is(&lexer::TokenKind::EOF));
+    parser.index = 1;
+    assert!(!parser.is(&lexer::TokenKind::EOF));
+    parser.index = 0;
+    parser.tokens.push((lexer::TokenKind::KeywordFn, 0));
+    assert!(parser.is(&lexer::TokenKind::KeywordFn));
   }
 
   #[test]
@@ -1277,13 +1304,63 @@ mod tests {
     let mut context = cache::Cache::new();
     let mut parser = Parser::new(vec![], &mut context);
 
-    assert_eq!(true, parser.is_eof());
+    assert!(parser.is_eof());
     parser.tokens.push((lexer::TokenKind::KeywordFn, 0));
-    assert_eq!(true, parser.is_eof());
+    assert!(parser.is_eof());
     parser.tokens.push((lexer::TokenKind::KeywordFn, 0));
-    assert_eq!(false, parser.is_eof());
+    assert!(!parser.is_eof());
     parser.skip();
-    assert_eq!(true, parser.is_eof());
+    assert!(parser.is_eof());
+  }
+
+  #[test]
+  fn after_pattern_is() {
+    let mut context = cache::Cache::new();
+
+    let mut parser = Parser::new(
+      vec![(lexer::TokenKind::Identifier("test".to_string()), 0)],
+      &mut context,
+    );
+
+    parser.tokens.push((lexer::TokenKind::SymbolBraceL, 0));
+    assert!(parser.after_pattern_is(&lexer::TokenKind::SymbolBraceL));
+    parser.tokens.pop();
+    parser.tokens.push((lexer::TokenKind::SymbolDot, 0));
+
+    parser
+      .tokens
+      .push((lexer::TokenKind::Identifier("foo".to_string()), 0));
+
+    parser.tokens.push((lexer::TokenKind::SymbolBraceL, 0));
+    assert!(parser.after_pattern_is(&lexer::TokenKind::SymbolBraceL));
+  }
+
+  #[test]
+  fn is_binary_operator() {
+    let mut context = cache::Cache::new();
+    let mut parser = Parser::new(Vec::new(), &mut context);
+
+    assert!(!parser.is_binary_operator(&lexer::TokenKind::SymbolBraceL));
+    assert!(parser.is_binary_operator(&lexer::TokenKind::SymbolPlus));
+    assert!(!parser.is_binary_operator(&lexer::TokenKind::SymbolEqual));
+    parser.tokens.push((lexer::TokenKind::SymbolEqual, 0));
+    assert!(!parser.is_binary_operator(&lexer::TokenKind::SymbolEqual));
+    parser.tokens.push((lexer::TokenKind::SymbolEqual, 0));
+    assert!(parser.is_binary_operator(&lexer::TokenKind::SymbolEqual));
+    assert!(parser.is_binary_operator(&lexer::TokenKind::KeywordAnd));
+    assert!(!parser.is_binary_operator(&lexer::TokenKind::EOF));
+  }
+
+  #[test]
+  fn peek_is() {
+    let mut context = cache::Cache::new();
+    let mut parser = Parser::new(Vec::new(), &mut context);
+
+    assert!(!parser.peek_is(&lexer::TokenKind::SymbolBraceL));
+    parser.tokens.push((lexer::TokenKind::SymbolBraceL, 0));
+    assert!(!parser.peek_is(&lexer::TokenKind::SymbolBraceL));
+    parser.tokens.push((lexer::TokenKind::SymbolBraceL, 0));
+    assert!(parser.peek_is(&lexer::TokenKind::SymbolBraceL));
   }
 
   // TODO: Add more tests.

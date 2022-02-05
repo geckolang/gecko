@@ -567,3 +567,21 @@ impl NameResolver {
 }
 
 // TODO: Add essential tests.
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn proper_initial_values() {
+    let name_resolver = NameResolver::new();
+
+    assert!(name_resolver.current_module_name.is_none());
+    assert!(name_resolver.relative_scopes.is_empty());
+    assert!(name_resolver.global_scopes.is_empty());
+  }
+
+  #[test]
+  fn missing_test() {
+    // TODO: Continue adding tests.
+  }
+}
