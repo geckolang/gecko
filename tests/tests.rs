@@ -46,6 +46,8 @@ mod tests {
   // FIXME: Test isn't working for some reason.
   #[test]
   fn test_sources() {
+    // FIXME: Complete implementation.
+
     let source_files = vec!["recursion", "shorthands"];
     let mut sources = Vec::new();
 
@@ -71,7 +73,7 @@ mod tests {
 
       let mut top_level_nodes = match parser.parse_all() {
         Ok(nodes) => nodes,
-        Err(diagnostic) => {
+        Err(_diagnostic) => {
           assert_eq!(false, true);
 
           return;

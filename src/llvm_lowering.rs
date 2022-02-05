@@ -986,6 +986,23 @@ impl Lower for ast::UnaryExpr {
 
         generator.access(llvm_value.into_pointer_value())
       }
+      ast::OperatorKind::Cast => {
+        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_to_type = generator.lower_type(self.cast_type.as_ref().unwrap(), cache);
+
+        if !llvm_value.is_int_value() {
+          // TODO: Implement for other cases.
+          todo!();
+        }
+
+        generator.llvm_builder.build_cast(
+          // FIXME: Different instruction opcodes depending on whether the target type is bigger or smaller (extend vs. truncate). As well as from different types of values, such as when going from int to float, etc.
+          inkwell::values::InstructionOpcode::SExt,
+          llvm_value,
+          llvm_to_type,
+          "cast_op",
+        )
+      }
       _ => unreachable!(),
     })
   }
@@ -1374,7 +1391,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
         llvm_type
       }
-      // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no.
+      // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
       // NOTE: The unit type will never be lowered.
       ast::Type::Unit => unreachable!(),
     }

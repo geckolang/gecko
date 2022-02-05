@@ -25,13 +25,10 @@ pub trait Resolve {
 impl Resolve for ast::Type {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     match self {
-      ast::Type::Stub(stub_type) => {
-        stub_type.resolve(resolver, cache);
-      }
-      ast::Type::Pointer(pointee_type) => {
-        pointee_type.resolve(resolver, cache);
-      }
-      // FIXME: What about arrays, etc.?
+      ast::Type::Stub(stub_type) => stub_type.resolve(resolver, cache),
+      ast::Type::Pointer(pointee_type) => pointee_type.resolve(resolver, cache),
+      ast::Type::Array(element_type, _) => element_type.resolve(resolver, cache),
+      // TODO: Are there any other types that may need to be resolved?
       _ => {}
     };
   }
@@ -528,7 +525,8 @@ impl NameResolver {
       let declaration = cache.declarations.get(definition).unwrap().borrow();
 
       match &*declaration {
-        ast::Node::LetStmt(let_stmt) => {
+        ast::Node::LetStmt(_let_stmt) => {
+          todo!();
           // TODO: Consider resolving/unboxing the type, instead of doing it manually.
 
           // let stub_type_target_key = match &let_stmt.ty {

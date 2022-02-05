@@ -278,6 +278,7 @@ pub struct TypeAlias {
   pub ty: Type,
 }
 
+#[derive(PartialEq)]
 pub enum OperatorKind {
   And,
   Or,
@@ -295,6 +296,7 @@ pub enum OperatorKind {
   LessThanOrEqual,
   GreaterThanOrEqual,
   Equality,
+  Cast,
 }
 
 pub struct BinaryExpr {
@@ -306,6 +308,10 @@ pub struct BinaryExpr {
 pub struct UnaryExpr {
   pub expr: Box<Node>,
   pub operator: OperatorKind,
+  /// Represents the type being casted to.
+  ///
+  /// Only available when the unary expression is a cast.
+  pub cast_type: Option<Type>,
 }
 
 pub struct Definition {

@@ -166,14 +166,18 @@ impl TypeCheck for ast::UnaryExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let expr_type = self.expr.infer_type(cache);
 
-    if expr_type == ast::Type::Unit {
-      return match self.operator {
-        ast::OperatorKind::AddressOf => ast::Type::Pointer(Box::new(expr_type)),
-        _ => expr_type,
-      };
+    // Short-circuit if the expression's type is unit.
+    if expr_type.is_unit() {
+      return ast::Type::Unit;
     }
 
-    ast::Type::Unit
+    // The type of the unary expression will always be that of the
+    // operand, with a few exceptions.
+    return match self.operator {
+      ast::OperatorKind::AddressOf => ast::Type::Pointer(Box::new(expr_type)),
+      ast::OperatorKind::Cast => self.cast_type.as_ref().unwrap().clone(),
+      _ => expr_type,
+    };
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
@@ -206,6 +210,7 @@ impl TypeCheck for ast::UnaryExpr {
       }
       ast::OperatorKind::SubtractOrNegate => {
         // TODO: Include floats.
+        // FIXME: Shouldn't we be using `unify` here? What about types that need to be resolved? How do we pass-in a variant tho.? Or maybe the inferred type is already at its simplest form? Verify.
         if !matches!(expr_type, ast::Type::Primitive(ast::PrimitiveType::Int(_))) {
           // TODO: Error message too similar to the boolean negation case.
           type_context
@@ -215,6 +220,16 @@ impl TypeCheck for ast::UnaryExpr {
       }
       ast::OperatorKind::AddressOf => {
         // TODO: Implement.
+        // todo!();
+      }
+      ast::OperatorKind::Cast => {
+        if !matches!(expr_type, ast::Type::Primitive(_))
+          || !matches!(self.cast_type.as_ref().unwrap(), ast::Type::Primitive(_))
+        {
+          type_context
+            .diagnostic_builder
+            .error("can only cast between primitive types".to_string());
+        }
       }
       _ => unreachable!(),
     };

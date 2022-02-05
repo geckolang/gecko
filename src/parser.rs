@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, lexer, name_resolution, type_check::TypeCheck};
+use crate::{ast, cache, diagnostic, lexer, name_resolution};
 
 macro_rules! skip_past {
   ($self:expr, $token:expr) => {
@@ -131,6 +131,7 @@ impl<'a> Parser<'a> {
         | lexer::TokenKind::SymbolBang
         | lexer::TokenKind::SymbolAmpersand
         | lexer::TokenKind::SymbolAsterisk
+        | lexer::TokenKind::SymbolBacktick
     )
   }
 
@@ -968,7 +969,8 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::SymbolMinus
       | lexer::TokenKind::SymbolBang
       | lexer::TokenKind::SymbolAmpersand
-      | lexer::TokenKind::SymbolAsterisk => ast::Node::UnaryExpr(self.parse_unary_expr()?),
+      | lexer::TokenKind::SymbolAsterisk
+      | lexer::TokenKind::SymbolBacktick => ast::Node::UnaryExpr(self.parse_unary_expr()?),
       lexer::TokenKind::SymbolBracketL => ast::Node::ArrayValue(self.parse_array_value()?),
       lexer::TokenKind::KeywordNew => ast::Node::StructValue(self.parse_struct_value()?),
       // Default to a literal if nothing else matched.
@@ -995,6 +997,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::SymbolLessThan => ast::OperatorKind::LessThan,
       lexer::TokenKind::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
       lexer::TokenKind::SymbolAmpersand => ast::OperatorKind::AddressOf,
+      lexer::TokenKind::SymbolBacktick => ast::OperatorKind::Cast,
       lexer::TokenKind::SymbolEqual if self.peek_is(&lexer::TokenKind::SymbolEqual) => {
         self.skip();
 
@@ -1051,9 +1054,21 @@ impl<'a> Parser<'a> {
     }
 
     let operator = self.parse_operator()?;
+
+    let cast_type = if operator == ast::OperatorKind::Cast {
+      // FIXME: Type must be verified to be a primitive type [type-checker].
+      Some(self.parse_type()?)
+    } else {
+      None
+    };
+
     let expr = Box::new(self.parse_primary_expr()?);
 
-    Ok(ast::UnaryExpr { operator, expr })
+    Ok(ast::UnaryExpr {
+      operator,
+      expr,
+      cast_type,
+    })
   }
 
   // TODO: Better naming and/or positioning for logic.
