@@ -388,36 +388,10 @@ impl NameResolver {
     self.relative_scopes.clear();
   }
 
-  pub fn set_active_module(&mut self, name: String) {
-    // TODO: Unsafe? No checks.
+  pub fn set_active_module(&mut self, name: String): bool {
+    // TODO: Implement checks (that module exists, etc.).
+    // TODO: Shouldn't we reset buffers here? This might prevent the re-definition bug.
     self.current_module_name = Some(name.clone());
-  }
-
-  // TODO: Incomplete (cannot access `self` as `&Node`).
-  fn _define(
-    &mut self,
-    definition_key: cache::DefinitionKey,
-    symbol: Symbol,
-    _cache: &mut cache::Cache,
-    _node: &ast::Node,
-  ) -> bool {
-    // Check for existing definitions.
-    if self.contains(&symbol) {
-      self
-        .diagnostic_builder
-        .error(format!("re-definition of `{}`", symbol.0));
-
-      return false;
-    }
-
-    // Register the node on the context for lowering lookup.
-    // TODO:
-    // context
-    //   .declarations
-    //   .insert(definition_key, std::rc::Rc::clone(node));
-
-    // Bind the symbol to the current scope for name resolution lookup.
-    self.bind(symbol, definition_key);
 
     true
   }
@@ -510,55 +484,6 @@ impl NameResolver {
     None
   }
 
-  // FIXME: The current design for this function might be flawed. Review.
-  fn _lookup_member(
-    &mut self,
-    pattern: &ast::Pattern,
-    cache: &cache::Cache,
-  ) -> Option<&cache::DefinitionKey> {
-    let definition_key = self.relative_lookup(&(
-      pattern.base_name.clone(),
-      SymbolKind::StaticOrVariableOrParameter,
-    ));
-
-    if let Some(definition) = definition_key {
-      let declaration = cache.declarations.get(definition).unwrap().borrow();
-
-      match &*declaration {
-        ast::Node::LetStmt(_let_stmt) => {
-          todo!();
-          // TODO: Consider resolving/unboxing the type, instead of doing it manually.
-
-          // let stub_type_target_key = match &let_stmt.ty {
-          //   ast::Type::Stub(ast::StubType {
-          //     name: _,
-          //     target_key,
-          //   }) => target_key.unwrap(),
-          //   _ => unreachable!(),
-          // };
-
-          // let target_type_declaration = cache
-          //   .declarations
-          //   .get(&stub_type_target_key)
-          //   .unwrap()
-          //   .borrow();
-
-          // let _struct_type = match &*target_type_declaration {
-          //   ast::Node::StructType(struct_type) => struct_type,
-          //   _ => unreachable!(),
-          // };
-
-          // FIXME: There IS no definition key for struct members. So what should be do instead? Maybe this should be handled instead during the `declare` step for `LetStmt` (in the case that `LetStmt` declares a resolved-type of struct)?
-        }
-        // TODO: Add logic for parameters.
-        // It must be a variable declaration or parameter, containing a struct.
-        _ => unreachable!(),
-      };
-    }
-
-    None
-  }
-
   fn contains(&mut self, key: &Symbol) -> bool {
     self.relative_lookup(key).is_some()
   }
@@ -579,7 +504,13 @@ mod tests {
   }
 
   #[test]
-  fn missing_test() {
-    // TODO: Continue adding tests.
+  fn push_pop_scope() {
+    let name_resolver = NameResolver::new();
+
+    assert!(name_resolver.relative_scopes.is_empty());
+    name_resolver.push_scope();
+    assert_eq!(1, name_resolver.relative_scopes.len());
+    name_resolver.pop_scope();
+    assert!(!name_resolver.relative_scopes.is_empty());
   }
 }

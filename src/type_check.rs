@@ -36,33 +36,30 @@ impl TypeCheckContext {
   }
 
   fn is_null_pointer_type(ty: &ast::Type) -> bool {
-    match ty {
-      ast::Type::Pointer(ty) => match ty.as_ref() {
-        ast::Type::Primitive(ast::PrimitiveType::Null) => true,
-        _ => false,
-      },
-      _ => false,
+    if let ast::Type::Pointer(ty) = ty {
+      return matches!(ty.as_ref(), ast::Type::Primitive(ast::PrimitiveType::Null));
     }
+
+    false
   }
 
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
   /// Resolve a possible user-defined type, so it can be used properly.
   fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
-    match ty {
-      ast::Type::Stub(stub_type) => {
-        let target_type = cache.get(&stub_type.target_key.unwrap());
+    // TODO: What if it's a pointer to a user-defined type?
+    if let ast::Type::Stub(stub_type) = ty {
+      let target_type = cache.get(&stub_type.target_key.unwrap());
 
-        match &*target_type {
-          // TODO: Cloning struct type.
-          ast::Node::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
-          ast::Node::TypeAlias(type_alias) => type_alias.ty.clone(),
-          _ => unreachable!(),
-        }
-      }
-      // TODO: What if it's a pointer to a user-defined type?
-      // TODO: Cloning type on most cases! Inefficient.
-      _ => ty.clone(),
+      return match &*target_type {
+        // TODO: Cloning struct type.
+        ast::Node::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
+        ast::Node::TypeAlias(type_alias) => type_alias.ty.clone(),
+        _ => unreachable!(),
+      };
     }
+
+    // FIXME: Do not clone. Find a better alternative.
+    ty.clone()
   }
 }
 
