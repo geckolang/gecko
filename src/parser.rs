@@ -664,7 +664,7 @@ impl<'a> Parser<'a> {
 
     skip_past!(self, &lexer::TokenKind::SymbolEqual);
 
-    // FIXME: Recursive type aliases are possible, and cause stack-overflow. Fix this bug.
+    // FIXME: Recursive type aliases are possible, and cause stack-overflow. Fix this bug. This bug possibly exist for any other thing that uses deferred-resolved types.
     let ty = self.parse_type()?;
 
     let type_alias = ast::TypeAlias {
