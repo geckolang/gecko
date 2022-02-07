@@ -1,38 +1,38 @@
-use crate::{cache, name_resolution};
+use crate::{cache, diagnostic, name_resolution};
 
 #[macro_export]
 macro_rules! dispatch {
   ($node:expr, $target_fn:expr $(, $($args:expr),* )? ) => {
     match $node {
-      $crate::ast::Node::Literal(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::ExternFunction(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::ExternStatic(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Function(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Block(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::FunctionCall(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Definition(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::VariableOrMemberRef(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::AssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::UnsafeBlock(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Enum(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::StructType(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::Node::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Literal(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::ExternFunction(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::ExternStatic(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Function(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Block(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::FunctionCall(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Definition(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::VariableOrMemberRef(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::AssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::UnsafeBlock(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Enum(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::StructType(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -84,7 +84,7 @@ impl Type {
 }
 
 // TODO: Write a macro that both defines this and `as_x_node()` (which alternatively yields `unreachable!()`) methods.
-pub enum Node {
+pub enum NodeKind {
   Literal(Literal),
   ExternFunction(ExternFunction),
   ExternStatic(ExternStatic),
@@ -114,6 +114,11 @@ pub enum Node {
   StructValue(StructValue),
   Pattern(Pattern),
   TypeAlias(TypeAlias),
+}
+
+pub struct Node {
+  pub kind: NodeKind,
+  pub span: diagnostic::Span,
 }
 
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
@@ -220,7 +225,7 @@ pub struct Function {
 }
 
 pub struct Block {
-  pub statements: Vec<Box<Node>>,
+  pub statements: Vec<Node>,
   pub yield_last_expr: bool,
 }
 

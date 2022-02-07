@@ -4,7 +4,7 @@ use std::cell::Ref;
 pub type DefinitionKey = usize;
 
 // TODO: For the `Cache` struct, we might not need a `RefCell<>`, since there are no mutable borrows.
-pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::Node>>;
+pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::NodeKind>>;
 
 pub struct Cache {
   key_counter: usize,
@@ -19,7 +19,7 @@ impl Cache {
     }
   }
 
-  pub fn get(&self, key: &DefinitionKey) -> Ref<'_, ast::Node> {
+  pub fn get(&self, key: &DefinitionKey) -> Ref<'_, ast::NodeKind> {
     self.declarations.get(key).unwrap().as_ref().borrow()
   }
 
@@ -36,6 +36,6 @@ impl Cache {
   }
 }
 
-pub fn create_cached_node(node: ast::Node) -> CachedNode {
+pub fn create_cached_node(node: ast::NodeKind) -> CachedNode {
   std::rc::Rc::new(std::cell::RefCell::new(node))
 }

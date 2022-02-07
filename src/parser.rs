@@ -44,7 +44,6 @@ pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
   index: usize,
   cache: &'a mut cache::Cache,
-  span_begin_index: Option<usize>,
 }
 
 impl<'a> Parser<'a> {
@@ -53,7 +52,6 @@ impl<'a> Parser<'a> {
       tokens,
       index: 0,
       cache,
-      span_begin_index: None,
     }
   }
 
@@ -67,7 +65,7 @@ impl<'a> Parser<'a> {
   }
 
   /// Parse all top-level definitions.
-  pub fn parse_all(&mut self) -> ParserResult<Vec<ast::Node>> {
+  pub fn parse_all(&mut self) -> ParserResult<Vec<ast::NodeKind>> {
     let mut result = Vec::new();
 
     while !self.is_eof() {
@@ -79,22 +77,8 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
-  fn begin_span(&mut self) {
-    self.span_begin_index = Some(self.index);
-  }
-
-  fn close_span(&mut self) -> Option<diagnostic::Span> {
-    if self.span_begin_index.is_none() {
-      // TODO: Awaiting safety check?
-      return self.get_span();
-    }
-
-    let begin_index = self.span_begin_index.unwrap();
-    let end_index = self.index;
-
-    self.span_begin_index = None;
-
-    Some(begin_index..end_index)
+  fn close_span(&self, span_start: usize) -> diagnostic::Span {
+    span_start..self.index
   }
 
   fn skip_past(&mut self, token_kind: &lexer::TokenKind) -> ParserResult<()> {
@@ -273,27 +257,29 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_statement(&mut self) -> ParserResult<ast::Node> {
-    Ok(match self.force_get() {
-      lexer::TokenKind::KeywordReturn => ast::Node::ReturnStmt(self.parse_return_stmt()?),
-      lexer::TokenKind::KeywordLet => ast::Node::Definition(self.parse_let_stmt()?),
-      lexer::TokenKind::KeywordLoop => ast::Node::LoopStmt(self.parse_loop_stmt()?),
-      lexer::TokenKind::KeywordBreak => ast::Node::BreakStmt(self.parse_break_stmt()?),
-      lexer::TokenKind::KeywordContinue => ast::Node::ContinueStmt(self.parse_continue_stmt()?),
-      lexer::TokenKind::KeywordUnsafe => ast::Node::UnsafeBlock(self.parse_unsafe_block_stmt()?),
+    let span_start = self.index;
+
+    let kind = match self.force_get() {
+      lexer::TokenKind::KeywordReturn => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
+      lexer::TokenKind::KeywordLet => ast::NodeKind::Definition(self.parse_let_stmt()?),
+      lexer::TokenKind::KeywordLoop => ast::NodeKind::LoopStmt(self.parse_loop_stmt()?),
+      lexer::TokenKind::KeywordBreak => ast::NodeKind::BreakStmt(self.parse_break_stmt()?),
+      lexer::TokenKind::KeywordContinue => ast::NodeKind::ContinueStmt(self.parse_continue_stmt()?),
+      lexer::TokenKind::KeywordUnsafe => {
+        ast::NodeKind::UnsafeBlock(self.parse_unsafe_block_stmt()?)
+      }
       // TODO: Ensure pattern matching occurs as expected in this case.
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::SymbolEqual) => {
-        ast::Node::AssignStmt(self.parse_assign_stmt()?)
+        ast::NodeKind::AssignStmt(self.parse_assign_stmt()?)
       }
-      // FIXME: Why is there a lonely identifier matching variable reference in STATEMENTS?
-      // lexer::TokenKind::Identifier(_)
-      //   if !self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
-      // {
-      //   ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
-      // }
-      // Otherwise, assume an in-line expression.
-      _ => ast::Node::InlineExprStmt(ast::InlineExprStmt {
+      _ => ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
         expr: Box::new(self.parse_expr()?),
       }),
+    };
+
+    Ok(ast::Node {
+      kind,
+      span: self.close_span(span_start),
     })
   }
 
@@ -317,14 +303,14 @@ impl<'a> Parser<'a> {
 
       // TODO: Must ensure a semi-colon always follows (for if statements, loops, etc.)?
       return Ok(ast::Block {
-        statements: vec![Box::new(statement)],
+        statements: vec![statement],
         yield_last_expr,
       });
     }
 
     self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
 
-    let mut statements = vec![];
+    let mut statements = Vec::new();
     let mut yield_last_expr = false;
 
     while self.until(&lexer::TokenKind::SymbolBraceR)? {
@@ -338,7 +324,7 @@ impl<'a> Parser<'a> {
         yield_last_expr = true;
       }
 
-      statements.push(Box::new(statement));
+      statements.push(statement);
     }
 
     self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
@@ -513,7 +499,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
-      node_ref_cell: cache::create_cached_node(ast::Node::Function(function)),
+      node_ref_cell: cache::create_cached_node(ast::NodeKind::Function(function)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -540,7 +526,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
-      node_ref_cell: cache::create_cached_node(ast::Node::ExternFunction(extern_function)),
+      node_ref_cell: cache::create_cached_node(ast::NodeKind::ExternFunction(extern_function)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -559,7 +545,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::StaticOrVariableOrParameter,
-      node_ref_cell: cache::create_cached_node(ast::Node::ExternStatic(extern_static)),
+      node_ref_cell: cache::create_cached_node(ast::NodeKind::ExternStatic(extern_static)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -592,7 +578,7 @@ impl<'a> Parser<'a> {
 
   // TODO: Why not build the `Definition` node here? We might require access to the `name` and `symbol_kind`, however.
   /// {%function | %extern | %enum | %struct}
-  fn parse_top_level_node(&mut self) -> ParserResult<ast::Node> {
+  fn parse_top_level_node(&mut self) -> ParserResult<ast::NodeKind> {
     // TODO: Why not move this check into the `get()` method?
     if self.is_eof() {
       return Err(diagnostic::Diagnostic {
@@ -605,7 +591,7 @@ impl<'a> Parser<'a> {
     let mut attributes: Vec<ast::Attribute> = Vec::new();
 
     while self.is(&lexer::TokenKind::SymbolAt) {
-      self.begin_span();
+      let span_start = self.index;
 
       let attribute = self.parse_attribute()?;
 
@@ -613,7 +599,7 @@ impl<'a> Parser<'a> {
         return Err(diagnostic::Diagnostic {
           message: format!("duplicate attribute `{}`", attribute.name),
           severity: diagnostic::Severity::Error,
-          span: self.close_span(),
+          span: Some(self.close_span(span_start)),
         });
       }
 
@@ -637,16 +623,16 @@ impl<'a> Parser<'a> {
 
     let definition = match token {
       // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
-      lexer::TokenKind::KeywordFn => ast::Node::Definition(self.parse_function(attributes)?),
+      lexer::TokenKind::KeywordFn => ast::NodeKind::Definition(self.parse_function(attributes)?),
       lexer::TokenKind::KeywordExtern if self.peek_is(&lexer::TokenKind::KeywordFn) => {
-        ast::Node::Definition(self.parse_extern_function(attributes)?)
+        ast::NodeKind::Definition(self.parse_extern_function(attributes)?)
       }
       lexer::TokenKind::KeywordExtern if self.peek_is(&lexer::TokenKind::KeywordStatic) => {
-        ast::Node::Definition(self.parse_extern_static()?)
+        ast::NodeKind::Definition(self.parse_extern_static()?)
       }
-      lexer::TokenKind::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
-      lexer::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_type()?),
-      lexer::TokenKind::KeywordType => ast::Node::Definition(self.parse_type_alias()?),
+      lexer::TokenKind::KeywordEnum => ast::NodeKind::Definition(self.parse_enum()?),
+      lexer::TokenKind::KeywordStruct => ast::NodeKind::Definition(self.parse_struct_type()?),
+      lexer::TokenKind::KeywordType => ast::NodeKind::Definition(self.parse_type_alias()?),
       _ => return Err(self.expected("top-level construct")),
     };
 
@@ -671,7 +657,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
-      node_ref_cell: cache::create_cached_node(ast::Node::TypeAlias(type_alias)),
+      node_ref_cell: cache::create_cached_node(ast::NodeKind::TypeAlias(type_alias)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -726,7 +712,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::StaticOrVariableOrParameter,
-      node_ref_cell: cache::create_cached_node(ast::Node::LetStmt(let_stmt)),
+      node_ref_cell: cache::create_cached_node(ast::NodeKind::LetStmt(let_stmt)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -946,31 +932,38 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
-    Ok(match self.force_get() {
-      lexer::TokenKind::KeywordIf => ast::Node::IfStmt(self.parse_if_expr()?),
-      lexer::TokenKind::SymbolTilde => ast::Node::IntrinsicCall(self.parse_intrinsic_call()?),
+    let span_start = self.index;
+
+    let kind = match self.force_get() {
+      lexer::TokenKind::KeywordIf => ast::NodeKind::IfStmt(self.parse_if_expr()?),
+      lexer::TokenKind::SymbolTilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       lexer::TokenKind::Identifier(_)
         if self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
       {
-        ast::Node::FunctionCall(self.parse_function_call()?)
+        ast::NodeKind::FunctionCall(self.parse_function_call()?)
       }
       // FIXME: Use `after_pattern_is`.
       lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolBracketL) => {
-        ast::Node::ArrayIndexing(self.parse_array_indexing()?)
+        ast::NodeKind::ArrayIndexing(self.parse_array_indexing()?)
       }
       // FIXME: Use `after_pattern_is`.
       lexer::TokenKind::Identifier(_) => {
-        ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
+        ast::NodeKind::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
       }
       lexer::TokenKind::SymbolMinus
       | lexer::TokenKind::SymbolBang
       | lexer::TokenKind::SymbolAmpersand
       | lexer::TokenKind::SymbolAsterisk
-      | lexer::TokenKind::SymbolBacktick => ast::Node::UnaryExpr(self.parse_unary_expr()?),
-      lexer::TokenKind::SymbolBracketL => ast::Node::ArrayValue(self.parse_array_value()?),
-      lexer::TokenKind::KeywordNew => ast::Node::StructValue(self.parse_struct_value()?),
+      | lexer::TokenKind::SymbolBacktick => ast::NodeKind::UnaryExpr(self.parse_unary_expr()?),
+      lexer::TokenKind::SymbolBracketL => ast::NodeKind::ArrayValue(self.parse_array_value()?),
+      lexer::TokenKind::KeywordNew => ast::NodeKind::StructValue(self.parse_struct_value()?),
       // Default to a literal if nothing else matched.
-      _ => ast::Node::Literal(self.parse_literal()?),
+      _ => ast::NodeKind::Literal(self.parse_literal()?),
+    };
+
+    Ok(ast::Node {
+      kind,
+      span: self.close_span(span_start),
     })
   }
 
@@ -1015,9 +1008,10 @@ impl<'a> Parser<'a> {
     left: ast::Node,
     min_precedence: usize,
   ) -> ParserResult<ast::Node> {
+    let span_start = self.index;
     let mut token_buffer = self.force_get();
     let precedence = get_token_precedence(&token_buffer);
-    let mut result = left;
+    let mut buffer = left;
 
     while self.is_binary_operator(token_buffer) && (precedence > min_precedence) {
       let operator = self.parse_operator()?;
@@ -1034,14 +1028,19 @@ impl<'a> Parser<'a> {
         token_buffer = self.force_get();
       }
 
-      result = ast::Node::BinaryExpr(ast::BinaryExpr {
-        left: Box::new(result),
+      let kind = ast::NodeKind::BinaryExpr(ast::BinaryExpr {
+        left: Box::new(buffer),
         operator,
         right: Box::new(right),
       });
+
+      buffer = ast::Node {
+        kind,
+        span: self.close_span(span_start),
+      };
     }
 
-    Ok(result)
+    Ok(buffer)
   }
 
   /// %operator %expr
@@ -1182,7 +1181,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
-      node_ref_cell: cache::create_cached_node(ast::Node::Enum(enum_)),
+      node_ref_cell: cache::create_cached_node(ast::NodeKind::Enum(enum_)),
       definition_key: self.cache.create_definition_key(),
     })
   }
@@ -1219,7 +1218,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
-      node_ref_cell: cache::create_cached_node(ast::Node::StructType(struct_type)),
+      node_ref_cell: cache::create_cached_node(ast::NodeKind::StructType(struct_type)),
       definition_key: self.cache.create_definition_key(),
     })
   }

@@ -52,8 +52,8 @@ impl TypeCheckContext {
 
       return match &*target_type {
         // TODO: Cloning struct type.
-        ast::Node::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
-        ast::Node::TypeAlias(type_alias) => type_alias.ty.clone(),
+        ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
+        ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
         _ => unreachable!(),
       };
     }
@@ -73,7 +73,7 @@ pub trait TypeCheck {
   }
 }
 
-impl TypeCheck for ast::Node {
+impl TypeCheck for ast::NodeKind {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     dispatch!(self, TypeCheck::type_check, type_context, cache);
   }
@@ -104,7 +104,7 @@ impl TypeCheck for ast::StructValue {
     let struct_type_node = cache.get(&self.target_key.unwrap());
 
     let struct_type = match &*struct_type_node {
-      ast::Node::StructType(struct_type) => struct_type,
+      ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
 
@@ -116,7 +116,7 @@ impl TypeCheck for ast::StructValue {
     let struct_type_node = cache.get(&self.target_key.unwrap());
 
     let struct_type = match &*struct_type_node {
-      ast::Node::StructType(struct_type) => struct_type,
+      ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
 
@@ -161,7 +161,7 @@ impl TypeCheck for ast::StructType {
 
 impl TypeCheck for ast::UnaryExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let expr_type = self.expr.infer_type(cache);
+    let expr_type = self.expr.kind.infer_type(cache);
 
     // Short-circuit if the expression's type is unit.
     if expr_type.is_unit() {
@@ -178,7 +178,7 @@ impl TypeCheck for ast::UnaryExpr {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let expr_type = self.expr.infer_type(cache);
+    let expr_type = self.expr.kind.infer_type(cache);
 
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
@@ -241,13 +241,13 @@ impl TypeCheck for ast::AssignStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: Need to unify the value and the target's type, as well as ensuring that the target is mutable.
 
-    let assignee_type = self.assignee_expr.infer_type(cache);
+    let assignee_type = self.assignee_expr.kind.infer_type(cache);
     let is_pointer_or_ref_expr = matches!(assignee_type, ast::Type::Pointer(_));
-    let is_array_indexing = matches!(self.assignee_expr.as_ref(), ast::Node::ArrayIndexing(_));
+    let is_array_indexing = matches!(self.assignee_expr.kind, ast::NodeKind::ArrayIndexing(_));
 
     let is_variable_ref = matches!(
-      self.assignee_expr.as_ref(),
-      ast::Node::VariableOrMemberRef(_)
+      self.assignee_expr.kind,
+      ast::NodeKind::VariableOrMemberRef(_)
     );
 
     // TODO: Missing member access (struct fields) support.
@@ -259,12 +259,12 @@ impl TypeCheck for ast::AssignStmt {
         .error("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing".to_string());
     } else if is_variable_ref {
       // If the assignee is a variable reference, ensure that the variable is mutable.
-      match self.assignee_expr.as_ref() {
-        ast::Node::VariableOrMemberRef(variable_ref) => {
+      match &self.assignee_expr.kind {
+        ast::NodeKind::VariableOrMemberRef(variable_ref) => {
           let declaration = cache.get(&variable_ref.0.target_key.unwrap());
 
           match &*declaration {
-            ast::Node::LetStmt(let_stmt) if !let_stmt.is_mutable => {
+            ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
               type_context
                 .diagnostic_builder
                 .error("assignee is immutable".to_string());
@@ -277,7 +277,7 @@ impl TypeCheck for ast::AssignStmt {
       };
     }
 
-    self.value.type_check(type_context, cache);
+    self.value.kind.type_check(type_context, cache);
   }
 }
 
@@ -296,8 +296,8 @@ impl TypeCheck for ast::ArrayIndexing {
     let target_array_variable = &*cache.get(&self.target_key.unwrap());
 
     let array_type = match target_array_variable {
-      ast::Node::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
-      ast::Node::Parameter(parameter) => &parameter.1,
+      ast::NodeKind::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
+      ast::NodeKind::Parameter(parameter) => &parameter.1,
       _ => unreachable!(),
     };
 
@@ -322,7 +322,7 @@ impl TypeCheck for ast::ArrayValue {
     let array_element_type = if let Some(explicit_type) = &self.explicit_type {
       explicit_type.clone()
     } else {
-      self.elements.first().unwrap().infer_type(cache)
+      self.elements.first().unwrap().kind.infer_type(cache)
     };
 
     // TODO: Is the length conversion safe?
@@ -336,13 +336,13 @@ impl TypeCheck for ast::ArrayValue {
     let expected_element_type = if let Some(explicit_type) = &self.explicit_type {
       explicit_type.clone()
     } else {
-      self.elements.first().unwrap().infer_type(cache)
+      self.elements.first().unwrap().kind.infer_type(cache)
     };
 
     // TODO: Skip the first element during iteration, as it is redundant.
     for element in &self.elements {
       // Report this error only once.
-      if !mixed_elements_flag && element.infer_type(cache) != expected_element_type {
+      if !mixed_elements_flag && element.kind.infer_type(cache) != expected_element_type {
         type_context
           .diagnostic_builder
           .error("array elements must all be of the same type".to_string());
@@ -350,7 +350,7 @@ impl TypeCheck for ast::ArrayValue {
         mixed_elements_flag = true;
       }
 
-      element.type_check(type_context, cache);
+      element.kind.type_check(type_context, cache);
     }
   }
 }
@@ -384,17 +384,17 @@ impl TypeCheck for ast::Block {
       || self
         .statements
         .iter()
-        .any(|x| matches!(x.as_ref(), ast::Node::ReturnStmt(_)))
+        .any(|x| matches!(x.kind, ast::NodeKind::ReturnStmt(_)))
     {
       return ast::Type::Unit;
     }
 
-    return self.statements.last().unwrap().infer_type(cache);
+    return self.statements.last().unwrap().kind.infer_type(cache);
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     for statement in &self.statements {
-      statement.type_check(type_context, cache);
+      statement.kind.type_check(type_context, cache);
     }
   }
 }
@@ -405,8 +405,8 @@ impl TypeCheck for ast::VariableOrMemberRef {
 
     // TODO: Why not infer its type? Is this correct? (Let statement doesn't have type!).
     let variable_type = match target_variable {
-      ast::Node::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
-      ast::Node::Parameter(parameter) => &parameter.1,
+      ast::NodeKind::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
+      ast::NodeKind::Parameter(parameter) => &parameter.1,
       _ => unreachable!(),
     };
 
@@ -449,7 +449,7 @@ impl TypeCheck for ast::IfStmt {
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     if !TypeCheckContext::unify(
-      &self.condition.infer_type(cache),
+      &self.condition.kind.infer_type(cache),
       &ast::Type::Primitive(ast::PrimitiveType::Bool),
       cache,
     ) {
@@ -472,13 +472,13 @@ impl TypeCheck for ast::BinaryExpr {
       | ast::OperatorKind::Nand
       | ast::OperatorKind::Nor
       | ast::OperatorKind::Xor => ast::Type::Primitive(ast::PrimitiveType::Bool),
-      _ => self.left.infer_type(cache),
+      _ => self.left.kind.infer_type(cache),
     }
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let left_type = self.left.infer_type(cache);
-    let right_type = self.right.infer_type(cache);
+    let left_type = self.left.kind.infer_type(cache);
+    let right_type = self.right.kind.infer_type(cache);
 
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
@@ -512,8 +512,8 @@ impl TypeCheck for ast::BinaryExpr {
       _ => {}
     };
 
-    self.left.type_check(type_context, cache);
-    self.right.type_check(type_context, cache);
+    self.left.kind.type_check(type_context, cache);
+    self.right.kind.type_check(type_context, cache);
   }
 }
 
@@ -535,7 +535,7 @@ impl TypeCheck for ast::Definition {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let node = self.node_ref_cell.borrow();
 
-    if let ast::Node::Function(_) = &*node {
+    if let ast::NodeKind::Function(_) = &*node {
       type_context.current_function_key = Some(self.definition_key);
     }
 
@@ -545,17 +545,17 @@ impl TypeCheck for ast::Definition {
 
 impl TypeCheck for ast::InlineExprStmt {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.expr.infer_type(cache)
+    self.expr.kind.infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    self.expr.type_check(type_context, cache);
+    self.expr.kind.type_check(type_context, cache);
   }
 }
 
 impl TypeCheck for ast::LetStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let value_type = self.value.infer_type(cache);
+    let value_type = self.value.kind.infer_type(cache);
 
     if !TypeCheckContext::unify(self.ty.as_ref().unwrap(), &value_type, cache) {
       type_context.diagnostic_builder.error(format!(
@@ -564,7 +564,7 @@ impl TypeCheck for ast::LetStmt {
       ));
     }
 
-    self.value.type_check(type_context, cache);
+    self.value.kind.type_check(type_context, cache);
   }
 }
 
@@ -577,7 +577,7 @@ impl TypeCheck for ast::ReturnStmt {
       .borrow();
 
     let current_function = match &*current_function_node {
-      ast::Node::Function(function) => function,
+      ast::NodeKind::Function(function) => function,
       _ => unreachable!(),
     };
 
@@ -593,7 +593,7 @@ impl TypeCheck for ast::ReturnStmt {
     }
 
     if let Some(value) = &self.value {
-      let value_type = value.infer_type(cache);
+      let value_type = value.kind.infer_type(cache);
 
       if !TypeCheckContext::unify(&current_function.prototype.return_type, &value_type, cache) {
         type_context.diagnostic_builder.error(format!(
@@ -602,7 +602,7 @@ impl TypeCheck for ast::ReturnStmt {
         ));
       }
 
-      value.type_check(type_context, cache);
+      value.kind.type_check(type_context, cache);
     }
   }
 }
@@ -618,7 +618,7 @@ impl TypeCheck for ast::Function {
           .body
           .statements
           .iter()
-          .any(|x| matches!(x.as_ref(), ast::Node::ReturnStmt(_)))
+          .any(|x| matches!(x.kind, ast::NodeKind::ReturnStmt(_)))
     {
       type_context.diagnostic_builder.error(format!(
         "the body of function `{}` must return a value",
@@ -636,8 +636,8 @@ impl TypeCheck for ast::FunctionCall {
     let function_or_extern = &*cache.get(&self.callee_pattern.target_key.unwrap());
 
     let prototype = match function_or_extern {
-      ast::Node::Function(function) => &function.prototype,
-      ast::Node::ExternFunction(extern_) => &extern_.prototype,
+      ast::NodeKind::Function(function) => &function.prototype,
+      ast::NodeKind::ExternFunction(extern_) => &extern_.prototype,
       _ => unreachable!(),
     };
 
@@ -657,7 +657,7 @@ impl TypeCheck for ast::FunctionCall {
     let attributes;
 
     match callee {
-      ast::Node::ExternFunction(extern_) => {
+      ast::NodeKind::ExternFunction(extern_) => {
         if !type_context.in_unsafe_block {
           type_context.diagnostic_builder.error(format!(
             "extern function call to `{}` may only occur inside an unsafe block",
@@ -669,7 +669,7 @@ impl TypeCheck for ast::FunctionCall {
         prototype = &extern_.prototype;
         attributes = &extern_.attributes;
       }
-      ast::Node::Function(function) => {
+      ast::NodeKind::Function(function) => {
         name = &function.name;
         prototype = &function.prototype;
         attributes = &function.attributes;
@@ -725,7 +725,7 @@ impl TypeCheck for ast::LoopStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
       if !TypeCheckContext::unify(
-        &condition.infer_type(cache),
+        &condition.kind.infer_type(cache),
         &ast::Type::Primitive(ast::PrimitiveType::Bool),
         cache,
       ) {
@@ -734,7 +734,7 @@ impl TypeCheck for ast::LoopStmt {
           .error("loop condition must evaluate to a boolean".to_string());
       }
 
-      condition.type_check(type_context, cache);
+      condition.kind.type_check(type_context, cache);
     }
 
     // TODO: To avoid problems with nested cases, save a buffer here, then restore?

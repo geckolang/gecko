@@ -18,7 +18,7 @@ pub trait Lower {
   }
 }
 
-impl Lower for ast::Node {
+impl Lower for ast::NodeKind {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -52,6 +52,7 @@ impl Lower for ast::IntrinsicCall {
           .arguments
           .first()
           .unwrap()
+          .kind
           .lower(generator, cache)
           .unwrap();
 
@@ -106,7 +107,7 @@ impl Lower for ast::StructValue {
         .build_struct_gep(struct_alloca_ptr, index as u32, "struct.field.gep")
         .unwrap();
 
-      let llvm_field_value = field.lower(generator, cache).unwrap();
+      let llvm_field_value = field.kind.lower(generator, cache).unwrap();
 
       generator
         .llvm_builder
@@ -157,8 +158,8 @@ impl Lower for ast::AssignStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_value = self.value.lower(generator, cache).unwrap();
-    let llvm_target = self.assignee_expr.lower(generator, cache).unwrap();
+    let llvm_value = self.value.kind.lower(generator, cache).unwrap();
+    let llvm_target = self.assignee_expr.kind.lower(generator, cache).unwrap();
 
     generator
       .llvm_builder
@@ -188,7 +189,13 @@ impl Lower for ast::ArrayIndexing {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_index = self.index.lower(generator, cache).unwrap().into_int_value();
+    let llvm_index = self
+      .index
+      .kind
+      .lower(generator, cache)
+      .unwrap()
+      .into_int_value();
+
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_array = generator.memoize_or_retrieve(self.target_key.unwrap(), cache, false);
 
@@ -231,7 +238,7 @@ impl Lower for ast::ArrayValue {
     llvm_values.reserve(self.elements.len());
 
     for element in &self.elements {
-      llvm_values.push(element.lower(generator, cache).unwrap());
+      llvm_values.push(element.kind.lower(generator, cache).unwrap());
     }
 
     // TODO: Is this cast (usize -> u32) safe?
@@ -315,8 +322,8 @@ impl Lower for ast::BinaryExpr {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_left_value = self.left.lower(generator, cache).unwrap();
-    let llvm_right_value = self.right.lower(generator, cache).unwrap();
+    let llvm_left_value = self.left.kind.lower(generator, cache).unwrap();
+    let llvm_right_value = self.right.kind.lower(generator, cache).unwrap();
 
     // NOTE: By this point, we assume that both values are of the same type.
     let is_int_values = llvm_left_value.is_int_value();
@@ -576,7 +583,11 @@ impl Lower for ast::LoopStmt {
     // FIXME: The condition needs to be re-lowered per iteration.
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
     let llvm_condition = if let Some(condition) = &self.condition {
-      condition.lower(generator, cache).unwrap().into_int_value()
+      condition
+        .kind
+        .lower(generator, cache)
+        .unwrap()
+        .into_int_value()
     } else {
       generator.llvm_context.bool_type().const_int(1, false)
     };
@@ -605,7 +616,11 @@ impl Lower for ast::LoopStmt {
     // Fallthrough or loop if applicable.
     if generator.get_current_block().get_terminator().is_none() {
       let llvm_condition_iter = if let Some(condition) = &self.condition {
-        condition.lower(generator, cache).unwrap().into_int_value()
+        condition
+          .kind
+          .lower(generator, cache)
+          .unwrap()
+          .into_int_value()
       } else {
         generator.llvm_context.bool_type().const_int(1, false)
       };
@@ -630,7 +645,7 @@ impl Lower for ast::IfStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_condition = self.condition.lower(generator, cache).unwrap();
+    let llvm_condition = self.condition.kind.lower(generator, cache).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
     let ty = self.infer_type(cache);
     let yields_expression = !ty.is_unit();
@@ -904,7 +919,7 @@ impl Lower for ast::Block {
     let mut last_statement_value = None;
 
     for (index, statement) in self.statements.iter().enumerate() {
-      let statement_value = statement.lower(generator, cache);
+      let statement_value = statement.kind.lower(generator, cache);
 
       // Do not continue lowering statements if the current block is terminated.
       if generator.get_current_block().get_terminator().is_some() {
@@ -925,7 +940,7 @@ impl Lower for ast::ReturnStmt {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_return_value = if let Some(return_value) = &self.value {
-      Some(return_value.lower(generator, cache).unwrap())
+      Some(return_value.kind.lower(generator, cache).unwrap())
     } else {
       None
     };
@@ -944,7 +959,7 @@ impl Lower for ast::UnaryExpr {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match self.operator {
       ast::OperatorKind::Not => {
-        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
 
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
         generator
@@ -953,7 +968,7 @@ impl Lower for ast::UnaryExpr {
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
-        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
 
         // NOTE: We expect the value to be an integer or float. This should be enforced during type-checking.
         if llvm_value.is_int_value() {
@@ -974,12 +989,12 @@ impl Lower for ast::UnaryExpr {
         // FIXME: The expression shouldn't be accessed in this case. Find out how to accomplish this.
 
         // TODO: For the time being, this isn't being returned. This should be the return value.
-        self.expr.lower(generator, cache).unwrap();
+        self.expr.kind.lower(generator, cache).unwrap();
 
         todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
-        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
 
         // FIXME: Binary expression is instead re-directing here for some reason. Might be a problem with parsing function calls as an operand.
         println!("===> Deref");
@@ -987,7 +1002,7 @@ impl Lower for ast::UnaryExpr {
         generator.access(llvm_value.into_pointer_value())
       }
       ast::OperatorKind::Cast => {
-        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
         let llvm_to_type = generator.lower_type(self.cast_type.as_ref().unwrap(), cache);
 
         if !llvm_value.is_int_value() {
@@ -1023,7 +1038,7 @@ impl Lower for ast::LetStmt {
     // TODO: Might this affect nested constructs unintentionally. Avoid flags, find a better solution.
     generator.let_stmt_flag = Some(llvm_alloca_ptr);
 
-    let llvm_value = self.value.lower(generator, cache);
+    let llvm_value = self.value.kind.lower(generator, cache);
 
     generator.let_stmt_flag = None;
 
@@ -1050,7 +1065,7 @@ impl Lower for ast::FunctionCall {
     let llvm_arguments = self
       .arguments
       .iter()
-      .map(|argument| argument.lower(generator, cache).unwrap().into())
+      .map(|argument| argument.kind.lower(generator, cache).unwrap().into())
       .collect::<Vec<_>>();
 
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
@@ -1101,13 +1116,16 @@ impl Lower for ast::Definition {
     // Set the pending function definition key to cache the function early.
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
-    if matches!(&*node, ast::Node::Function(_)) {
+    if matches!(&*node, ast::NodeKind::Function(_)) {
       generator.pending_function_definition_key = Some(self.definition_key);
     }
 
     // TODO: This might error for other globally-defined types.
     // TODO: Forwarding buffers. Is this okay in this instance?
-    if !matches!(&*node, ast::Node::StructType(_) | ast::Node::TypeAlias(_)) {
+    if !matches!(
+      &*node,
+      ast::NodeKind::StructType(_) | ast::NodeKind::TypeAlias(_)
+    ) {
       Some(generator.memoize_or_retrieve(self.definition_key, cache, true))
     } else {
       None
@@ -1121,7 +1139,7 @@ impl Lower for ast::InlineExprStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.expr.lower(generator, cache)
+    self.expr.kind.lower(generator, cache)
   }
 }
 
@@ -1377,10 +1395,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         let cached_type_node = cache.get(&target_key);
 
         let llvm_type = match &*cached_type_node {
-          ast::Node::StructType(struct_type) => self
+          ast::NodeKind::StructType(struct_type) => self
             .lower_struct_type(struct_type, cache)
             .as_basic_type_enum(),
-          ast::Node::TypeAlias(type_alias) => {
+          ast::NodeKind::TypeAlias(type_alias) => {
             // FIXME: Non-tail-recursive recursive call!
             self.lower_type(&type_alias.ty, cache).as_basic_type_enum()
           }
