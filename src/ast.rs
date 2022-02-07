@@ -33,6 +33,7 @@ macro_rules! dispatch {
       $crate::ast::NodeKind::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -74,6 +75,7 @@ pub enum Type {
   Struct(StructType),
   /// A type that may need to be resolved.
   Stub(StubType),
+  Function(FunctionType),
   Unit,
 }
 
@@ -114,11 +116,24 @@ pub enum NodeKind {
   StructValue(StructValue),
   Pattern(Pattern),
   TypeAlias(TypeAlias),
+  Closure(Closure),
 }
 
 pub struct Node {
   pub kind: NodeKind,
+  // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
   pub span: diagnostic::Span,
+}
+
+pub struct Closure {
+  pub prototype: Prototype,
+  pub body: Block,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct FunctionType {
+  pub return_type: Box<Type>,
+  pub parameters: Vec<Type>,
 }
 
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?

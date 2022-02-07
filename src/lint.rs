@@ -87,6 +87,10 @@ impl Lint for ast::NodeKind {
   }
 }
 
+impl Lint for ast::Closure {
+  //
+}
+
 impl Lint for ast::TypeAlias {
   //
 }

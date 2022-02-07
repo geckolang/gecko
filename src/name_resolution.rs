@@ -46,6 +46,18 @@ impl Resolve for ast::NodeKind {
   }
 }
 
+impl Resolve for ast::Closure {
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.prototype.declare(resolver, cache);
+    self.body.declare(resolver, cache);
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.prototype.resolve(resolver, cache);
+    self.body.resolve(resolver, cache);
+  }
+}
+
 impl Resolve for ast::TypeAlias {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.ty.resolve(resolver, cache);
@@ -233,6 +245,10 @@ impl Resolve for ast::IfStmt {
 }
 
 impl Resolve for ast::LetStmt {
+  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.value.kind.declare(resolver, cache);
+  }
+
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.value.kind.resolve(resolver, cache);
 

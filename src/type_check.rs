@@ -17,6 +17,25 @@ impl TypeCheckContext {
     }
   }
 
+  // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
+  /// Resolve a possible user-defined type, so it can be used properly.
+  pub fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
+    // TODO: What if it's a pointer to a user-defined type?
+    if let ast::Type::Stub(stub_type) = ty {
+      let target_type = cache.get(&stub_type.target_key.unwrap());
+
+      return match &*target_type {
+        // TODO: Cloning struct type.
+        ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
+        ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
+        _ => unreachable!(),
+      };
+    }
+
+    // FIXME: Do not clone. Find a better alternative.
+    ty.clone()
+  }
+
   /// Compare two types for equality.
   pub fn unify(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
     let unboxed_type_a = Self::resolve_type(type_a, cache);
@@ -42,25 +61,6 @@ impl TypeCheckContext {
 
     false
   }
-
-  // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
-  /// Resolve a possible user-defined type, so it can be used properly.
-  fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
-    // TODO: What if it's a pointer to a user-defined type?
-    if let ast::Type::Stub(stub_type) = ty {
-      let target_type = cache.get(&stub_type.target_key.unwrap());
-
-      return match &*target_type {
-        // TODO: Cloning struct type.
-        ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
-        ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
-        _ => unreachable!(),
-      };
-    }
-
-    // FIXME: Do not clone. Find a better alternative.
-    ty.clone()
-  }
 }
 
 pub trait TypeCheck {
@@ -80,6 +80,31 @@ impl TypeCheck for ast::NodeKind {
 
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     dispatch!(self, TypeCheck::infer_type, cache)
+  }
+}
+
+impl TypeCheck for ast::Closure {
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    let parameters = self
+      .prototype
+      .parameters
+      .iter()
+      .map(|x| x.1.clone())
+      .collect::<Vec<_>>();
+
+    let return_type = self.prototype.return_type.clone();
+
+    ast::Type::Function(ast::FunctionType {
+      parameters,
+      return_type: Box::new(return_type),
+    })
+  }
+
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
+    // TODO: Might need to mirror `Function`'s type check.
+
+    self.prototype.type_check(type_context, cache);
+    self.body.type_check(type_context, cache);
   }
 }
 

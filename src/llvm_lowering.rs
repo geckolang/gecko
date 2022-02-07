@@ -28,6 +28,47 @@ impl Lower for ast::NodeKind {
   }
 }
 
+impl Lower for ast::Closure {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let buffers = generator.stash_buffers();
+    let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
+    let llvm_function_name = generator.mangle_name(&String::from("closure"));
+
+    assert!(generator
+      .llvm_module
+      .get_function(llvm_function_name.as_str())
+      .is_none());
+
+    let llvm_function = generator.llvm_module.add_function(
+      llvm_function_name.as_str(),
+      llvm_function_type,
+      Some(inkwell::module::Linkage::Private),
+    );
+
+    generator.llvm_function_buffer = Some(llvm_function);
+
+    let llvm_entry_block = generator
+      .llvm_context
+      .append_basic_block(llvm_function, "closure.entry");
+
+    generator.llvm_builder.position_at_end(llvm_entry_block);
+
+    let yielded_result = self.body.lower(generator, cache);
+
+    generator.attempt_build_return(yielded_result);
+
+    let result = llvm_function.as_global_value().as_basic_value_enum();
+
+    generator.restore_buffers(buffers);
+
+    Some(result)
+  }
+}
+
 impl Lower for ast::TypeAlias {
   //
 }
@@ -917,9 +958,16 @@ impl Lower for ast::Block {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let mut last_statement_value = None;
+    let function_buffer = generator.llvm_function_buffer;
 
     for (index, statement) in self.statements.iter().enumerate() {
       let statement_value = statement.kind.lower(generator, cache);
+
+      // TODO: What about other buffers? What if we placed the functionality of stashing and restoring buffers inside the lowering of closures instead?
+      // Restore the original function buffer, in case it was changed
+      // by anything recursively within statement (such as a closure
+      // expression).
+      generator.llvm_function_buffer = function_buffer;
 
       // Do not continue lowering statements if the current block is terminated.
       if generator.get_current_block().get_terminator().is_some() {
@@ -996,9 +1044,6 @@ impl Lower for ast::UnaryExpr {
       ast::OperatorKind::MultiplyOrDereference => {
         let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
 
-        // FIXME: Binary expression is instead re-directing here for some reason. Might be a problem with parsing function calls as an operand.
-        println!("===> Deref");
-
         generator.access(llvm_value.into_pointer_value())
       }
       ast::OperatorKind::Cast => {
@@ -1029,7 +1074,20 @@ impl Lower for ast::LetStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_type = generator.lower_type(self.ty.as_ref().unwrap(), cache);
+    let ty = self.ty.as_ref().unwrap();
+
+    // Special case if the value is a closure.
+    if matches!(
+      TypeCheckContext::resolve_type(ty, cache),
+      ast::Type::Function(_)
+    ) {
+      let result = self.value.kind.lower(generator, cache);
+      // TODO: Here create a definition for the closure, with the let statement as the name.
+
+      return result;
+    }
+
+    let llvm_type = generator.lower_type(ty, cache);
 
     let llvm_alloca_ptr = generator
       .llvm_builder
@@ -1143,6 +1201,14 @@ impl Lower for ast::InlineExprStmt {
   }
 }
 
+pub struct LlvmGeneratorBuffers<'ctx> {
+  current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
+  return_expects_access: bool,
+  let_stmt_flag: Option<inkwell::values::PointerValue<'ctx>>,
+  llvm_current_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
+  llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
+}
+
 pub struct LlvmGenerator<'a, 'ctx> {
   pub module_name: String,
   llvm_context: &'ctx inkwell::context::Context,
@@ -1186,6 +1252,27 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       panic_function_cache: None,
       print_function_cache: None,
       mangle_counter: 0,
+    }
+  }
+
+  fn stash_buffers(&self) -> LlvmGeneratorBuffers<'ctx> {
+    LlvmGeneratorBuffers {
+      current_loop_block: self.current_loop_block,
+      return_expects_access: self.return_expects_access,
+      let_stmt_flag: self.let_stmt_flag,
+      llvm_current_block: self.llvm_builder.get_insert_block(),
+      llvm_function_buffer: self.llvm_function_buffer,
+    }
+  }
+
+  fn restore_buffers(&mut self, buffers: LlvmGeneratorBuffers<'ctx>) {
+    self.current_loop_block = buffers.current_loop_block;
+    self.return_expects_access = buffers.return_expects_access;
+    self.let_stmt_flag = buffers.let_stmt_flag;
+    self.llvm_function_buffer = buffers.llvm_function_buffer;
+
+    if let Some(llvm_current_block) = buffers.llvm_current_block {
+      self.llvm_builder.position_at_end(llvm_current_block);
     }
   }
 
@@ -1383,6 +1470,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::Struct(struct_type) => self
         .lower_struct_type(struct_type, cache)
         .as_basic_type_enum(),
+      // FIXME: Why not resolve the type if it is a stub type, then proceed to lower it?
       ast::Type::Stub(stub_type) => {
         let target_key = stub_type.target_key.unwrap();
 
@@ -1409,14 +1497,16 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
         llvm_type
       }
+      // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
       // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
-      // NOTE: The unit type will never be lowered.
-      ast::Type::Unit => unreachable!(),
+      // NOTE: These types are never lowered.
+      ast::Type::Unit | ast::Type::Function(_) => unreachable!(),
       // TODO: Implement.
       ast::Type::Reference(_reference_type) => todo!(),
     }
   }
 
+  // TODO: Consider merging with `lower_function_type` (DRY).
   fn lower_prototype(
     &mut self,
     prototype: &ast::Prototype,
@@ -1507,10 +1597,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .clone();
     }
 
-    // TODO: Are we missing any buffers to be saved?
-    // TODO: Will there be a case where we'd need the buffers to change? If so, take in a flag parameter.
-    let previous_function_buffer = self.llvm_function_buffer;
-    let previous_insert_block = self.llvm_builder.get_insert_block();
+    let buffers = self.stash_buffers();
 
     let llvm_value = cache
       .declarations
@@ -1522,14 +1609,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     self.llvm_cached_values.insert(definition_key, llvm_value);
 
-    // TODO: What if the `previous_block` buffer was `None`?
     // Restore buffers after processing, if requested.
     if !forward_buffers {
-      if let Some(previous_block) = previous_insert_block {
-        self.llvm_builder.position_at_end(previous_block);
-      }
-
-      self.llvm_function_buffer = previous_function_buffer;
+      self.restore_buffers(buffers);
     }
 
     return llvm_value;
