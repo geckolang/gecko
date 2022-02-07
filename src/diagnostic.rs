@@ -1,21 +1,3 @@
-#[macro_export]
-// TODO: Replace this with an `expect` method (under `Lexer).
-macro_rules! diagnostic_assert {
-  ($condition:expr) => {
-    match $condition {
-      true => true,
-      false => {
-        return Err(diagnostic::Diagnostic {
-          message: format!("assertion failed: `{}`", stringify!($condition)),
-          severity: diagnostic::Severity::Internal,
-          // TODO: No location.
-          location: None,
-        });
-      }
-    }
-  };
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Severity {
   Warning,
@@ -23,14 +5,13 @@ pub enum Severity {
   Internal,
 }
 
-pub type Location = std::ops::Range<usize>;
+pub type Span = std::ops::Range<usize>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Diagnostic {
   pub message: String,
   pub severity: Severity,
-  // TODO: Rename to `span`.
-  pub location: Option<Location>,
+  pub span: Option<Span>,
 }
 
 impl Diagnostic {
@@ -56,7 +37,7 @@ impl DiagnosticBuilder {
     self.diagnostics.push(Diagnostic {
       message,
       severity: Severity::Error,
-      location: None,
+      span: None,
     });
   }
 
@@ -64,7 +45,7 @@ impl DiagnosticBuilder {
     self.diagnostics.push(Diagnostic {
       message,
       severity: Severity::Warning,
-      location: None,
+      span: None,
     });
   }
 }

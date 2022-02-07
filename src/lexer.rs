@@ -142,7 +142,7 @@ impl Lexer {
     Ok(tokens)
   }
 
-  fn get_location(&self) -> Option<diagnostic::Location> {
+  fn get_span(&self) -> Option<diagnostic::Span> {
     Some(self.index..self.index)
   }
 
@@ -180,7 +180,7 @@ impl Lexer {
       return Err(diagnostic::Diagnostic {
         message: "number might be too large or invalid".to_string(),
         severity: diagnostic::Severity::Error,
-        location: self.get_location(),
+        span: self.get_span(),
       });
     }
 
@@ -227,14 +227,14 @@ impl Lexer {
           return Err(diagnostic::Diagnostic {
             message: format!("`{}` is not a valid string escape sequence", char),
             severity: diagnostic::Severity::Error,
-            location: self.get_location(),
+            span: self.get_span(),
           })
         }
         None => {
           return Err(diagnostic::Diagnostic {
             message: "unexpected end of input, expected character".to_string(),
             severity: diagnostic::Severity::Error,
-            location: self.get_location(),
+            span: self.get_span(),
           })
         }
       };
@@ -257,7 +257,7 @@ impl Lexer {
       return Err(diagnostic::Diagnostic {
         message: "unexpected end of input, expected character".to_string(),
         severity: diagnostic::Severity::Error,
-        location: self.get_location(),
+        span: self.get_span(),
       });
     }
 

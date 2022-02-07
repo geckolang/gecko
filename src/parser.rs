@@ -44,6 +44,7 @@ pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
   index: usize,
   cache: &'a mut cache::Cache,
+  span_begin_index: Option<usize>,
 }
 
 impl<'a> Parser<'a> {
@@ -52,6 +53,7 @@ impl<'a> Parser<'a> {
       tokens,
       index: 0,
       cache,
+      span_begin_index: None,
     }
   }
 
@@ -77,6 +79,24 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  fn begin_span(&mut self) {
+    self.span_begin_index = Some(self.index);
+  }
+
+  fn close_span(&mut self) -> Option<diagnostic::Span> {
+    if self.span_begin_index.is_none() {
+      // TODO: Awaiting safety check?
+      return self.get_span();
+    }
+
+    let begin_index = self.span_begin_index.unwrap();
+    let end_index = self.index;
+
+    self.span_begin_index = None;
+
+    Some(begin_index..end_index)
+  }
+
   fn skip_past(&mut self, token_kind: &lexer::TokenKind) -> ParserResult<()> {
     if !self.is(token_kind) {
       return Err(self.expected(format!("token `{}`", token_kind).as_str()));
@@ -92,7 +112,7 @@ impl<'a> Parser<'a> {
       // TODO: Unsafe access. Default to `EOF` if there isn't a current token.
       message: format!("expected {}, but got `{}`", expected, self.force_get()),
       severity: diagnostic::Severity::Error,
-      location: self.get_location(),
+      span: self.get_span(),
     }
   }
 
@@ -139,8 +159,8 @@ impl<'a> Parser<'a> {
     &self.tokens.get(self.index).unwrap().0
   }
 
-  // TODO: Rename to `span`.
-  fn get_location(&self) -> Option<diagnostic::Location> {
+  fn get_span(&self) -> Option<diagnostic::Span> {
+    // TODO: Safety check?
     let position = self.tokens[self.index].1;
 
     Some(position..position)
@@ -264,12 +284,12 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::SymbolEqual) => {
         ast::Node::AssignStmt(self.parse_assign_stmt()?)
       }
-      // FIXME: Pattern matching is wrong in this case. Here's the example case where it fails: `n * fn()`. The binary expression isn't being parsed.
-      lexer::TokenKind::Identifier(_)
-        if !self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
-      {
-        ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
-      }
+      // FIXME: Why is there a lonely identifier matching variable reference in STATEMENTS?
+      // lexer::TokenKind::Identifier(_)
+      //   if !self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
+      // {
+      //   ast::Node::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
+      // }
       // Otherwise, assume an in-line expression.
       _ => ast::Node::InlineExprStmt(ast::InlineExprStmt {
         expr: Box::new(self.parse_expr()?),
@@ -365,7 +385,7 @@ impl<'a> Parser<'a> {
 
     let element_type = self.parse_type()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolComma);
+    self.skip_past(&lexer::TokenKind::SymbolComma)?;
 
     let size = match self.force_get() {
       lexer::TokenKind::LiteralInt(value) => value.clone() as u32,
@@ -373,7 +393,7 @@ impl<'a> Parser<'a> {
     };
 
     self.skip();
-    self.skip_past(&lexer::TokenKind::SymbolBracketR);
+    self.skip_past(&lexer::TokenKind::SymbolBracketR)?;
 
     Ok(ast::Type::Array(Box::new(element_type), size))
   }
@@ -578,20 +598,22 @@ impl<'a> Parser<'a> {
       return Err(diagnostic::Diagnostic {
         message: "expected top-level construct but got end of file".to_string(),
         severity: diagnostic::Severity::Error,
-        location: self.get_location(),
+        span: self.get_span(),
       });
     }
 
     let mut attributes: Vec<ast::Attribute> = Vec::new();
 
     while self.is(&lexer::TokenKind::SymbolAt) {
+      self.begin_span();
+
       let attribute = self.parse_attribute()?;
 
       if attributes.iter().any(|x| x.name == x.name) {
         return Err(diagnostic::Diagnostic {
           message: format!("duplicate attribute `{}`", attribute.name),
           severity: diagnostic::Severity::Error,
-          location: self.get_location(),
+          span: self.close_span(),
         });
       }
 
@@ -607,7 +629,7 @@ impl<'a> Parser<'a> {
       return Err(diagnostic::Diagnostic {
         message: "attributes may only be attached to functions or externs".to_string(),
         severity: diagnostic::Severity::Error,
-        location: self.get_location(),
+        span: self.get_span(),
       });
     }
 
@@ -625,13 +647,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::KeywordEnum => ast::Node::Definition(self.parse_enum()?),
       lexer::TokenKind::KeywordStruct => ast::Node::Definition(self.parse_struct_type()?),
       lexer::TokenKind::KeywordType => ast::Node::Definition(self.parse_type_alias()?),
-      _ => {
-        return Err(diagnostic::Diagnostic {
-          message: format!("unexpected token `{}`, expected top-level construct", token),
-          severity: diagnostic::Severity::Error,
-          location: self.get_location(),
-        })
-      }
+      _ => return Err(self.expected("top-level construct")),
     };
 
     Ok(definition)
@@ -676,7 +692,7 @@ impl<'a> Parser<'a> {
     Ok(ast::ReturnStmt { value })
   }
 
-  /// let %name (':' %type_group) '=' %expr ';'
+  /// let %name (':' %type) '=' %expr
   fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
     self.skip_past(&lexer::TokenKind::KeywordLet)?;
 
@@ -735,7 +751,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// loop %expr %block
+  /// loop (%expr) %block
   fn parse_loop_stmt(&mut self) -> ParserResult<ast::LoopStmt> {
     self.skip_past(&lexer::TokenKind::KeywordLoop)?;
 
@@ -750,14 +766,14 @@ impl<'a> Parser<'a> {
     Ok(ast::LoopStmt { condition, body })
   }
 
-  /// break ';'
+  /// break
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
     self.skip_past(&lexer::TokenKind::KeywordBreak)?;
 
     Ok(ast::BreakStmt {})
   }
 
-  /// continue ';'
+  /// continue
   fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
     self.skip_past(&lexer::TokenKind::KeywordContinue)?;
 
@@ -992,6 +1008,7 @@ impl<'a> Parser<'a> {
     Ok(operator)
   }
 
+  // TODO: Move to use the Pratt parsing technique instead to replace the non-tail recursive method.
   /// %expr %operator %expr
   fn parse_binary_expr(
     &mut self,
@@ -1036,7 +1053,6 @@ impl<'a> Parser<'a> {
     let operator = self.parse_operator()?;
 
     let cast_type = if operator == ast::OperatorKind::Cast {
-      // FIXME: Type must be verified to be a primitive type [type-checker].
       Some(self.parse_type()?)
     } else {
       None
@@ -1086,6 +1102,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// '~' %name '(' (%expr (,))* ')'
   fn parse_intrinsic_call(&mut self) -> ParserResult<ast::IntrinsicCall> {
     self.skip_past(&lexer::TokenKind::SymbolTilde)?;
 
@@ -1112,14 +1129,14 @@ impl<'a> Parser<'a> {
     Ok(ast::IntrinsicCall { kind, arguments })
   }
 
-  /// %name
+  /// %pattern
   fn parse_variable_or_member_ref(&mut self) -> ParserResult<ast::VariableOrMemberRef> {
     let pattern = self.parse_pattern(name_resolution::SymbolKind::StaticOrVariableOrParameter)?;
 
     Ok(ast::VariableOrMemberRef(pattern))
   }
 
-  /// %name '=' %expr ';'
+  /// %name '=' %expr
   fn parse_assign_stmt(&mut self) -> ParserResult<ast::AssignStmt> {
     let assignee_expr = Box::new(self.parse_expr()?);
 
