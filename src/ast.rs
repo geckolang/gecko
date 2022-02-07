@@ -68,6 +68,8 @@ pub enum Type {
   Array(Box<Type>, u32),
   Primitive(PrimitiveType),
   Pointer(Box<Type>),
+  // TODO: Consider merging with `Pointer` type, since they have common functionality. Esure all cases conform if so.
+  Reference(Box<Type>),
   // TODO: Isn't this incompatible with `UserDefined`?
   Struct(StructType),
   /// A type that may need to be resolved.
@@ -203,7 +205,6 @@ pub struct ExternFunction {
   pub attributes: Vec<Attribute>,
 }
 
-// TODO: What about the type? Do we care?
 pub struct ExternStatic(pub String, pub Type);
 
 pub struct Attribute {

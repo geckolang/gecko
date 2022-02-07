@@ -29,6 +29,7 @@ pub type Location = std::ops::Range<usize>;
 pub struct Diagnostic {
   pub message: String,
   pub severity: Severity,
+  // TODO: Rename to `span`.
   pub location: Option<Location>,
 }
 
