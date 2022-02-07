@@ -76,7 +76,7 @@ impl LintContext {
       self.diagnostic_builder.warning(format!(
         "{} name `{}` should be written in {} case",
         subject, name, case_name
-      ))
+      ));
     }
   }
 }
@@ -251,13 +251,6 @@ impl Lint for ast::Enum {
 
 impl Lint for ast::InlineExprStmt {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
-    match self.expr.kind {
-      ast::NodeKind::FunctionCall(_) => {}
-      _ => context
-        .diagnostic_builder
-        .warning("expression may be redundant".to_string()),
-    };
-
     self.expr.kind.lint(cache, context);
   }
 }

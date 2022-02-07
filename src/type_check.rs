@@ -587,9 +587,12 @@ impl TypeCheck for ast::ReturnStmt {
         .diagnostic_builder
         .error("return statement must return a value".to_string());
     } else if current_function.prototype.return_type.is_unit() && self.value.is_some() {
-      return type_context
+      type_context
         .diagnostic_builder
         .error("return statement must not return a value".to_string());
+
+      // TODO: Returning at this point. Is this okay?
+      return;
     }
 
     if let Some(value) = &self.value {

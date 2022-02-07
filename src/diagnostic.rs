@@ -33,20 +33,31 @@ impl DiagnosticBuilder {
     }
   }
 
-  pub fn error(&mut self, message: String) {
+  pub fn error(&mut self, message: String) -> &mut DiagnosticBuilder {
     self.diagnostics.push(Diagnostic {
       message,
       severity: Severity::Error,
       span: None,
     });
+
+    self
   }
 
-  pub fn warning(&mut self, message: String) {
+  pub fn warning(&mut self, message: String) -> &mut DiagnosticBuilder {
     self.diagnostics.push(Diagnostic {
       message,
       severity: Severity::Warning,
       span: None,
     });
+
+    self
+  }
+
+  pub fn with_span(&mut self, span: Span) -> &mut DiagnosticBuilder {
+    // FIXME: Add bound checks, and find out a way to handle appropriately?
+    self.diagnostics.last_mut().unwrap().span = Some(span);
+
+    self
   }
 }
 
