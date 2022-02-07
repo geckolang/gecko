@@ -77,9 +77,9 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
-  fn skip_past(&mut token_kind: &lexer::TokenKind) -> ParserResult<()> {
+  fn skip_past(&mut self, token_kind: &lexer::TokenKind) -> ParserResult<()> {
     if !self.is(token_kind) {
-      return Err(self.expected(format!("token `{}`", token_kind)));
+      return Err(self.expected(format!("token `{}`", token_kind).as_str()));
     }
 
     self.skip();
@@ -598,7 +598,10 @@ impl<'a> Parser<'a> {
       attributes.push(attribute);
     }
 
-    let is_attributable = matches!(self.force_get(), lexer::TokenKind::KeywordFn | lexer::TokenKind::KeywordExtern);
+    let is_attributable = matches!(
+      self.force_get(),
+      lexer::TokenKind::KeywordFn | lexer::TokenKind::KeywordExtern
+    );
 
     if !attributes.is_empty() && !is_attributable {
       return Err(diagnostic::Diagnostic {

@@ -1394,6 +1394,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
       // NOTE: The unit type will never be lowered.
       ast::Type::Unit => unreachable!(),
+      // TODO: Implement.
+      ast::Type::Reference(_reference_type) => todo!(),
     }
   }
 

@@ -388,7 +388,7 @@ impl NameResolver {
     self.relative_scopes.clear();
   }
 
-  pub fn set_active_module(&mut self, name: String): bool {
+  pub fn set_active_module(&mut self, name: String) -> bool {
     // TODO: Implement checks (that module exists, etc.).
     // TODO: Shouldn't we reset buffers here? This might prevent the re-definition bug.
     self.current_module_name = Some(name.clone());
@@ -505,12 +505,12 @@ mod tests {
 
   #[test]
   fn push_pop_scope() {
-    let name_resolver = NameResolver::new();
+    let mut name_resolver = NameResolver::new();
 
     assert!(name_resolver.relative_scopes.is_empty());
     name_resolver.push_scope();
     assert_eq!(1, name_resolver.relative_scopes.len());
     name_resolver.pop_scope();
-    assert!(!name_resolver.relative_scopes.is_empty());
+    assert!(name_resolver.relative_scopes.is_empty());
   }
 }
