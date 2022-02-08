@@ -935,8 +935,13 @@ impl<'a> Parser<'a> {
     let span_start = self.index;
 
     let kind = match self.force_get() {
-      // TODO: In the future, once parentheses expressions are added, we'll need to disambiguate.
-      lexer::TokenKind::KeywordFn => ast::NodeKind::Closure(self.parse_closure()?),
+      // FIXME: Possible redundant check after the fn keyword. But how do we know we're still not on a block and accidentally parse a function as a closure?
+      lexer::TokenKind::KeywordFn
+        if (self.peek_is(&lexer::TokenKind::SymbolBracketL)
+          || self.peek_is(&lexer::TokenKind::SymbolParenthesesL)) =>
+      {
+        ast::NodeKind::Closure(self.parse_closure()?)
+      }
       lexer::TokenKind::KeywordIf => ast::NodeKind::IfStmt(self.parse_if_expr()?),
       lexer::TokenKind::SymbolTilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       lexer::TokenKind::Identifier(_)
@@ -944,12 +949,14 @@ impl<'a> Parser<'a> {
       {
         ast::NodeKind::FunctionCall(self.parse_function_call()?)
       }
-      // FIXME: Use `after_pattern_is`.
-      lexer::TokenKind::Identifier(_) if self.peek_is(&lexer::TokenKind::SymbolBracketL) => {
+      lexer::TokenKind::Identifier(_)
+        if self.after_pattern_is(&lexer::TokenKind::SymbolBracketL) =>
+      {
         ast::NodeKind::ArrayIndexing(self.parse_array_indexing()?)
       }
       // FIXME: Use `after_pattern_is`.
       lexer::TokenKind::Identifier(_) => {
+        println!("{:?}", self.force_get());
         ast::NodeKind::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
       }
       lexer::TokenKind::SymbolMinus

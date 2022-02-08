@@ -37,21 +37,24 @@ impl TypeCheckContext {
   }
 
   /// Compare two types for equality.
+  ///
+  /// The types passed-in will be resolved if needed before
+  /// the comparison takes place.
   pub fn unify(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
-    let unboxed_type_a = Self::resolve_type(type_a, cache);
-    let unboxed_type_b = Self::resolve_type(type_b, cache);
+    let resolved_type_a = Self::resolve_type(type_a, cache);
+    let resolved_type_b = Self::resolve_type(type_b, cache);
 
     // If both types are pointers, and at least one is a null pointer type, then always unify.
     // This is because null pointers unify with any pointer type (any pointer can be null).
-    if matches!(unboxed_type_a, ast::Type::Pointer(_))
-      && matches!(unboxed_type_a, ast::Type::Pointer(_))
-      && (Self::is_null_pointer_type(&unboxed_type_a)
-        || Self::is_null_pointer_type(&unboxed_type_b))
+    if matches!(resolved_type_a, ast::Type::Pointer(_))
+      && matches!(resolved_type_a, ast::Type::Pointer(_))
+      && (Self::is_null_pointer_type(&resolved_type_a)
+        || Self::is_null_pointer_type(&resolved_type_b))
     {
       return true;
     }
 
-    unboxed_type_a == unboxed_type_b
+    resolved_type_a == resolved_type_b
   }
 
   fn is_null_pointer_type(ty: &ast::Type) -> bool {
@@ -426,16 +429,7 @@ impl TypeCheck for ast::Block {
 
 impl TypeCheck for ast::VariableOrMemberRef {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_variable = &*cache.get(&self.0.target_key.unwrap());
-
-    // TODO: Why not infer its type? Is this correct? (Let statement doesn't have type!).
-    let variable_type = match target_variable {
-      ast::NodeKind::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
-      ast::NodeKind::Parameter(parameter) => &parameter.1,
-      _ => unreachable!(),
-    };
-
-    variable_type.clone()
+    (&*cache).get(&self.0.target_key.unwrap()).infer_type(cache)
   }
 }
 

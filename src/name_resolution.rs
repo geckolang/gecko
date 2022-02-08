@@ -48,18 +48,24 @@ impl Resolve for ast::NodeKind {
 
 impl Resolve for ast::Closure {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    // TODO: Here, captures should be force-declared.
+
     self.prototype.declare(resolver, cache);
     self.body.declare(resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    for capture in &mut self.captures {
+    for (index, capture) in self.captures.iter_mut().enumerate() {
       let symbol = (capture.0.clone(), SymbolKind::StaticOrVariableOrParameter);
 
-      capture.1 = resolver.relative_lookup_or_error(&symbol);
+      capture.1 = resolver.closure_lookup(&symbol).cloned();
+
+      // FIXME: Anything else needs to be done here?
     }
 
     self.prototype.resolve(resolver, cache);
+
+    // FIXME: Anything resolved here will use the relative lookup, instead of closure lookup.
     self.body.resolve(resolver, cache);
   }
 }
@@ -497,11 +503,35 @@ impl NameResolver {
   }
 
   fn relative_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::DefinitionKey> {
-    if let Some(definition_key) = self.relative_lookup(symbol).cloned() {
-      return Some(definition_key);
+    if let Some(definition_key) = self.relative_lookup(symbol) {
+      return Some(definition_key.clone());
     }
 
     self.produce_lookup_error(&symbol.0);
+
+    None
+  }
+
+  /// Attempt to lookup a symbol within a closure's environment.
+  ///
+  /// A closure's lookup symbol table is limited to what is explicitly
+  /// captured, and the global scope. The closure's scope will be assumed
+  /// to be the last scope on the relative scopes stack.
+  fn closure_lookup(&mut self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
+    // First, look on the closure's scope.
+    if let Some(last_scope) = self.relative_scopes.last() {
+      return last_scope.get(symbol);
+    }
+
+    // Otherwise, look on the global scope.
+    let global_scope = self
+      .global_scopes
+      .get(self.current_module_name.as_ref().unwrap())
+      .unwrap();
+
+    if let Some(definition_key) = global_scope.get(&symbol) {
+      return Some(definition_key);
+    }
 
     None
   }

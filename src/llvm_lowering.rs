@@ -37,14 +37,17 @@ impl Lower for ast::Closure {
     let buffers = generator.stash_buffers();
     let mut modified_prototype = self.prototype.clone();
 
-    for capture in &self.captures {
+    for (index, capture) in self.captures.iter().enumerate() {
       let capture_node = cache.get(&capture.1.unwrap());
       let capture_node_type = (&*capture_node).infer_type(cache);
+      let computed_parameter_index = self.prototype.parameters.len() as usize + index;
 
-      // TODO: Parameter position?
-      modified_prototype
-        .parameters
-        .push((format!("capture.{}", capture.0), capture_node_type, 0))
+      // TODO: Is the parameter position correct?
+      modified_prototype.parameters.push((
+        format!("capture.{}", capture.0),
+        capture_node_type,
+        computed_parameter_index as u32,
+      ))
     }
 
     let llvm_function_type = generator.lower_prototype(&modified_prototype, cache);
@@ -60,6 +63,8 @@ impl Lower for ast::Closure {
       llvm_function_type,
       Some(inkwell::module::Linkage::Private),
     );
+
+    // TODO: Name arguments, same method as in `Function`.
 
     generator.llvm_function_buffer = Some(llvm_function);
 
@@ -187,10 +192,12 @@ impl Lower for ast::Enum {
     _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for (index, name) in self.variants.iter().enumerate() {
+      let llvm_name = generator.mangle_name(&format!("enum.{}.{}", self.name, name));
+
       let llvm_variant_global = generator.llvm_module.add_global(
         generator.llvm_context.i32_type(),
         Some(inkwell::AddressSpace::Const),
-        format!("{}.{}", self.name, name).as_str(),
+        llvm_name.as_str(),
       );
 
       llvm_variant_global.set_initializer(
@@ -609,10 +616,9 @@ impl Lower for ast::VariableOrMemberRef {
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let llvm_value = generator.memoize_or_retrieve(target_key, cache, false);
 
-    // If the value is not a string, proceed to access it.
-    // Strings shouldn't be accessed, otherwise they'd be
-    // demoted to `i8` which is a single character. Instead, they
-    // should stay as `i8*`. This is a special case.
+    // If the value is not a string, proceed to access it. Strings shouldn't
+    // be accessed, otherwise they'd be demoted to `i8` which is a single
+    // character. Instead, they should remain as `i8*`. This is a special case.
     if !TypeCheckContext::unify(
       &value_node_type,
       &ast::Type::Primitive(ast::PrimitiveType::String),
@@ -622,6 +628,12 @@ impl Lower for ast::VariableOrMemberRef {
       // NOTE: Not all values will be LLVM pointer values.
       Some(generator.attempt_access(llvm_value))
     } else {
+      // FIXME: This is the problem. Since let statement's type can now be inferred, it's lowered **. Fix bug.
+      if matches!(*value_node, ast::NodeKind::LetStmt(_)) {
+        println!("VAR REF STR, IS LET STMT!");
+      }
+      println!("var ref a string: {}", self.0.base_name);
+
       Some(llvm_value)
     }
   }
@@ -887,6 +899,7 @@ impl Lower for ast::Function {
 
     let is_main = self.name == MAIN_FUNCTION_NAME;
 
+    // TODO: Prepend `fn` to the name.
     let llvm_function_name = if is_main {
       // TODO: Name being cloned. Is this okay?
       self.name.to_owned()
@@ -918,7 +931,7 @@ impl Lower for ast::Function {
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
-    // TODO: Use a zipper, along with a chain. Actually, is this necessary?
+    // TODO: Use a zipper, along with a chain.
     for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
       // TODO: Ensure safe access.
       let parameter = &self.prototype.parameters[i];
@@ -1135,7 +1148,7 @@ impl Lower for ast::FunctionCall {
     let llvm_arguments = self
       .arguments
       .iter()
-      .map(|argument| argument.kind.lower(generator, cache).unwrap().into())
+      .map(|x| x.kind.lower(generator, cache).unwrap().into())
       .collect::<Vec<_>>();
 
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
@@ -1294,7 +1307,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // NOTE: The current module name isn't used because it's not guaranteed to be the
     // active module when the definition is memoized (for example, inter-module function
     // calls).
-    let mangled_name = format!(".fn{}.{}", self.mangle_counter, name);
+    let mangled_name = format!(".{}.{}", self.mangle_counter, name);
 
     self.mangle_counter += 1;
 
@@ -1518,7 +1531,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
-  // TODO: Consider merging with `lower_function_type` (DRY).
   fn lower_prototype(
     &mut self,
     prototype: &ast::Prototype,
@@ -1565,9 +1577,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     // TODO: Consider caching the struct type here?
 
-    let llvm_struct_type = self
-      .llvm_context
-      .opaque_struct_type(format!("struct.{}", struct_type.name).as_str());
+    let name = self.mangle_name(&format!("struct.{}", struct_type.name));
+    let llvm_struct_type = self.llvm_context.opaque_struct_type(name.as_str());
 
     llvm_struct_type.set_body(llvm_field_types.as_slice(), false);
 
@@ -1593,6 +1604,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   // TODO: Accept reference for key?
   /// Attempt to retrieve an existing definition, otherwise proceed to
   /// lowering it and memoizing it under the current module.
+  ///
+  /// If specified, any modified buffers during the process will be kept,
+  /// otherwise they will all be restored.
   fn memoize_or_retrieve(
     &mut self,
     definition_key: cache::DefinitionKey,
