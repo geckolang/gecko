@@ -35,7 +35,19 @@ impl Lower for ast::Closure {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let buffers = generator.stash_buffers();
-    let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
+    let mut modified_prototype = self.prototype.clone();
+
+    for capture in &self.captures {
+      let capture_node = cache.get(&capture.1.unwrap());
+      let capture_node_type = (&*capture_node).infer_type(cache);
+
+      // TODO: Parameter position?
+      modified_prototype
+        .parameters
+        .push((format!("capture.{}", capture.0), capture_node_type, 0))
+    }
+
+    let llvm_function_type = generator.lower_prototype(&modified_prototype, cache);
     let llvm_function_name = generator.mangle_name(&String::from("closure"));
 
     assert!(generator
@@ -1515,7 +1527,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|parameter| self.lower_type(&parameter.1, cache).into())
+      .map(|x| self.lower_type(&x.1, cache).into())
       .collect::<Vec<_>>();
 
     // TODO: Simplify code (find common ground between `void` and `basic` types).

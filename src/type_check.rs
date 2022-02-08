@@ -579,6 +579,10 @@ impl TypeCheck for ast::InlineExprStmt {
 }
 
 impl TypeCheck for ast::LetStmt {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    self.value.kind.infer_type(&cache)
+  }
+
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let value_type = self.value.kind.infer_type(cache);
 

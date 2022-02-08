@@ -936,7 +936,7 @@ impl<'a> Parser<'a> {
 
     let kind = match self.force_get() {
       // TODO: In the future, once parentheses expressions are added, we'll need to disambiguate.
-      lexer::TokenKind::SymbolParenthesesL => ast::NodeKind::Closure(self.parse_closure()?),
+      lexer::TokenKind::KeywordFn => ast::NodeKind::Closure(self.parse_closure()?),
       lexer::TokenKind::KeywordIf => ast::NodeKind::IfStmt(self.parse_if_expr()?),
       lexer::TokenKind::SymbolTilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       lexer::TokenKind::Identifier(_)
@@ -1257,10 +1257,28 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_closure(&mut self) -> ParserResult<ast::Closure> {
+    self.skip_past(&lexer::TokenKind::KeywordFn)?;
+
+    let mut captures = Vec::new();
+
+    if self.is(&lexer::TokenKind::SymbolBracketL) {
+      self.skip();
+
+      while self.until(&lexer::TokenKind::SymbolBracketR)? {
+        captures.push((self.parse_name()?, None));
+      }
+
+      self.skip();
+    }
+
     let prototype = self.parse_prototype()?;
     let body = self.parse_block()?;
 
-    Ok(ast::Closure { prototype, body })
+    Ok(ast::Closure {
+      captures,
+      prototype,
+      body,
+    })
   }
 }
 

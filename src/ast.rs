@@ -69,7 +69,7 @@ pub enum Type {
   Array(Box<Type>, u32),
   Primitive(PrimitiveType),
   Pointer(Box<Type>),
-  // TODO: Consider merging with `Pointer` type, since they have common functionality. Esure all cases conform if so.
+  // TODO: Consider merging with `Pointer` type, since they have common functionality. Ensure all cases conform if so.
   Reference(Box<Type>),
   // TODO: Isn't this incompatible with `UserDefined`?
   Struct(StructType),
@@ -126,6 +126,7 @@ pub struct Node {
 }
 
 pub struct Closure {
+  pub captures: Vec<(String, Option<cache::DefinitionKey>)>,
   pub prototype: Prototype,
   pub body: Block,
 }
@@ -157,6 +158,7 @@ impl Pattern {
   }
 }
 
+// TODO: Consider switching to `Display` trait.
 impl ToString for Pattern {
   fn to_string(&self) -> String {
     // TODO: Missing the module name.
@@ -213,6 +215,7 @@ pub enum Literal {
   Nullptr,
 }
 
+#[derive(Clone)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
   pub return_type: Type,

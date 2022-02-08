@@ -53,6 +53,12 @@ impl Resolve for ast::Closure {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    for capture in &mut self.captures {
+      let symbol = (capture.0.clone(), SymbolKind::StaticOrVariableOrParameter);
+
+      capture.1 = resolver.relative_lookup_or_error(&symbol);
+    }
+
     self.prototype.resolve(resolver, cache);
     self.body.resolve(resolver, cache);
   }
@@ -98,14 +104,14 @@ impl Resolve for ast::ExternStatic {
 impl Resolve for ast::StubType {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+    self.target_key = resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
 impl Resolve for ast::StructValue {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_key = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+    self.target_key = resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
@@ -169,8 +175,8 @@ impl Resolve for ast::ArrayIndexing {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.index.kind.resolve(resolver, cache);
 
-    self.target_key =
-      resolver.lookup_or_error(&(self.name.clone(), SymbolKind::StaticOrVariableOrParameter));
+    self.target_key = resolver
+      .relative_lookup_or_error(&(self.name.clone(), SymbolKind::StaticOrVariableOrParameter));
   }
 }
 
@@ -490,7 +496,7 @@ impl NameResolver {
     None
   }
 
-  fn lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::DefinitionKey> {
+  fn relative_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::DefinitionKey> {
     if let Some(definition_key) = self.relative_lookup(symbol).cloned() {
       return Some(definition_key);
     }
