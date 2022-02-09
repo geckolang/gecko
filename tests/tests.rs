@@ -136,11 +136,9 @@ mod tests {
       }
     }
 
-    println!("DIAGNOSTICS: {:?}", diagnostics);
-
     // assert_eq!(true, false);
     assert!(llvm_module.verify().is_ok());
-    assert_eq!(diagnostics.len(), 0);
+    assert!(diagnostics.is_empty());
   }
 
   // TODO: Write more integration tests, and ensure they're picked up when running 'cargo test'.

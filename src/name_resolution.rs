@@ -49,6 +49,7 @@ impl Resolve for ast::NodeKind {
 impl Resolve for ast::Closure {
   fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: Here, captures should be force-declared.
+    // FIXME: The body is resolved within a virtual environment. This means that declarations from here may not be accessible. To solve this, perhaps we may virtualize all but the last scope (this declaration's body's scope).
 
     self.prototype.declare(resolver, cache);
     self.body.declare(resolver, cache);
@@ -58,15 +59,22 @@ impl Resolve for ast::Closure {
     for (index, capture) in self.captures.iter_mut().enumerate() {
       let symbol = (capture.0.clone(), SymbolKind::StaticOrVariableOrParameter);
 
-      capture.1 = resolver.closure_lookup(&symbol).cloned();
+      capture.1 = resolver.relative_lookup_or_error(&symbol);
 
       // FIXME: Anything else needs to be done here?
     }
 
     self.prototype.resolve(resolver, cache);
 
-    // FIXME: Anything resolved here will use the relative lookup, instead of closure lookup.
+    // Cache the existing relative scopes, and create a new, empty
+    // environment within the resolver, then restore the cached scopes
+    // after the body has been resolved. This is done to encapsulate the
+    // closure's environment.
+    let relative_scopes_cache = resolver.relative_scopes.clone();
+
+    resolver.relative_scopes.clear();
     self.body.resolve(resolver, cache);
+    resolver.relative_scopes = relative_scopes_cache;
   }
 }
 

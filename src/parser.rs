@@ -954,9 +954,7 @@ impl<'a> Parser<'a> {
       {
         ast::NodeKind::ArrayIndexing(self.parse_array_indexing()?)
       }
-      // FIXME: Use `after_pattern_is`.
       lexer::TokenKind::Identifier(_) => {
-        println!("{:?}", self.force_get());
         ast::NodeKind::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
       }
       lexer::TokenKind::SymbolMinus

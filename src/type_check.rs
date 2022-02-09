@@ -17,6 +17,8 @@ impl TypeCheckContext {
     }
   }
 
+  // TODO: Create a `finalize` method to ensure that the main function was defined.
+
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
   /// Resolve a possible user-defined type, so it can be used properly.
   pub fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
@@ -573,6 +575,7 @@ impl TypeCheck for ast::InlineExprStmt {
 }
 
 impl TypeCheck for ast::LetStmt {
+  // FIXME: [!] This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.value.kind.infer_type(&cache)
   }

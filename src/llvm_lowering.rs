@@ -628,13 +628,12 @@ impl Lower for ast::VariableOrMemberRef {
       // NOTE: Not all values will be LLVM pointer values.
       Some(generator.attempt_access(llvm_value))
     } else {
-      // FIXME: This is the problem. Since let statement's type can now be inferred, it's lowered **. Fix bug.
+      // FIXME: [!] Bug: Temporary fix, special case for let-statements. Without this, we get an error when a let-statement containing a string is referenced (because of the let-statement's inferred type somehow). First investigate the root of the issue, then fix.
       if matches!(*value_node, ast::NodeKind::LetStmt(_)) {
-        println!("VAR REF STR, IS LET STMT!");
+        Some(generator.attempt_access(llvm_value))
+      } else {
+        Some(llvm_value)
       }
-      println!("var ref a string: {}", self.0.base_name);
-
-      Some(llvm_value)
     }
   }
 }

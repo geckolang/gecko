@@ -162,12 +162,6 @@ impl Lint for ast::Block {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     let mut did_return = false;
 
-    if self.statements.is_empty() {
-      context
-        .diagnostic_builder
-        .warning("empty block".to_string());
-    }
-
     // TODO: Might be repetitive for subsequent nested blocks.
     if context.block_depth > 4 {
       context
