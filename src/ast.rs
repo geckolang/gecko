@@ -75,7 +75,7 @@ pub enum Type {
   Struct(StructType),
   /// A type that may need to be resolved.
   Stub(StubType),
-  Function(FunctionType),
+  Callable(CallableType),
   Unit,
 }
 
@@ -132,7 +132,7 @@ pub struct Closure {
 }
 
 #[derive(PartialEq, Clone)]
-pub struct FunctionType {
+pub struct CallableType {
   pub return_type: Box<Type>,
   pub parameters: Vec<Type>,
 }
@@ -338,6 +338,8 @@ pub struct UnaryExpr {
   pub cast_type: Option<Type>,
 }
 
+/// Represents an accessible definition. Acts as a transient
+/// value helper.
 pub struct Definition {
   pub name: String,
   pub symbol_kind: name_resolution::SymbolKind,

@@ -4,6 +4,7 @@ pub mod ast;
 pub mod cache;
 pub mod diagnostic;
 pub mod lexer;
+pub mod lifetime_check;
 pub mod lint;
 pub mod llvm_lowering;
 pub mod name_resolution;

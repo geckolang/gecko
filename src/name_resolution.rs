@@ -56,6 +56,8 @@ impl Resolve for ast::Closure {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    // FIXME: Continue implementation.
+
     for (index, capture) in self.captures.iter_mut().enumerate() {
       let symbol = (capture.0.clone(), SymbolKind::StaticOrVariableOrParameter);
 

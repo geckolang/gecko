@@ -64,7 +64,15 @@ impl Lower for ast::Closure {
       Some(inkwell::module::Linkage::Private),
     );
 
-    // TODO: Name arguments, same method as in `Function`.
+    // TODO: Use a zipper, along with a chain.
+    // for (i, llvm_parameter) in llvm_function.get_param_iter().enumerate() {
+    //   // TODO: Ensure safe access.
+    //   // FIXME: The llvm function's parameter count is longer than that of the prototypes. This is because of inserted captures. Fix this bug.
+    //   let parameter = &self.prototype.parameters[i];
+
+    //   parameter.lower(generator, cache);
+    //   llvm_parameter.set_name(format!("param.{}", parameter.0).as_str());
+    // }
 
     generator.llvm_function_buffer = Some(llvm_function);
 
@@ -930,14 +938,18 @@ impl Lower for ast::Function {
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
-    // TODO: Use a zipper, along with a chain.
-    for (i, ref mut llvm_parameter) in llvm_function.get_param_iter().enumerate() {
-      // TODO: Ensure safe access.
-      let parameter = &self.prototype.parameters[i];
+    assert_eq!(
+      llvm_function.count_params(),
+      self.prototype.parameters.len() as u32
+    );
 
-      parameter.lower(generator, cache);
-      llvm_parameter.set_name(parameter.0.as_str());
-    }
+    llvm_function
+      .get_param_iter()
+      .zip(self.prototype.parameters.iter())
+      .for_each(|x| {
+        x.1.lower(generator, cache);
+        x.0.set_name(format!("param.{}", x.1 .0).as_str());
+      });
 
     let llvm_entry_block = generator
       .llvm_context
@@ -1103,7 +1115,7 @@ impl Lower for ast::LetStmt {
     // Special case if the value is a closure.
     if matches!(
       TypeCheckContext::resolve_type(ty, cache),
-      ast::Type::Function(_)
+      ast::Type::Callable(_)
     ) {
       let result = self.value.kind.lower(generator, cache);
       // TODO: Here create a definition for the closure, with the let statement as the name.
@@ -1524,7 +1536,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
       // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
       // NOTE: These types are never lowered.
-      ast::Type::Unit | ast::Type::Function(_) => unreachable!(),
+      ast::Type::Unit | ast::Type::Callable(_) => unreachable!(),
       // TODO: Implement.
       ast::Type::Reference(_reference_type) => todo!(),
     }

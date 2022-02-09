@@ -99,7 +99,7 @@ impl TypeCheck for ast::Closure {
 
     let return_type = self.prototype.return_type.clone();
 
-    ast::Type::Function(ast::FunctionType {
+    ast::Type::Callable(ast::CallableType {
       parameters,
       return_type: Box::new(return_type),
     })
@@ -180,6 +180,18 @@ impl TypeCheck for ast::StructValue {
 }
 
 impl TypeCheck for ast::Prototype {
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    ast::Type::Callable(ast::CallableType {
+      return_type: Box::new(self.return_type.clone()),
+      parameters: self
+        .parameters
+        .iter()
+        .cloned()
+        .map(|x| x.1.clone())
+        .collect(),
+    })
+  }
+
   fn type_check(&self, _type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
     // TODO: Implement?
   }
@@ -198,12 +210,12 @@ impl TypeCheck for ast::UnaryExpr {
       return ast::Type::Unit;
     }
 
-    // The type of the unary expression will always be that of the
-    // operand, with a few exceptions.
     return match self.operator {
       ast::OperatorKind::AddressOf => ast::Type::Pointer(Box::new(expr_type)),
       ast::OperatorKind::Cast => self.cast_type.as_ref().unwrap().clone(),
-      _ => expr_type,
+      ast::OperatorKind::Not => ast::Type::Primitive(ast::PrimitiveType::Bool),
+      ast::OperatorKind::SubtractOrNegate => expr_type,
+      _ => unreachable!(),
     };
   }
 
@@ -395,7 +407,9 @@ impl TypeCheck for ast::UnsafeBlockStmt {
 }
 
 impl TypeCheck for ast::ExternFunction {
-  //
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    self.prototype.infer_type(cache)
+  }
 }
 
 impl TypeCheck for ast::Parameter {
@@ -483,7 +497,6 @@ impl TypeCheck for ast::IfStmt {
 
 impl TypeCheck for ast::BinaryExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // TODO: Support for missing operators (not, negation, etc.).
     match self.operator {
       ast::OperatorKind::LessThan
       | ast::OperatorKind::GreaterThan
@@ -637,6 +650,10 @@ impl TypeCheck for ast::ReturnStmt {
 }
 
 impl TypeCheck for ast::Function {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    self.prototype.infer_type(cache)
+  }
+
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: Special case for the `main` function. Unify expected signature.
 
@@ -662,15 +679,12 @@ impl TypeCheck for ast::Function {
 
 impl TypeCheck for ast::FunctionCall {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let function_or_extern = &*cache.get(&self.callee_pattern.target_key.unwrap());
+    let callable_node = &*cache.get(&self.callee_pattern.target_key.unwrap());
 
-    let prototype = match function_or_extern {
-      ast::NodeKind::Function(function) => &function.prototype,
-      ast::NodeKind::ExternFunction(extern_) => &extern_.prototype,
+    match callable_node.infer_type(cache) {
+      ast::Type::Callable(callable_type) => callable_type.return_type.as_ref().clone(),
       _ => unreachable!(),
-    };
-
-    prototype.return_type.clone()
+    }
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
