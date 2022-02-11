@@ -1010,7 +1010,7 @@ impl<'a> Parser<'a> {
 
   // TODO: Move to use the Pratt parsing technique instead to replace the non-tail recursive method.
   /// %expr %operator %expr
-  fn parse_binary_expr(
+  fn parse_binary_expr_or_default(
     &mut self,
     left: ast::Node,
     min_precedence: usize,
@@ -1031,7 +1031,7 @@ impl<'a> Parser<'a> {
       {
         // TODO: Are we adding the correct amount of precedence here? Shouldn't there be a higher difference in precedence?
         // TODO: This isn't tail-recursive?
-        right = self.parse_binary_expr(right, precedence + 1)?;
+        right = self.parse_binary_expr_or_default(right, precedence + 1)?;
         token_buffer = self.force_get();
       }
 
@@ -1080,12 +1080,15 @@ impl<'a> Parser<'a> {
     let starting_expr = self.parse_primary_expr()?;
 
     // TODO: Should the precedence be zero here?
-    Ok(self.parse_binary_expr(starting_expr, 0)?)
+    Ok(self.parse_binary_expr_or_default(starting_expr, 0)?)
   }
 
-  /// %pattern '(' (%expr (,))* ')'
-  fn parse_function_call(&mut self) -> ParserResult<ast::FunctionCall> {
-    let callee_pattern = self.parse_pattern(name_resolution::SymbolKind::FunctionOrExtern)?;
+  /// %expr '(' (%expr (,))* ')'
+  fn parse_function_call(&mut self) -> ParserResult<ast::CallExpr> {
+    let callee_expr = self.parse_expr()?;
+
+    // FIXME: On the expressions being parsed, the pattern may not be parsed as a pattern linking to a function or extern. Ensure this is actually the case.
+    // let callee_pattern = self.parse_pattern(name_resolution::SymbolKind::FunctionOrExtern)?;
 
     self.skip_past(&lexer::TokenKind::SymbolParenthesesL)?;
 
@@ -1102,8 +1105,8 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
 
-    Ok(ast::FunctionCall {
-      callee_pattern,
+    Ok(ast::CallExpr {
+      callee_expr: Box::new(callee_expr),
       arguments,
     })
   }

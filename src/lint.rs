@@ -271,11 +271,12 @@ impl Lint for ast::Function {
   }
 }
 
-impl Lint for ast::FunctionCall {
+impl Lint for ast::CallExpr {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
-    context
-      .function_references
-      .insert(self.callee_pattern.target_key.unwrap(), true);
+    // FIXME:
+    // context
+    //   .function_references
+    //   .insert(self.callee_expr.target_key.unwrap(), true);
   }
 }
 

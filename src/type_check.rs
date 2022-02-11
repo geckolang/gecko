@@ -102,6 +102,7 @@ impl TypeCheck for ast::Closure {
     ast::Type::Callable(ast::CallableType {
       parameters,
       return_type: Box::new(return_type),
+      is_variadic: false,
     })
   }
 
@@ -189,6 +190,7 @@ impl TypeCheck for ast::Prototype {
         .cloned()
         .map(|x| x.1.clone())
         .collect(),
+      is_variadic: self.is_variadic,
     })
   }
 
@@ -677,11 +679,11 @@ impl TypeCheck for ast::Function {
   }
 }
 
-impl TypeCheck for ast::FunctionCall {
+impl TypeCheck for ast::CallExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let callable_node = &*cache.get(&self.callee_pattern.target_key.unwrap());
+    let callee_expr_type = self.callee_expr.kind.infer_type(cache);
 
-    match callable_node.infer_type(cache) {
+    match callee_expr_type {
       ast::Type::Callable(callable_type) => callable_type.return_type.as_ref().clone(),
       _ => unreachable!(),
     }
@@ -692,53 +694,56 @@ impl TypeCheck for ast::FunctionCall {
     // TODO: Need access to the current function.
     // TODO: Ensure externs and unsafe function are only called from unsafe functions.
 
-    let callee = &*cache.get(self.callee_pattern.target_key.as_ref().unwrap());
-
-    // TODO: Better, simpler way of doing this?
-    let name;
-    let prototype;
-    let attributes;
-
-    match callee {
-      ast::NodeKind::ExternFunction(extern_) => {
-        if !type_context.in_unsafe_block {
-          type_context.diagnostic_builder.error(format!(
-            "extern function call to `{}` may only occur inside an unsafe block",
-            extern_.name
-          ));
-        }
-
-        name = &extern_.name;
-        prototype = &extern_.prototype;
-        attributes = &extern_.attributes;
-      }
-      ast::NodeKind::Function(function) => {
-        name = &function.name;
-        prototype = &function.prototype;
-        attributes = &function.attributes;
-      }
+    let callee_type = match self.callee_expr.kind.infer_type(cache) {
+      ast::Type::Callable(callable_type) => callable_type,
       _ => unreachable!(),
     };
 
-    for attribute in attributes {
-      // TODO: Keep it simple for now, but later, we can improve the attribute system.
-      match attribute.name.as_str() {
-        "deprecated" => type_context
-          .diagnostic_builder
-          .warning(format!("function `{}` is deprecated", name)),
-        _ => type_context.diagnostic_builder.warning(format!(
-          "use of unrecognized attribute `{}`",
-          attribute.name
-        )),
-      };
-    }
+    // TODO: Better, simpler way of doing this?
+    let name = "pending";
+    // let attributes;
 
-    let min_arg_count = prototype.parameters.len();
+    // TODO: Need names.
+    // match callee_type {
+    //   ast::NodeKind::ExternFunction(extern_) => {
+    //     if !type_context.in_unsafe_block {
+    //       type_context.diagnostic_builder.error(format!(
+    //         "extern function call to `{}` may only occur inside an unsafe block",
+    //         extern_.name
+    //       ));
+    //     }
+
+    //     name = &extern_.name;
+    //     prototype = &extern_.prototype;
+    //     attributes = &extern_.attributes;
+    //   }
+    //   ast::NodeKind::Function(function) => {
+    //     name = &function.name;
+    //     prototype = &function.prototype;
+    //     attributes = &function.attributes;
+    //   }
+    //   _ => unreachable!(),
+    // };
+
+    // for attribute in attributes {
+    //   // TODO: Keep it simple for now, but later, we can improve the attribute system.
+    //   match attribute.name.as_str() {
+    //     "deprecated" => type_context
+    //       .diagnostic_builder
+    //       .warning(format!("function `{}` is deprecated", name)),
+    //     _ => type_context.diagnostic_builder.warning(format!(
+    //       "use of unrecognized attribute `{}`",
+    //       attribute.name
+    //     )),
+    //   };
+    // }
+
+    let min_arg_count = callee_type.parameters.len();
     let actual_arg_count = self.arguments.len();
 
     // Verify argument count.
-    if (!prototype.is_variadic && actual_arg_count != min_arg_count)
-      || (prototype.is_variadic && actual_arg_count < min_arg_count)
+    if (!callee_type.is_variadic && actual_arg_count != min_arg_count)
+      || (callee_type.is_variadic && actual_arg_count < min_arg_count)
     {
       type_context.diagnostic_builder.error(format!(
         "function call to `{}` has an invalid amount of arguments",

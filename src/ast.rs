@@ -96,7 +96,7 @@ pub enum NodeKind {
   LetStmt(LetStmt),
   IfStmt(IfStmt),
   LoopStmt(LoopStmt),
-  FunctionCall(FunctionCall),
+  FunctionCall(CallExpr),
   IntrinsicCall(IntrinsicCall),
   BreakStmt(BreakStmt),
   ContinueStmt(ContinueStmt),
@@ -135,6 +135,7 @@ pub struct Closure {
 pub struct CallableType {
   pub return_type: Box<Type>,
   pub parameters: Vec<Type>,
+  pub is_variadic: bool,
 }
 
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
@@ -277,8 +278,8 @@ pub struct InlineExprStmt {
   pub expr: Box<Node>,
 }
 
-pub struct FunctionCall {
-  pub callee_pattern: Pattern,
+pub struct CallExpr {
+  pub callee_expr: Box<Node>,
   pub arguments: Vec<Node>,
 }
 

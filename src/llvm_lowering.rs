@@ -1150,7 +1150,7 @@ impl Lower for ast::LetStmt {
   }
 }
 
-impl Lower for ast::FunctionCall {
+impl Lower for ast::CallExpr {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -1162,15 +1162,19 @@ impl Lower for ast::FunctionCall {
       .map(|x| x.kind.lower(generator, cache).unwrap().into())
       .collect::<Vec<_>>();
 
+    // FIXME: It seems that this is causing stack-overflow because results aren't cached? What's going on? Or maybe it's the parser?
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
-    let llvm_target_function = generator
-      .memoize_or_retrieve(self.callee_pattern.target_key.unwrap(), cache, false)
+    let llvm_target_callable = self
+      .callee_expr
+      .kind
+      .lower(generator, cache)
+      .unwrap()
       .into_pointer_value();
 
     let llvm_call_value = generator.llvm_builder.build_call(
-      inkwell::values::CallableValue::try_from(llvm_target_function).unwrap(),
+      inkwell::values::CallableValue::try_from(llvm_target_callable).unwrap(),
       llvm_arguments.as_slice(),
-      format!("call.{}", self.callee_pattern.to_string()).as_str(),
+      "call",
     );
 
     let llvm_call_basic_value_result = llvm_call_value.try_as_basic_value();

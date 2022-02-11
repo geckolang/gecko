@@ -366,9 +366,9 @@ impl Resolve for ast::Definition {
   }
 }
 
-impl Resolve for ast::FunctionCall {
+impl Resolve for ast::CallExpr {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.callee_pattern.resolve(resolver, cache);
+    self.callee_expr.kind.resolve(resolver, cache);
 
     for argument in &mut self.arguments {
       argument.kind.resolve(resolver, cache);
