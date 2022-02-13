@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, dispatch};
+use crate::{ast, cache, diagnostic, dispatch, llvm_lowering};
 
 pub struct TypeCheckContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
@@ -703,6 +703,13 @@ impl TypeCheck for ast::Function {
       ));
     }
 
+    if self.prototype.is_variadic {
+      type_context.diagnostic_builder.error(format!(
+        "function `{}` cannot be variadic; only externs are allowed to be variadic",
+        self.name
+      ));
+    }
+
     if self.body.yield_last_expr
       && !TypeCheckContext::unify(
         &self.prototype.return_type,
@@ -715,6 +722,21 @@ impl TypeCheck for ast::Function {
         "function body of `{}` yielded value type-mismatch",
         self.name
       ));
+    }
+
+    if self.name == llvm_lowering::MAIN_FUNCTION_NAME {
+      let main_prototype = ast::Prototype {
+        // TODO: Parameters. Also, the comparison should ignore parameter names.
+        parameters: vec![],
+        return_type: ast::Type::Primitive(ast::PrimitiveType::Int(ast::IntSize::I32)),
+        is_variadic: false,
+      };
+
+      if self.prototype != main_prototype {
+        type_context
+          .diagnostic_builder
+          .error(format!("the `main` function has an invalid signature"));
+      }
     }
 
     self.prototype.type_check(type_context, cache);

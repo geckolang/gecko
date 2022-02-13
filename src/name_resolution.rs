@@ -57,7 +57,7 @@ impl Resolve for ast::Closure {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // FIXME: Continue implementation.
 
-    for (index, capture) in self.captures.iter_mut().enumerate() {
+    for (_index, capture) in self.captures.iter_mut().enumerate() {
       let symbol = (capture.0.clone(), SymbolKind::Definition);
 
       capture.1 = resolver.relative_lookup_or_error(&symbol);
@@ -299,31 +299,18 @@ impl Resolve for ast::ReturnStmt {
 
 impl Resolve for ast::Block {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // FIXME: [!!] Bug: We didn't have scope management here, on the declare step.
-    // This meant that all declarations where being made in the global scope. However,
-    // now that we add scope management during the declare step, after the entire declare
-    // step ends, no scope will be left standing. Then, when we try to resolve existing
-    // declarations, we will not be able to find them, since all the scopes where those
-    // symbols where declared had been popped. Currently, we shouldn't be able to resolve
-    // anything, except global symbols, maybe (global scope isn't temporary). How can we solve this?
-
     resolver.push_scope();
 
     for statement in &self.statements {
       statement.kind.declare(resolver, cache);
     }
 
-    let mut scope_tree = vec![resolver.force_pop_scope()];
-
-    // Clone the relative scope tree.
-    scope_tree.extend(resolver.relative_scopes.iter().rev().cloned());
-
-    resolver.scope_map.insert(self.unique_id, scope_tree);
+    resolver.register_scope_tree(self.unique_id);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     resolver.current_block_unique_id = Some(self.unique_id);
-    
+
     // TODO:
     for statement in &mut self.statements {
       statement.kind.resolve(resolver, cache);
@@ -337,12 +324,20 @@ impl Resolve for ast::Literal {
 
 impl Resolve for ast::Function {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    resolver.push_scope();
     self.prototype.declare(resolver, cache);
+
+    // NOTE: The scope tree won't be overwritten by the block's scope tree,
+    // instead they will be merged, as expected.
+    resolver.register_scope_tree(self.body.unique_id);
+
     self.body.declare(resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    // TODO: Do we need scope management here, for the prototype's parameters?
     self.prototype.resolve(resolver, cache);
+
     self.body.resolve(resolver, cache);
   }
 }
@@ -486,6 +481,26 @@ impl NameResolver {
   /// Will panic if there are no relative scopes.
   fn force_pop_scope(&mut self) -> Scope {
     self.relative_scopes.pop().unwrap()
+  }
+
+  /// Force-pop the last scope off the relatives scopes stack, and create
+  /// a scope tree. This tree will then be inserted into the scope map. If
+  /// an entry with the same block id already exists, the scope tree will
+  /// be appended onto the existing definition.
+  fn register_scope_tree(&mut self, block_id: cache::UniqueId) {
+    let mut scope_tree = vec![self.force_pop_scope()];
+
+    // Clone the relative scope tree.
+    scope_tree.extend(self.relative_scopes.iter().rev().cloned());
+
+    let mut final_value_buffer = scope_tree;
+
+    // Append to the existing definition, if applicable.
+    if self.scope_map.contains_key(&block_id) {
+      final_value_buffer.extend(self.scope_map.remove(&block_id).unwrap());
+    }
+
+    self.scope_map.insert(block_id, final_value_buffer);
   }
 
   /// Register a name on the last scope for name resolution lookups.

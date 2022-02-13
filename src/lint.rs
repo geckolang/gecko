@@ -272,7 +272,7 @@ impl Lint for ast::Function {
 }
 
 impl Lint for ast::CallExpr {
-  fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
+  fn lint(&self, _cache: &mut cache::Cache, _context: &mut LintContext) {
     // FIXME:
     // context
     //   .function_references

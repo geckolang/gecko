@@ -229,7 +229,7 @@ pub enum Literal {
   Nullptr,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
   pub return_type: Type,
