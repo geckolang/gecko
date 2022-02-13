@@ -285,6 +285,7 @@ impl<'a> Parser<'a> {
 
   /// {'{' (%statement+) '}' | '=' {%statement | %expr}}
   fn parse_block(&mut self) -> ParserResult<ast::Block> {
+    // TODO: Simplify.
     // Support for short syntax.
     if self.is(&lexer::TokenKind::SymbolEqual) {
       self.skip();
@@ -305,23 +306,25 @@ impl<'a> Parser<'a> {
       return Ok(ast::Block {
         statements: vec![statement],
         yield_last_expr,
+        unique_id: self.cache.create_unique_id(),
       });
     }
 
     self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
 
     let mut statements = Vec::new();
-    let mut yield_last_expr = false;
+    let mut yield_last_expr = true;
 
+    // FIXME: What if the last statement is a let-statement? Let-statements have inferrable types, used internally. Review this.
+    // FIXME: This may be the reason why let-statements shouldn't have inferrable types (only internally).
     while self.until(&lexer::TokenKind::SymbolBraceR)? {
       let statement = self.parse_statement()?;
 
-      // TODO: Is this logic correct?
-      // We're reached the end of the block without a semi-colon.
-      // This means that an expression is to be yielded. Otherwise,
-      // simply skip a semi-colon if applicable.
-      if self.is(&lexer::TokenKind::SymbolBraceR) {
-        yield_last_expr = true;
+      if self.peek_is(&lexer::TokenKind::SymbolBraceR)
+        && self.is(&lexer::TokenKind::SymbolSemiColon)
+      {
+        self.skip();
+        yield_last_expr = false;
       }
 
       statements.push(statement);
@@ -332,6 +335,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Block {
       statements,
       yield_last_expr,
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -498,9 +502,9 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
+      symbol_kind: name_resolution::SymbolKind::Definition,
       node_ref_cell: cache::create_cached_node(ast::NodeKind::Function(function)),
-      definition_key: self.cache.create_definition_key(),
+      definition_key: self.cache.create_unique_id(),
     })
   }
 
@@ -525,9 +529,9 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::FunctionOrExtern,
+      symbol_kind: name_resolution::SymbolKind::Definition,
       node_ref_cell: cache::create_cached_node(ast::NodeKind::ExternFunction(extern_function)),
-      definition_key: self.cache.create_definition_key(),
+      definition_key: self.cache.create_unique_id(),
     })
   }
 
@@ -544,9 +548,9 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::StaticOrVariableOrParameter,
+      symbol_kind: name_resolution::SymbolKind::Definition,
       node_ref_cell: cache::create_cached_node(ast::NodeKind::ExternStatic(extern_static)),
-      definition_key: self.cache.create_definition_key(),
+      definition_key: self.cache.create_unique_id(),
     })
   }
 
@@ -658,7 +662,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
       node_ref_cell: cache::create_cached_node(ast::NodeKind::TypeAlias(type_alias)),
-      definition_key: self.cache.create_definition_key(),
+      definition_key: self.cache.create_unique_id(),
     })
   }
 
@@ -711,9 +715,9 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Definition {
       name,
-      symbol_kind: name_resolution::SymbolKind::StaticOrVariableOrParameter,
+      symbol_kind: name_resolution::SymbolKind::Definition,
       node_ref_cell: cache::create_cached_node(ast::NodeKind::LetStmt(let_stmt)),
-      definition_key: self.cache.create_definition_key(),
+      definition_key: self.cache.create_unique_id(),
     })
   }
 
@@ -885,7 +889,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::ArrayIndexing {
       name,
-      index,
+      index_expr: index,
       target_key: None,
     })
   }
@@ -945,18 +949,11 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::KeywordIf => ast::NodeKind::IfStmt(self.parse_if_expr()?),
       lexer::TokenKind::SymbolTilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       lexer::TokenKind::Identifier(_)
-        if self.after_pattern_is(&lexer::TokenKind::SymbolParenthesesL) =>
-      {
-        ast::NodeKind::FunctionCall(self.parse_function_call()?)
-      }
-      lexer::TokenKind::Identifier(_)
         if self.after_pattern_is(&lexer::TokenKind::SymbolBracketL) =>
       {
         ast::NodeKind::ArrayIndexing(self.parse_array_indexing()?)
       }
-      lexer::TokenKind::Identifier(_) => {
-        ast::NodeKind::VariableOrMemberRef(self.parse_variable_or_member_ref()?)
-      }
+      lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
       lexer::TokenKind::SymbolMinus
       | lexer::TokenKind::SymbolBang
       | lexer::TokenKind::SymbolAmpersand
@@ -968,10 +965,20 @@ impl<'a> Parser<'a> {
       _ => ast::NodeKind::Literal(self.parse_literal()?),
     };
 
-    Ok(ast::Node {
+    let mut node = ast::Node {
       kind,
       span: self.close_span(span_start),
-    })
+    };
+
+    if self.is(&lexer::TokenKind::SymbolParenthesesL) {
+      // TODO: Simplify (DRY).
+      node = ast::Node {
+        kind: ast::NodeKind::CallExpr(self.parse_function_call(node)?),
+        span: self.close_span(span_start),
+      };
+    }
+
+    Ok(node)
   }
 
   /// {'+' | '-' | '*' | '/'}
@@ -1084,9 +1091,7 @@ impl<'a> Parser<'a> {
   }
 
   /// %expr '(' (%expr (,))* ')'
-  fn parse_function_call(&mut self) -> ParserResult<ast::CallExpr> {
-    let callee_expr = self.parse_expr()?;
-
+  fn parse_function_call(&mut self, callee_expr: ast::Node) -> ParserResult<ast::CallExpr> {
     // FIXME: On the expressions being parsed, the pattern may not be parsed as a pattern linking to a function or extern. Ensure this is actually the case.
     // let callee_pattern = self.parse_pattern(name_resolution::SymbolKind::FunctionOrExtern)?;
 
@@ -1139,10 +1144,10 @@ impl<'a> Parser<'a> {
   }
 
   /// %pattern
-  fn parse_variable_or_member_ref(&mut self) -> ParserResult<ast::VariableOrMemberRef> {
-    let pattern = self.parse_pattern(name_resolution::SymbolKind::StaticOrVariableOrParameter)?;
+  fn parse_reference(&mut self) -> ParserResult<ast::Reference> {
+    let pattern = self.parse_pattern(name_resolution::SymbolKind::Definition)?;
 
-    Ok(ast::VariableOrMemberRef(pattern))
+    Ok(ast::Reference(pattern))
   }
 
   /// %name '=' %expr
@@ -1192,7 +1197,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
       node_ref_cell: cache::create_cached_node(ast::NodeKind::Enum(enum_)),
-      definition_key: self.cache.create_definition_key(),
+      definition_key: self.cache.create_unique_id(),
     })
   }
 
@@ -1229,7 +1234,7 @@ impl<'a> Parser<'a> {
       name,
       symbol_kind: name_resolution::SymbolKind::Type,
       node_ref_cell: cache::create_cached_node(ast::NodeKind::StructType(struct_type)),
-      definition_key: self.cache.create_definition_key(),
+      definition_key: self.cache.create_unique_id(),
     })
   }
 

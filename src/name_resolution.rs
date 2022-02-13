@@ -1,19 +1,18 @@
 use crate::{ast, cache, diagnostic, type_check::TypeCheck};
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
-  StaticOrVariableOrParameter,
-  FunctionOrExtern,
+  Definition,
   // A global type. Can be a struct, or enum.
   Type,
 }
 
 type Symbol = (String, SymbolKind);
 
-type Scope = std::collections::HashMap<Symbol, cache::DefinitionKey>;
+type Scope = std::collections::HashMap<Symbol, cache::UniqueId>;
 
 pub trait Resolve {
-  fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     //
   }
 
@@ -37,7 +36,7 @@ impl Resolve for ast::Type {
 impl Resolve for ast::NodeKind {
   // TODO: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     crate::dispatch!(self, Resolve::declare, resolver, cache);
   }
 
@@ -47,7 +46,7 @@ impl Resolve for ast::NodeKind {
 }
 
 impl Resolve for ast::Closure {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: Here, captures should be force-declared.
     // FIXME: The body is resolved within a virtual environment. This means that declarations from here may not be accessible. To solve this, perhaps we may virtualize all but the last scope (this declaration's body's scope).
 
@@ -59,7 +58,7 @@ impl Resolve for ast::Closure {
     // FIXME: Continue implementation.
 
     for (index, capture) in self.captures.iter_mut().enumerate() {
-      let symbol = (capture.0.clone(), SymbolKind::StaticOrVariableOrParameter);
+      let symbol = (capture.0.clone(), SymbolKind::Definition);
 
       capture.1 = resolver.relative_lookup_or_error(&symbol);
 
@@ -93,8 +92,8 @@ impl Resolve for ast::Pattern {
     let symbol = (self.base_name.clone(), self.symbol_kind.clone());
 
     let lookup_result = match self.symbol_kind {
-      SymbolKind::StaticOrVariableOrParameter => resolver.relative_lookup(&symbol),
-      SymbolKind::FunctionOrExtern => resolver.absolute_lookup(self),
+      SymbolKind::Definition => resolver.relative_lookup(&symbol),
+      // SymbolKind::Type => resolver.absolute_lookup(self),
       // TODO: What else? Maybe `unreachable!()`?
       _ => todo!(),
     };
@@ -132,16 +131,16 @@ impl Resolve for ast::StructValue {
 }
 
 impl Resolve for ast::Prototype {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: This is sort of a hack.
-    for parameter in &mut self.parameters {
+    for parameter in &self.parameters {
       ast::Definition {
         name: parameter.0.clone(),
-        symbol_kind: SymbolKind::StaticOrVariableOrParameter,
+        symbol_kind: SymbolKind::Definition,
         // TODO: Cloning parameter.
         node_ref_cell: cache::create_cached_node(ast::NodeKind::Parameter(parameter.clone())),
         // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
-        definition_key: cache.create_definition_key(),
+        definition_key: cache.create_unique_id(),
       }
       .declare(resolver, cache);
     }
@@ -157,7 +156,7 @@ impl Resolve for ast::Prototype {
 }
 
 impl Resolve for ast::StructType {
-  fn declare(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // TODO: Implement?
   }
 
@@ -189,10 +188,10 @@ impl Resolve for ast::ContinueStmt {
 
 impl Resolve for ast::ArrayIndexing {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.index.kind.resolve(resolver, cache);
+    self.index_expr.kind.resolve(resolver, cache);
 
-    self.target_key = resolver
-      .relative_lookup_or_error(&(self.name.clone(), SymbolKind::StaticOrVariableOrParameter));
+    self.target_key =
+      resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Definition));
   }
 }
 
@@ -205,7 +204,7 @@ impl Resolve for ast::ArrayValue {
 }
 
 impl Resolve for ast::UnsafeBlockStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.0.declare(resolver, cache);
   }
 
@@ -218,7 +217,7 @@ impl Resolve for ast::Parameter {
   //
 }
 
-impl Resolve for ast::VariableOrMemberRef {
+impl Resolve for ast::Reference {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.0.resolve(resolver, cache);
   }
@@ -229,8 +228,8 @@ impl Resolve for ast::BreakStmt {
 }
 
 impl Resolve for ast::LoopStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    if let Some(condition) = &mut self.condition {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    if let Some(condition) = &self.condition {
       condition.kind.declare(resolver, cache);
     }
 
@@ -247,11 +246,11 @@ impl Resolve for ast::LoopStmt {
 }
 
 impl Resolve for ast::IfStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.condition.kind.declare(resolver, cache);
     self.then_block.declare(resolver, cache);
 
-    if let Some(else_block) = &mut self.else_block {
+    if let Some(else_block) = &self.else_block {
       else_block.declare(resolver, cache);
     }
   }
@@ -267,7 +266,7 @@ impl Resolve for ast::IfStmt {
 }
 
 impl Resolve for ast::LetStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.value.kind.declare(resolver, cache);
   }
 
@@ -285,8 +284,8 @@ impl Resolve for ast::LetStmt {
 }
 
 impl Resolve for ast::ReturnStmt {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    if let Some(value) = &mut self.value {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    if let Some(value) = &self.value {
       value.kind.declare(resolver, cache);
     }
   }
@@ -299,20 +298,36 @@ impl Resolve for ast::ReturnStmt {
 }
 
 impl Resolve for ast::Block {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    for statement in &mut self.statements {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    // FIXME: [!!] Bug: We didn't have scope management here, on the declare step.
+    // This meant that all declarations where being made in the global scope. However,
+    // now that we add scope management during the declare step, after the entire declare
+    // step ends, no scope will be left standing. Then, when we try to resolve existing
+    // declarations, we will not be able to find them, since all the scopes where those
+    // symbols where declared had been popped. Currently, we shouldn't be able to resolve
+    // anything, except global symbols, maybe (global scope isn't temporary). How can we solve this?
+
+    resolver.push_scope();
+
+    for statement in &self.statements {
       statement.kind.declare(resolver, cache);
     }
+
+    let mut scope_tree = vec![resolver.force_pop_scope()];
+
+    // Clone the relative scope tree.
+    scope_tree.extend(resolver.relative_scopes.iter().rev().cloned());
+
+    resolver.scope_map.insert(self.unique_id, scope_tree);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    resolver.push_scope();
-
+    resolver.current_block_unique_id = Some(self.unique_id);
+    
+    // TODO:
     for statement in &mut self.statements {
       statement.kind.resolve(resolver, cache);
     }
-
-    resolver.pop_scope();
   }
 }
 
@@ -321,7 +336,7 @@ impl Resolve for ast::Literal {
 }
 
 impl Resolve for ast::Function {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.prototype.declare(resolver, cache);
     self.body.declare(resolver, cache);
   }
@@ -339,11 +354,12 @@ impl Resolve for ast::ExternFunction {
 }
 
 impl Resolve for ast::Definition {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     let symbol = (self.name.clone(), self.symbol_kind.clone());
 
+    // TODO: In the future, we'd like to warn against shadowed names. This can be accomplished simply, by using `resolver.contains_relative`.
     // Check for existing definitions.
-    if resolver.contains(&symbol) {
+    if resolver.contains_current_scope(&symbol) {
       resolver
         .diagnostic_builder
         .error(format!("re-definition of `{}`", self.name));
@@ -377,13 +393,17 @@ impl Resolve for ast::CallExpr {
 }
 
 impl Resolve for ast::InlineExprStmt {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.expr.kind.declare(resolver, cache);
+  }
+
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.expr.kind.resolve(resolver, cache);
   }
 }
 
 impl Resolve for ast::BinaryExpr {
-  fn declare(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.left.kind.declare(resolver, cache);
     self.right.kind.declare(resolver, cache);
   }
@@ -399,8 +419,15 @@ pub struct NameResolver {
   current_module_name: Option<String>,
   /// Contains the modules with their respective top-level definitions.
   global_scopes: std::collections::HashMap<String, Scope>,
-  /// Contains volatile, relative scopes. This is reset when the module changes.
+  /// Contains volatile, relative scopes. Only used during the declare step.
+  /// This is reset when the module changes, although by that time all the
+  /// relative scopes should have been popped automatically.
   relative_scopes: Vec<Scope>,
+  /// A mapping of a block's unique key to its scope, and all visible parent
+  /// relative scopes, excluding the global scope.
+  scope_map: std::collections::HashMap<cache::UniqueId, Vec<Scope>>,
+  /// The unique id of the current block. Used for the resolve step.
+  current_block_unique_id: Option<cache::UniqueId>,
 }
 
 impl NameResolver {
@@ -410,6 +437,8 @@ impl NameResolver {
       current_module_name: None,
       global_scopes: std::collections::HashMap::new(),
       relative_scopes: Vec::new(),
+      scope_map: std::collections::HashMap::new(),
+      current_block_unique_id: None,
     }
   }
 
@@ -452,14 +481,17 @@ impl NameResolver {
     self.relative_scopes.push(std::collections::HashMap::new());
   }
 
-  fn pop_scope(&mut self) {
-    self.relative_scopes.pop();
+  /// Pop the last scope off the relatives scopes stack, and return it.
+  ///
+  /// Will panic if there are no relative scopes.
+  fn force_pop_scope(&mut self) -> Scope {
+    self.relative_scopes.pop().unwrap()
   }
 
   /// Register a name on the last scope for name resolution lookups.
   ///
   /// If there are no relative scopes, the symbol is registered in the global scope.
-  fn bind(&mut self, symbol: Symbol, definition_key: cache::DefinitionKey) {
+  fn bind(&mut self, symbol: Symbol, definition_key: cache::UniqueId) {
     self.get_current_scope().insert(symbol, definition_key);
   }
 
@@ -469,31 +501,16 @@ impl NameResolver {
       .error(format!("undefined reference to `{}`", name));
   }
 
-  // Lookup the global scope of a specific module.
-  fn absolute_lookup(&mut self, pattern: &ast::Pattern) -> Option<&cache::DefinitionKey> {
-    // FIXME: Something here might be taking precedence where it shouldn't (bug occurs when two functions with same name on different modules).
-
-    // TODO: Consider whether to clone or use references.
-    let module_name = pattern
-      .module_name
-      .clone()
-      .unwrap_or(self.current_module_name.clone().unwrap());
-
-    let global_scope = self.global_scopes.get(&module_name).unwrap();
-    let symbol = (pattern.base_name.clone(), pattern.symbol_kind.clone());
-
-    if let Some(definition_key) = global_scope.get(&symbol) {
-      return Some(definition_key);
-    }
-
-    None
-  }
-
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope
   /// of the current module.
-  fn relative_lookup(&mut self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
+  fn relative_lookup(&mut self, symbol: &Symbol) -> Option<&cache::UniqueId> {
+    let scope_tree = self
+      .scope_map
+      .get(&self.current_block_unique_id.unwrap())
+      .unwrap();
+
     // First attempt to find the symbol in the relative scopes.
-    for scope in self.relative_scopes.iter().rev() {
+    for scope in scope_tree {
       if let Some(definition_key) = scope.get(&symbol) {
         return Some(definition_key);
       }
@@ -512,7 +529,7 @@ impl NameResolver {
     None
   }
 
-  fn relative_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::DefinitionKey> {
+  fn relative_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::UniqueId> {
     if let Some(definition_key) = self.relative_lookup(symbol) {
       return Some(definition_key.clone());
     }
@@ -522,32 +539,8 @@ impl NameResolver {
     None
   }
 
-  /// Attempt to lookup a symbol within a closure's environment.
-  ///
-  /// A closure's lookup symbol table is limited to what is explicitly
-  /// captured, and the global scope. The closure's scope will be assumed
-  /// to be the last scope on the relative scopes stack.
-  fn closure_lookup(&mut self, symbol: &Symbol) -> Option<&cache::DefinitionKey> {
-    // First, look on the closure's scope.
-    if let Some(last_scope) = self.relative_scopes.last() {
-      return last_scope.get(symbol);
-    }
-
-    // Otherwise, look on the global scope.
-    let global_scope = self
-      .global_scopes
-      .get(self.current_module_name.as_ref().unwrap())
-      .unwrap();
-
-    if let Some(definition_key) = global_scope.get(&symbol) {
-      return Some(definition_key);
-    }
-
-    None
-  }
-
-  fn contains(&mut self, key: &Symbol) -> bool {
-    self.relative_lookup(key).is_some()
+  fn contains_current_scope(&mut self, key: &Symbol) -> bool {
+    self.get_current_scope().contains_key(key)
   }
 }
 
@@ -572,7 +565,7 @@ mod tests {
     assert!(name_resolver.relative_scopes.is_empty());
     name_resolver.push_scope();
     assert_eq!(1, name_resolver.relative_scopes.len());
-    name_resolver.pop_scope();
+    name_resolver.force_pop_scope();
     assert!(name_resolver.relative_scopes.is_empty());
   }
 }

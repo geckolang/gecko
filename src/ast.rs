@@ -13,13 +13,13 @@ macro_rules! dispatch {
       $crate::ast::NodeKind::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::NodeKind::FunctionCall(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::Definition(inner) => $target_fn(inner $(, $($args),* )?),
-      $crate::ast::NodeKind::VariableOrMemberRef(inner) => $target_fn(inner $(, $($args),* )?),
+      $crate::ast::NodeKind::Reference(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::AssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       $crate::ast::NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
@@ -41,7 +41,7 @@ macro_rules! dispatch {
 /// A parameter containing its name, type, and index position.
 pub type Parameter = (String, Type, u32);
 
-#[derive(PartialEq, PartialOrd, Clone)]
+#[derive(PartialEq, PartialOrd, Clone, Debug)]
 pub enum IntSize {
   U8,
   U16,
@@ -55,7 +55,7 @@ pub enum IntSize {
   Isize,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum PrimitiveType {
   Int(IntSize),
   Bool,
@@ -64,7 +64,7 @@ pub enum PrimitiveType {
   Null,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum Type {
   Array(Box<Type>, u32),
   Primitive(PrimitiveType),
@@ -86,6 +86,7 @@ impl Type {
 }
 
 // TODO: Write a macro that both defines this and `as_x_node()` (which alternatively yields `unreachable!()`) methods.
+#[derive(Debug)]
 pub enum NodeKind {
   Literal(Literal),
   ExternFunction(ExternFunction),
@@ -96,13 +97,13 @@ pub enum NodeKind {
   LetStmt(LetStmt),
   IfStmt(IfStmt),
   LoopStmt(LoopStmt),
-  FunctionCall(CallExpr),
+  CallExpr(CallExpr),
   IntrinsicCall(IntrinsicCall),
   BreakStmt(BreakStmt),
   ContinueStmt(ContinueStmt),
   InlineExprStmt(InlineExprStmt),
   Definition(Definition),
-  VariableOrMemberRef(VariableOrMemberRef),
+  Reference(Reference),
   AssignStmt(AssignStmt),
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
@@ -119,19 +120,21 @@ pub enum NodeKind {
   Closure(Closure),
 }
 
+#[derive(Debug)]
 pub struct Node {
   pub kind: NodeKind,
   // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
   pub span: diagnostic::Span,
 }
 
+#[derive(Debug)]
 pub struct Closure {
-  pub captures: Vec<(String, Option<cache::DefinitionKey>)>,
+  pub captures: Vec<(String, Option<cache::UniqueId>)>,
   pub prototype: Prototype,
   pub body: Block,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct CallableType {
   pub return_type: Box<Type>,
   pub parameters: Vec<Type>,
@@ -139,12 +142,13 @@ pub struct CallableType {
 }
 
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
+#[derive(Debug)]
 pub struct Pattern {
   pub module_name: Option<String>,
   pub base_name: String,
   pub member_path: Vec<String>,
   pub symbol_kind: name_resolution::SymbolKind,
-  pub target_key: Option<cache::DefinitionKey>,
+  pub target_key: Option<cache::UniqueId>,
 }
 
 impl Pattern {
@@ -168,46 +172,55 @@ impl ToString for Pattern {
   }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct StubType {
   pub name: String,
-  pub target_key: Option<cache::DefinitionKey>,
+  pub target_key: Option<cache::UniqueId>,
 }
 
+#[derive(Debug)]
 pub struct StructValue {
   pub name: String,
   pub fields: Vec<Node>,
-  pub target_key: Option<cache::DefinitionKey>,
+  pub target_key: Option<cache::UniqueId>,
 }
 
+#[derive(Debug)]
 pub struct Enum {
   pub name: String,
   pub variants: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct ContinueStmt;
 
+#[derive(Debug)]
 pub struct ArrayIndexing {
   pub name: String,
-  pub index: Box<Node>,
-  pub target_key: Option<cache::DefinitionKey>,
+  pub index_expr: Box<Node>,
+  pub target_key: Option<cache::UniqueId>,
 }
 
+#[derive(Debug)]
 pub struct ArrayValue {
   pub elements: Vec<Node>,
   /// Holds the type of the array, in case it is an empty array.
   pub explicit_type: Option<Type>,
 }
 
+#[derive(Debug)]
 pub struct UnsafeBlockStmt(pub Block);
 
-pub struct VariableOrMemberRef(pub Pattern);
+#[derive(Debug)]
+pub struct Reference(pub Pattern);
 
+#[derive(Debug)]
 pub struct AssignStmt {
   pub assignee_expr: Box<Node>,
   pub value: Box<Node>,
 }
 
+#[derive(Debug)]
 pub enum Literal {
   Bool(bool),
   Int(u64, IntSize),
@@ -216,26 +229,30 @@ pub enum Literal {
   Nullptr,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
   pub return_type: Type,
   pub is_variadic: bool,
 }
 
+#[derive(Debug)]
 pub struct ExternFunction {
   pub name: String,
   pub prototype: Prototype,
   pub attributes: Vec<Attribute>,
 }
 
+#[derive(Debug)]
 pub struct ExternStatic(pub String, pub Type);
 
+#[derive(Debug)]
 pub struct Attribute {
   pub name: String,
   pub values: Vec<Literal>,
 }
 
+#[derive(Debug)]
 pub struct Function {
   pub name: String,
   pub prototype: Prototype,
@@ -243,19 +260,24 @@ pub struct Function {
   pub attributes: Vec<Attribute>,
 }
 
+#[derive(Debug)]
 pub struct Block {
   pub statements: Vec<Node>,
   pub yield_last_expr: bool,
+  pub unique_id: cache::UniqueId,
 }
 
+#[derive(Debug)]
 pub struct BreakStmt {
   //
 }
 
+#[derive(Debug)]
 pub struct ReturnStmt {
   pub value: Option<Box<Node>>,
 }
 
+#[derive(Debug)]
 pub struct LetStmt {
   pub name: String,
   pub ty: Option<Type>,
@@ -263,47 +285,54 @@ pub struct LetStmt {
   pub is_mutable: bool,
 }
 
+#[derive(Debug)]
 pub struct IfStmt {
   pub condition: Box<Node>,
   pub then_block: Block,
   pub else_block: Option<Block>,
 }
 
+#[derive(Debug)]
 pub struct LoopStmt {
   pub condition: Option<Box<Node>>,
   pub body: Block,
 }
 
+#[derive(Debug)]
 pub struct InlineExprStmt {
   pub expr: Box<Node>,
 }
 
+#[derive(Debug)]
 pub struct CallExpr {
   pub callee_expr: Box<Node>,
   pub arguments: Vec<Node>,
 }
 
+#[derive(Debug)]
 pub enum IntrinsicKind {
   Panic,
 }
 
+#[derive(Debug)]
 pub struct IntrinsicCall {
   pub kind: IntrinsicKind,
   pub arguments: Vec<Node>,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct StructType {
   pub name: String,
   pub fields: std::collections::HashMap<String, Type>,
 }
 
+#[derive(Debug)]
 pub struct TypeAlias {
   pub name: String,
   pub ty: Type,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum OperatorKind {
   And,
   Or,
@@ -324,12 +353,14 @@ pub enum OperatorKind {
   Cast,
 }
 
+#[derive(Debug)]
 pub struct BinaryExpr {
   pub left: Box<Node>,
   pub right: Box<Node>,
   pub operator: OperatorKind,
 }
 
+#[derive(Debug)]
 pub struct UnaryExpr {
   pub expr: Box<Node>,
   pub operator: OperatorKind,
@@ -341,14 +372,16 @@ pub struct UnaryExpr {
 
 /// Represents an accessible definition. Acts as a transient
 /// value helper.
+#[derive(Debug)]
 pub struct Definition {
   pub name: String,
   pub symbol_kind: name_resolution::SymbolKind,
   pub node_ref_cell: cache::CachedNode,
-  pub definition_key: cache::DefinitionKey,
+  pub definition_key: cache::UniqueId,
 }
 
+#[derive(Debug)]
 pub struct MemberAccess {
   pub scope_qualifier: Pattern,
-  pub target_key: Option<cache::DefinitionKey>,
+  pub target_key: Option<cache::UniqueId>,
 }

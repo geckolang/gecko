@@ -9,8 +9,8 @@ pub trait Lint {
 pub struct LintContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   block_depth: usize,
-  function_references: std::collections::HashMap<cache::DefinitionKey, bool>,
-  variable_references: std::collections::HashMap<cache::DefinitionKey, bool>,
+  function_references: std::collections::HashMap<cache::UniqueId, bool>,
+  variable_references: std::collections::HashMap<cache::UniqueId, bool>,
 }
 
 impl LintContext {
@@ -139,7 +139,7 @@ impl Lint for ast::ArrayIndexing {
       .variable_references
       .insert(self.target_key.unwrap(), true);
 
-    self.index.kind.lint(cache, context);
+    self.index_expr.kind.lint(cache, context);
   }
 }
 
@@ -336,7 +336,7 @@ impl Lint for ast::AssignStmt {
   }
 }
 
-impl Lint for ast::VariableOrMemberRef {
+impl Lint for ast::Reference {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
     context
       .variable_references

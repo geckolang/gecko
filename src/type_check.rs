@@ -4,7 +4,7 @@ pub struct TypeCheckContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   in_loop: bool,
   in_unsafe_block: bool,
-  current_function_key: Option<cache::DefinitionKey>,
+  current_function_key: Option<cache::UniqueId>,
 }
 
 impl TypeCheckContext {
@@ -264,12 +264,17 @@ impl TypeCheck for ast::UnaryExpr {
         // todo!();
       }
       ast::OperatorKind::Cast => {
+        // FIXME: What if it's an alias?
         if !matches!(expr_type, ast::Type::Primitive(_))
           || !matches!(self.cast_type.as_ref().unwrap(), ast::Type::Primitive(_))
         {
           type_context
             .diagnostic_builder
             .error("can only cast between primitive types".to_string());
+        } else if TypeCheckContext::unify(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
+          type_context
+            .diagnostic_builder
+            .warning("redundant cast to the same type".to_string());
         }
       }
       _ => unreachable!(),
@@ -289,10 +294,7 @@ impl TypeCheck for ast::AssignStmt {
     let is_pointer_or_ref_expr = matches!(assignee_type, ast::Type::Pointer(_));
     let is_array_indexing = matches!(self.assignee_expr.kind, ast::NodeKind::ArrayIndexing(_));
 
-    let is_variable_ref = matches!(
-      self.assignee_expr.kind,
-      ast::NodeKind::VariableOrMemberRef(_)
-    );
+    let is_variable_ref = matches!(self.assignee_expr.kind, ast::NodeKind::Reference(_));
 
     // TODO: Missing member access (struct fields) support.
     // NOTE: The assignee expression may only be an expression of type `Pointer`
@@ -300,11 +302,11 @@ impl TypeCheck for ast::AssignStmt {
     if !is_pointer_or_ref_expr && !is_variable_ref && !is_array_indexing {
       type_context
         .diagnostic_builder
-        .error("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing".to_string());
+        .error("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing expression".to_string());
     } else if is_variable_ref {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match &self.assignee_expr.kind {
-        ast::NodeKind::VariableOrMemberRef(variable_ref) => {
+        ast::NodeKind::Reference(variable_ref) => {
           let declaration = cache.get(&variable_ref.0.target_key.unwrap());
 
           match &*declaration {
@@ -353,8 +355,27 @@ impl TypeCheck for ast::ArrayIndexing {
     array_element_type
   }
 
-  fn type_check(&self, _type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
-    // TODO: Implement.
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
+    let index_expr_type = self.index_expr.kind.infer_type(cache);
+
+    let is_unsigned_int_type =
+      // TODO: Should we be using `unify` here, instead?
+      if let ast::Type::Primitive(ast::PrimitiveType::Int(int_size)) = index_expr_type {
+        matches!(int_size, ast::IntSize::U8)
+          || matches!(int_size, ast::IntSize::U16)
+          || matches!(int_size, ast::IntSize::U32)
+          || matches!(int_size, ast::IntSize::U64)
+      } else {
+        false
+      };
+
+    if !is_unsigned_int_type {
+      type_context
+        .diagnostic_builder
+        .error("array index expression must evaluate to an unsigned integer".to_string());
+    }
+
+    self.index_expr.kind.type_check(type_context, cache);
   }
 }
 
@@ -439,13 +460,14 @@ impl TypeCheck for ast::Block {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    for statement in &self.statements {
-      statement.kind.type_check(type_context, cache);
-    }
+    self
+      .statements
+      .iter()
+      .for_each(|x| x.kind.type_check(type_context, cache));
   }
 }
 
-impl TypeCheck for ast::VariableOrMemberRef {
+impl TypeCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     (&*cache).get(&self.0.target_key.unwrap()).infer_type(cache)
   }
@@ -476,6 +498,7 @@ impl TypeCheck for ast::IfStmt {
     let else_block = self.else_block.as_ref().unwrap();
     let then_block_type = self.then_block.infer_type(cache);
 
+    // FIXME: Perhaps make a special case for let-statement? Its type inference is used internally, but they should yield 'Unit' for the user.
     // In case of a type-mismatch between branches, simply return the unit type.
     if !TypeCheckContext::unify(&then_block_type, &else_block.infer_type(cache), cache) {
       return ast::Type::Unit;
@@ -493,6 +516,13 @@ impl TypeCheck for ast::IfStmt {
       type_context
         .diagnostic_builder
         .error("if statement condition must evaluate to a boolean".to_string());
+    }
+
+    self.condition.kind.type_check(type_context, cache);
+    self.then_block.type_check(type_context, cache);
+
+    if let Some(else_block) = &self.else_block {
+      else_block.type_check(type_context, cache);
     }
   }
 }
@@ -658,18 +688,31 @@ impl TypeCheck for ast::Function {
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: Special case for the `main` function. Unify expected signature.
-
     // If applicable, the function's body must return a value.
     if !self.prototype.return_type.is_unit()
       && !self.body.yield_last_expr
-        & !self
-          .body
-          .statements
-          .iter()
-          .any(|x| matches!(x.kind, ast::NodeKind::ReturnStmt(_)))
+      && !self
+        .body
+        .statements
+        .iter()
+        .any(|x| matches!(x.kind, ast::NodeKind::ReturnStmt(_)))
     {
       type_context.diagnostic_builder.error(format!(
         "the body of function `{}` must return a value",
+        self.name
+      ));
+    }
+
+    if self.body.yield_last_expr
+      && !TypeCheckContext::unify(
+        &self.prototype.return_type,
+        &self.body.infer_type(cache),
+        cache,
+      )
+    {
+      // TODO: Improve error message.
+      type_context.diagnostic_builder.error(format!(
+        "function body of `{}` yielded value type-mismatch",
         self.name
       ));
     }
@@ -685,22 +728,35 @@ impl TypeCheck for ast::CallExpr {
 
     match callee_expr_type {
       ast::Type::Callable(callable_type) => callable_type.return_type.as_ref().clone(),
-      _ => unreachable!(),
+      // If the callee is not a function, return the callee's type
+      // by default.
+      _ => callee_expr_type,
     }
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    // TODO: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
-    // TODO: Need access to the current function.
-    // TODO: Ensure externs and unsafe function are only called from unsafe functions.
+    self.callee_expr.kind.type_check(type_context, cache);
 
-    let callee_type = match self.callee_expr.kind.infer_type(cache) {
+    // TODO: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
+    // TODO: Need access to the current function?
+
+    let callee_expr_type = self.callee_expr.kind.infer_type(cache);
+
+    if !matches!(callee_expr_type, ast::Type::Callable(_)) {
+      type_context
+        .diagnostic_builder
+        .error("call expression's callee is not actually callable".to_string());
+
+      // Cannot continue.
+      return;
+    }
+
+    let callee_type = match callee_expr_type {
       ast::Type::Callable(callable_type) => callable_type,
       _ => unreachable!(),
     };
 
     // TODO: Better, simpler way of doing this?
-    let name = "pending";
     // let attributes;
 
     // TODO: Need names.
@@ -745,10 +801,9 @@ impl TypeCheck for ast::CallExpr {
     if (!callee_type.is_variadic && actual_arg_count != min_arg_count)
       || (callee_type.is_variadic && actual_arg_count < min_arg_count)
     {
-      type_context.diagnostic_builder.error(format!(
-        "function call to `{}` has an invalid amount of arguments",
-        name
-      ));
+      type_context
+        .diagnostic_builder
+        .error("call expression has an invalid amount of arguments".to_string());
     }
 
     // FIXME: Straight up broken. Need to re-verify and fix.

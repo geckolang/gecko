@@ -258,7 +258,7 @@ impl Lower for ast::ArrayIndexing {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_index = self
-      .index
+      .index_expr
       .kind
       .lower(generator, cache)
       .unwrap()
@@ -355,13 +355,15 @@ impl Lower for ast::ArrayValue {
   }
 }
 
+// FIXME: [!] Bug: Parameters with the same name on other functions are being resolved elsewhere. This is likely because of the current design of relative scopes. Fix this issue. (May be related to when memoizing or retrieving other functions, then not virtualizing their environment).
 impl Lower for ast::Parameter {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // TODO: In the future, consider having an `alloca` per parameter, for simpler tracking of them.
+    // TODO: In the future, consider having an `alloca` per parameter, for simpler tracking of them?
+
     Some(
       generator
         .llvm_function_buffer
@@ -607,7 +609,7 @@ impl Lower for ast::BinaryExpr {
   }
 }
 
-impl Lower for ast::VariableOrMemberRef {
+impl Lower for ast::Reference {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -1214,20 +1216,17 @@ impl Lower for ast::Definition {
     // Set the pending function definition key to cache the function early.
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
-    if matches!(&*node, ast::NodeKind::Function(_)) {
+    if let ast::NodeKind::Function(function) = &*node {
       generator.pending_function_definition_key = Some(self.definition_key);
+
+      // TODO: Explain what's happening (documentation).
+      if function.name == MAIN_FUNCTION_NAME {
+        // TODO: Is there a need to return a value for the main function? Even for `Definition`?
+        return Some(generator.memoize_or_retrieve(self.definition_key, cache, true));
+      }
     }
 
-    // TODO: This might error for other globally-defined types.
-    // TODO: Forwarding buffers. Is this okay in this instance?
-    if !matches!(
-      &*node,
-      ast::NodeKind::StructType(_) | ast::NodeKind::TypeAlias(_)
-    ) {
-      Some(generator.memoize_or_retrieve(self.definition_key, cache, true))
-    } else {
-      None
-    }
+    None
   }
 }
 
@@ -1257,16 +1256,16 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Shouldn't this be a vector instead?
   llvm_cached_values:
-    std::collections::HashMap<cache::DefinitionKey, inkwell::values::BasicValueEnum<'ctx>>,
+    std::collections::HashMap<cache::UniqueId, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_cached_types:
-    std::collections::HashMap<cache::DefinitionKey, inkwell::types::BasicTypeEnum<'ctx>>,
+    std::collections::HashMap<cache::UniqueId, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
   current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   return_expects_access: bool,
   let_stmt_flag: Option<inkwell::values::PointerValue<'ctx>>,
   /// The definition key of the function currently being emitted (if any).
   /// Used to be able to handle recursive calls.
-  pending_function_definition_key: Option<cache::DefinitionKey>,
+  pending_function_definition_key: Option<cache::UniqueId>,
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   print_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   mangle_counter: usize,
@@ -1293,6 +1292,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       print_function_cache: None,
       mangle_counter: 0,
     }
+  }
+
+  fn is_callable(llvm_value: inkwell::values::BasicValueEnum<'ctx>) -> bool {
+    inkwell::values::CallableValue::try_from(llvm_value.into_pointer_value()).is_ok()
   }
 
   fn stash_buffers(&self) -> LlvmGeneratorBuffers<'ctx> {
@@ -1460,7 +1463,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     &mut self,
     llvm_value: inkwell::values::BasicValueEnum<'ctx>,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    if llvm_value.is_pointer_value() {
+    if llvm_value.is_pointer_value() && !LlvmGenerator::is_callable(llvm_value) {
       self.access(llvm_value.into_pointer_value())
     } else {
       llvm_value
@@ -1624,7 +1627,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   /// otherwise they will all be restored.
   fn memoize_or_retrieve(
     &mut self,
-    definition_key: cache::DefinitionKey,
+    definition_key: cache::UniqueId,
     cache: &cache::Cache,
     forward_buffers: bool,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
@@ -1639,14 +1642,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
 
     let buffers = self.stash_buffers();
-
-    let llvm_value = cache
-      .declarations
-      .get(&definition_key)
-      .unwrap()
-      .borrow()
-      .lower(self, cache)
-      .unwrap();
+    let llvm_value = cache.get(&definition_key).lower(self, cache).unwrap();
 
     self.llvm_cached_values.insert(definition_key, llvm_value);
 

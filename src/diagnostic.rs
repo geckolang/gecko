@@ -15,6 +15,7 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
+  // TODO: After `Internal` is removed, this should no longer be needed.
   /// Determine whether the error is non-informational, and instead
   /// denotes a problem in either the program or the compiler itself.
   pub fn is_error_like(&self) -> bool {
