@@ -140,8 +140,8 @@ impl Resolve for ast::StructValue {
 
 impl Resolve for ast::Prototype {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // TODO: This is sort of a hack.
     for parameter in &self.parameters {
+      // Create and process an anonymous definition per-parameter.
       ast::Definition {
         symbol: Some((parameter.0.clone(), SymbolKind::Definition)),
         // TODO: Cloning parameter.
@@ -158,7 +158,7 @@ impl Resolve for ast::Prototype {
       parameter.1.resolve(resolver, cache);
     }
 
-    self.return_type.as_mut().unwrap().resolve(resolver, cache);
+    // NOTE: The prototype is manually resolved after its body is resolved.
   }
 }
 
@@ -341,20 +341,39 @@ impl Resolve for ast::Function {
     self.body.declare(resolver, cache);
   }
 
+  // FIXME: This resolve step may need to be repeated for closure.
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // FIXME: [!] Investigate: Do we need to resolve the prototype first?
     // If so, doesn't the prototype's inferred type depend on the body being
     // resolved first?
 
-    self.body.resolve(resolver, cache);
+    // TODO: Do we need scope management here, for the prototype's parameters?
+    self.prototype.resolve(resolver, cache);
 
-    // Infer the prototype's return value, if it was omitted by the user.
+    // Infer the prototype's return value, if it was omitted by the user. It is
+    // important that this is done after the prototype is resolved, otherwise
+    // parameter references will cause unwrap errors.
     if self.prototype.return_type.is_none() {
+      // FIXME: [!!] During the inference, if we have a non-existent reference, there's no guards
+      // to stop attempting to retrieve an undeclared definition from the cache.
+      // So, what will happen is that there will be an access error and no proper diagnostic emitted.
+      // This bug can be replicated by simply having a function's return type be inferred, then attempting
+      // to reference an invalid symbol. A panic will be thrown instead of a proper diagnostic. Find out
+      // how to address this bug.
       self.prototype.return_type = Some(self.body.infer_type(cache));
     }
 
-    // TODO: Do we need scope management here, for the prototype's parameters?
-    self.prototype.resolve(resolver, cache);
+    // After the return type has been inferred, we can proceed to resolve it.
+    self
+      .prototype
+      .return_type
+      .as_mut()
+      .unwrap()
+      .resolve(resolver, cache);
+
+    // Finally, after both the prototype and its return type have been resolved,
+    // proceed to resolve the body.
+    self.body.resolve(resolver, cache);
   }
 }
 

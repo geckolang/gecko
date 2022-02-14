@@ -19,6 +19,7 @@ impl Cache {
     }
   }
 
+  // TODO: Use this function as a guide to ensure that nothing is looked up or inferred before its actually resolved. Within the type-checker.
   pub fn get(&self, key: &UniqueId) -> Ref<'_, ast::NodeKind> {
     self.declarations.get(key).unwrap().as_ref().borrow()
   }

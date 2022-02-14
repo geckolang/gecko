@@ -1537,16 +1537,21 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         llvm_type
       }
       ast::Type::Callable(callable_type) => {
-        let anonymous_prototype = ast::Prototype {
-          // FIXME: Parameters.
-          parameters: vec![],
+        let prototype_parameters = callable_type
+          .parameters
+          .iter()
+          .map(|x| (String::default(), x.clone(), 0))
+          .collect();
+
+        let prototype = ast::Prototype {
+          parameters: prototype_parameters,
           return_type: Some(callable_type.return_type.as_ref().clone()),
           // TODO: Support for variadic closure type lowering?
           is_variadic: false,
         };
 
         self
-          .lower_prototype(&anonymous_prototype, cache)
+          .lower_prototype(&prototype, cache)
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum()
       }
