@@ -7,7 +7,7 @@ pub enum SymbolKind {
   Type,
 }
 
-type Symbol = (String, SymbolKind);
+pub type Symbol = (String, SymbolKind);
 
 type Scope = std::collections::HashMap<Symbol, cache::UniqueId>;
 
@@ -65,8 +65,6 @@ impl Resolve for ast::Closure {
       // FIXME: Anything else needs to be done here?
     }
 
-    self.prototype.resolve(resolver, cache);
-
     // Cache the existing relative scopes, and create a new, empty
     // environment within the resolver, then restore the cached scopes
     // after the body has been resolved. This is done to encapsulate the
@@ -75,7 +73,17 @@ impl Resolve for ast::Closure {
 
     resolver.relative_scopes.clear();
     self.body.resolve(resolver, cache);
+
+    // FIXME: [!] Investigate: Should this closing of relative scopes occur
+    // before or after the return type is possibly inferred?
     resolver.relative_scopes = relative_scopes_cache;
+
+    // Infer the prototype's return value, if it was omitted by the user.
+    if self.prototype.return_type.is_none() {
+      self.prototype.return_type = Some(self.body.infer_type(cache));
+    }
+
+    self.prototype.resolve(resolver, cache);
   }
 }
 
@@ -135,8 +143,7 @@ impl Resolve for ast::Prototype {
     // TODO: This is sort of a hack.
     for parameter in &self.parameters {
       ast::Definition {
-        name: parameter.0.clone(),
-        symbol_kind: SymbolKind::Definition,
+        symbol: Some((parameter.0.clone(), SymbolKind::Definition)),
         // TODO: Cloning parameter.
         node_ref_cell: cache::create_cached_node(ast::NodeKind::Parameter(parameter.clone())),
         // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
@@ -151,7 +158,7 @@ impl Resolve for ast::Prototype {
       parameter.1.resolve(resolver, cache);
     }
 
-    self.return_type.resolve(resolver, cache);
+    self.return_type.as_mut().unwrap().resolve(resolver, cache);
   }
 }
 
@@ -335,10 +342,19 @@ impl Resolve for ast::Function {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // TODO: Do we need scope management here, for the prototype's parameters?
-    self.prototype.resolve(resolver, cache);
+    // FIXME: [!] Investigate: Do we need to resolve the prototype first?
+    // If so, doesn't the prototype's inferred type depend on the body being
+    // resolved first?
 
     self.body.resolve(resolver, cache);
+
+    // Infer the prototype's return value, if it was omitted by the user.
+    if self.prototype.return_type.is_none() {
+      self.prototype.return_type = Some(self.body.infer_type(cache));
+    }
+
+    // TODO: Do we need scope management here, for the prototype's parameters?
+    self.prototype.resolve(resolver, cache);
   }
 }
 
@@ -350,24 +366,24 @@ impl Resolve for ast::ExternFunction {
 
 impl Resolve for ast::Definition {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    let symbol = (self.name.clone(), self.symbol_kind.clone());
-
     // TODO: In the future, we'd like to warn against shadowed names. This can be accomplished simply, by using `resolver.contains_relative`.
-    // Check for existing definitions.
-    if resolver.contains_current_scope(&symbol) {
-      resolver
-        .diagnostic_builder
-        .error(format!("re-definition of `{}`", self.name));
+    if let Some(symbol) = &self.symbol {
+      // Check for existing definitions.
+      if resolver.contains_current_scope(&symbol) {
+        resolver
+          .diagnostic_builder
+          .error(format!("re-definition of `{}`", symbol.0));
 
-      // TODO: What about calling the child's declare function?
-      return;
+        // TODO: What about calling the child's declare function?
+        return;
+      }
+
+      // Bind the symbol to the current scope for name resolution lookup.
+      resolver.bind(symbol.clone(), self.definition_key);
     }
 
     // Register the node on the cache for lowering lookup.
     cache.bind(self.definition_key, std::rc::Rc::clone(&self.node_ref_cell));
-
-    // Bind the symbol to the current scope for name resolution lookup.
-    resolver.bind(symbol, self.definition_key);
 
     self.node_ref_cell.borrow_mut().declare(resolver, cache);
   }

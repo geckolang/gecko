@@ -152,7 +152,8 @@ impl<'a> Parser<'a> {
 
   /// Compare the current token to the given token.
   ///
-  /// If `EOF` has been reached, `false` will always be returned.
+  /// If `EOF` has been reached, `false` will always be returned. This is
+  /// to avoid infinite loops that rely on this check as their condition.
   fn is(&self, token: &lexer::TokenKind) -> bool {
     if self.index >= self.tokens.len() {
       return false;
@@ -161,6 +162,7 @@ impl<'a> Parser<'a> {
     self.force_get() == token
   }
 
+  // TODO: Consider returning a `ParserResult<bool>` instead.
   // TODO: Need testing for this function.
   /// Attempt to reposition the index to the next token (if any).
   ///
@@ -242,7 +244,6 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// %identifier
   fn parse_name(&mut self) -> ParserResult<String> {
     // TODO: Illegal/unrecognized tokens MAY also be represented under 'Identifier'? Is this a problem?
 
@@ -388,12 +389,12 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Array(Box::new(element_type), size))
   }
 
-  /// %type
   fn parse_type(&mut self) -> ParserResult<ast::Type> {
     // TODO: Check if the index is valid?
     // TODO: Support for more types.
     match self.force_get() {
       // TODO: Other types as well.
+      lexer::TokenKind::KeywordFn => self.parse_callable_type(),
       lexer::TokenKind::TypeSignedInt8
       | lexer::TokenKind::TypeSignedInt16
       | lexer::TokenKind::TypeSignedInt32
@@ -419,6 +420,41 @@ impl<'a> Parser<'a> {
     }
   }
 
+  /// fn '(' (%type (','))* ')' ('[' %type ']')
+  fn parse_callable_type(&mut self) -> ParserResult<ast::Type> {
+    self.skip_past(&lexer::TokenKind::KeywordFn)?;
+    self.skip_past(&lexer::TokenKind::SymbolParenthesesL)?;
+
+    let mut parameter_types = Vec::new();
+
+    while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
+      parameter_types.push(self.parse_type()?);
+
+      if !self.peek_is(&lexer::TokenKind::SymbolParenthesesR) {
+        self.skip_past(&lexer::TokenKind::SymbolComma)?;
+      }
+    }
+
+    self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
+    self.skip_past(&lexer::TokenKind::SymbolBracketL)?;
+
+    let return_type = if self.is(&lexer::TokenKind::SymbolBracketR) {
+      ast::Type::Unit
+    } else {
+      self.parse_type()?
+    };
+
+    self.skip_past(&lexer::TokenKind::SymbolBracketR)?;
+
+    Ok(ast::Type::Callable(ast::CallableType {
+      parameters: parameter_types,
+      return_type: Box::new(return_type),
+      // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
+      is_variadic: false,
+    }))
+  }
+
+  /// %name
   fn parse_stub_type(&mut self) -> ParserResult<ast::Type> {
     let name = self.parse_name()?;
 
@@ -428,7 +464,7 @@ impl<'a> Parser<'a> {
     }))
   }
 
-  /// %name ':' %type_group
+  /// %name ':' %type
   fn parse_parameter(&mut self, index: u32) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
@@ -439,7 +475,7 @@ impl<'a> Parser<'a> {
     Ok((name, type_group, index))
   }
 
-  /// '(' {%parameter* (,)} (+) ')' ':' %type_group
+  /// '(' {%parameter* (,)} (+) ')' ':' %type
   fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
     self.skip_past(&lexer::TokenKind::SymbolParenthesesL)?;
 
@@ -469,11 +505,11 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
 
-    let mut return_type = ast::Type::Unit;
+    let mut return_type = None;
 
     if self.is(&lexer::TokenKind::SymbolColon) {
       self.skip();
-      return_type = self.parse_type()?;
+      return_type = Some(self.parse_type()?);
     }
 
     Ok(ast::Prototype {
@@ -501,14 +537,13 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::Definition {
-      name,
-      symbol_kind: name_resolution::SymbolKind::Definition,
+      symbol: Some((name, name_resolution::SymbolKind::Definition)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::Function(function)),
       definition_key: self.cache.create_unique_id(),
     })
   }
 
-  /// extern fn %prototype ';'
+  /// extern fn %prototype
   fn parse_extern_function(
     &mut self,
     attributes: Vec<ast::Attribute>,
@@ -521,6 +556,12 @@ impl<'a> Parser<'a> {
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
 
+    // Extern functions must provide an explicit return type for their
+    // prototypes.
+    if prototype.return_type.is_none() {
+      return Err(self.expected("explicit return type"));
+    }
+
     let extern_function = ast::ExternFunction {
       name: name.clone(),
       prototype,
@@ -528,13 +569,13 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::Definition {
-      name,
-      symbol_kind: name_resolution::SymbolKind::Definition,
+      symbol: Some((name, name_resolution::SymbolKind::Definition)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::ExternFunction(extern_function)),
       definition_key: self.cache.create_unique_id(),
     })
   }
 
+  /// extern static %name ':' %type
   fn parse_extern_static(&mut self) -> ParserResult<ast::Definition> {
     self.skip_past(&lexer::TokenKind::KeywordExtern)?;
     self.skip_past(&lexer::TokenKind::KeywordStatic)?;
@@ -547,13 +588,13 @@ impl<'a> Parser<'a> {
     let extern_static = ast::ExternStatic(name.clone(), ty);
 
     Ok(ast::Definition {
-      name,
-      symbol_kind: name_resolution::SymbolKind::Definition,
+      symbol: Some((name, name_resolution::SymbolKind::Definition)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::ExternStatic(extern_static)),
       definition_key: self.cache.create_unique_id(),
     })
   }
 
+  /// '@' %name ('(' (%literal (','))* ')')
   fn parse_attribute(&mut self) -> ParserResult<ast::Attribute> {
     self.skip_past(&lexer::TokenKind::SymbolAt)?;
 
@@ -643,6 +684,7 @@ impl<'a> Parser<'a> {
     Ok(definition)
   }
 
+  /// type %name = %type
   fn parse_type_alias(&mut self) -> ParserResult<ast::Definition> {
     self.skip_past(&lexer::TokenKind::KeywordType)?;
 
@@ -659,8 +701,7 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::Definition {
-      name,
-      symbol_kind: name_resolution::SymbolKind::Type,
+      symbol: Some((name, name_resolution::SymbolKind::Type)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::TypeAlias(type_alias)),
       definition_key: self.cache.create_unique_id(),
     })
@@ -682,7 +723,7 @@ impl<'a> Parser<'a> {
     Ok(ast::ReturnStmt { value })
   }
 
-  /// let %name (':' %type) '=' %expr
+  /// let (mut) %name (':' %type) '=' %expr
   fn parse_let_stmt(&mut self) -> ParserResult<ast::Definition> {
     self.skip_past(&lexer::TokenKind::KeywordLet)?;
 
@@ -714,8 +755,7 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::Definition {
-      name,
-      symbol_kind: name_resolution::SymbolKind::Definition,
+      symbol: Some((name, name_resolution::SymbolKind::Definition)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::LetStmt(let_stmt)),
       definition_key: self.cache.create_unique_id(),
     })
@@ -876,7 +916,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// %pattern '[' %expr ']'
+  /// %name '[' %expr ']'
   fn parse_array_indexing(&mut self) -> ParserResult<ast::ArrayIndexing> {
     // TODO: Work with a pattern instead.
     let name = self.parse_name()?;
@@ -910,6 +950,7 @@ impl<'a> Parser<'a> {
     })
   }
 
+  // TODO: Retire this function. Remove it once its no longer needed.
   fn after_pattern_is(&self, token: &lexer::TokenKind) -> bool {
     let mut index = self.index;
     let mut delimiter_switch = false;
@@ -944,10 +985,11 @@ impl<'a> Parser<'a> {
         if (self.peek_is(&lexer::TokenKind::SymbolBracketL)
           || self.peek_is(&lexer::TokenKind::SymbolParenthesesL)) =>
       {
-        ast::NodeKind::Closure(self.parse_closure()?)
+        ast::NodeKind::Definition(self.parse_closure()?)
       }
       lexer::TokenKind::KeywordIf => ast::NodeKind::IfStmt(self.parse_if_expr()?),
       lexer::TokenKind::SymbolTilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
+      // TODO: Change this syntax to the same treatment as call expressions (check afterwards).
       lexer::TokenKind::Identifier(_)
         if self.after_pattern_is(&lexer::TokenKind::SymbolBracketL) =>
       {
@@ -970,10 +1012,11 @@ impl<'a> Parser<'a> {
       span: self.close_span(span_start),
     };
 
-    if self.is(&lexer::TokenKind::SymbolParenthesesL) {
+    // Parse a call expression chain, if applicable.
+    while self.is(&lexer::TokenKind::SymbolParenthesesL) {
       // TODO: Simplify (DRY).
       node = ast::Node {
-        kind: ast::NodeKind::CallExpr(self.parse_function_call(node)?),
+        kind: ast::NodeKind::CallExpr(self.parse_call_expr(node)?),
         span: self.close_span(span_start),
       };
     }
@@ -1091,7 +1134,7 @@ impl<'a> Parser<'a> {
   }
 
   /// %expr '(' (%expr (,))* ')'
-  fn parse_function_call(&mut self, callee_expr: ast::Node) -> ParserResult<ast::CallExpr> {
+  fn parse_call_expr(&mut self, callee_expr: ast::Node) -> ParserResult<ast::CallExpr> {
     // FIXME: On the expressions being parsed, the pattern may not be parsed as a pattern linking to a function or extern. Ensure this is actually the case.
     // let callee_pattern = self.parse_pattern(name_resolution::SymbolKind::FunctionOrExtern)?;
 
@@ -1150,7 +1193,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Reference(pattern))
   }
 
-  /// %name '=' %expr
+  /// %expr '=' %expr
   fn parse_assign_stmt(&mut self) -> ParserResult<ast::AssignStmt> {
     let assignee_expr = Box::new(self.parse_expr()?);
 
@@ -1194,8 +1237,7 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::Definition {
-      name,
-      symbol_kind: name_resolution::SymbolKind::Type,
+      symbol: Some((name, name_resolution::SymbolKind::Type)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::Enum(enum_)),
       definition_key: self.cache.create_unique_id(),
     })
@@ -1231,13 +1273,13 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::Definition {
-      name,
-      symbol_kind: name_resolution::SymbolKind::Type,
+      symbol: Some((name, name_resolution::SymbolKind::Type)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::StructType(struct_type)),
       definition_key: self.cache.create_unique_id(),
     })
   }
 
+  /// new %name '{' (%name ':' %expr ',')* '}'
   fn parse_struct_value(&mut self) -> ParserResult<ast::StructValue> {
     self.skip_past(&lexer::TokenKind::KeywordNew)?;
 
@@ -1269,7 +1311,8 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_closure(&mut self) -> ParserResult<ast::Closure> {
+  /// fn '[' (%name (','))* ']' %prototype %block
+  fn parse_closure(&mut self) -> ParserResult<ast::Definition> {
     self.skip_past(&lexer::TokenKind::KeywordFn)?;
 
     let mut captures = Vec::new();
@@ -1287,10 +1330,16 @@ impl<'a> Parser<'a> {
     let prototype = self.parse_prototype()?;
     let body = self.parse_block()?;
 
-    Ok(ast::Closure {
+    let closure = ast::Closure {
       captures,
       prototype,
       body,
+    };
+
+    Ok(ast::Definition {
+      symbol: None,
+      node_ref_cell: cache::create_cached_node(ast::NodeKind::Closure(closure)),
+      definition_key: self.cache.create_unique_id(),
     })
   }
 }

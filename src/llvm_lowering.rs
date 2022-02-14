@@ -1213,20 +1213,16 @@ impl Lower for ast::Definition {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let node = self.node_ref_cell.borrow();
 
+    // FIXME: What about closures?
     // Set the pending function definition key to cache the function early.
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
-    if let ast::NodeKind::Function(function) = &*node {
+    if let ast::NodeKind::Function(_) = &*node {
       generator.pending_function_definition_key = Some(self.definition_key);
-
-      // TODO: Explain what's happening (documentation).
-      if function.name == MAIN_FUNCTION_NAME {
-        // TODO: Is there a need to return a value for the main function? Even for `Definition`?
-        return Some(generator.memoize_or_retrieve(self.definition_key, cache, true));
-      }
     }
 
-    None
+    // TODO: Is there a need to return a value for the main function? Even for `Definition`?
+    Some(generator.memoize_or_retrieve(self.definition_key, cache, true))
   }
 }
 
@@ -1540,12 +1536,26 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
         llvm_type
       }
-      // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
-      // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
-      // NOTE: These types are never lowered.
-      ast::Type::Unit | ast::Type::Callable(_) => unreachable!(),
+      ast::Type::Callable(callable_type) => {
+        let anonymous_prototype = ast::Prototype {
+          // FIXME: Parameters.
+          parameters: vec![],
+          return_type: Some(callable_type.return_type.as_ref().clone()),
+          // TODO: Support for variadic closure type lowering?
+          is_variadic: false,
+        };
+
+        self
+          .lower_prototype(&anonymous_prototype, cache)
+          .ptr_type(inkwell::AddressSpace::Generic)
+          .as_basic_type_enum()
+      }
       // TODO: Implement.
       ast::Type::Reference(_reference_type) => todo!(),
+      // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
+      // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
+      // NOTE: The unit type is never lowered.
+      ast::Type::Unit => unreachable!(),
     }
   }
 
@@ -1560,10 +1570,12 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       .map(|x| self.lower_type(&x.1, cache).into())
       .collect::<Vec<_>>();
 
+    let return_type = prototype.return_type.as_ref().unwrap();
+
     // TODO: Simplify code (find common ground between `void` and `basic` types).
-    if !prototype.return_type.is_unit() {
+    if !return_type.is_unit() {
       self
-        .lower_type(&prototype.return_type, cache)
+        .lower_type(return_type, cache)
         // TODO: Is `is_variadic` being copied?
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)

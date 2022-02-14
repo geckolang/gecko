@@ -89,7 +89,7 @@ impl TypeCheck for ast::NodeKind {
 }
 
 impl TypeCheck for ast::Closure {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let parameters = self
       .prototype
       .parameters
@@ -97,11 +97,11 @@ impl TypeCheck for ast::Closure {
       .map(|x| x.1.clone())
       .collect::<Vec<_>>();
 
-    let return_type = self.prototype.return_type.clone();
+    let return_type = self.body.infer_type(cache);
 
     ast::Type::Callable(ast::CallableType {
       parameters,
-      return_type: Box::new(return_type),
+      return_type: Box::new(return_type.clone()),
       is_variadic: false,
     })
   }
@@ -183,7 +183,7 @@ impl TypeCheck for ast::StructValue {
 impl TypeCheck for ast::Prototype {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Callable(ast::CallableType {
-      return_type: Box::new(self.return_type.clone()),
+      return_type: Box::new(self.return_type.as_ref().unwrap().clone()),
       parameters: self
         .parameters
         .iter()
@@ -443,9 +443,14 @@ impl TypeCheck for ast::Parameter {
 
 impl TypeCheck for ast::Block {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // If the last expression is not to be yielded, there are
-    // no statements, or there is a return statement present,
-    // the block will not yield a value.
+    // If the last expression isn't yielded, then the block's type
+    // defaults to unit. If there's no statements on the block, the
+    // type of the block will logically be unit. Finally, if there is
+    // at least a single return statement in the block, the block's type
+    // will also be unit. Note that a return statement does not affect
+    // the block's type, because the function is terminated, and not the
+    // individual block. In other words, the block type is only determined
+    // when an expression is yielded.
     if !self.yield_last_expr
       || self.statements.is_empty()
       || self
@@ -456,14 +461,13 @@ impl TypeCheck for ast::Block {
       return ast::Type::Unit;
     }
 
-    return self.statements.last().unwrap().kind.infer_type(cache);
+    self.statements.last().unwrap().kind.infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    self
-      .statements
-      .iter()
-      .for_each(|x| x.kind.type_check(type_context, cache));
+    for statement in &self.statements {
+      statement.kind.type_check(type_context, cache);
+    }
   }
 }
 
@@ -601,7 +605,10 @@ impl TypeCheck for ast::Definition {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let node = self.node_ref_cell.borrow();
 
-    if let ast::NodeKind::Function(_) = &*node {
+    if matches!(
+      &*node,
+      ast::NodeKind::Function(_) | ast::NodeKind::Closure(_)
+    ) {
       type_context.current_function_key = Some(self.definition_key);
     }
 
@@ -647,17 +654,28 @@ impl TypeCheck for ast::ReturnStmt {
       .unwrap()
       .borrow();
 
-    let current_function = match &*current_function_node {
-      ast::NodeKind::Function(function) => function,
+    let mut name = None;
+    let prototype;
+
+    match &*current_function_node {
+      ast::NodeKind::Function(function) => {
+        name = Some(function.name.clone());
+        prototype = &function.prototype;
+      }
+      ast::NodeKind::Closure(closure) => {
+        prototype = &closure.prototype;
+      }
       _ => unreachable!(),
     };
 
+    let return_type = prototype.return_type.as_ref().unwrap();
+
     // TODO: Whether a function returns is already checked. Limit this to unifying the types only.
-    if !current_function.prototype.return_type.is_unit() && self.value.is_none() {
+    if !return_type.is_unit() && self.value.is_none() {
       type_context
         .diagnostic_builder
         .error("return statement must return a value".to_string());
-    } else if current_function.prototype.return_type.is_unit() && self.value.is_some() {
+    } else if return_type.is_unit() && self.value.is_some() {
       type_context
         .diagnostic_builder
         .error("return statement must not return a value".to_string());
@@ -669,10 +687,14 @@ impl TypeCheck for ast::ReturnStmt {
     if let Some(value) = &self.value {
       let value_type = value.kind.infer_type(cache);
 
-      if !TypeCheckContext::unify(&current_function.prototype.return_type, &value_type, cache) {
+      if !TypeCheckContext::unify(return_type, &value_type, cache) {
         type_context.diagnostic_builder.error(format!(
-          "return statement value and function return type mismatch for function `{}`",
-          current_function.name
+          "return statement value and prototype return type mismatch for {}",
+          if let Some(name) = name {
+            format!("function `{}`", name)
+          } else {
+            "closure".to_string()
+          }
         ));
       }
 
@@ -687,9 +709,11 @@ impl TypeCheck for ast::Function {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
+    let return_type = self.prototype.return_type.as_ref().unwrap();
+
     // TODO: Special case for the `main` function. Unify expected signature.
     // If applicable, the function's body must return a value.
-    if !self.prototype.return_type.is_unit()
+    if !return_type.is_unit()
       && !self.body.yield_last_expr
       && !self
         .body
@@ -711,11 +735,7 @@ impl TypeCheck for ast::Function {
     }
 
     if self.body.yield_last_expr
-      && !TypeCheckContext::unify(
-        &self.prototype.return_type,
-        &self.body.infer_type(cache),
-        cache,
-      )
+      && !TypeCheckContext::unify(return_type, &self.body.infer_type(cache), cache)
     {
       // TODO: Improve error message.
       type_context.diagnostic_builder.error(format!(
@@ -728,7 +748,9 @@ impl TypeCheck for ast::Function {
       let main_prototype = ast::Prototype {
         // TODO: Parameters. Also, the comparison should ignore parameter names.
         parameters: vec![],
-        return_type: ast::Type::Primitive(ast::PrimitiveType::Int(ast::IntSize::I32)),
+        return_type: Some(ast::Type::Primitive(ast::PrimitiveType::Int(
+          ast::IntSize::I32,
+        ))),
         is_variadic: false,
       };
 
