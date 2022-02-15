@@ -331,7 +331,7 @@ pub struct IntrinsicCall {
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructType {
   pub name: String,
-  pub fields: std::collections::HashMap<String, Type>,
+  pub fields: Vec<(String, Type)>,
 }
 
 #[derive(Debug)]

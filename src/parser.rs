@@ -1251,7 +1251,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
 
-    let mut fields = std::collections::HashMap::new();
+    let mut fields = Vec::new();
 
     while self.until(&lexer::TokenKind::SymbolBraceR)? {
       let field_name = self.parse_name()?;
@@ -1261,7 +1261,7 @@ impl<'a> Parser<'a> {
       let field_type = self.parse_type()?;
 
       self.skip_past(&lexer::TokenKind::SymbolComma)?;
-      fields.insert(field_name, field_type);
+      fields.push((field_name, field_type));
     }
 
     // Skip the closing brace symbol.

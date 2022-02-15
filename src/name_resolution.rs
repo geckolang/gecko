@@ -104,10 +104,12 @@ impl Resolve for ast::Pattern {
     if let Some(target_key) = lookup_result {
       self.target_key = Some(target_key.clone());
 
+      // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
       // TODO: Will this work for all cases? Ex. will there be a case where the target hasn't been resolved yet?
       if !self.member_path.is_empty() {
         let mut member_field_queue = vec![self.member_path.first_mut().unwrap()];
 
+        // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
         // TODO: What if it hasn't been resolved by now?
         let cached_struct_value_node = cache.force_get(&self.target_key.unwrap());
 
@@ -123,6 +125,7 @@ impl Resolve for ast::Pattern {
         let cached_struct_type_node = cache.force_get(&last_struct_value.target_key.unwrap());
 
         // TODO: What if it hasn't been resolved by now?
+        // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
         let mut last_struct_type = match &*cached_struct_type_node {
           ast::NodeKind::StructType(struct_type) => struct_type,
           _ => unreachable!(),
@@ -132,7 +135,7 @@ impl Resolve for ast::Pattern {
           let index = last_struct_type
             .fields
             .iter()
-            .position(|x| x.0 == &next_member_field.0)
+            .position(|x| x.0 == next_member_field.0)
             .unwrap();
 
           next_member_field.1 = Some(index as u32);
