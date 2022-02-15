@@ -539,7 +539,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       symbol: Some((name, name_resolution::SymbolKind::Definition)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::Function(function)),
-      definition_key: self.cache.create_unique_id(),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -571,7 +571,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       symbol: Some((name, name_resolution::SymbolKind::Definition)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::ExternFunction(extern_function)),
-      definition_key: self.cache.create_unique_id(),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -590,7 +590,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       symbol: Some((name, name_resolution::SymbolKind::Definition)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::ExternStatic(extern_static)),
-      definition_key: self.cache.create_unique_id(),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -703,7 +703,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       symbol: Some((name, name_resolution::SymbolKind::Type)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::TypeAlias(type_alias)),
-      definition_key: self.cache.create_unique_id(),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -757,7 +757,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       symbol: Some((name, name_resolution::SymbolKind::Definition)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::LetStmt(let_stmt)),
-      definition_key: self.cache.create_unique_id(),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -1239,7 +1239,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       symbol: Some((name, name_resolution::SymbolKind::Type)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::Enum(enum_)),
-      definition_key: self.cache.create_unique_id(),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -1275,7 +1275,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       symbol: Some((name, name_resolution::SymbolKind::Type)),
       node_ref_cell: cache::create_cached_node(ast::NodeKind::StructType(struct_type)),
-      definition_key: self.cache.create_unique_id(),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -1339,7 +1339,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Definition {
       symbol: None,
       node_ref_cell: cache::create_cached_node(ast::NodeKind::Closure(closure)),
-      definition_key: self.cache.create_unique_id(),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 }

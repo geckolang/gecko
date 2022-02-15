@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, type_check::TypeCheck};
+use crate::{ast, cache, diagnostic};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
@@ -78,11 +78,6 @@ impl Resolve for ast::Closure {
     // before or after the return type is possibly inferred?
     resolver.relative_scopes = relative_scopes_cache;
 
-    // Infer the prototype's return value, if it was omitted by the user.
-    if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(self.body.infer_type(cache));
-    }
-
     self.prototype.resolve(resolver, cache);
   }
 }
@@ -142,12 +137,13 @@ impl Resolve for ast::Prototype {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for parameter in &self.parameters {
       // Create and process an anonymous definition per-parameter.
+      let key = cache.create_unique_id();
       ast::Definition {
         symbol: Some((parameter.0.clone(), SymbolKind::Definition)),
         // TODO: Cloning parameter.
         node_ref_cell: cache::create_cached_node(ast::NodeKind::Parameter(parameter.clone())),
         // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
-        definition_key: cache.create_unique_id(),
+        unique_id: key,
       }
       .declare(resolver, cache);
     }
@@ -281,11 +277,8 @@ impl Resolve for ast::LetStmt {
     self.value.kind.resolve(resolver, cache);
 
     // If the type was explicitly given, proceed to resolve it.
-    // Otherwise, infer the type from the resolved value.
     if let Some(ty) = &mut self.ty {
       ty.resolve(resolver, cache);
-    } else {
-      self.ty = Some(self.value.kind.infer_type(cache));
     }
   }
 }
@@ -331,13 +324,16 @@ impl Resolve for ast::Literal {
 
 impl Resolve for ast::Function {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    resolver.push_scope();
-    self.prototype.declare(resolver, cache);
+    // FIXME: [!] Revise: Ensure the order is correct (test nested parameter, references, etc.).
 
-    // NOTE: The scope tree won't be overwritten by the block's scope tree,
-    // instead they will be merged, as expected.
+    // Parameter scope.
+    resolver.push_scope();
+
+    // NOTE: The scope tree won't be overwritten by the block's, nor the
+    // prototype's scope tree, instead they will be merged, as expected.
     resolver.register_scope_tree(self.body.unique_id);
 
+    self.prototype.declare(resolver, cache);
     self.body.declare(resolver, cache);
   }
 
@@ -350,26 +346,9 @@ impl Resolve for ast::Function {
     // TODO: Do we need scope management here, for the prototype's parameters?
     self.prototype.resolve(resolver, cache);
 
-    // Infer the prototype's return value, if it was omitted by the user. It is
-    // important that this is done after the prototype is resolved, otherwise
-    // parameter references will cause unwrap errors.
-    if self.prototype.return_type.is_none() {
-      // FIXME: [!!] During the inference, if we have a non-existent reference, there's no guards
-      // to stop attempting to retrieve an undeclared definition from the cache.
-      // So, what will happen is that there will be an access error and no proper diagnostic emitted.
-      // This bug can be replicated by simply having a function's return type be inferred, then attempting
-      // to reference an invalid symbol. A panic will be thrown instead of a proper diagnostic. Find out
-      // how to address this bug.
-      self.prototype.return_type = Some(self.body.infer_type(cache));
+    if let Some(return_type) = &mut self.prototype.return_type {
+      return_type.resolve(resolver, cache);
     }
-
-    // After the return type has been inferred, we can proceed to resolve it.
-    self
-      .prototype
-      .return_type
-      .as_mut()
-      .unwrap()
-      .resolve(resolver, cache);
 
     // Finally, after both the prototype and its return type have been resolved,
     // proceed to resolve the body.
@@ -398,11 +377,11 @@ impl Resolve for ast::Definition {
       }
 
       // Bind the symbol to the current scope for name resolution lookup.
-      resolver.bind(symbol.clone(), self.definition_key);
+      resolver.bind(symbol.clone(), self.unique_id);
     }
 
     // Register the node on the cache for lowering lookup.
-    cache.bind(self.definition_key, std::rc::Rc::clone(&self.node_ref_cell));
+    cache.bind(self.unique_id, std::rc::Rc::clone(&self.node_ref_cell));
 
     self.node_ref_cell.borrow_mut().declare(resolver, cache);
   }
@@ -413,6 +392,14 @@ impl Resolve for ast::Definition {
 }
 
 impl Resolve for ast::CallExpr {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    // Declare any possible `Definition` nodes in the arguments
+    // (such as inline closures, etc.).
+    for argument in &self.arguments {
+      argument.kind.declare(resolver, cache);
+    }
+  }
+
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.callee_expr.kind.resolve(resolver, cache);
 

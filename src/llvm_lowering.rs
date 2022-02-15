@@ -227,7 +227,13 @@ impl Lower for ast::AssignStmt {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.value.kind.lower(generator, cache).unwrap();
+
+    generator.assign_flag = true;
+
     let llvm_target = self.assignee_expr.kind.lower(generator, cache).unwrap();
+
+    // TODO: What if we overwrite a previous buffer? Maybe use a stack? Revise.
+    generator.assign_flag = false;
 
     generator
       .llvm_builder
@@ -380,9 +386,7 @@ impl Lower for ast::UnsafeBlockStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.0.lower(generator, cache);
-
-    None
+    self.0.lower(generator, cache)
   }
 }
 
@@ -625,6 +629,11 @@ impl Lower for ast::Reference {
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let llvm_value = generator.memoize_or_retrieve(target_key, cache, false);
+
+    // FIXME: Temporary hot-fix.
+    if matches!(*value_node, ast::NodeKind::LetStmt(_)) && generator.assign_flag {
+      return Some(llvm_value);
+    }
 
     // If the value is not a string, proceed to access it. Strings shouldn't
     // be accessed, otherwise they'd be demoted to `i8` which is a single
@@ -1218,11 +1227,11 @@ impl Lower for ast::Definition {
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
     if let ast::NodeKind::Function(_) = &*node {
-      generator.pending_function_definition_key = Some(self.definition_key);
+      generator.pending_function_definition_key = Some(self.unique_id);
     }
 
     // TODO: Is there a need to return a value for the main function? Even for `Definition`?
-    Some(generator.memoize_or_retrieve(self.definition_key, cache, true))
+    Some(generator.memoize_or_retrieve(self.unique_id, cache, true))
   }
 }
 
@@ -1265,6 +1274,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   print_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   mangle_counter: usize,
+  assign_flag: bool,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -1287,6 +1297,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       panic_function_cache: None,
       print_function_cache: None,
       mangle_counter: 0,
+      assign_flag: false,
     }
   }
 

@@ -377,7 +377,7 @@ pub struct UnaryExpr {
 pub struct Definition {
   pub symbol: Option<name_resolution::Symbol>,
   pub node_ref_cell: cache::CachedNode,
-  pub definition_key: cache::UniqueId,
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]
