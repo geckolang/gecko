@@ -90,7 +90,7 @@ impl Resolve for ast::TypeAlias {
 
 // TODO: This might be getting too complicated. Maybe we should keep it simple in this case?
 impl Resolve for ast::Pattern {
-  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: Consider extending this as a function of `Pattern` (via `impl`).
     let symbol = (self.base_name.clone(), self.symbol_kind.clone());
 
@@ -103,6 +103,43 @@ impl Resolve for ast::Pattern {
 
     if let Some(target_key) = lookup_result {
       self.target_key = Some(target_key.clone());
+
+      // TODO: Will this work for all cases? Ex. will there be a case where the target hasn't been resolved yet?
+      if !self.member_path.is_empty() {
+        let mut member_field_queue = vec![self.member_path.first_mut().unwrap()];
+
+        // TODO: What if it hasn't been resolved by now?
+        let cached_struct_value_node = cache.force_get(&self.target_key.unwrap());
+
+        let last_struct_value = match &*cached_struct_value_node {
+          ast::NodeKind::StructValue(struct_value) => struct_value,
+          ast::NodeKind::LetStmt(let_stmt) => match &let_stmt.value.as_ref().kind {
+            ast::NodeKind::StructValue(struct_value) => struct_value,
+            _ => unreachable!(),
+          },
+          _ => unreachable!(),
+        };
+
+        let cached_struct_type_node = cache.force_get(&last_struct_value.target_key.unwrap());
+
+        // TODO: What if it hasn't been resolved by now?
+        let mut last_struct_type = match &*cached_struct_type_node {
+          ast::NodeKind::StructType(struct_type) => struct_type,
+          _ => unreachable!(),
+        };
+
+        while let Some(next_member_field) = member_field_queue.pop() {
+          let index = last_struct_type
+            .fields
+            .iter()
+            .position(|x| x.0 == &next_member_field.0)
+            .unwrap();
+
+          next_member_field.1 = Some(index as u32);
+
+          // TODO: Continue implementation.
+        }
+      }
     } else {
       resolver.produce_lookup_error(&symbol.0);
     }
@@ -528,8 +565,8 @@ impl NameResolver {
   /// Register a name on the last scope for name resolution lookups.
   ///
   /// If there are no relative scopes, the symbol is registered in the global scope.
-  fn bind(&mut self, symbol: Symbol, definition_key: cache::UniqueId) {
-    self.get_current_scope().insert(symbol, definition_key);
+  fn bind(&mut self, symbol: Symbol, unique_id: cache::UniqueId) {
+    self.get_current_scope().insert(symbol, unique_id);
   }
 
   fn produce_lookup_error(&mut self, name: &String) {
@@ -548,8 +585,8 @@ impl NameResolver {
 
     // First attempt to find the symbol in the relative scopes.
     for scope in scope_tree {
-      if let Some(definition_key) = scope.get(&symbol) {
-        return Some(definition_key);
+      if let Some(unique_id) = scope.get(&symbol) {
+        return Some(unique_id);
       }
     }
 
@@ -559,16 +596,16 @@ impl NameResolver {
       .get(self.current_module_name.as_ref().unwrap())
       .unwrap();
 
-    if let Some(definition_key) = global_scope.get(&symbol) {
-      return Some(definition_key);
+    if let Some(unique_id) = global_scope.get(&symbol) {
+      return Some(unique_id);
     }
 
     None
   }
 
   fn relative_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::UniqueId> {
-    if let Some(definition_key) = self.relative_lookup(symbol) {
-      return Some(definition_key.clone());
+    if let Some(unique_id) = self.relative_lookup(symbol) {
+      return Some(unique_id.clone());
     }
 
     self.produce_lookup_error(&symbol.0);

@@ -146,7 +146,10 @@ pub struct CallableType {
 pub struct Pattern {
   pub module_name: Option<String>,
   pub base_name: String,
-  pub member_path: Vec<String>,
+  /// A list of pairs containing both the name and index
+  /// position of nested structs and their fields. These
+  /// indexes will be filled out during name resolution.
+  pub member_path: Vec<(String, Option<u32>)>,
   pub symbol_kind: name_resolution::SymbolKind,
   pub target_key: Option<cache::UniqueId>,
 }
@@ -168,7 +171,9 @@ impl ToString for Pattern {
   fn to_string(&self) -> String {
     // TODO: Missing the module name.
     // TODO: Hard-coded character.
-    self.base_name.clone() + self.member_path.join(".").as_str()
+    // TODO: Properly implement. Also, consider if this is even needed. If not, remove this trait implementation.
+    // self.base_name.clone() + self.member_path.join(".").as_str()
+    String::from("pending_implementation")
   }
 }
 
@@ -182,6 +187,8 @@ pub struct StubType {
 pub struct StructValue {
   pub name: String,
   pub fields: Vec<Node>,
+  /// A unique id targeting the struct value's type. Resolved
+  /// during name resolution.
   pub target_key: Option<cache::UniqueId>,
 }
 

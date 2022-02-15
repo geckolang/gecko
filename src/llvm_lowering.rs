@@ -38,7 +38,7 @@ impl Lower for ast::Closure {
     let mut modified_prototype = self.prototype.clone();
 
     for (index, capture) in self.captures.iter().enumerate() {
-      let capture_node = cache.get(&capture.1.unwrap());
+      let capture_node = cache.force_get(&capture.1.unwrap());
       let capture_node_type = (&*capture_node).infer_type(cache);
       let computed_parameter_index = self.prototype.parameters.len() as usize + index;
 
@@ -271,7 +271,9 @@ impl Lower for ast::ArrayIndexing {
       .into_int_value();
 
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
-    let llvm_target_array = generator.memoize_or_retrieve(self.target_key.unwrap(), cache, false);
+    let llvm_target_array = generator
+      .memoize_or_retrieve(self.target_key.unwrap(), cache, false)
+      .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
     unsafe {
@@ -628,11 +630,31 @@ impl Lower for ast::Reference {
 
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
-    let llvm_value = generator.memoize_or_retrieve(target_key, cache, false);
+    let mut llvm_value = generator
+      .memoize_or_retrieve(target_key, cache, false)
+      .unwrap();
 
     // FIXME: Temporary hot-fix.
     if matches!(*value_node, ast::NodeKind::LetStmt(_)) && generator.assign_flag {
       return Some(llvm_value);
+    }
+
+    let mut access_path = self.0.member_path.clone();
+
+    // If there's any member access present, we assume that the value
+    // is a struct, and therefore an LLVM pointer value.
+    while let Some(field) = access_path.pop() {
+      // FIXME: [!!] Bug: Sometimes, the index is the wrong one. This is because for some reason the lowered struct type index order changes every X build. Find what's causing this and how to fix it.
+
+      llvm_value = generator
+        .llvm_builder
+        .build_struct_gep(
+          llvm_value.into_pointer_value(),
+          field.1.unwrap(),
+          format!("struct.field.{}.gep", field.0).as_str(),
+        )
+        .unwrap()
+        .as_basic_value_enum();
     }
 
     // If the value is not a string, proceed to access it. Strings shouldn't
@@ -945,7 +967,7 @@ impl Lower for ast::Function {
     // FIXME: Still getting stack-overflow errors when using recursive functions (specially multiple of them at the same time). Investigate whether that's caused here or elsewhere.
     // Manually cache the function now to allow for recursive function calls.
     generator.llvm_cached_values.insert(
-      generator.pending_function_definition_key.unwrap(),
+      generator.pending_function_unique_id.unwrap(),
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
@@ -1227,11 +1249,11 @@ impl Lower for ast::Definition {
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
     if let ast::NodeKind::Function(_) = &*node {
-      generator.pending_function_definition_key = Some(self.unique_id);
+      generator.pending_function_unique_id = Some(self.unique_id);
     }
 
     // TODO: Is there a need to return a value for the main function? Even for `Definition`?
-    Some(generator.memoize_or_retrieve(self.unique_id, cache, true))
+    generator.memoize_or_retrieve(self.unique_id, cache, true)
   }
 }
 
@@ -1270,7 +1292,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   let_stmt_flag: Option<inkwell::values::PointerValue<'ctx>>,
   /// The definition key of the function currently being emitted (if any).
   /// Used to be able to handle recursive calls.
-  pending_function_definition_key: Option<cache::UniqueId>,
+  pending_function_unique_id: Option<cache::UniqueId>,
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   print_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   mangle_counter: usize,
@@ -1293,7 +1315,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       current_loop_block: None,
       return_expects_access: false,
       let_stmt_flag: None,
-      pending_function_definition_key: None,
+      pending_function_unique_id: None,
       panic_function_cache: None,
       print_function_cache: None,
       mangle_counter: 0,
@@ -1328,7 +1350,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   /// Mangle a name with an unique counter to avoid name collisions.
   fn mangle_name(&mut self, name: &String) -> String {
-    // TODO: Consider using the `definition_key` instead?
+    // TODO: Consider using the `unique_id` instead?
     // NOTE: The current module name isn't used because it's not guaranteed to be the
     // active module when the definition is memoized (for example, inter-module function
     // calls).
@@ -1530,7 +1552,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         }
 
         // Otherwise, lower and cache the target type.
-        let cached_type_node = cache.get(&target_key);
+        let cached_type_node = cache.force_get(&target_key);
 
         let llvm_type = match &*cached_type_node {
           ast::NodeKind::StructType(struct_type) => self
@@ -1655,24 +1677,22 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   /// otherwise they will all be restored.
   fn memoize_or_retrieve(
     &mut self,
-    definition_key: cache::UniqueId,
+    unique_id: cache::UniqueId,
     cache: &cache::Cache,
     forward_buffers: bool,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // If the definition has been cached previously, simply retrieve it.
-    if self.llvm_cached_values.contains_key(&definition_key) {
+    if let Some(existing_definition) = self.llvm_cached_values.get(&unique_id) {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
-      return self
-        .llvm_cached_values
-        .get(&definition_key)
-        .unwrap()
-        .clone();
+      return Some(existing_definition.clone());
     }
 
     let buffers = self.stash_buffers();
-    let llvm_value = cache.get(&definition_key).lower(self, cache).unwrap();
+    let llvm_value = cache.force_get(&unique_id).lower(self, cache);
 
-    self.llvm_cached_values.insert(definition_key, llvm_value);
+    if let Some(llvm_value) = llvm_value {
+      self.llvm_cached_values.insert(unique_id, llvm_value);
+    }
 
     // Restore buffers after processing, if requested.
     if !forward_buffers {

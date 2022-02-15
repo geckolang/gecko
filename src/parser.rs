@@ -232,7 +232,7 @@ impl<'a> Parser<'a> {
 
     while self.is(&lexer::TokenKind::SymbolDot) {
       self.skip();
-      member_path.push(self.parse_name()?);
+      member_path.push((self.parse_name()?, None));
     }
 
     Ok(ast::Pattern {
@@ -622,7 +622,7 @@ impl<'a> Parser<'a> {
   }
 
   // TODO: Why not build the `Definition` node here? We might require access to the `name` and `symbol_kind`, however.
-  /// {%function | %extern | %enum | %struct}
+  /// {%function | %extern_function | %extern_static | %type_alias | %enum | %struct_type}
   fn parse_top_level_node(&mut self) -> ParserResult<ast::NodeKind> {
     // TODO: Why not move this check into the `get()` method?
     if self.is_eof() {

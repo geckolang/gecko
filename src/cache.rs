@@ -7,33 +7,33 @@ pub type UniqueId = usize;
 pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::NodeKind>>;
 
 pub struct Cache {
-  key_counter: usize,
+  unique_id_counter: usize,
   pub declarations: std::collections::HashMap<UniqueId, CachedNode>,
 }
 
 impl Cache {
   pub fn new() -> Self {
     Self {
-      key_counter: 0,
+      unique_id_counter: 0,
       declarations: std::collections::HashMap::new(),
     }
   }
 
   // TODO: Use this function as a guide to ensure that nothing is looked up or inferred before its actually resolved. Within the type-checker.
-  pub fn get(&self, key: &UniqueId) -> Ref<'_, ast::NodeKind> {
+  pub fn force_get(&self, key: &UniqueId) -> Ref<'_, ast::NodeKind> {
     self.declarations.get(key).unwrap().as_ref().borrow()
   }
 
-  pub fn bind(&mut self, key: UniqueId, node: CachedNode) {
-    self.declarations.insert(key, node);
+  pub fn bind(&mut self, unique_id: UniqueId, node: CachedNode) {
+    self.declarations.insert(unique_id, node);
   }
 
   pub fn create_unique_id(&mut self) -> UniqueId {
-    let key = self.key_counter;
+    let unique_id = self.unique_id_counter;
 
-    self.key_counter += 1;
+    self.unique_id_counter += 1;
 
-    key
+    unique_id
   }
 }
 

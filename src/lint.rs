@@ -30,7 +30,7 @@ impl LintContext {
         continue;
       }
 
-      let function_or_extern_node = cache.get(&function_key);
+      let function_or_extern_node = cache.force_get(&function_key);
 
       let name = match &*function_or_extern_node {
         ast::NodeKind::Function(function) => &function.name,
@@ -50,7 +50,7 @@ impl LintContext {
         continue;
       }
 
-      let variable_def_node = cache.get(&variable_def_key);
+      let variable_def_node = cache.force_get(&variable_def_key);
 
       let name = match &*variable_def_node {
         ast::NodeKind::LetStmt(let_stmt) => &let_stmt.name,
