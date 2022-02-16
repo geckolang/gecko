@@ -28,6 +28,10 @@ impl Lower for ast::NodeKind {
   }
 }
 
+impl Lower for ast::MemberAccess {
+  //
+}
+
 impl Lower for ast::Closure {
   fn lower<'a, 'ctx>(
     &self,
@@ -161,16 +165,20 @@ impl Lower for ast::StructValue {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: If possible and practical, find a way to remove reliance on the generator's state.
+    let llvm_struct_type = generator.memoize_or_retrieve_type(self.target_key.unwrap(), cache);
 
-    // FIXME: This is invalid. Struct value might be used in a different context (non-declaration).
-    let struct_alloca_ptr = generator.let_stmt_flag.unwrap().clone();
+    let llvm_struct_alloca = generator.llvm_builder.build_alloca(
+      llvm_struct_type,
+      format!("struct.{}.alloca", self.name).as_str(),
+    );
 
     // Populate struct fields.
     for (index, field) in self.fields.iter().enumerate() {
       let struct_field_gep = generator
         .llvm_builder
         // TODO: Is this conversion safe?
-        .build_struct_gep(struct_alloca_ptr, index as u32, "struct.field.gep")
+        // TODO: Better name.
+        .build_struct_gep(llvm_struct_alloca, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
       let llvm_field_value = field.kind.lower(generator, cache).unwrap();
@@ -181,7 +189,14 @@ impl Lower for ast::StructValue {
         .build_store(struct_field_gep, llvm_field_value);
     }
 
-    Some(struct_alloca_ptr.as_basic_value_enum())
+    // FIXME: [!] Revise: Inconsistent. Deals with flag, also what about on the case of an assignment?
+    // If the array value is being directly assigned to a variable,
+    // return the alloca pointer. Otherwise, access the alloca.
+    Some(if generator.let_stmt_flag.is_some() {
+      llvm_struct_alloca.as_basic_value_enum()
+    } else {
+      generator.access(llvm_struct_alloca)
+    })
   }
 }
 
@@ -272,7 +287,7 @@ impl Lower for ast::ArrayIndexing {
 
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_array = generator
-      .memoize_or_retrieve(self.target_key.unwrap(), cache, false)
+      .memoize_or_retrieve_value(self.target_key.unwrap(), cache, false)
       .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
@@ -631,7 +646,7 @@ impl Lower for ast::Reference {
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let mut llvm_value = generator
-      .memoize_or_retrieve(target_key, cache, false)
+      .memoize_or_retrieve_value(target_key, cache, false)
       .unwrap();
 
     // FIXME: Temporary hot-fix.
@@ -1143,6 +1158,8 @@ impl Lower for ast::LetStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // FIXME: [!] If the child expression is directly a struct value, we don't need to allocate here. It's handled by its corresponding lower method.
+
     let ty = self.ty.as_ref().unwrap();
 
     // Special case if the value is a closure.
@@ -1156,6 +1173,10 @@ impl Lower for ast::LetStmt {
       return result;
     }
 
+    // FIXME: [!!] Bug: If we create a let-statement with a struct value as its value,
+    // we'll end up having two definitions of the same type. This is because the struct
+    // type isn't being memoized here, instead it's directly being lowered. Yet on the
+    // struct value's lowering implementation, the struct type is memoized or lowered first.
     let llvm_type = generator.lower_type(ty, cache);
 
     let llvm_alloca_ptr = generator
@@ -1253,7 +1274,7 @@ impl Lower for ast::Definition {
     }
 
     // TODO: Is there a need to return a value for the main function? Even for `Definition`?
-    generator.memoize_or_retrieve(self.unique_id, cache, true)
+    generator.memoize_or_retrieve_value(self.unique_id, cache, true)
   }
 }
 
@@ -1539,35 +1560,25 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
       // FIXME: Is this redundant (because of `UserDefined`)?
-      ast::Type::Struct(struct_type) => self
-        .lower_struct_type(struct_type, cache)
-        .as_basic_type_enum(),
+      ast::Type::Struct(struct_type) => {
+        let llvm_field_types = struct_type
+          .fields
+          .iter()
+          .map(|field| self.lower_type(&field.1, cache))
+          .collect::<Vec<_>>();
+
+        // TODO: Consider caching the struct type here?
+
+        let name = self.mangle_name(&format!("struct.{}", struct_type.name));
+        let llvm_struct_type = self.llvm_context.opaque_struct_type(name.as_str());
+
+        llvm_struct_type.set_body(llvm_field_types.as_slice(), false);
+
+        llvm_struct_type.as_basic_type_enum()
+      }
       // FIXME: Why not resolve the type if it is a stub type, then proceed to lower it?
       ast::Type::Stub(stub_type) => {
-        let target_key = stub_type.target_key.unwrap();
-
-        // If the type has been cached previously, simply retrieve it.
-        if let Some(llvm_cached_type) = self.llvm_cached_types.get(&target_key) {
-          return llvm_cached_type.clone();
-        }
-
-        // Otherwise, lower and cache the target type.
-        let cached_type_node = cache.force_get(&target_key);
-
-        let llvm_type = match &*cached_type_node {
-          ast::NodeKind::StructType(struct_type) => self
-            .lower_struct_type(struct_type, cache)
-            .as_basic_type_enum(),
-          ast::NodeKind::TypeAlias(type_alias) => {
-            // FIXME: Non-tail-recursive recursive call!
-            self.lower_type(&type_alias.ty, cache).as_basic_type_enum()
-          }
-          _ => unreachable!(),
-        };
-
-        self.llvm_cached_types.insert(target_key, llvm_type.clone());
-
-        llvm_type
+        self.memoize_or_retrieve_type(stub_type.target_key.unwrap(), cache)
       }
       ast::Type::Callable(callable_type) => {
         let prototype_parameters = callable_type
@@ -1632,25 +1643,30 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     .into_function_type()
   }
 
-  fn lower_struct_type(
+  fn memoize_or_retrieve_type(
     &mut self,
-    struct_type: &ast::StructType,
+    unique_id: cache::UniqueId,
     cache: &cache::Cache,
-  ) -> inkwell::types::StructType<'ctx> {
-    let llvm_field_types = struct_type
-      .fields
-      .iter()
-      .map(|field| self.lower_type(&field.1, cache))
-      .collect::<Vec<_>>();
+  ) -> inkwell::types::BasicTypeEnum<'ctx> {
+    if let Some(existing_definition) = self.llvm_cached_types.get(&unique_id) {
+      return existing_definition.clone();
+    }
 
-    // TODO: Consider caching the struct type here?
+    // TODO: Consider making a separate map for types in the cache.
 
-    let name = self.mangle_name(&format!("struct.{}", struct_type.name));
-    let llvm_struct_type = self.llvm_context.opaque_struct_type(name.as_str());
+    let node = cache.force_get(&unique_id);
 
-    llvm_struct_type.set_body(llvm_field_types.as_slice(), false);
+    let ty = match &*node {
+      ast::NodeKind::StructType(struct_type) => struct_type,
+      // TODO: Any more?
+      _ => unreachable!(),
+    };
 
-    llvm_struct_type
+    let llvm_type = self.lower_type(&ast::Type::Struct(ty.clone()), cache);
+
+    self.llvm_cached_types.insert(unique_id, llvm_type);
+
+    llvm_type
   }
 
   fn get_current_block(&self) -> inkwell::basic_block::BasicBlock<'ctx> {
@@ -1675,7 +1691,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   ///
   /// If specified, any modified buffers during the process will be kept,
   /// otherwise they will all be restored.
-  fn memoize_or_retrieve(
+  fn memoize_or_retrieve_value(
     &mut self,
     unique_id: cache::UniqueId,
     cache: &cache::Cache,

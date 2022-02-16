@@ -88,6 +88,10 @@ impl TypeCheck for ast::NodeKind {
   }
 }
 
+impl TypeCheck for ast::MemberAccess {
+  //
+}
+
 impl TypeCheck for ast::Closure {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let parameters = self

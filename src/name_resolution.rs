@@ -55,6 +55,10 @@ impl Resolve for ast::NodeKind {
   }
 }
 
+impl Resolve for ast::MemberAccess {
+  //
+}
+
 impl Resolve for ast::Closure {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // TODO: Here, captures should be force-declared.
@@ -198,7 +202,6 @@ impl Resolve for ast::StubType {
 
 impl Resolve for ast::StructValue {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    println!("resolve struct value");
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_key = resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
 

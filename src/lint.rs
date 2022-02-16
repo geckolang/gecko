@@ -87,6 +87,10 @@ impl Lint for ast::NodeKind {
   }
 }
 
+impl Lint for ast::MemberAccess {
+  //
+}
+
 impl Lint for ast::Closure {
   //
 }
@@ -206,20 +210,13 @@ impl Lint for ast::Definition {
     // TODO: Simplify. Abstract the map, then process.
     match node {
       ast::NodeKind::Function(_) => {
-        if !context
-          .function_references
-          .contains_key(&self.unique_id)
-        {
-          context
-            .function_references
-            .insert(self.unique_id, false);
+        if !context.function_references.contains_key(&self.unique_id) {
+          context.function_references.insert(self.unique_id, false);
         }
       }
       ast::NodeKind::LetStmt(_) => {
         // NOTE: Variable declarations always occur before their usage.
-        context
-          .variable_references
-          .insert(self.unique_id, false);
+        context.variable_references.insert(self.unique_id, false);
       }
       // TODO: Lint other definitions.
       _ => {}

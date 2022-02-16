@@ -1,4 +1,7 @@
-use crate::{ast, cache, diagnostic, lexer, name_resolution};
+use crate::{
+  ast::{self, MemberAccess},
+  cache, diagnostic, lexer, name_resolution,
+};
 
 // TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
 /// Determine the minimum bit-size in which a number can fit.
@@ -976,6 +979,18 @@ impl<'a> Parser<'a> {
     }
   }
 
+  // TODO: Make use-of, or dispose.
+  fn is_chain(&self) -> bool {
+    if self.is_eof() {
+      return false;
+    }
+
+    matches!(
+      self.force_get(),
+      lexer::TokenKind::SymbolDot | lexer::TokenKind::SymbolParenthesesL
+    )
+  }
+
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     let span_start = self.index;
 
@@ -1012,16 +1027,34 @@ impl<'a> Parser<'a> {
       span: self.close_span(span_start),
     };
 
-    // Parse a call expression chain, if applicable.
-    while self.is(&lexer::TokenKind::SymbolParenthesesL) {
-      // TODO: Simplify (DRY).
+    // Upgrade the node to a chain, if applicable.
+    while self.is_chain() {
+      let kind = match self.force_get() {
+        lexer::TokenKind::SymbolParenthesesL => {
+          ast::NodeKind::CallExpr(self.parse_call_expr(node)?)
+        }
+        lexer::TokenKind::SymbolDot => ast::NodeKind::MemberAccess(self.parse_member_access(node)?),
+        _ => unreachable!(),
+      };
+
+      // TODO: Simplify (DRY)?
       node = ast::Node {
-        kind: ast::NodeKind::CallExpr(self.parse_call_expr(node)?),
+        kind,
         span: self.close_span(span_start),
       };
     }
 
     Ok(node)
+  }
+
+  /// %expr '.' %name
+  fn parse_member_access(&mut self, base_expr: ast::Node) -> ParserResult<ast::MemberAccess> {
+    self.skip_past(&lexer::TokenKind::SymbolDot)?;
+
+    Ok(ast::MemberAccess {
+      base_expr: Box::new(base_expr),
+      member_name: self.parse_name()?,
+    })
   }
 
   /// {'+' | '-' | '*' | '/'}

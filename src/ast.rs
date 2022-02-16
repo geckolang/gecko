@@ -34,6 +34,7 @@ macro_rules! dispatch {
       ast::NodeKind::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -118,6 +119,7 @@ pub enum NodeKind {
   Pattern(Pattern),
   TypeAlias(TypeAlias),
   Closure(Closure),
+  MemberAccess(MemberAccess),
 }
 
 #[derive(Debug)]
@@ -141,6 +143,7 @@ pub struct CallableType {
   pub is_variadic: bool,
 }
 
+// FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
 #[derive(Debug)]
 pub struct Pattern {
@@ -389,6 +392,6 @@ pub struct Definition {
 
 #[derive(Debug)]
 pub struct MemberAccess {
-  pub scope_qualifier: Pattern,
-  pub target_key: Option<cache::UniqueId>,
+  pub base_expr: Box<Node>,
+  pub member_name: String,
 }
