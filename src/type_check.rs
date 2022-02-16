@@ -69,13 +69,6 @@ impl TypeCheckContext {
 }
 
 pub trait TypeCheck {
-  /// Fill-in any inferred types waiting to be resolved. This occurs
-  /// after name resolution, so all the types and expressions have been
-  /// both declared and resolved.
-  fn prelude(&mut self, _cache: &cache::Cache) {
-    //
-  }
-
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Unit
   }
@@ -86,10 +79,6 @@ pub trait TypeCheck {
 }
 
 impl TypeCheck for ast::NodeKind {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    dispatch!(self, TypeCheck::prelude, cache);
-  }
-
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     dispatch!(self, TypeCheck::type_check, type_context, cache);
   }
@@ -100,15 +89,6 @@ impl TypeCheck for ast::NodeKind {
 }
 
 impl TypeCheck for ast::Closure {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    // Infer the prototype's return value, if it was omitted by the user.
-    if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(self.body.infer_type(cache));
-    }
-
-    self.body.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let parameters = self
       .prototype
@@ -151,12 +131,6 @@ impl TypeCheck for ast::ExternStatic {
 }
 
 impl TypeCheck for ast::StructValue {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    for field in &mut self.fields {
-      field.kind.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let struct_type_node = cache.force_get(&self.target_key.unwrap());
 
@@ -230,10 +204,6 @@ impl TypeCheck for ast::StructType {
 }
 
 impl TypeCheck for ast::UnaryExpr {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.expr.kind.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let expr_type = self.expr.kind.infer_type(cache);
 
@@ -317,11 +287,6 @@ impl TypeCheck for ast::Enum {
 }
 
 impl TypeCheck for ast::AssignStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.assignee_expr.kind.prelude(cache);
-    self.value.kind.prelude(cache);
-  }
-
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: Need to unify the value and the target's type, as well as ensuring that the target is mutable.
 
@@ -373,10 +338,6 @@ impl TypeCheck for ast::ContinueStmt {
 }
 
 impl TypeCheck for ast::ArrayIndexing {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.index_expr.kind.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let target_array_variable = &*cache.force_get(&self.target_key.unwrap());
 
@@ -419,12 +380,6 @@ impl TypeCheck for ast::ArrayIndexing {
 }
 
 impl TypeCheck for ast::ArrayValue {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    for element in &mut self.elements {
-      element.kind.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // TODO: Temporary, until type-inference is implemented.
     // We assume that the length is `0` if the explicit type is provided, otherwise
@@ -466,10 +421,6 @@ impl TypeCheck for ast::ArrayValue {
 }
 
 impl TypeCheck for ast::UnsafeBlockStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.0.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.0.infer_type(cache)
   }
@@ -495,13 +446,6 @@ impl TypeCheck for ast::Parameter {
 }
 
 impl TypeCheck for ast::Block {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    // Invoke prelude for any let-statements.
-    for statement in &mut self.statements {
-      statement.kind.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // If the last expression isn't yielded, then the block's type
     // defaults to unit. If there's no statements on the block, the
@@ -533,7 +477,9 @@ impl TypeCheck for ast::Block {
 
 impl TypeCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    (&*cache).force_get(&self.0.unique_id.unwrap()).infer_type(cache)
+    (&*cache)
+      .force_get(&self.0.unique_id.unwrap())
+      .infer_type(cache)
   }
 }
 
@@ -552,15 +498,6 @@ impl TypeCheck for ast::Literal {
 }
 
 impl TypeCheck for ast::IfStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.condition.kind.prelude(cache);
-    self.then_block.prelude(cache);
-
-    if let Some(else_block) = &mut self.else_block {
-      else_block.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // Both branches must be present in order for a value
     // to possibly evaluate.
@@ -601,11 +538,6 @@ impl TypeCheck for ast::IfStmt {
 }
 
 impl TypeCheck for ast::BinaryExpr {
-  fn prelude(&mut self, _cache: &cache::Cache) {
-    self.left.kind.prelude(_cache);
-    self.right.kind.prelude(_cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     match self.operator {
       ast::OperatorKind::LessThan
@@ -672,10 +604,6 @@ impl TypeCheck for ast::BreakStmt {
 }
 
 impl TypeCheck for ast::Definition {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.node_ref_cell.borrow_mut().prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.node_ref_cell.borrow().infer_type(cache)
   }
@@ -695,10 +623,6 @@ impl TypeCheck for ast::Definition {
 }
 
 impl TypeCheck for ast::InlineExprStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.expr.kind.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.expr.kind.infer_type(cache)
   }
@@ -709,15 +633,6 @@ impl TypeCheck for ast::InlineExprStmt {
 }
 
 impl TypeCheck for ast::LetStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    // If the type was explicitly given, proceed to resolve it.
-    // Otherwise, infer the type from the resolved value.
-    if self.ty.is_none() {
-      // FIXME: Usage of inference. What if the value's type can only be inferred after ALL the symbols have been resolved?
-      self.ty = Some(self.value.kind.infer_type(cache));
-    }
-  }
-
   // FIXME: [!] This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.value.kind.infer_type(&cache)
@@ -738,12 +653,6 @@ impl TypeCheck for ast::LetStmt {
 }
 
 impl TypeCheck for ast::ReturnStmt {
-  fn prelude(&mut self, _cache: &cache::Cache) {
-    if let Some(value) = &mut self.value {
-      value.kind.prelude(_cache);
-    }
-  }
-
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let current_function_node = cache
       .declarations
@@ -801,15 +710,6 @@ impl TypeCheck for ast::ReturnStmt {
 }
 
 impl TypeCheck for ast::Function {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    // Infer the prototype's return value, if it was omitted by the user.
-    if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(self.body.infer_type(cache));
-    }
-
-    self.body.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.prototype.infer_type(cache)
   }
@@ -873,14 +773,6 @@ impl TypeCheck for ast::Function {
 }
 
 impl TypeCheck for ast::CallExpr {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.callee_expr.kind.prelude(cache);
-
-    for argument in &mut self.arguments {
-      argument.kind.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let callee_expr_type = self.callee_expr.kind.infer_type(cache);
 
@@ -983,14 +875,6 @@ impl TypeCheck for ast::CallExpr {
 }
 
 impl TypeCheck for ast::LoopStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    if let Some(condition) = &mut self.condition {
-      condition.kind.prelude(cache);
-    }
-
-    self.body.prelude(cache);
-  }
-
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
       if !TypeCheckContext::unify(

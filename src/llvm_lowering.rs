@@ -181,7 +181,7 @@ impl Lower for ast::StructValue {
         .build_store(struct_field_gep, llvm_field_value);
     }
 
-    None
+    Some(struct_alloca_ptr.as_basic_value_enum())
   }
 }
 
