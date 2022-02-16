@@ -624,7 +624,7 @@ impl Lower for ast::Reference {
     // FIXME: Verify that the logic for automatic access is correct in this function.
     // FIXME: When string variables are referenced, they are accessed and demoted to `i8`. This is a bug!
 
-    let target_key = self.0.target_key.unwrap();
+    let target_key = self.0.unique_id.unwrap();
     let value_node = cache.declarations.get(&target_key).unwrap().borrow();
     let value_node_type = value_node.infer_type(cache);
 

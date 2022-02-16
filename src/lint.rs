@@ -340,7 +340,7 @@ impl Lint for ast::Reference {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
     context
       .variable_references
-      .insert(self.0.target_key.unwrap(), true);
+      .insert(self.0.unique_id.unwrap(), true);
   }
 }
 

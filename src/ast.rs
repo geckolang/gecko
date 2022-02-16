@@ -151,7 +151,7 @@ pub struct Pattern {
   /// indexes will be filled out during name resolution.
   pub member_path: Vec<(String, Option<u32>)>,
   pub symbol_kind: name_resolution::SymbolKind,
-  pub target_key: Option<cache::UniqueId>,
+  pub unique_id: Option<cache::UniqueId>,
 }
 
 impl Pattern {
@@ -161,7 +161,7 @@ impl Pattern {
       base_name,
       member_path: Vec::new(),
       symbol_kind,
-      target_key: None,
+      unique_id: None,
     }
   }
 }

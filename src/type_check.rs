@@ -342,7 +342,7 @@ impl TypeCheck for ast::AssignStmt {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match &self.assignee_expr.kind {
         ast::NodeKind::Reference(variable_ref) => {
-          let declaration = cache.force_get(&variable_ref.0.target_key.unwrap());
+          let declaration = cache.force_get(&variable_ref.0.unique_id.unwrap());
 
           match &*declaration {
             ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
@@ -533,7 +533,7 @@ impl TypeCheck for ast::Block {
 
 impl TypeCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    (&*cache).force_get(&self.0.target_key.unwrap()).infer_type(cache)
+    (&*cache).force_get(&self.0.unique_id.unwrap()).infer_type(cache)
   }
 }
 

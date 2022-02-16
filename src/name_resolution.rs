@@ -101,17 +101,21 @@ impl Resolve for ast::Pattern {
       _ => todo!(),
     };
 
-    if let Some(target_key) = lookup_result {
-      self.target_key = Some(target_key.clone());
+    if lookup_result.is_none() {
+      return resolver.produce_lookup_error(&symbol.0);
+    }
 
-      // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
-      // TODO: Will this work for all cases? Ex. will there be a case where the target hasn't been resolved yet?
-      if !self.member_path.is_empty() {
-        let mut member_field_queue = vec![self.member_path.first_mut().unwrap()];
+    self.unique_id = Some(lookup_result.unwrap().clone());
 
+    // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
+    // TODO: Will this work for all cases? Ex. will there be a case where the target hasn't been resolved yet?
+    if !self.member_path.is_empty() {
+      let mut member_field_queue = vec![self.member_path.first_mut().unwrap()];
+
+      let resolve_struct_type = |unique_id| {
         // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
         // TODO: What if it hasn't been resolved by now?
-        let cached_struct_value_node = cache.force_get(&self.target_key.unwrap());
+        let cached_struct_value_node = cache.force_get(unique_id);
 
         let last_struct_value = match &*cached_struct_value_node {
           ast::NodeKind::StructValue(struct_value) => struct_value,
@@ -126,25 +130,30 @@ impl Resolve for ast::Pattern {
 
         // TODO: What if it hasn't been resolved by now?
         // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
-        let mut last_struct_type = match &*cached_struct_type_node {
-          ast::NodeKind::StructType(struct_type) => struct_type,
-          _ => unreachable!(),
-        };
+        cached_struct_type_node
+      };
 
-        while let Some(next_member_field) = member_field_queue.pop() {
-          let index = last_struct_type
-            .fields
-            .iter()
-            .position(|x| x.0 == next_member_field.0)
-            .unwrap();
+      let struct_type_node = resolve_struct_type(&self.unique_id.unwrap());
 
-          next_member_field.1 = Some(index as u32);
+      let mut previous_struct_type = match &*struct_type_node {
+        ast::NodeKind::StructType(struct_type) => struct_type,
+        _ => unreachable!(),
+      };
 
-          // TODO: Continue implementation.
-        }
+      while let Some(next_member_field) = member_field_queue.pop() {
+        let index = previous_struct_type
+          .fields
+          .iter()
+          .position(|x| x.0 == next_member_field.0)
+          .unwrap();
+
+        next_member_field.1 = Some(index as u32);
+
+        // TODO: Continue implementation.
+        // previous_struct_type = cache
+        //   .force_get(&previous_struct_type.fields[index].1.unwrap())
+        //   .unwrap();
       }
-    } else {
-      resolver.produce_lookup_error(&symbol.0);
     }
   }
 }
@@ -167,9 +176,14 @@ impl Resolve for ast::StubType {
 }
 
 impl Resolve for ast::StructValue {
-  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    println!("resolve struct value");
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_key = resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+
+    for field in self.fields.iter_mut() {
+      field.kind.resolve(resolver, cache);
+    }
   }
 }
 
@@ -203,8 +217,10 @@ impl Resolve for ast::StructType {
     // TODO: Implement?
   }
 
-  fn resolve(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
-    // TODO: Implement?
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    for field in &mut self.fields {
+      field.1.resolve(resolver, cache);
+    }
   }
 }
 

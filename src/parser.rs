@@ -240,7 +240,7 @@ impl<'a> Parser<'a> {
       base_name,
       member_path,
       symbol_kind,
-      target_key: None,
+      unique_id: None,
     })
   }
 
