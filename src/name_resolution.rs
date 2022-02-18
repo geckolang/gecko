@@ -39,24 +39,34 @@ impl Resolve for ast::Type {
   }
 }
 
-impl Resolve for ast::NodeKind {
+impl Resolve for ast::Node {
   // TODO: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    crate::dispatch!(self, Resolve::declare, resolver, cache);
+    crate::dispatch!(&self.kind, Resolve::declare, resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    crate::dispatch!(self, Resolve::resolve, resolver);
+    crate::dispatch!(&mut self.kind, Resolve::resolve, resolver);
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
-    crate::dispatch!(self, Resolve::post_resolve, cache);
+    crate::dispatch!(&mut self.kind, Resolve::post_resolve, cache);
+  }
+}
+
+impl Resolve for ast::StructImpl {
+  fn post_resolve(&mut self, cache: &cache::Cache) {
+    for method in &mut self.methods {
+      method.post_resolve(cache);
+    }
   }
 }
 
 impl Resolve for ast::MemberAccess {
-  //
+  fn resolve(&mut self, resolver: &mut NameResolver) {
+    self.base_expr.resolve(resolver);
+  }
 }
 
 impl Resolve for ast::Closure {
@@ -131,55 +141,55 @@ impl Resolve for ast::Pattern {
     self.unique_id = Some(lookup_result.unwrap().clone());
   }
 
-  fn post_resolve(&mut self, cache: &cache::Cache) {
+  fn post_resolve(&mut self, _cache: &cache::Cache) {
     // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
     // TODO: Will this work for all cases? Ex. will there be a case where the target hasn't been resolved yet?
-    if !self.member_path.is_empty() {
-      let mut member_field_queue = vec![self.member_path.first_mut().unwrap()];
+    // if !self.member_path.is_empty() {
+    //   let mut member_field_queue = vec![self.member_path.first_mut().unwrap()];
 
-      let resolve_struct_type = |unique_id| {
-        // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
-        // TODO: What if it hasn't been resolved by now?
-        let cached_struct_value_node = cache.force_get(unique_id);
+    //   let resolve_struct_type = |unique_id| {
+    //     // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
+    //     // TODO: What if it hasn't been resolved by now?
+    //     let cached_struct_value_node = cache.force_get(unique_id);
 
-        let last_struct_value = match &*cached_struct_value_node {
-          ast::NodeKind::StructValue(struct_value) => struct_value,
-          ast::NodeKind::LetStmt(let_stmt) => match &let_stmt.value.as_ref().kind {
-            ast::NodeKind::StructValue(struct_value) => struct_value,
-            _ => unreachable!(),
-          },
-          _ => unreachable!(),
-        };
+    //     let last_struct_value = match &*cached_struct_value_node {
+    //       ast::NodeKind::StructValue(struct_value) => struct_value,
+    //       ast::NodeKind::LetStmt(let_stmt) => match &let_stmt.value.as_ref().kind {
+    //         ast::NodeKind::StructValue(struct_value) => struct_value,
+    //         _ => unreachable!(),
+    //       },
+    //       _ => unreachable!(),
+    //     };
 
-        let cached_struct_type_node = cache.force_get(&last_struct_value.target_key.unwrap());
+    //     let cached_struct_type_node = cache.force_get(&last_struct_value.target_key.unwrap());
 
-        // TODO: What if it hasn't been resolved by now?
-        // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
-        cached_struct_type_node
-      };
+    //     // TODO: What if it hasn't been resolved by now?
+    //     // FIXME: Violating the guideline that we cannot use `.force_get()` on any name resolution phase.
+    //     cached_struct_type_node
+    //   };
 
-      let struct_type_node = resolve_struct_type(&self.unique_id.unwrap());
+    //   let struct_type_node = resolve_struct_type(&self.unique_id.unwrap());
 
-      let /*mut*/ previous_struct_type = match &*struct_type_node {
-        ast::NodeKind::StructType(struct_type) => struct_type,
-        _ => unreachable!(),
-      };
+    //   let /*mut*/ previous_struct_type = match &*struct_type_node {
+    //     ast::NodeKind::StructType(struct_type) => struct_type,
+    //     _ => unreachable!(),
+    //   };
 
-      while let Some(next_member_field) = member_field_queue.pop() {
-        let index = previous_struct_type
-          .fields
-          .iter()
-          .position(|x| x.0 == next_member_field.0)
-          .unwrap();
+    //   while let Some(next_member_field) = member_field_queue.pop() {
+    //     let index = previous_struct_type
+    //       .fields
+    //       .iter()
+    //       .position(|x| x.0 == next_member_field.0)
+    //       .unwrap();
 
-        next_member_field.1 = Some(index as u32);
+    //     next_member_field.1 = Some(index as u32);
 
-        // TODO: Continue implementation.
-        // previous_struct_type = cache
-        //   .force_get(&previous_struct_type.fields[index].1.unwrap())
-        //   .unwrap();
-      }
-    }
+    //     // TODO: Continue implementation.
+    //     // previous_struct_type = cache
+    //     //   .force_get(&previous_struct_type.fields[index].1.unwrap())
+    //     //   .unwrap();
+    //   }
+    // }
   }
 }
 
@@ -203,16 +213,17 @@ impl Resolve for ast::StubType {
 impl Resolve for ast::StructValue {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_key = resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+    self.target_key =
+      resolver.relative_lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
 
     for field in self.fields.iter_mut() {
-      field.kind.resolve(resolver);
+      field.resolve(resolver);
     }
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
     for field in &mut self.fields {
-      field.kind.post_resolve(cache);
+      field.post_resolve(cache);
     }
   }
 }
@@ -224,7 +235,12 @@ impl Resolve for ast::Prototype {
       ast::Definition {
         symbol: Some((parameter.0.clone(), SymbolKind::Definition)),
         // TODO: Cloning parameter.
-        node_ref_cell: cache::create_cached_node(ast::NodeKind::Parameter(parameter.clone())),
+        node_ref_cell: cache::create_cached_node(ast::Node {
+          kind: ast::NodeKind::Parameter(parameter.clone()),
+          // TODO: Span.
+          span: 0..0,
+          as_rvalue: false,
+        }),
         // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
         unique_id: cache.create_unique_id(),
       }
@@ -255,11 +271,11 @@ impl Resolve for ast::StructType {
 
 impl Resolve for ast::UnaryExpr {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.expr.kind.resolve(resolver);
+    self.expr.resolve(resolver);
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
-    self.expr.kind.post_resolve(cache);
+    self.expr.post_resolve(cache);
   }
 }
 
@@ -269,13 +285,13 @@ impl Resolve for ast::Enum {
 
 impl Resolve for ast::AssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.assignee_expr.kind.resolve(resolver);
-    self.value.kind.resolve(resolver);
+    self.assignee_expr.resolve(resolver);
+    self.value.resolve(resolver);
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
-    self.assignee_expr.kind.post_resolve(cache);
-    self.value.kind.post_resolve(cache);
+    self.assignee_expr.post_resolve(cache);
+    self.value.post_resolve(cache);
   }
 }
 
@@ -285,27 +301,27 @@ impl Resolve for ast::ContinueStmt {
 
 impl Resolve for ast::ArrayIndexing {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.index_expr.kind.resolve(resolver);
+    self.index_expr.resolve(resolver);
 
     self.target_key =
       resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Definition));
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
-    self.index_expr.kind.post_resolve(cache);
+    self.index_expr.post_resolve(cache);
   }
 }
 
 impl Resolve for ast::ArrayValue {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     for element in &mut self.elements {
-      element.kind.resolve(resolver);
+      element.resolve(resolver);
     }
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
     for element in &mut self.elements {
-      element.kind.post_resolve(cache);
+      element.post_resolve(cache);
     }
   }
 }
@@ -341,7 +357,7 @@ impl Resolve for ast::BreakStmt {
 impl Resolve for ast::LoopStmt {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(condition) = &self.condition {
-      condition.kind.declare(resolver, cache);
+      condition.declare(resolver, cache);
     }
 
     self.body.declare(resolver, cache);
@@ -349,7 +365,7 @@ impl Resolve for ast::LoopStmt {
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
     if let Some(condition) = &mut self.condition {
-      condition.kind.resolve(resolver);
+      condition.resolve(resolver);
     }
 
     self.body.resolve(resolver);
@@ -357,7 +373,7 @@ impl Resolve for ast::LoopStmt {
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
     if let Some(condition) = &mut self.condition {
-      condition.kind.post_resolve(cache);
+      condition.post_resolve(cache);
     }
 
     self.body.post_resolve(cache);
@@ -366,7 +382,7 @@ impl Resolve for ast::LoopStmt {
 
 impl Resolve for ast::IfStmt {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.condition.kind.declare(resolver, cache);
+    self.condition.declare(resolver, cache);
     self.then_block.declare(resolver, cache);
 
     if let Some(else_block) = &self.else_block {
@@ -375,7 +391,7 @@ impl Resolve for ast::IfStmt {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.condition.kind.resolve(resolver);
+    self.condition.resolve(resolver);
     self.then_block.resolve(resolver);
 
     if let Some(else_block) = &mut self.else_block {
@@ -384,7 +400,7 @@ impl Resolve for ast::IfStmt {
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
-    self.condition.kind.post_resolve(cache);
+    self.condition.post_resolve(cache);
     self.then_block.post_resolve(cache);
 
     if let Some(else_block) = &mut self.else_block {
@@ -395,11 +411,11 @@ impl Resolve for ast::IfStmt {
 
 impl Resolve for ast::LetStmt {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.value.kind.declare(resolver, cache);
+    self.value.declare(resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.value.kind.resolve(resolver);
+    self.value.resolve(resolver);
 
     // If the type was explicitly given, proceed to resolve it.
     if let Some(ty) = &mut self.ty {
@@ -412,7 +428,7 @@ impl Resolve for ast::LetStmt {
     // Otherwise, infer the type from the resolved value.
     if self.ty.is_none() {
       // FIXME: Usage of inference. What if the value's type can only be inferred after ALL the symbols have been resolved?
-      self.ty = Some(self.value.kind.infer_type(cache));
+      self.ty = Some(self.value.infer_type(cache));
     }
   }
 }
@@ -420,19 +436,19 @@ impl Resolve for ast::LetStmt {
 impl Resolve for ast::ReturnStmt {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(value) = &self.value {
-      value.kind.declare(resolver, cache);
+      value.declare(resolver, cache);
     }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
     if let Some(value) = &mut self.value {
-      value.kind.resolve(resolver);
+      value.resolve(resolver);
     }
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
     if let Some(value) = &mut self.value {
-      value.kind.post_resolve(cache);
+      value.post_resolve(cache);
     }
   }
 }
@@ -442,7 +458,7 @@ impl Resolve for ast::Block {
     resolver.push_scope();
 
     for statement in &self.statements {
-      statement.kind.declare(resolver, cache);
+      statement.declare(resolver, cache);
     }
 
     resolver.register_scope_tree(self.unique_id);
@@ -453,14 +469,14 @@ impl Resolve for ast::Block {
 
     // TODO:
     for statement in &mut self.statements {
-      statement.kind.resolve(resolver);
+      statement.resolve(resolver);
     }
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
     // Invoke prelude for any let-statements.
     for statement in &mut self.statements {
-      statement.kind.post_resolve(cache);
+      statement.post_resolve(cache);
     }
   }
 }
@@ -556,55 +572,55 @@ impl Resolve for ast::CallExpr {
     // Declare any possible `Definition` nodes in the arguments
     // (such as inline closures, etc.).
     for argument in &self.arguments {
-      argument.kind.declare(resolver, cache);
+      argument.declare(resolver, cache);
     }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.callee_expr.kind.resolve(resolver);
+    self.callee_expr.resolve(resolver);
 
     for argument in &mut self.arguments {
-      argument.kind.resolve(resolver);
+      argument.resolve(resolver);
     }
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
-    self.callee_expr.kind.post_resolve(cache);
+    self.callee_expr.post_resolve(cache);
 
     for argument in &mut self.arguments {
-      argument.kind.post_resolve(cache);
+      argument.post_resolve(cache);
     }
   }
 }
 
 impl Resolve for ast::InlineExprStmt {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.expr.kind.declare(resolver, cache);
+    self.expr.declare(resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.expr.kind.resolve(resolver);
+    self.expr.resolve(resolver);
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
-    self.expr.kind.post_resolve(cache);
+    self.expr.post_resolve(cache);
   }
 }
 
 impl Resolve for ast::BinaryExpr {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.left.kind.declare(resolver, cache);
-    self.right.kind.declare(resolver, cache);
+    self.left.declare(resolver, cache);
+    self.right.declare(resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.left.kind.resolve(resolver);
-    self.right.kind.resolve(resolver);
+    self.left.resolve(resolver);
+    self.right.resolve(resolver);
   }
 
   fn post_resolve(&mut self, cache: &cache::Cache) {
-    self.left.kind.post_resolve(cache);
-    self.right.kind.post_resolve(cache);
+    self.left.post_resolve(cache);
+    self.right.post_resolve(cache);
   }
 }
 

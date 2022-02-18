@@ -35,6 +35,7 @@ macro_rules! dispatch {
       ast::NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -78,6 +79,8 @@ pub enum Type {
   Stub(StubType),
   Callable(CallableType),
   Unit,
+  // FIXME: Implement logic to NEVER match/unify this type with anything (including itself!).
+  Error,
 }
 
 impl Type {
@@ -120,6 +123,7 @@ pub enum NodeKind {
   TypeAlias(TypeAlias),
   Closure(Closure),
   MemberAccess(MemberAccess),
+  StructImpl(StructImpl),
 }
 
 #[derive(Debug)]
@@ -127,6 +131,12 @@ pub struct Node {
   pub kind: NodeKind,
   // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
   pub span: diagnostic::Span,
+  /// Whether the node was used as an rvalue, and thus must be
+  /// internally accessed during the lowering step.
+  ///
+  /// This only applies to nodes that aren't natural values (such as
+  /// literals).
+  pub as_rvalue: bool,
 }
 
 #[derive(Debug)]
@@ -149,10 +159,6 @@ pub struct CallableType {
 pub struct Pattern {
   pub module_name: Option<String>,
   pub base_name: String,
-  /// A list of pairs containing both the name and index
-  /// position of nested structs and their fields. These
-  /// indexes will be filled out during name resolution.
-  pub member_path: Vec<(String, Option<u32>)>,
   pub symbol_kind: name_resolution::SymbolKind,
   pub unique_id: Option<cache::UniqueId>,
 }
@@ -162,7 +168,6 @@ impl Pattern {
     Pattern {
       module_name: None,
       base_name,
-      member_path: Vec::new(),
       symbol_kind,
       unique_id: None,
     }
@@ -188,11 +193,17 @@ pub struct StubType {
 
 #[derive(Debug)]
 pub struct StructValue {
-  pub name: String,
+  pub struct_name: String,
   pub fields: Vec<Node>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
   pub target_key: Option<cache::UniqueId>,
+}
+
+#[derive(Debug)]
+pub struct StructImpl {
+  pub struct_name: String,
+  pub methods: Vec<Definition>,
 }
 
 #[derive(Debug)]
@@ -244,6 +255,7 @@ pub struct Prototype {
   pub parameters: Vec<Parameter>,
   pub return_type: Option<Type>,
   pub is_variadic: bool,
+  pub accepts_instance: bool,
 }
 
 #[derive(Debug)]

@@ -1,11 +1,5 @@
 use crate::{ast, cache, diagnostic, llvm_lowering};
 
-pub trait Lint {
-  fn lint(&self, _cache: &mut cache::Cache, _context: &mut LintContext) {
-    //
-  }
-}
-
 pub struct LintContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   block_depth: usize,
@@ -32,7 +26,7 @@ impl LintContext {
 
       let function_or_extern_node = cache.force_get(&function_key);
 
-      let name = match &*function_or_extern_node {
+      let name = match &(&*function_or_extern_node).kind {
         ast::NodeKind::Function(function) => &function.name,
         ast::NodeKind::ExternFunction(extern_) => &extern_.name,
         _ => unreachable!(),
@@ -52,7 +46,7 @@ impl LintContext {
 
       let variable_def_node = cache.force_get(&variable_def_key);
 
-      let name = match &*variable_def_node {
+      let name = match &(&*variable_def_node).kind {
         ast::NodeKind::LetStmt(let_stmt) => &let_stmt.name,
         _ => unreachable!(),
       };
@@ -81,10 +75,21 @@ impl LintContext {
   }
 }
 
-impl Lint for ast::NodeKind {
-  fn lint(&self, cache: &mut cache::Cache, lint_context: &mut LintContext) {
-    crate::dispatch!(self, Lint::lint, cache, lint_context);
+pub trait Lint {
+  fn lint(&self, _cache: &mut cache::Cache, _context: &mut LintContext) {
+    //
   }
+}
+
+impl Lint for ast::Node {
+  fn lint(&self, cache: &mut cache::Cache, lint_context: &mut LintContext) {
+    // TODO: Here we have access to the node's metadata. Consider using some system to provide it to whatever needs it.
+    crate::dispatch!(&self.kind, Lint::lint, cache, lint_context);
+  }
+}
+
+impl Lint for ast::StructImpl {
+  //
 }
 
 impl Lint for ast::MemberAccess {
@@ -133,7 +138,7 @@ impl Lint for ast::StructType {
 
 impl Lint for ast::UnaryExpr {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
-    self.expr.kind.lint(cache, context);
+    self.expr.lint(cache, context);
   }
 }
 
@@ -143,22 +148,22 @@ impl Lint for ast::ArrayIndexing {
       .variable_references
       .insert(self.target_key.unwrap(), true);
 
-    self.index_expr.kind.lint(cache, context);
+    self.index_expr.lint(cache, context);
   }
 }
 
 impl Lint for ast::ArrayValue {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     for element in &self.elements {
-      element.kind.lint(cache, context);
+      element.lint(cache, context);
     }
   }
 }
 
 impl Lint for ast::BinaryExpr {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
-    self.left.kind.lint(cache, context);
-    self.right.kind.lint(cache, context);
+    self.left.lint(cache, context);
+    self.right.lint(cache, context);
   }
 }
 
@@ -188,7 +193,7 @@ impl Lint for ast::Block {
         did_return = true;
       }
 
-      statement.kind.lint(cache, context);
+      statement.lint(cache, context);
     }
 
     context.block_depth -= 1;
@@ -208,7 +213,7 @@ impl Lint for ast::Definition {
     let node = &*self.node_ref_cell.borrow();
 
     // TODO: Simplify. Abstract the map, then process.
-    match node {
+    match node.kind {
       ast::NodeKind::Function(_) => {
         if !context.function_references.contains_key(&self.unique_id) {
           context.function_references.insert(self.unique_id, false);
@@ -246,7 +251,7 @@ impl Lint for ast::Enum {
 
 impl Lint for ast::InlineExprStmt {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
-    self.expr.kind.lint(cache, context);
+    self.expr.lint(cache, context);
   }
 }
 
@@ -291,7 +296,7 @@ impl Lint for ast::IfStmt {
       else_block.lint(cache, context);
     }
 
-    self.condition.kind.lint(cache, context);
+    self.condition.lint(cache, context);
     self.then_block.lint(cache, context);
   }
 }
@@ -299,7 +304,7 @@ impl Lint for ast::IfStmt {
 impl Lint for ast::LetStmt {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     context.lint_name_casing("variable", &self.name, convert_case::Case::Snake);
-    self.value.kind.lint(cache, context);
+    self.value.lint(cache, context);
   }
 }
 
@@ -316,7 +321,7 @@ impl Lint for ast::Parameter {
 impl Lint for ast::ReturnStmt {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     if let Some(value) = &self.value {
-      value.kind.lint(cache, context);
+      value.lint(cache, context);
     }
   }
 }
@@ -329,7 +334,7 @@ impl Lint for ast::UnsafeBlockStmt {
 
 impl Lint for ast::AssignStmt {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
-    self.value.kind.lint(cache, context);
+    self.value.lint(cache, context);
   }
 }
 
@@ -344,7 +349,7 @@ impl Lint for ast::Reference {
 impl Lint for ast::LoopStmt {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     if let Some(condition) = &self.condition {
-      condition.kind.lint(cache, context);
+      condition.lint(cache, context);
     }
 
     self.body.lint(cache, context);
