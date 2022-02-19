@@ -726,6 +726,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::KeywordStruct => ast::NodeKind::Definition(self.parse_struct_type()?),
       lexer::TokenKind::KeywordType => ast::NodeKind::Definition(self.parse_type_alias()?),
       lexer::TokenKind::KeywordImpl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
+      lexer::TokenKind::KeywordTrait => ast::NodeKind::Definition(self.parse_trait()?),
       _ => return Err(self.expected("top-level construct")),
     };
 
@@ -1466,7 +1467,14 @@ impl<'a> Parser<'a> {
   fn parse_struct_impl(&mut self) -> ParserResult<ast::StructImpl> {
     self.skip_past(&lexer::TokenKind::KeywordImpl)?;
 
-    let struct_pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
+    let mut struct_pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
+    let mut trait_pattern = None;
+
+    if self.is(&lexer::TokenKind::KeywordFor) {
+      trait_pattern = Some(struct_pattern);
+      self.skip();
+      struct_pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
+    }
 
     self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
 
@@ -1486,8 +1494,47 @@ impl<'a> Parser<'a> {
     Ok(ast::StructImpl {
       // TODO: Support for trait specialization.
       is_default: false,
-      struct_pattern,
+      target_struct_pattern: struct_pattern,
+      trait_pattern,
       methods,
+    })
+  }
+
+  fn parse_trait(&mut self) -> ParserResult<ast::Definition> {
+    let span_start = self.index;
+
+    self.skip_past(&lexer::TokenKind::KeywordTrait)?;
+
+    let name = self.parse_name()?;
+
+    self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
+
+    let mut methods = Vec::new();
+
+    while self.until(&lexer::TokenKind::SymbolBraceR)? {
+      self.skip_past(&lexer::TokenKind::KeywordFn)?;
+
+      let method_name = self.parse_name()?;
+      let prototype = self.parse_prototype()?;
+
+      methods.push((method_name, prototype));
+    }
+
+    self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
+
+    let trait_node = ast::Node {
+      kind: ast::NodeKind::Trait(ast::Trait {
+        name: name.clone(),
+        methods,
+      }),
+      span: self.close_span(span_start),
+      as_rvalue: false,
+    };
+
+    Ok(ast::Definition {
+      symbol: Some((name, name_resolution::SymbolKind::Type)),
+      node_ref_cell: cache::create_cached_node(trait_node),
+      unique_id: self.cache.create_unique_id(),
     })
   }
 }

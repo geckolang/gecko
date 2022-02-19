@@ -28,6 +28,10 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::Trait {
+  //
+}
+
 impl Lower for ast::StructImpl {
   fn lower<'a, 'ctx>(
     &self,

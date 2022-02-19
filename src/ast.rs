@@ -36,6 +36,7 @@ macro_rules! dispatch {
       ast::NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -125,6 +126,7 @@ pub enum NodeKind {
   Closure(Closure),
   MemberAccess(MemberAccess),
   StructImpl(StructImpl),
+  Trait(Trait),
 }
 
 #[derive(Debug)]
@@ -209,8 +211,15 @@ pub struct StructValue {
 #[derive(Debug)]
 pub struct StructImpl {
   pub is_default: bool,
-  pub struct_pattern: Pattern,
+  pub target_struct_pattern: Pattern,
+  pub trait_pattern: Option<Pattern>,
   pub methods: Vec<Definition>,
+}
+
+#[derive(Debug)]
+pub struct Trait {
+  pub name: String,
+  pub methods: Vec<(String, Prototype)>,
 }
 
 #[derive(Debug)]

@@ -88,6 +88,10 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::Trait {
+  //
+}
+
 impl Lint for ast::StructImpl {
   //
 }

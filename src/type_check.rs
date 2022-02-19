@@ -105,12 +105,53 @@ impl TypeCheck for ast::Node {
   }
 }
 
+impl TypeCheck for ast::Trait {
+  // TODO: Implement.
+}
+
 impl TypeCheck for ast::StructImpl {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     type_context.in_impl = true;
 
     for method in &self.methods {
       method.type_check(type_context, cache);
+    }
+
+    let target_node = cache.force_get(&self.target_struct_pattern.target_id.unwrap());
+
+    // TODO: Cleanup.
+    if let ast::NodeKind::StructType(target_struct_type) = &target_node.kind {
+      if let Some(trait_pattern) = &self.trait_pattern {
+        let trait_node = cache.force_get(&trait_pattern.target_id.unwrap());
+
+        if let ast::NodeKind::Trait(trait_type) = &trait_node.kind {
+          for trait_method in &trait_type.methods {
+            let impl_method_result = self
+              .methods
+              .iter()
+              .find(|x| x.symbol.as_ref().unwrap().0 == trait_method.0);
+
+            if let Some(impl_method) = impl_method_result {
+              // TODO: Compare method prototypes.
+            } else {
+              type_context.diagnostic_builder.error(format!(
+                "required method `{}` not implemented",
+                trait_method.0
+              ));
+            }
+          }
+        } else {
+          type_context.diagnostic_builder.error(format!(
+            "cannot implement non-trait `{}`",
+            &trait_pattern.base_name
+          ));
+        }
+      }
+    } else {
+      type_context.diagnostic_builder.error(format!(
+        "cannot implement for a non-struct type `{}`",
+        self.target_struct_pattern.base_name
+      ));
     }
 
     type_context.in_impl = false;

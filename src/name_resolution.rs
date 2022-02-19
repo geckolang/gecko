@@ -56,6 +56,10 @@ impl Resolve for ast::Node {
   }
 }
 
+impl Resolve for ast::Trait {
+  // TODO: Implement.
+}
+
 impl Resolve for ast::ThisType {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     if let Some(this_type_id) = resolver.current_struct_type_id {
@@ -80,12 +84,16 @@ impl Resolve for ast::StructImpl {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.struct_pattern.resolve(resolver);
+    self.target_struct_pattern.resolve(resolver);
+
+    if let Some(trait_pattern) = &mut self.trait_pattern {
+      trait_pattern.resolve(resolver);
+    }
 
     // FIXME: [!] Investigate: We can't unwrap here because the lookup
     // might have failed. Is this done in other parts? Certain resolve methods
     // depend on other things being resolved already, this could be dangerous.
-    let struct_type_id_result = self.struct_pattern.target_id;
+    let struct_type_id_result = self.target_struct_pattern.target_id;
 
     if let Some(struct_type_id) = struct_type_id_result {
       resolver.current_struct_type_id = Some(struct_type_id);
@@ -99,7 +107,7 @@ impl Resolve for ast::StructImpl {
   }
 
   fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    resolver.current_struct_type_id = Some(self.struct_pattern.target_id.unwrap());
+    resolver.current_struct_type_id = Some(self.target_struct_pattern.target_id.unwrap());
 
     for method in &mut self.methods {
       method.post_resolve(resolver, cache);
@@ -108,7 +116,7 @@ impl Resolve for ast::StructImpl {
     resolver.current_struct_type_id = None;
 
     cache.add_struct_impl(
-      self.struct_pattern.target_id.unwrap(),
+      self.target_struct_pattern.target_id.unwrap(),
       self
         .methods
         .iter()
