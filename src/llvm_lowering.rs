@@ -29,7 +29,17 @@ impl Lower for ast::Node {
 }
 
 impl Lower for ast::StructImpl {
-  // TODO:
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    for method in &self.methods {
+      method.lower(generator, cache);
+    }
+
+    None
+  }
 }
 
 impl Lower for ast::MemberAccess {
@@ -72,7 +82,7 @@ impl Lower for ast::Closure {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let buffers = generator.stash_buffers();
+    let buffers = generator.copy_buffers();
     let mut modified_prototype = self.prototype.clone();
 
     for (index, capture) in self.captures.iter().enumerate() {
@@ -198,7 +208,7 @@ impl Lower for ast::StructValue {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: If possible and practical, find a way to remove reliance on the generator's state.
-    let llvm_struct_type = generator.memoize_or_retrieve_type(self.target_key.unwrap(), cache);
+    let llvm_struct_type = generator.memoize_or_retrieve_type(self.target_id.unwrap(), cache);
 
     let llvm_struct_alloca = generator.llvm_builder.build_alloca(
       llvm_struct_type,
@@ -320,7 +330,7 @@ impl Lower for ast::ArrayIndexing {
 
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_array = generator
-      .memoize_or_retrieve_value(self.target_key.unwrap(), cache, false)
+      .memoize_or_retrieve_value(self.target_id.unwrap(), cache, false)
       .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
@@ -674,7 +684,7 @@ impl Lower for ast::Reference {
 
     // FIXME: [!!] Investigate+Revise: What about if there's a nested reference? Will it be intercepted by the flag? Perhaps we can capture the flag here immediately? But wouldn't this affect the order of which reference is actually not lowered, ex. first one in `foo.bar`, which is incorrect?
     let llvm_target = generator
-      .memoize_or_retrieve_value(self.0.unique_id.unwrap(), cache, false)
+      .memoize_or_retrieve_value(self.0.target_id.unwrap(), cache, false)
       .unwrap();
 
     // FIXME: [!] Investigate+Revise: Usage of a flag may cause trouble if the buffer is modified several times.
@@ -1227,12 +1237,13 @@ impl Lower for ast::Definition {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let node = self.node_ref_cell.borrow();
+    let node_kind = &(&*node).kind;
 
     // FIXME: What about closures?
     // Set the pending function definition key to cache the function early.
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
-    if let ast::NodeKind::Function(_) = (&*node).kind {
+    if let ast::NodeKind::Function(_) = node_kind {
       generator.pending_function_unique_id = Some(self.unique_id);
     }
 
@@ -1306,7 +1317,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     inkwell::values::CallableValue::try_from(llvm_value.into_pointer_value()).is_ok()
   }
 
-  fn stash_buffers(&self) -> LlvmGeneratorBuffers<'ctx> {
+  fn copy_buffers(&self) -> LlvmGeneratorBuffers<'ctx> {
     LlvmGeneratorBuffers {
       current_loop_block: self.current_loop_block,
       return_expects_access: self.return_expects_access,
@@ -1536,7 +1547,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       }
       // FIXME: Why not resolve the type if it is a stub type, then proceed to lower it?
       ast::Type::Stub(stub_type) => {
-        self.memoize_or_retrieve_type(stub_type.target_key.unwrap(), cache)
+        self.memoize_or_retrieve_type(stub_type.target_id.unwrap(), cache)
       }
       ast::Type::Callable(callable_type) => {
         let prototype_parameters = callable_type
@@ -1561,6 +1572,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       }
       // TODO: Implement.
       ast::Type::Reference(_reference_type) => todo!(),
+      // FIXME: Implement.
+      ast::Type::This(this_type) => {
+        self.memoize_or_retrieve_type(this_type.target_id.unwrap(), cache)
+      }
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
       // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
       // NOTE: These types are never lowered.
@@ -1664,7 +1679,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       return Some(existing_definition.clone());
     }
 
-    let buffers = self.stash_buffers();
+    let buffers = self.copy_buffers();
     let llvm_value = cache.force_get(&unique_id).lower(self, cache);
 
     if let Some(llvm_value) = llvm_value {

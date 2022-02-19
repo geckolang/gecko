@@ -26,7 +26,7 @@ impl TypeCheckContext {
   pub fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
     // TODO: What if it's a pointer to a user-defined type?
     if let ast::Type::Stub(stub_type) = ty {
-      let target_type = cache.force_get(&stub_type.target_key.unwrap());
+      let target_type = cache.force_get(&stub_type.target_id.unwrap());
 
       return match &(&*target_type).kind {
         // TODO: Cloning struct type.
@@ -193,7 +193,7 @@ impl TypeCheck for ast::ExternStatic {
 
 impl TypeCheck for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type_node = cache.force_get(&self.target_key.unwrap());
+    let struct_type_node = cache.force_get(&self.target_id.unwrap());
 
     let struct_type = match &(&*struct_type_node).kind {
       ast::NodeKind::StructType(struct_type) => struct_type,
@@ -205,7 +205,7 @@ impl TypeCheck for ast::StructValue {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let struct_type_node = cache.force_get(&self.target_key.unwrap());
+    let struct_type_node = cache.force_get(&self.target_id.unwrap());
 
     let struct_type = match &(&*struct_type_node).kind {
       ast::NodeKind::StructType(struct_type) => struct_type,
@@ -384,7 +384,7 @@ impl TypeCheck for ast::AssignStmt {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match &self.assignee_expr.kind {
         ast::NodeKind::Reference(variable_ref) => {
-          let declaration = cache.force_get(&variable_ref.0.unique_id.unwrap());
+          let declaration = cache.force_get(&variable_ref.0.target_id.unwrap());
 
           match &(&*declaration).kind {
             ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
@@ -416,7 +416,7 @@ impl TypeCheck for ast::ContinueStmt {
 
 impl TypeCheck for ast::ArrayIndexing {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_array_variable = &*cache.force_get(&self.target_key.unwrap());
+    let target_array_variable = &*cache.force_get(&self.target_id.unwrap());
 
     let array_type = match &target_array_variable.kind {
       ast::NodeKind::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
@@ -563,7 +563,7 @@ impl TypeCheck for ast::Block {
 impl TypeCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     (&*cache)
-      .force_get(&self.0.unique_id.unwrap())
+      .force_get(&self.0.target_id.unwrap())
       .infer_type(cache)
   }
 }

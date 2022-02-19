@@ -146,7 +146,7 @@ impl Lint for ast::ArrayIndexing {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
     context
       .variable_references
-      .insert(self.target_key.unwrap(), true);
+      .insert(self.target_id.unwrap(), true);
 
     self.index_expr.lint(cache, context);
   }
@@ -342,7 +342,7 @@ impl Lint for ast::Reference {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
     context
       .variable_references
-      .insert(self.0.unique_id.unwrap(), true);
+      .insert(self.0.target_id.unwrap(), true);
   }
 }
 

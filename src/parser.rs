@@ -1,5 +1,7 @@
 use crate::{ast, cache, diagnostic, lexer, name_resolution};
 
+const THIS_IDENTIFIER: &str = "this";
+
 // TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
 /// Determine the minimum bit-size in which a number can fit.
 fn minimum_int_size_of(number: &u64) -> ast::IntSize {
@@ -232,7 +234,7 @@ impl<'a> Parser<'a> {
       module_name,
       base_name,
       symbol_kind,
-      unique_id: None,
+      target_id: None,
     })
   }
 
@@ -368,6 +370,13 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Primitive(ast::PrimitiveType::Bool))
   }
 
+  // TODO: Specialize return types of the `parse_type_x` functions to their actual types instead of the `ast::Type` enum wrapper?
+  fn parse_this_type(&mut self) -> ParserResult<ast::Type> {
+    self.skip_past(&lexer::TokenKind::TypeThis)?;
+
+    Ok(ast::Type::This(ast::ThisType { target_id: None }))
+  }
+
   /// '[' %type, 0-9+ ']'
   fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::SymbolBracketL)?;
@@ -404,6 +413,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::TypeBool => self.parse_bool_type(),
       lexer::TokenKind::Identifier(_) => self.parse_stub_type(),
       lexer::TokenKind::SymbolBracketL => self.parse_array_type(),
+      lexer::TokenKind::TypeThis => self.parse_this_type(),
       lexer::TokenKind::SymbolAsterisk => {
         self.skip();
 
@@ -458,7 +468,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Type::Stub(ast::StubType {
       name,
-      target_key: None,
+      target_id: None,
     }))
   }
 
@@ -483,9 +493,15 @@ impl<'a> Parser<'a> {
     let mut parameter_index_counter = 0;
     let mut accepts_instance = false;
 
-    if self.is(&lexer::TokenKind::KeywordThis) {
+    if self.is(&lexer::TokenKind::Identifier(THIS_IDENTIFIER.to_string())) {
       self.skip();
-      parameters.push(("this".to_string(), ast::Type::Unit, 0));
+
+      parameters.push((
+        THIS_IDENTIFIER.to_string(),
+        ast::Type::This(ast::ThisType { target_id: None }),
+        0,
+      ));
+
       parameter_index_counter += 1;
       accepts_instance = true;
 
@@ -978,7 +994,7 @@ impl<'a> Parser<'a> {
     Ok(ast::ArrayIndexing {
       name,
       index_expr: index,
-      target_key: None,
+      target_id: None,
     })
   }
 
@@ -1400,7 +1416,7 @@ impl<'a> Parser<'a> {
     Ok(ast::StructValue {
       struct_name,
       fields,
-      target_key: None,
+      target_id: None,
     })
   }
 
@@ -1445,7 +1461,7 @@ impl<'a> Parser<'a> {
   fn parse_struct_impl(&mut self) -> ParserResult<ast::StructImpl> {
     self.skip_past(&lexer::TokenKind::KeywordImpl)?;
 
-    let struct_name = self.parse_name()?;
+    let struct_pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
 
     self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
 
@@ -1463,7 +1479,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
 
     Ok(ast::StructImpl {
-      struct_name,
+      struct_pattern,
       methods,
     })
   }

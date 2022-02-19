@@ -78,6 +78,7 @@ pub enum Type {
   /// A type that may need to be resolved.
   Stub(StubType),
   Callable(CallableType),
+  This(ThisType),
   Unit,
   // FIXME: Implement logic to NEVER match/unify this type with anything (including itself!).
   Error,
@@ -153,6 +154,11 @@ pub struct CallableType {
   pub is_variadic: bool,
 }
 
+#[derive(PartialEq, Clone, Debug)]
+pub struct ThisType {
+  pub target_id: Option<cache::UniqueId>,
+}
+
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
 #[derive(Debug)]
@@ -160,7 +166,7 @@ pub struct Pattern {
   pub module_name: Option<String>,
   pub base_name: String,
   pub symbol_kind: name_resolution::SymbolKind,
-  pub unique_id: Option<cache::UniqueId>,
+  pub target_id: Option<cache::UniqueId>,
 }
 
 impl Pattern {
@@ -169,7 +175,7 @@ impl Pattern {
       module_name: None,
       base_name,
       symbol_kind,
-      unique_id: None,
+      target_id: None,
     }
   }
 }
@@ -188,7 +194,7 @@ impl ToString for Pattern {
 #[derive(PartialEq, Clone, Debug)]
 pub struct StubType {
   pub name: String,
-  pub target_key: Option<cache::UniqueId>,
+  pub target_id: Option<cache::UniqueId>,
 }
 
 #[derive(Debug)]
@@ -197,12 +203,12 @@ pub struct StructValue {
   pub fields: Vec<Node>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
-  pub target_key: Option<cache::UniqueId>,
+  pub target_id: Option<cache::UniqueId>,
 }
 
 #[derive(Debug)]
 pub struct StructImpl {
-  pub struct_name: String,
+  pub struct_pattern: Pattern,
   pub methods: Vec<Definition>,
 }
 
@@ -219,7 +225,7 @@ pub struct ContinueStmt;
 pub struct ArrayIndexing {
   pub name: String,
   pub index_expr: Box<Node>,
-  pub target_key: Option<cache::UniqueId>,
+  pub target_id: Option<cache::UniqueId>,
 }
 
 #[derive(Debug)]

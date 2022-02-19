@@ -33,6 +33,7 @@ impl Resolve for ast::Type {
       ast::Type::Stub(stub_type) => stub_type.resolve(resolver),
       ast::Type::Pointer(pointee_type) => pointee_type.resolve(resolver),
       ast::Type::Array(element_type, _) => element_type.resolve(resolver),
+      ast::Type::This(this_type) => this_type.resolve(resolver),
       // TODO: Are there any other types that may need to be resolved?
       _ => {}
     };
@@ -55,7 +56,48 @@ impl Resolve for ast::Node {
   }
 }
 
+impl Resolve for ast::ThisType {
+  fn resolve(&mut self, resolver: &mut NameResolver) {
+    if let Some(this_type_id) = resolver.this_type_id {
+      self.target_id = Some(this_type_id);
+    } else {
+      resolver
+        .diagnostic_builder
+        .error("type `This` cannot be used outside of a struct implementation".to_string());
+    }
+  }
+}
+
 impl Resolve for ast::StructImpl {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    resolver.push_scope();
+
+    for method in &self.methods {
+      method.declare(resolver, cache);
+    }
+
+    resolver.force_pop_scope();
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver) {
+    self.struct_pattern.resolve(resolver);
+
+    // FIXME: [!!] Investigate: We can't unwrap here because the lookup
+    // might have failed. Is this done in other parts? Certain resolve methods
+    // depend on other things being resolved already, this could be dangerous.
+    let struct_type_id_result = self.struct_pattern.target_id;
+
+    if let Some(struct_type_id) = struct_type_id_result {
+      resolver.this_type_id = Some(struct_type_id);
+
+      for method in &mut self.methods {
+        method.resolve(resolver);
+      }
+
+      resolver.this_type_id = None;
+    }
+  }
+
   fn post_resolve(&mut self, cache: &cache::Cache) {
     for method in &mut self.methods {
       method.post_resolve(cache);
@@ -126,19 +168,13 @@ impl Resolve for ast::Pattern {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     // TODO: Consider extending this as a function of `Pattern` (via `impl`).
     let symbol = (self.base_name.clone(), self.symbol_kind.clone());
-
-    let lookup_result = match self.symbol_kind {
-      SymbolKind::Definition => resolver.relative_lookup(&symbol),
-      // SymbolKind::Type => resolver.absolute_lookup(self),
-      // TODO: What else? Maybe `unreachable!()`?
-      _ => todo!(),
-    };
+    let lookup_result = resolver.relative_lookup(&symbol);
 
     if lookup_result.is_none() {
       return resolver.produce_lookup_error(&symbol.0);
     }
 
-    self.unique_id = Some(lookup_result.unwrap().clone());
+    self.target_id = Some(lookup_result.unwrap().clone());
   }
 
   fn post_resolve(&mut self, _cache: &cache::Cache) {
@@ -206,14 +242,14 @@ impl Resolve for ast::ExternStatic {
 impl Resolve for ast::StubType {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_key = resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+    self.target_id = resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
 impl Resolve for ast::StructValue {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_key =
+    self.target_id =
       resolver.relative_lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
 
     for field in self.fields.iter_mut() {
@@ -303,7 +339,7 @@ impl Resolve for ast::ArrayIndexing {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.index_expr.resolve(resolver);
 
-    self.target_key =
+    self.target_id =
       resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Definition));
   }
 
@@ -341,7 +377,9 @@ impl Resolve for ast::UnsafeBlockStmt {
 }
 
 impl Resolve for ast::Parameter {
-  //
+  fn resolve(&mut self, resolver: &mut NameResolver) {
+    self.1.resolve(resolver);
+  }
 }
 
 impl Resolve for ast::Reference {
@@ -630,14 +668,15 @@ pub struct NameResolver {
   /// Contains the modules with their respective top-level definitions.
   global_scopes: std::collections::HashMap<String, Scope>,
   /// Contains volatile, relative scopes. Only used during the declare step.
-  /// This is reset when the module changes, although by that time all the
+  /// This is reset when the module changes, although by that time, all the
   /// relative scopes should have been popped automatically.
   relative_scopes: Vec<Scope>,
-  /// A mapping of a block's unique key to its scope, and all visible parent
+  /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
   scope_map: std::collections::HashMap<cache::UniqueId, Vec<Scope>>,
-  /// The unique id of the current block. Used for the resolve step.
+  /// The unique id of the current block's scope. Used in the resolve step.
   current_block_unique_id: Option<cache::UniqueId>,
+  this_type_id: Option<cache::UniqueId>,
 }
 
 impl NameResolver {
@@ -649,6 +688,7 @@ impl NameResolver {
       relative_scopes: Vec::new(),
       scope_map: std::collections::HashMap::new(),
       current_block_unique_id: None,
+      this_type_id: None,
     }
   }
 
@@ -700,9 +740,9 @@ impl NameResolver {
 
   /// Force-pop the last scope off the relatives scopes stack, and create
   /// a scope tree. This tree will then be inserted into the scope map. If
-  /// an entry with the same block id already exists, the scope tree will
+  /// an entry with the same unique id already exists, the scope tree will
   /// be appended onto the existing definition.
-  fn register_scope_tree(&mut self, block_id: cache::UniqueId) {
+  fn register_scope_tree(&mut self, unique_id: cache::UniqueId) {
     let mut scope_tree = vec![self.force_pop_scope()];
 
     // Clone the relative scope tree.
@@ -711,11 +751,11 @@ impl NameResolver {
     let mut final_value_buffer = scope_tree;
 
     // Append to the existing definition, if applicable.
-    if self.scope_map.contains_key(&block_id) {
-      final_value_buffer.extend(self.scope_map.remove(&block_id).unwrap());
+    if self.scope_map.contains_key(&unique_id) {
+      final_value_buffer.extend(self.scope_map.remove(&unique_id).unwrap());
     }
 
-    self.scope_map.insert(block_id, final_value_buffer);
+    self.scope_map.insert(unique_id, final_value_buffer);
   }
 
   /// Register a name on the last scope for name resolution lookups.
