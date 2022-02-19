@@ -80,7 +80,7 @@ pub enum Type {
   Callable(CallableType),
   This(ThisType),
   Unit,
-  // FIXME: Implement logic to NEVER match/unify this type with anything (including itself!).
+  // FIXME: [!!] Investigate: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
   Error,
 }
 
@@ -208,6 +208,7 @@ pub struct StructValue {
 
 #[derive(Debug)]
 pub struct StructImpl {
+  pub is_default: bool,
   pub struct_pattern: Pattern,
   pub methods: Vec<Definition>,
 }
@@ -262,6 +263,8 @@ pub struct Prototype {
   pub return_type: Option<Type>,
   pub is_variadic: bool,
   pub accepts_instance: bool,
+  pub instance_type_id: Option<cache::UniqueId>,
+  pub this_parameter: Option<Parameter>,
 }
 
 #[derive(Debug)]
@@ -309,6 +312,7 @@ pub struct ReturnStmt {
 #[derive(Debug)]
 pub struct LetStmt {
   pub name: String,
+  // TODO: Since there's no use for explicit type, simply assume its always inferred. Same for prototype return types.
   pub ty: Option<Type>,
   pub value: Box<Node>,
   pub is_mutable: bool,
@@ -351,6 +355,7 @@ pub struct IntrinsicCall {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructType {
+  pub unique_id: cache::UniqueId,
   pub name: String,
   pub fields: Vec<(String, Type)>,
 }

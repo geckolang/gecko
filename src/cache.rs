@@ -9,6 +9,7 @@ pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::Node>>;
 pub struct Cache {
   unique_id_counter: usize,
   pub declarations: std::collections::HashMap<UniqueId, CachedNode>,
+  pub struct_impls: std::collections::HashMap<UniqueId, Vec<(UniqueId, String)>>,
 }
 
 impl Cache {
@@ -16,6 +17,7 @@ impl Cache {
     Self {
       unique_id_counter: 0,
       declarations: std::collections::HashMap::new(),
+      struct_impls: std::collections::HashMap::new(),
     }
   }
 
@@ -34,6 +36,23 @@ impl Cache {
     self.unique_id_counter += 1;
 
     unique_id
+  }
+
+  /// Retrieve any existing implementations for a given struct type.
+  ///
+  /// If there are none, an empty vector will be returned instead.
+  pub fn get_struct_impls(&self, struct_unique_id: &UniqueId) -> Option<&Vec<(UniqueId, String)>> {
+    self.struct_impls.get(struct_unique_id)
+  }
+
+  pub fn add_struct_impl(&mut self, struct_unique_id: UniqueId, methods: Vec<(UniqueId, String)>) {
+    if let Some(existing_impls) = self.struct_impls.get_mut(&struct_unique_id) {
+      existing_impls.extend(methods);
+
+      return;
+    }
+
+    self.struct_impls.insert(struct_unique_id, methods);
   }
 }
 

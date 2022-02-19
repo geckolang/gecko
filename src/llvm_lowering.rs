@@ -35,7 +35,7 @@ impl Lower for ast::StructImpl {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for method in &self.methods {
-      method.lower(generator, cache);
+      method.lower(generator, cache).unwrap();
     }
 
     None
@@ -55,24 +55,37 @@ impl Lower for ast::MemberAccess {
       .into_pointer_value();
 
     // TODO: Should we reposition this to the name resolution step (post-resolve), and include a `Option<u32>` index field in `MemberAccess`?
-    let struct_type = match self.base_expr.infer_type(cache) {
+    let struct_type = match TypeCheckContext::resolve_type(&self.base_expr.infer_type(cache), cache)
+    {
       ast::Type::Struct(struct_type) => struct_type,
+      // FIXME: What about `This` type? Parameter `this` is of `This` type.
       _ => unreachable!(),
     };
 
-    let member_index = struct_type
+    // First, check if its a field.
+    if let Some(field_index) = struct_type
       .fields
       .iter()
       .position(|x| x.0 == self.member_name)
+    {
+      return Some(
+        generator
+          .llvm_builder
+          .build_struct_gep(llvm_struct, field_index as u32, "struct.member.gep")
+          .unwrap()
+          .as_basic_value_enum(),
+      );
+    }
+
+    // Otherwise, it must be a method.
+    let impl_method_info = cache
+      .get_struct_impls(&struct_type.unique_id)
+      .unwrap()
+      .iter()
+      .find(|x| x.1 == self.member_name)
       .unwrap();
 
-    let llvm_member = generator
-      .llvm_builder
-      .build_struct_gep(llvm_struct, member_index as u32, "struct.member.gep")
-      .unwrap()
-      .as_basic_value_enum();
-
-    Some(llvm_member)
+    generator.memoize_or_retrieve_value(impl_method_info.0, cache, false)
   }
 }
 
@@ -978,11 +991,17 @@ impl Lower for ast::Function {
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
-    assert_eq!(
-      llvm_function.count_params(),
-      self.prototype.parameters.len() as u32
-    );
+    let mut expected_param_count = self.prototype.parameters.len() as u32;
 
+    if self.prototype.accepts_instance {
+      expected_param_count += 1;
+    }
+
+    assert_eq!(llvm_function.count_params(), expected_param_count);
+
+    // FIXME: [!] Revise: The parameter counts aren't always guaranteed
+    // to be the same, given if the prototype accepts an instance. This zip
+    // might cause unexpected problems.
     llvm_function
       .get_param_iter()
       .zip(self.prototype.parameters.iter())
@@ -1184,11 +1203,24 @@ impl Lower for ast::CallExpr {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_arguments = self
+    let mut llvm_arguments = self
       .arguments
       .iter()
       .map(|x| x.lower(generator, cache).unwrap().into())
       .collect::<Vec<_>>();
+
+    // Insert the instance pointer as the first argument, if applicable.
+    if let ast::NodeKind::MemberAccess(member_access) = &self.callee_expr.kind {
+      // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
+      llvm_arguments.insert(
+        0,
+        member_access
+          .base_expr
+          .lower(generator, cache)
+          .unwrap()
+          .into(),
+      );
+    }
 
     // FIXME: It seems that this is causing stack-overflow because results aren't cached? What's going on? Or maybe it's the parser?
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
@@ -1563,6 +1595,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           is_variadic: false,
           // TODO: Is this correct?
           accepts_instance: false,
+          instance_type_id: None,
+          this_parameter: None,
         };
 
         self
@@ -1588,11 +1622,24 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     prototype: &ast::Prototype,
     cache: &cache::Cache,
   ) -> inkwell::types::FunctionType<'ctx> {
-    let llvm_parameter_types = prototype
+    let mut llvm_parameter_types = prototype
       .parameters
       .iter()
       .map(|x| self.lower_type(&x.1, cache).into())
       .collect::<Vec<_>>();
+
+    if prototype.accepts_instance {
+      let llvm_instance_type =
+        self.memoize_or_retrieve_type(prototype.instance_type_id.unwrap(), cache);
+
+      // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
+      llvm_parameter_types.insert(
+        0,
+        llvm_instance_type
+          .ptr_type(inkwell::AddressSpace::Generic)
+          .into(),
+      );
+    }
 
     let return_type = prototype.return_type.as_ref().unwrap();
 

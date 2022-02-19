@@ -1,6 +1,6 @@
 use crate::{ast, cache, diagnostic, lexer, name_resolution};
 
-const THIS_IDENTIFIER: &str = "this";
+pub const THIS_IDENTIFIER: &str = "this";
 
 // TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
 /// Determine the minimum bit-size in which a number can fit.
@@ -492,18 +492,18 @@ impl<'a> Parser<'a> {
     let mut is_variadic = false;
     let mut parameter_index_counter = 0;
     let mut accepts_instance = false;
+    let mut this_parameter = None;
 
     if self.is(&lexer::TokenKind::Identifier(THIS_IDENTIFIER.to_string())) {
       self.skip();
+      parameter_index_counter += 1;
+      accepts_instance = true;
 
-      parameters.push((
+      this_parameter = Some((
         THIS_IDENTIFIER.to_string(),
         ast::Type::This(ast::ThisType { target_id: None }),
         0,
       ));
-
-      parameter_index_counter += 1;
-      accepts_instance = true;
 
       if !self.is(&lexer::TokenKind::SymbolParenthesesR) {
         self.skip_past(&lexer::TokenKind::SymbolComma)?;
@@ -543,6 +543,8 @@ impl<'a> Parser<'a> {
       return_type,
       is_variadic,
       accepts_instance,
+      instance_type_id: None,
+      this_parameter,
     })
   }
 
@@ -1372,9 +1374,12 @@ impl<'a> Parser<'a> {
     // Skip the closing brace symbol.
     self.skip();
 
+    let unique_id = self.cache.create_unique_id();
+
     let struct_type = ast::NodeKind::StructType(ast::StructType {
       name: name.clone(),
       fields,
+      unique_id,
     });
 
     Ok(ast::Definition {
@@ -1384,7 +1389,7 @@ impl<'a> Parser<'a> {
         span: self.close_span(span_start),
         as_rvalue: false,
       }),
-      unique_id: self.cache.create_unique_id(),
+      unique_id,
     })
   }
 
@@ -1479,6 +1484,8 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
 
     Ok(ast::StructImpl {
+      // TODO: Support for trait specialization.
+      is_default: false,
       struct_pattern,
       methods,
     })

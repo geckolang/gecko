@@ -24,6 +24,8 @@ impl TypeCheckContext {
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
   /// Resolve a possible user-defined type, so it can be used properly.
   pub fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
+    // TODO: Cleanup.
+
     // TODO: What if it's a pointer to a user-defined type?
     if let ast::Type::Stub(stub_type) = ty {
       let target_type = cache.force_get(&stub_type.target_id.unwrap());
@@ -34,9 +36,17 @@ impl TypeCheckContext {
         ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
         _ => unreachable!(),
       };
+    } else if let ast::Type::This(this_type) = ty {
+      let target_type = cache.force_get(&this_type.target_id.unwrap());
+
+      return match &(&*target_type).kind {
+        // TODO: Cloning struct type.
+        ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
+        _ => unreachable!(),
+      };
     }
 
-    // FIXME: Do not clone. Find a better alternative.
+    // FIXME: Do not clone by default. Find a better alternative.
     ty.clone()
   }
 
@@ -48,9 +58,13 @@ impl TypeCheckContext {
     let resolved_type_a = Self::resolve_type(type_a, cache);
     let resolved_type_b = Self::resolve_type(type_b, cache);
 
+    // The error type does not unify with anything.
+    if matches!(resolved_type_a, ast::Type::Error) || matches!(resolved_type_b, ast::Type::Error) {
+      return false;
+    }
     // If both types are pointers, and at least one is a null pointer type, then always unify.
     // This is because null pointers unify with any pointer type (any pointer can be null).
-    if matches!(resolved_type_a, ast::Type::Pointer(_))
+    else if matches!(resolved_type_a, ast::Type::Pointer(_))
       && matches!(resolved_type_a, ast::Type::Pointer(_))
       && (Self::is_null_pointer_type(&resolved_type_a)
         || Self::is_null_pointer_type(&resolved_type_b))
@@ -111,19 +125,30 @@ impl TypeCheck for ast::MemberAccess {
       _ => return ast::Type::Error,
     };
 
-    // TODO: Revise.
-    struct_type
-      .fields
-      .iter()
-      .find(|x| x.0 == self.member_name)
-      .unwrap_or(&(String::default(), ast::Type::Error))
-      .1
-      .clone()
+    let struct_field_result = struct_type.fields.iter().find(|x| x.0 == self.member_name);
+
+    if let Some(struct_field) = struct_field_result {
+      return struct_field.1.clone();
+    }
+
+    // TODO: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
+    // TODO: Lookup implementation, and attempt to match a method.
+    if let Some(struct_impls) = cache.get_struct_impls(&struct_type.unique_id) {
+      for (method_unique_id, method_name) in struct_impls {
+        if method_name == &self.member_name {
+          return cache.force_get(&method_unique_id).infer_type(cache);
+        }
+      }
+    }
+
+    return ast::Type::Error;
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let struct_type = match self.base_expr.infer_type(cache) {
       ast::Type::Struct(struct_type) => struct_type,
+      // TODO: Implement
+      ast::Type::This(_) => return,
       // TODO: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
       _ => {
         type_context
@@ -135,10 +160,10 @@ impl TypeCheck for ast::MemberAccess {
     };
 
     if !struct_type.fields.iter().any(|x| x.0 == self.member_name) {
-      type_context.diagnostic_builder.error(format!(
-        "struct member `{}` does not exist",
-        self.member_name
-      ));
+      // type_context.diagnostic_builder.error(format!(
+      //   "struct type `{}` does not contain a field named `{}`",
+      //   struct_type.name, self.member_name
+      // ));
     }
   }
 }
@@ -850,6 +875,8 @@ impl TypeCheck for ast::Function {
         ))),
         is_variadic: false,
         accepts_instance: false,
+        instance_type_id: None,
+        this_parameter: None,
       };
 
       if self.prototype != main_prototype {
@@ -870,9 +897,7 @@ impl TypeCheck for ast::CallExpr {
 
     match callee_expr_type {
       ast::Type::Callable(callable_type) => callable_type.return_type.as_ref().clone(),
-      // If the callee is not a function, return the callee's type
-      // by default.
-      _ => callee_expr_type,
+      _ => ast::Type::Error,
     }
   }
 
