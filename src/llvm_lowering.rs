@@ -242,12 +242,12 @@ impl Lower for ast::StructValue {
         .unwrap();
 
       let llvm_field_value = field.lower(generator, cache).unwrap();
-      let llvm_accessed_field_value = llvm_field_value;
+      let llvm_final_field_value = generator.attempt_access(llvm_field_value);
 
       generator
         .llvm_builder
         // FIXME: For nested structs, they will return `None`.
-        .build_store(struct_field_gep, llvm_accessed_field_value);
+        .build_store(struct_field_gep, llvm_final_field_value);
     }
 
     // FIXME: [!] Revise: Inconsistent. Deals with flag, also what about on the case of an assignment?
@@ -306,6 +306,9 @@ impl Lower for ast::AssignStmt {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = self.value.lower(generator, cache).unwrap();
 
+    // FIXME: Strings shouldn't be accessed (exception).
+    let llvm_final_value = generator.attempt_access(llvm_value);
+
     // NOTE: In the case that our target is a let-statement (through
     // a reference), memoization or retrieval will occur on the lowering
     // step of the reference.
@@ -313,7 +316,7 @@ impl Lower for ast::AssignStmt {
 
     generator
       .llvm_builder
-      .build_store(llvm_assignee.into_pointer_value(), llvm_value);
+      .build_store(llvm_assignee.into_pointer_value(), llvm_final_value);
 
     None
   }
@@ -473,8 +476,11 @@ impl Lower for ast::BinaryExpr {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_left_value = self.left.lower(generator, cache).unwrap();
-    let llvm_right_value = self.right.lower(generator, cache).unwrap();
+    let mut llvm_left_value = self.left.lower(generator, cache).unwrap();
+    let mut llvm_right_value = self.right.lower(generator, cache).unwrap();
+
+    llvm_left_value = generator.attempt_access(llvm_left_value);
+    llvm_right_value = generator.attempt_access(llvm_right_value);
 
     // NOTE: By this point, we assume that both values are of the same type.
     let is_int_values = llvm_left_value.is_int_value();
@@ -877,12 +883,7 @@ impl Lower for ast::IfStmt {
     // If an expression is to be yielded, it must be accessed. A pointer
     // shouldn't be yielded.
     if let Some(llvm_if_value) = llvm_if_value {
-      Some(
-        generator
-          .llvm_builder
-          .build_load(llvm_if_value.into_pointer_value(), "if.access")
-          .as_basic_value_enum(),
-      )
+      Some(generator.access(llvm_if_value.into_pointer_value()))
     } else {
       None
     }
@@ -1107,26 +1108,28 @@ impl Lower for ast::UnaryExpr {
     Some(match self.operator {
       ast::OperatorKind::Not => {
         let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_final_value = generator.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
         generator
           .llvm_builder
-          .build_not(llvm_value.into_int_value(), "not_op")
+          .build_not(llvm_final_value.into_int_value(), "not_op")
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
         let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_final_value = generator.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be an integer or float. This should be enforced during type-checking.
         if llvm_value.is_int_value() {
           generator
             .llvm_builder
-            .build_int_neg(llvm_value.into_int_value(), "int.negate_op")
+            .build_int_neg(llvm_final_value.into_int_value(), "int.negate_op")
             .as_basic_value_enum()
         } else {
           generator
             .llvm_builder
-            .build_float_neg(llvm_value.into_float_value(), "float.negate_op")
+            .build_float_neg(llvm_final_value.into_float_value(), "float.negate_op")
             .as_basic_value_enum()
         }
       }
@@ -1147,6 +1150,7 @@ impl Lower for ast::UnaryExpr {
       }
       ast::OperatorKind::Cast => {
         let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_final_value = generator.attempt_access(llvm_value);
         let llvm_to_type = generator.lower_type(self.cast_type.as_ref().unwrap(), cache);
 
         if !llvm_value.is_int_value() {
@@ -1157,7 +1161,7 @@ impl Lower for ast::UnaryExpr {
         generator.llvm_builder.build_cast(
           // FIXME: Different instruction opcodes depending on whether the target type is bigger or smaller (extend vs. truncate). As well as from different types of values, such as when going from int to float, etc.
           inkwell::values::InstructionOpcode::SExt,
-          llvm_value,
+          llvm_final_value,
           llvm_to_type,
           "cast_op",
         )
@@ -1195,7 +1199,12 @@ impl Lower for ast::LetStmt {
 
     let llvm_value = self.value.lower(generator, cache).unwrap();
 
-    generator.llvm_builder.build_store(llvm_alloca, llvm_value);
+    // FIXME: Strings shouldn't be accessed (exception).
+    let llvm_final_value = generator.attempt_access(llvm_value);
+
+    generator
+      .llvm_builder
+      .build_store(llvm_alloca, llvm_final_value);
 
     Some(llvm_alloca.as_basic_value_enum())
   }
@@ -1210,7 +1219,12 @@ impl Lower for ast::CallExpr {
     let mut llvm_arguments = self
       .arguments
       .iter()
-      .map(|x| x.lower(generator, cache).unwrap().into())
+      .map(|x| {
+        let llvm_value = x.lower(generator, cache).unwrap();
+
+        // FIXME: Strings shouldn't be accessed (exception).
+        generator.attempt_access(llvm_value).into()
+      })
       .collect::<Vec<_>>();
 
     // Insert the instance pointer as the first argument, if applicable.

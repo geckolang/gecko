@@ -19,6 +19,38 @@ impl TypeCheckContext {
     }
   }
 
+  // TODO: Consider using `Result` instead of `Option`.
+  pub fn unify_prototypes(
+    prototype_a: &ast::Prototype,
+    prototype_b: &ast::Prototype,
+    cache: &cache::Cache,
+  ) -> Option<String> {
+    if prototype_a.parameters.len() != prototype_b.parameters.len() {
+      return Some("parameter count".to_string());
+    }
+
+    for (parameter_a, parameter_b) in prototype_a
+      .parameters
+      .iter()
+      .zip(prototype_b.parameters.iter())
+    {
+      if !Self::unify(&parameter_a.1, &parameter_b.1, cache) {
+        // TODO: Be more specific.
+        return Some("parameter type".to_string());
+      }
+    }
+
+    if !Self::unify(
+      prototype_a.return_type.as_ref().unwrap(),
+      prototype_b.return_type.as_ref().unwrap(),
+      cache,
+    ) {
+      return Some("return type".to_string());
+    }
+
+    None
+  }
+
   // TODO: Create a `finalize` method to ensure that the main function was defined.
 
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
@@ -106,7 +138,7 @@ impl TypeCheck for ast::Node {
 }
 
 impl TypeCheck for ast::Trait {
-  // TODO: Implement.
+  //
 }
 
 impl TypeCheck for ast::StructImpl {
@@ -132,7 +164,18 @@ impl TypeCheck for ast::StructImpl {
               .find(|x| x.symbol.as_ref().unwrap().0 == trait_method.0);
 
             if let Some(impl_method) = impl_method_result {
-              // TODO: Compare method prototypes.
+              // TODO: Finish implementing.
+              let prototype_unification_result =
+                // TypeCheckContext::unify_prototypes(&trait_method.1, impl_method, cache);
+                Some("pending error".to_string());
+
+              if let Some(error) = prototype_unification_result {
+                // TODO: Use expected/got system.
+                type_context.diagnostic_builder.error(format!(
+                  "prototype of implementation method `{}` for trait `{}` mismatch in {}",
+                  "pending impl method name", trait_type.name, error
+                ));
+              }
             } else {
               type_context.diagnostic_builder.error(format!(
                 "required method `{}` not implemented",
@@ -383,7 +426,7 @@ impl TypeCheck for ast::UnaryExpr {
           // TODO: Error message too similar to the boolean negation case.
           type_context
             .diagnostic_builder
-            .error("can only negate integers or float expressions".to_string());
+            .error("can only negate integer or float expressions".to_string());
         }
       }
       ast::OperatorKind::AddressOf => {
@@ -866,7 +909,7 @@ impl TypeCheck for ast::Function {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    if !type_context.in_impl && self.prototype.accepts_instance {
+    if self.prototype.accepts_instance && !type_context.in_impl {
       type_context
         .diagnostic_builder
         .error("cannot accept instance in a non-impl function".to_string());
