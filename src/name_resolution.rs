@@ -254,6 +254,7 @@ impl Resolve for ast::Prototype {
       .declare(resolver, cache);
     }
 
+    // FIXME: [!!] Investigate: This might be causing the unwrap problem, probably because of the cloning?
     for parameter in &self.parameters {
       // FIXME: This might cause bugs (e.g. the parameter is cloned, and the clone is saved on the cache).
       // Create and process an anonymous definition per-parameter.

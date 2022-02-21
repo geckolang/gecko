@@ -59,8 +59,7 @@ impl Lower for ast::MemberAccess {
       .into_pointer_value();
 
     // TODO: Should we reposition this to the name resolution step (post-resolve), and include a `Option<u32>` index field in `MemberAccess`?
-    let struct_type = match TypeCheckContext::resolve_type(&self.base_expr.infer_type(cache), cache)
-    {
+    let struct_type = match TypeCheckContext::infer_and_resolve_type(&self.base_expr, cache) {
       ast::Type::Struct(struct_type) => struct_type,
       // FIXME: What about `This` type? Parameter `this` is of `This` type.
       _ => unreachable!(),

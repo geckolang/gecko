@@ -19,6 +19,11 @@ impl TypeCheckContext {
     }
   }
 
+  // TODO: Find instances and replace old usages with this function.
+  pub fn infer_and_resolve_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
+    TypeCheckContext::resolve_type(&node.infer_type(cache), cache)
+  }
+
   // TODO: Consider using `Result` instead of `Option`.
   pub fn unify_prototypes(
     prototype_a: &ast::Prototype,
