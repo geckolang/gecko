@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, parser, type_check::TypeCheck};
+use crate::{ast, cache, diagnostic, type_check::TypeCheck};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
@@ -169,9 +169,8 @@ impl Resolve for ast::Closure {
   }
 
   fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // Infer the prototype's return value, if it was omitted by the user.
     if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(self.body.infer_type(cache));
+      self.prototype.return_type = Some(NameResolver::infer_return_type(&self.body, cache));
     }
 
     self.body.post_resolve(resolver, cache);
@@ -560,7 +559,7 @@ impl Resolve for ast::Function {
   fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // Infer the prototype's return value, if it was omitted by the user.
     if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(self.body.infer_type(cache));
+      self.prototype.return_type = Some(NameResolver::infer_return_type(&self.body, cache));
     }
 
     self.prototype.post_resolve(resolver, cache);
@@ -716,6 +715,28 @@ impl NameResolver {
     self.current_module_name = Some(name.clone());
 
     true
+  }
+
+  fn infer_return_type(body: &ast::Block, cache: &cache::Cache) -> ast::Type {
+    let mut return_type = body.infer_type(cache);
+
+    if return_type.is_unit() && !body.statements.is_empty() {
+      let first_return_stmt = body
+        .statements
+        .iter()
+        .find(|x| matches!(x.kind, ast::NodeKind::ReturnStmt(_)));
+
+      // TODO: Maybe could use some minor simplification.
+      if let Some(first_return_stmt) = first_return_stmt {
+        if let ast::NodeKind::ReturnStmt(return_stmt) = &first_return_stmt.kind {
+          if let Some(return_value) = &return_stmt.value {
+            return_type = return_value.infer_type(cache);
+          }
+        }
+      }
+    }
+
+    return_type
   }
 
   /// Retrieve the last pushed relative scope, or if there are none,

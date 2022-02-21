@@ -152,7 +152,7 @@ impl TypeCheck for ast::StructImpl {
     let target_node = cache.force_get(&self.target_struct_pattern.target_id.unwrap());
 
     // TODO: Cleanup.
-    if let ast::NodeKind::StructType(target_struct_type) = &target_node.kind {
+    if let ast::NodeKind::StructType(_target_struct_type) = &target_node.kind {
       if let Some(trait_pattern) = &self.trait_pattern {
         let trait_node = cache.force_get(&trait_pattern.target_id.unwrap());
 
@@ -163,7 +163,7 @@ impl TypeCheck for ast::StructImpl {
               .iter()
               .find(|x| x.symbol.as_ref().unwrap().0 == trait_method.0);
 
-            if let Some(impl_method) = impl_method_result {
+            if let Some(_impl_method) = impl_method_result {
               // TODO: Finish implementing.
               let prototype_unification_result =
                 // TypeCheckContext::unify_prototypes(&trait_method.1, impl_method, cache);
