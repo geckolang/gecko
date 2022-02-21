@@ -99,7 +99,7 @@ impl Lower for ast::Closure {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let buffers = generator.copy_buffers();
-    let mut modified_prototype = self.prototype.clone();
+    // let mut modified_prototype = self.prototype.clone();
 
     for (index, capture) in self.captures.iter().enumerate() {
       let capture_node = cache.force_get(&capture.1.unwrap());
@@ -107,14 +107,16 @@ impl Lower for ast::Closure {
       let computed_parameter_index = self.prototype.parameters.len() as usize + index;
 
       // TODO: Is the parameter position correct?
-      modified_prototype.parameters.push((
-        format!("capture.{}", capture.0),
-        capture_node_type,
-        computed_parameter_index as u32,
-      ))
+      // FIXME: Re-implement, after parameters were made definitions.
+      // modified_prototype.parameters.push((
+      //   format!("capture.{}", capture.0),
+      //   capture_node_type,
+      //   computed_parameter_index as u32,
+      // ))
     }
 
-    let llvm_function_type = generator.lower_prototype(&modified_prototype, cache);
+    // FIXME: Use modified prototype.
+    let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
     let llvm_function_name = generator.mangle_name(&String::from("closure"));
 
     assert!(generator
@@ -1001,9 +1003,11 @@ impl Lower for ast::Function {
     llvm_function
       .get_param_iter()
       .zip(self.prototype.parameters.iter())
-      .for_each(|x| {
-        x.1.lower(generator, cache);
-        x.0.set_name(format!("param.{}", x.1 .0).as_str());
+      .for_each(|params| {
+        params.1.lower(generator, cache);
+        params
+          .0
+          .set_name(format!("param.{}", params.1.symbol.as_ref().unwrap().0).as_str());
       });
 
     let llvm_entry_block = generator
@@ -1609,29 +1613,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::Stub(stub_type) => {
         self.memoize_or_retrieve_type(stub_type.target_id.unwrap(), cache)
       }
-      ast::Type::Callable(callable_type) => {
-        let prototype_parameters = callable_type
-          .parameters
-          .iter()
-          .map(|x| (String::default(), x.clone(), 0))
-          .collect();
-
-        let prototype = ast::Prototype {
-          parameters: prototype_parameters,
-          return_type: Some(callable_type.return_type.as_ref().clone()),
-          // TODO: Support for variadic closure type lowering?
-          is_variadic: false,
-          // TODO: Is this correct?
-          accepts_instance: false,
-          instance_type_id: None,
-          this_parameter: None,
-        };
-
-        self
-          .lower_prototype(&prototype, cache)
-          .ptr_type(inkwell::AddressSpace::Generic)
-          .as_basic_type_enum()
-      }
+      ast::Type::Callable(callable_type) => self
+        .lower_callable_type(callable_type, cache)
+        .ptr_type(inkwell::AddressSpace::Generic)
+        .as_basic_type_enum(),
       // TODO: Implement.
       ast::Type::Reference(_reference_type) => todo!(),
       // FIXME: Implement.
@@ -1645,6 +1630,22 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
+  fn lower_callable_type(
+    &mut self,
+    callable_type: &ast::CallableType,
+    cache: &cache::Cache,
+  ) -> inkwell::types::FunctionType<'ctx> {
+    let llvm_parameter_types = callable_type
+      .parameter_types
+      .iter()
+      .map(|parameter_type| self.lower_type(&parameter_type, cache).into())
+      .collect::<Vec<_>>();
+
+    let llvm_return_type = self.lower_type(&callable_type.return_type, cache);
+
+    llvm_return_type.fn_type(llvm_parameter_types.as_slice(), callable_type.is_variadic)
+  }
+
   fn lower_prototype(
     &mut self,
     prototype: &ast::Prototype,
@@ -1653,7 +1654,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let mut llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|x| self.lower_type(&x.1, cache).into())
+      .map(|x| self.lower_type(&x.infer_type(cache), cache).into())
       .collect::<Vec<_>>();
 
     if prototype.accepts_instance {

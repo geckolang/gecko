@@ -152,7 +152,7 @@ pub struct Closure {
 #[derive(PartialEq, Clone, Debug)]
 pub struct CallableType {
   pub return_type: Box<Type>,
-  pub parameters: Vec<Type>,
+  pub parameter_types: Vec<Type>,
   pub is_variadic: bool,
 }
 
@@ -266,9 +266,9 @@ pub enum Literal {
   Nullptr,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Prototype {
-  pub parameters: Vec<Parameter>,
+  pub parameters: Vec<Definition>,
   pub return_type: Option<Type>,
   pub is_variadic: bool,
   pub accepts_instance: bool,
@@ -420,6 +420,18 @@ pub struct Definition {
   pub symbol: Option<name_resolution::Symbol>,
   pub node_ref_cell: cache::CachedNode,
   pub unique_id: cache::UniqueId,
+}
+
+impl Definition {
+  // TODO: Unconventional, also cloning types.
+  pub fn force_get_param_type(&self) -> Type {
+    let node = &*self.node_ref_cell.borrow();
+
+    match &node.kind {
+      NodeKind::Parameter(parameter) => parameter.1.clone(),
+      _ => panic!("expected node kind to be parameter"),
+    }
+  }
 }
 
 #[derive(Debug)]

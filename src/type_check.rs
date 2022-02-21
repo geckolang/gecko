@@ -34,12 +34,19 @@ impl TypeCheckContext {
       return Some("parameter count".to_string());
     }
 
-    for (parameter_a, parameter_b) in prototype_a
+    let parameter_types = prototype_a
       .parameters
       .iter()
       .zip(prototype_b.parameters.iter())
-    {
-      if !Self::unify(&parameter_a.1, &parameter_b.1, cache) {
+      .map(|(param_def_a, param_def_b)| {
+        (
+          param_def_a.force_get_param_type(),
+          param_def_b.force_get_param_type(),
+        )
+      });
+
+    for (param_type_a, param_type_b) in parameter_types {
+      if !Self::unify(&param_type_a, &param_type_b, cache) {
         // TODO: Be more specific.
         return Some("parameter type".to_string());
       }
@@ -259,20 +266,7 @@ impl TypeCheck for ast::MemberAccess {
 
 impl TypeCheck for ast::Closure {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let parameters = self
-      .prototype
-      .parameters
-      .iter()
-      .map(|x| x.1.clone())
-      .collect::<Vec<_>>();
-
-    let return_type = self.body.infer_type(cache);
-
-    ast::Type::Callable(ast::CallableType {
-      parameters,
-      return_type: Box::new(return_type.clone()),
-      is_variadic: false,
-    })
+    self.prototype.infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
@@ -357,13 +351,23 @@ impl TypeCheck for ast::StructValue {
 
 impl TypeCheck for ast::Prototype {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    // TODO: Simplify.
     ast::Type::Callable(ast::CallableType {
       return_type: Box::new(self.return_type.as_ref().unwrap().clone()),
-      parameters: self
+      parameter_types: self
         .parameters
         .iter()
-        .cloned()
-        .map(|x| x.1.clone())
+        .map(|param_def| match &*param_def.node_ref_cell.borrow() {
+          ast::Node {
+            kind,
+            span: _,
+            as_rvalue: _,
+          } => match kind {
+            ast::NodeKind::Parameter((_, ty, _)) => ty.clone(),
+            _ => unreachable!(),
+          },
+          _ => unreachable!(),
+        })
         .collect(),
       is_variadic: self.is_variadic,
     })
@@ -968,7 +972,8 @@ impl TypeCheck for ast::Function {
         this_parameter: None,
       };
 
-      if self.prototype != main_prototype {
+      // TODO: Simplify.
+      if self.prototype.infer_type(cache) != main_prototype.infer_type(cache) {
         type_context
           .diagnostic_builder
           .error(format!("the `main` function has an invalid signature"));
@@ -1050,7 +1055,7 @@ impl TypeCheck for ast::CallExpr {
     //   };
     // }
 
-    let min_arg_count = callee_type.parameters.len();
+    let min_arg_count = callee_type.parameter_types.len();
     let actual_arg_count = self.arguments.len();
 
     // Verify argument count.

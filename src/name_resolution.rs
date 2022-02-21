@@ -256,27 +256,13 @@ impl Resolve for ast::Prototype {
 
     // FIXME: [!!] Investigate: This might be causing the unwrap problem, probably because of the cloning?
     for parameter in &self.parameters {
-      // FIXME: This might cause bugs (e.g. the parameter is cloned, and the clone is saved on the cache).
-      // Create and process an anonymous definition per-parameter.
-      ast::Definition {
-        symbol: Some((parameter.0.clone(), SymbolKind::Definition)),
-        // TODO: Cloning parameter.
-        node_ref_cell: cache::create_cached_node(ast::Node {
-          kind: ast::NodeKind::Parameter(parameter.clone()),
-          // TODO: Span.
-          span: 0..0,
-          as_rvalue: false,
-        }),
-        // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
-        unique_id: cache.create_unique_id(),
-      }
-      .declare(resolver, cache);
+      parameter.declare(resolver, cache);
     }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
     for parameter in &mut self.parameters {
-      parameter.1.resolve(resolver);
+      parameter.resolve(resolver);
     }
 
     if self.accepts_instance {

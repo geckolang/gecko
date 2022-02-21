@@ -455,7 +455,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::SymbolBracketR)?;
 
     Ok(ast::Type::Callable(ast::CallableType {
-      parameters: parameter_types,
+      parameter_types,
       return_type: Box::new(return_type),
       // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
       is_variadic: false,
@@ -519,7 +519,22 @@ impl<'a> Parser<'a> {
         break;
       }
 
-      parameters.push(self.parse_parameter(parameter_index_counter)?);
+      let param_span_start = self.index;
+      let parameter = self.parse_parameter(parameter_index_counter)?;
+
+      let parameter_node = ast::Node {
+        // TODO: Cloning to solve the move issue.
+        kind: ast::NodeKind::Parameter(parameter.clone()),
+        span: self.close_span(param_span_start),
+        as_rvalue: false,
+      };
+
+      parameters.push(ast::Definition {
+        symbol: Some((parameter.0, name_resolution::SymbolKind::Definition)),
+        node_ref_cell: cache::create_cached_node(parameter_node),
+        unique_id: self.cache.create_unique_id(),
+      });
+
       parameter_index_counter += 1;
 
       if !self.is(&lexer::TokenKind::SymbolComma) {
