@@ -102,9 +102,9 @@ impl Lower for ast::Closure {
     // let mut modified_prototype = self.prototype.clone();
 
     for (index, capture) in self.captures.iter().enumerate() {
-      let capture_node = cache.force_get(&capture.1.unwrap());
-      let capture_node_type = (&*capture_node).infer_type(cache);
-      let computed_parameter_index = self.prototype.parameters.len() as usize + index;
+      // let capture_node = cache.force_get(&capture.1.unwrap());
+      // let capture_node_type = (&*capture_node).infer_type(cache);
+      // let computed_parameter_index = self.prototype.parameters.len() as usize + index;
 
       // TODO: Is the parameter position correct?
       // FIXME: Re-implement, after parameters were made definitions.
@@ -1005,9 +1005,7 @@ impl Lower for ast::Function {
       .zip(self.prototype.parameters.iter())
       .for_each(|params| {
         params.1.lower(generator, cache);
-        params
-          .0
-          .set_name(format!("param.{}", params.1.symbol.as_ref().unwrap().0).as_str());
+        params.0.set_name(format!("param.{}", params.1 .0).as_str());
       });
 
     let llvm_entry_block = generator
@@ -1175,7 +1173,7 @@ impl Lower for ast::LetStmt {
     // TODO: Do we need to resolve here?
     // Special cases. The allocation is done elsewhere.
     if matches!(
-      TypeCheckContext::resolve_type(ty, cache),
+      TypeCheckContext::flatten_type(ty),
       ast::Type::Callable(_) | ast::Type::Struct(_)
     ) {
       // TODO: Here create a definition for the closure, with the let statement as the name?
@@ -1352,7 +1350,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value_result = node.lower(self, cache);
-    let node_type = TypeCheckContext::resolve_type(&node.infer_type(cache), cache);
+    let node_type = TypeCheckContext::flatten_type(&node.infer_type(cache));
 
     println!("node type: {:?}", node_type);
 

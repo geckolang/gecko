@@ -21,14 +21,13 @@ impl TypeCheckContext {
 
   // TODO: Find instances and replace old usages with this function.
   pub fn infer_and_resolve_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
-    TypeCheckContext::resolve_type(&node.infer_type(cache), cache)
+    TypeCheckContext::flatten_type(&node.infer_type(cache))
   }
 
   // TODO: Consider using `Result` instead of `Option`.
   pub fn unify_prototypes(
     prototype_a: &ast::Prototype,
     prototype_b: &ast::Prototype,
-    cache: &cache::Cache,
   ) -> Option<String> {
     if prototype_a.parameters.len() != prototype_b.parameters.len() {
       return Some("parameter count".to_string());
@@ -38,15 +37,10 @@ impl TypeCheckContext {
       .parameters
       .iter()
       .zip(prototype_b.parameters.iter())
-      .map(|(param_def_a, param_def_b)| {
-        (
-          param_def_a.force_get_param_type(),
-          param_def_b.force_get_param_type(),
-        )
-      });
+      .map(|(param_def_a, param_def_b)| (param_def_a.1.clone(), param_def_b.1.clone()));
 
     for (param_type_a, param_type_b) in parameter_types {
-      if !Self::unify(&param_type_a, &param_type_b, cache) {
+      if !Self::unify(&param_type_a, &param_type_b) {
         // TODO: Be more specific.
         return Some("parameter type".to_string());
       }
@@ -55,7 +49,6 @@ impl TypeCheckContext {
     if !Self::unify(
       prototype_a.return_type.as_ref().unwrap(),
       prototype_b.return_type.as_ref().unwrap(),
-      cache,
     ) {
       return Some("return type".to_string());
     }
@@ -67,27 +60,16 @@ impl TypeCheckContext {
 
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
   /// Resolve a possible user-defined type, so it can be used properly.
-  pub fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
+  pub fn flatten_type(ty: &ast::Type) -> ast::Type {
     // TODO: Cleanup.
 
     // TODO: What if it's a pointer to a user-defined type?
     if let ast::Type::Stub(stub_type) = ty {
-      let target_type = cache.force_get(&stub_type.target_id.unwrap());
-
-      return match &(&*target_type).kind {
-        // TODO: Cloning struct type.
-        ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
-        ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
-        _ => unreachable!(),
-      };
+      // TODO: No need to clone.
+      return stub_type.ty.as_ref().unwrap().as_ref().clone();
     } else if let ast::Type::This(this_type) = ty {
-      let target_type = cache.force_get(&this_type.target_id.unwrap());
-
-      return match &(&*target_type).kind {
-        // TODO: Cloning struct type.
-        ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
-        _ => unreachable!(),
-      };
+      // TODO: No need to clone.
+      return this_type.ty.as_ref().unwrap().as_ref().clone();
     }
 
     // FIXME: Do not clone by default. Find a better alternative.
@@ -98,9 +80,9 @@ impl TypeCheckContext {
   ///
   /// The types passed-in will be resolved if needed before
   /// the comparison takes place.
-  pub fn unify(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
-    let resolved_type_a = Self::resolve_type(type_a, cache);
-    let resolved_type_b = Self::resolve_type(type_b, cache);
+  pub fn unify(type_a: &ast::Type, type_b: &ast::Type) -> bool {
+    let resolved_type_a = Self::flatten_type(type_a);
+    let resolved_type_b = Self::flatten_type(type_b);
 
     // The error type does not unify with anything.
     if matches!(resolved_type_a, ast::Type::Error) || matches!(resolved_type_b, ast::Type::Error) {
@@ -173,7 +155,7 @@ impl TypeCheck for ast::StructImpl {
             let impl_method_result = self
               .methods
               .iter()
-              .find(|x| x.symbol.as_ref().unwrap().0 == trait_method.0);
+              .find(|impl_method| impl_method.name == trait_method.0);
 
             if let Some(_impl_method) = impl_method_result {
               // TODO: Finish implementing.
@@ -357,17 +339,7 @@ impl TypeCheck for ast::Prototype {
       parameter_types: self
         .parameters
         .iter()
-        .map(|param_def| match &*param_def.node_ref_cell.borrow() {
-          ast::Node {
-            kind,
-            span: _,
-            as_rvalue: _,
-          } => match kind {
-            ast::NodeKind::Parameter((_, ty, _)) => ty.clone(),
-            _ => unreachable!(),
-          },
-          _ => unreachable!(),
-        })
+        .map(|parameter| parameter.1.clone())
         .collect(),
       is_variadic: self.is_variadic,
     })
@@ -418,11 +390,7 @@ impl TypeCheck for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !TypeCheckContext::unify(
-          &expr_type,
-          &ast::Type::Primitive(ast::PrimitiveType::Bool),
-          cache,
-        ) {
+        if !TypeCheckContext::unify(&expr_type, &ast::Type::Primitive(ast::PrimitiveType::Bool)) {
           type_context
             .diagnostic_builder
             .error("can only negate boolean expressions".to_string());
@@ -450,7 +418,7 @@ impl TypeCheck for ast::UnaryExpr {
           type_context
             .diagnostic_builder
             .error("can only cast between primitive types".to_string());
-        } else if TypeCheckContext::unify(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
+        } else if TypeCheckContext::unify(&expr_type, self.cast_type.as_ref().unwrap()) {
           type_context
             .diagnostic_builder
             .warning("redundant cast to the same type".to_string());
@@ -472,7 +440,7 @@ impl TypeCheck for ast::AssignStmt {
     let assignee_type = self.assignee_expr.infer_type(cache);
 
     if matches!(
-      TypeCheckContext::resolve_type(&assignee_type, cache),
+      TypeCheckContext::flatten_type(&assignee_type),
       ast::Type::Reference(_)
     ) {
       type_context
@@ -713,7 +681,7 @@ impl TypeCheck for ast::IfStmt {
 
     // FIXME: Perhaps make a special case for let-statement? Its type inference is used internally, but they should yield 'Unit' for the user.
     // In case of a type-mismatch between branches, simply return the unit type.
-    if !TypeCheckContext::unify(&then_block_type, &else_block.infer_type(cache), cache) {
+    if !TypeCheckContext::unify(&then_block_type, &else_block.infer_type(cache)) {
       return ast::Type::Unit;
     }
 
@@ -724,7 +692,6 @@ impl TypeCheck for ast::IfStmt {
     if !TypeCheckContext::unify(
       &self.condition.infer_type(cache),
       &ast::Type::Primitive(ast::PrimitiveType::Bool),
-      cache,
     ) {
       type_context
         .diagnostic_builder
@@ -762,7 +729,7 @@ impl TypeCheck for ast::BinaryExpr {
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
     // TODO: If we require both operands to  be of the same type, then operator overloading isn't possible with mixed operands as parameters.
-    if !TypeCheckContext::unify(&left_type, &right_type, cache) {
+    if !TypeCheckContext::unify(&left_type, &right_type) {
       type_context
         .diagnostic_builder
         .error("binary expression operands must be the same type".to_string());
@@ -844,7 +811,7 @@ impl TypeCheck for ast::LetStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let value_type = self.value.infer_type(cache);
 
-    if !TypeCheckContext::unify(self.ty.as_ref().unwrap(), &value_type, cache) {
+    if !TypeCheckContext::unify(self.ty.as_ref().unwrap(), &value_type) {
       type_context.diagnostic_builder.error(format!(
         "variable declaration of `{}` value and type mismatch",
         self.name
@@ -896,7 +863,7 @@ impl TypeCheck for ast::ReturnStmt {
     if let Some(value) = &self.value {
       let value_type = value.infer_type(cache);
 
-      if !TypeCheckContext::unify(return_type, &value_type, cache) {
+      if !TypeCheckContext::unify(return_type, &value_type) {
         type_context.diagnostic_builder.error(format!(
           "return statement value and prototype return type mismatch for {}",
           if let Some(name) = name {
@@ -950,7 +917,7 @@ impl TypeCheck for ast::Function {
     }
 
     if self.body.yield_last_expr
-      && !TypeCheckContext::unify(return_type, &self.body.infer_type(cache), cache)
+      && !TypeCheckContext::unify(return_type, &self.body.infer_type(cache))
     {
       // TODO: Improve error message.
       type_context.diagnostic_builder.error(format!(
@@ -1091,7 +1058,6 @@ impl TypeCheck for ast::LoopStmt {
       if !TypeCheckContext::unify(
         &condition.infer_type(cache),
         &ast::Type::Primitive(ast::PrimitiveType::Bool),
-        cache,
       ) {
         type_context
           .diagnostic_builder
