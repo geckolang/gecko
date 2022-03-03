@@ -919,9 +919,10 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_float_literal(&mut self) -> ParserResult<ast::Literal> {
-    match self.tokens[self.index..self.index + 3] {
-      [(lexer::TokenKind::LiteralInt(ref whole), _), (lexer::TokenKind::SymbolDot, _), (lexer::TokenKind::LiteralInt(ref decimal), _)] =>
-      {
+    match self.tokens.get(self.index..self.index + 3) {
+      Some(
+        [(lexer::TokenKind::LiteralInt(ref whole), _), (lexer::TokenKind::SymbolDot, _), (lexer::TokenKind::LiteralInt(ref decimal), _)],
+      ) => {
         let mut result = rug::Float::new(rug::float::prec_max());
         result += whole;
         result += decimal.clone() / {
