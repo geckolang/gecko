@@ -922,12 +922,6 @@ impl<'a> Parser<'a> {
     match self.tokens[self.index..self.index + 3] {
       [(lexer::TokenKind::LiteralInt(ref whole), _), (lexer::TokenKind::SymbolDot, _), (lexer::TokenKind::LiteralInt(ref decimal), _)] =>
       {
-        let whole = whole.clone();
-        let decimal = decimal.clone();
-        // we consume 3 tokens
-        self.skip();
-        self.skip();
-        self.skip();
         let mut result = rug::Float::new(rug::float::prec_max());
         result += whole;
         result += decimal.clone() / {
@@ -935,6 +929,10 @@ impl<'a> Parser<'a> {
           tmp += decimal;
           tmp.log10().ceil()
         };
+        // we consume 3 tokens
+        self.skip();
+        self.skip();
+        self.skip();
         Ok(ast::Literal::Float(result, ast::FloatSize::F128))
       }
       _ => Err(diagnostic::Diagnostic {
