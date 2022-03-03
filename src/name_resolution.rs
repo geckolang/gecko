@@ -188,7 +188,7 @@ impl Resolve for ast::Prototype {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for parameter in &mut self.parameters {
-      parameter.type_.resolve(resolver, cache);
+      parameter.ty.resolve(resolver, cache);
     }
 
     // NOTE: The prototype is manually resolved after its body is resolved.

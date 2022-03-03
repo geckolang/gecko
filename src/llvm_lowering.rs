@@ -45,7 +45,7 @@ impl Lower for ast::Closure {
       // TODO: Is the parameter position correct?
       modified_prototype.parameters.push(ast::Parameter {
         name: format!("capture.{}", capture.0),
-        type_: capture_node_type,
+        ty: capture_node_type,
         position: computed_parameter_index as u32,
       })
     }
@@ -1575,7 +1575,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .iter()
           .map(|x| ast::Parameter {
             name: String::default(),
-            type_: x.clone(),
+            ty: x.clone(),
             position: 0,
           })
           .collect();
@@ -1609,7 +1609,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|x| self.lower_type(&x.type_, cache).into())
+      .map(|x| self.lower_type(&x.ty, cache).into())
       .collect::<Vec<_>>();
 
     let return_type = prototype.return_type.as_ref().unwrap();

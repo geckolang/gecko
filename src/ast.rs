@@ -42,7 +42,7 @@ macro_rules! dispatch {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
   pub name: String,
-  pub type_: Type,
+  pub ty: Type,
   pub position: u32,
 }
 

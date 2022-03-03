@@ -474,7 +474,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Parameter {
       name,
-      type_: type_group,
+      ty: type_group,
       position: index,
     })
   }
