@@ -893,9 +893,9 @@ impl Lower for ast::Literal {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
-    _: &cache::Cache,
+    _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    match self {
+    Some(match self {
       ast::Literal::Float(value, float_kind) => {
         let llvm_float_type = match float_kind {
           ast::FloatSize::F16 => generator.llvm_context.f16_type(),
@@ -903,11 +903,10 @@ impl Lower for ast::Literal {
           ast::FloatSize::F64 => generator.llvm_context.f64_type(),
           ast::FloatSize::F128 => generator.llvm_context.f128_type(),
         };
-        Some(
-          llvm_float_type
-            .const_float_from_string(&value.to_string_radix(16, None))
-            .as_basic_value_enum(),
-        )
+
+        llvm_float_type
+          .const_float_from_string(&value.to_string_radix(16, None))
+          .as_basic_value_enum()
       }
       ast::Literal::Int(value, integer_kind) => {
         let llvm_int_type = generator
@@ -920,56 +919,49 @@ impl Lower for ast::Literal {
             ast::IntSize::Isize | ast::IntSize::Usize => 128,
           });
 
-        Some(
-          llvm_int_type
-            .const_int(
-              value
-                .to_u64()
-                .expect("Number cannot fit in an 64bit integer"),
-              match integer_kind {
-                ast::IntSize::I8
-                | ast::IntSize::I16
-                | ast::IntSize::I32
-                | ast::IntSize::I64
-                | ast::IntSize::Isize => true,
-                _ => false,
-              },
-            )
-            .as_basic_value_enum(),
-        )
+        llvm_int_type
+          .const_int(
+            value
+              .to_u64()
+              .expect("Number cannot fit in an 64bit integer"),
+            match integer_kind {
+              ast::IntSize::I8
+              | ast::IntSize::I16
+              | ast::IntSize::I32
+              | ast::IntSize::I64
+              | ast::IntSize::Isize => true,
+              _ => false,
+            },
+          )
+          .as_basic_value_enum()
       }
-      ast::Literal::Char(value) => Some(
-        generator
-          .llvm_context
-          .i8_type()
-          // TODO: Is this cloning?
-          .const_int(*value as u64, false)
-          .as_basic_value_enum(),
-      ),
-      ast::Literal::Bool(value) => Some(
-        generator
-          .llvm_context
-          .bool_type()
-          // TODO: Is this cloning?
-          .const_int(*value as u64, false)
-          .as_basic_value_enum(),
-      ),
-      ast::Literal::String(value) => Some(
-        generator
-          .llvm_builder
-          .build_global_string_ptr(value.as_str(), "string_literal")
-          .as_basic_value_enum(),
-      ),
-      ast::Literal::Nullptr => Some(
-        generator
-          .llvm_context
-          // FIXME: The type should be correct. Otherwise, we'll get a type mismatch error when compiling the LLVM IR.
-          .i8_type()
-          .ptr_type(inkwell::AddressSpace::Generic)
-          .const_null()
-          .as_basic_value_enum(),
-      ),
-    }
+      ast::Literal::Char(value) => generator
+        .llvm_context
+        .i8_type()
+        // TODO: Is this cloning?
+        .const_int(*value as u64, false)
+        .as_basic_value_enum(),
+
+      ast::Literal::Bool(value) => generator
+        .llvm_context
+        .bool_type()
+        // TODO: Is this cloning?
+        .const_int(*value as u64, false)
+        .as_basic_value_enum(),
+
+      ast::Literal::String(value) => generator
+        .llvm_builder
+        .build_global_string_ptr(value.as_str(), "string_literal")
+        .as_basic_value_enum(),
+
+      ast::Literal::Nullptr => generator
+        .llvm_context
+        // FIXME: The type should be correct. Otherwise, we'll get a type mismatch error when compiling the LLVM IR.
+        .i8_type()
+        .ptr_type(inkwell::AddressSpace::Generic)
+        .const_null()
+        .as_basic_value_enum(),
+    })
   }
 }
 
