@@ -4,11 +4,12 @@ use std::cell::Ref;
 pub type UniqueId = usize;
 
 // TODO: For the `Cache` struct, we might not need a `RefCell<>`, since there are no mutable borrows.
-pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::NodeKind>>;
+pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::Node>>;
 
 pub struct Cache {
   unique_id_counter: usize,
   pub declarations: std::collections::HashMap<UniqueId, CachedNode>,
+  pub struct_impls: std::collections::HashMap<UniqueId, Vec<(UniqueId, String)>>,
 }
 
 impl Cache {
@@ -16,11 +17,12 @@ impl Cache {
     Self {
       unique_id_counter: 0,
       declarations: std::collections::HashMap::new(),
+      struct_impls: std::collections::HashMap::new(),
     }
   }
 
   // TODO: Use this function as a guide to ensure that nothing is looked up or inferred before its actually resolved. Within the type-checker.
-  pub fn force_get(&self, key: &UniqueId) -> Ref<'_, ast::NodeKind> {
+  pub fn force_get(&self, key: &UniqueId) -> Ref<'_, ast::Node> {
     self.declarations.get(key).unwrap().as_ref().borrow()
   }
 
@@ -35,8 +37,25 @@ impl Cache {
 
     unique_id
   }
+
+  /// Retrieve any existing implementations for a given struct type.
+  ///
+  /// If there are none, an empty vector will be returned instead.
+  pub fn get_struct_impls(&self, struct_unique_id: &UniqueId) -> Option<&Vec<(UniqueId, String)>> {
+    self.struct_impls.get(struct_unique_id)
+  }
+
+  pub fn add_struct_impl(&mut self, struct_unique_id: UniqueId, methods: Vec<(UniqueId, String)>) {
+    if let Some(existing_impls) = self.struct_impls.get_mut(&struct_unique_id) {
+      existing_impls.extend(methods);
+
+      return;
+    }
+
+    self.struct_impls.insert(struct_unique_id, methods);
+  }
 }
 
-pub fn create_cached_node(node: ast::NodeKind) -> CachedNode {
+pub fn create_cached_node(node: ast::Node) -> CachedNode {
   std::rc::Rc::new(std::cell::RefCell::new(node))
 }

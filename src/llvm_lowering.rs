@@ -18,13 +18,77 @@ pub trait Lower {
   }
 }
 
-impl Lower for ast::NodeKind {
+impl Lower for ast::Node {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    dispatch!(self, Lower::lower, generator, cache)
+    dispatch!(&self.kind, Lower::lower, generator, cache)
+  }
+}
+
+impl Lower for ast::Trait {
+  //
+}
+
+impl Lower for ast::StructImpl {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    for method in &self.methods {
+      method.lower(generator, cache).unwrap();
+    }
+
+    None
+  }
+}
+
+impl Lower for ast::MemberAccess {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let llvm_struct = self
+      .base_expr
+      .lower(generator, cache)
+      .unwrap()
+      .into_pointer_value();
+
+    // TODO: Should we reposition this to the name resolution step (post-resolve), and include a `Option<u32>` index field in `MemberAccess`?
+    let struct_type = match TypeCheckContext::infer_and_resolve_type(&self.base_expr, cache) {
+      ast::Type::Struct(struct_type) => struct_type,
+      // FIXME: What about `This` type? Parameter `this` is of `This` type.
+      _ => unreachable!(),
+    };
+
+    // First, check if its a field.
+    if let Some(field_index) = struct_type
+      .fields
+      .iter()
+      .position(|x| x.0 == self.member_name)
+    {
+      return Some(
+        generator
+          .llvm_builder
+          .build_struct_gep(llvm_struct, field_index as u32, "struct.member.gep")
+          .unwrap()
+          .as_basic_value_enum(),
+      );
+    }
+
+    // Otherwise, it must be a method.
+    let impl_method_info = cache
+      .get_struct_impls(&struct_type.unique_id)
+      .unwrap()
+      .iter()
+      .find(|x| x.1 == self.member_name)
+      .unwrap();
+
+    generator.memoize_or_retrieve_value(impl_method_info.0, cache, false)
   }
 }
 
@@ -34,8 +98,8 @@ impl Lower for ast::Closure {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let buffers = generator.stash_buffers();
-    let mut modified_prototype = self.prototype.clone();
+    let buffers = generator.copy_buffers();
+    // let mut modified_prototype = self.prototype.clone();
 
     for (index, capture) in self.captures.iter().enumerate() {
       let capture_node = cache.force_get(&capture.1.unwrap());
@@ -43,14 +107,16 @@ impl Lower for ast::Closure {
       let computed_parameter_index = self.prototype.parameters.len() as usize + index;
 
       // TODO: Is the parameter position correct?
-      modified_prototype.parameters.push((
-        format!("capture.{}", capture.0),
-        capture_node_type,
-        computed_parameter_index as u32,
-      ))
+      // FIXME: Re-implement, after parameters were made definitions.
+      // modified_prototype.parameters.push((
+      //   format!("capture.{}", capture.0),
+      //   capture_node_type,
+      //   computed_parameter_index as u32,
+      // ))
     }
 
-    let llvm_function_type = generator.lower_prototype(&modified_prototype, cache);
+    // FIXME: Use modified prototype.
+    let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
     let llvm_function_name = generator.mangle_name(&String::from("closure"));
 
     assert!(generator
@@ -118,7 +184,6 @@ impl Lower for ast::IntrinsicCall {
           .arguments
           .first()
           .unwrap()
-          .kind
           .lower(generator, cache)
           .unwrap();
 
@@ -161,19 +226,23 @@ impl Lower for ast::StructValue {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: If possible and practical, find a way to remove reliance on the generator's state.
+    let llvm_struct_type = generator.memoize_or_retrieve_type(self.target_id.unwrap(), cache);
 
-    // FIXME: This is invalid. Struct value might be used in a different context (non-declaration).
-    let struct_alloca_ptr = generator.let_stmt_flag.unwrap().clone();
+    let llvm_struct_alloca = generator.llvm_builder.build_alloca(
+      llvm_struct_type,
+      format!("struct.{}.alloca", self.struct_name).as_str(),
+    );
 
     // Populate struct fields.
     for (index, field) in self.fields.iter().enumerate() {
       let struct_field_gep = generator
         .llvm_builder
         // TODO: Is this conversion safe?
-        .build_struct_gep(struct_alloca_ptr, index as u32, "struct.field.gep")
+        // TODO: Better name.
+        .build_struct_gep(llvm_struct_alloca, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
-      let llvm_field_value = field.kind.lower(generator, cache).unwrap();
+      let llvm_field_value = generator.lower_with_access_rules(field, cache).unwrap();
 
       generator
         .llvm_builder
@@ -181,7 +250,16 @@ impl Lower for ast::StructValue {
         .build_store(struct_field_gep, llvm_field_value);
     }
 
-    None
+    // FIXME: [!] Revise: Inconsistent. Deals with flag, also what about on the case of an assignment?
+    // If the array value is being directly assigned to a variable,
+    // return the alloca pointer. Otherwise, access the alloca.
+    // Some(if generator.let_stmt_flag.is_some() {
+    //   llvm_struct_alloca.as_basic_value_enum()
+    // } else {
+    //   generator.access(llvm_struct_alloca)
+    // })
+
+    Some(llvm_struct_alloca.as_basic_value_enum())
   }
 }
 
@@ -226,18 +304,18 @@ impl Lower for ast::AssignStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_value = self.value.kind.lower(generator, cache).unwrap();
+    let llvm_value = generator
+      .lower_with_access_rules(self.value.as_ref(), cache)
+      .unwrap();
 
-    generator.assign_flag = true;
-
-    let llvm_target = self.assignee_expr.kind.lower(generator, cache).unwrap();
-
-    // TODO: What if we overwrite a previous buffer? Maybe use a stack? Revise.
-    generator.assign_flag = false;
+    // NOTE: In the case that our target is a let-statement (through
+    // a reference), memoization or retrieval will occur on the lowering
+    // step of the reference.
+    let llvm_assignee = self.assignee_expr.lower(generator, cache).unwrap();
 
     generator
       .llvm_builder
-      .build_store(llvm_target.into_pointer_value(), llvm_value);
+      .build_store(llvm_assignee.into_pointer_value(), llvm_value);
 
     None
   }
@@ -265,14 +343,13 @@ impl Lower for ast::ArrayIndexing {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_index = self
       .index_expr
-      .kind
       .lower(generator, cache)
       .unwrap()
       .into_int_value();
 
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_array = generator
-      .memoize_or_retrieve(self.target_key.unwrap(), cache, false)
+      .memoize_or_retrieve_value(self.target_id.unwrap(), cache, false)
       .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
@@ -314,7 +391,7 @@ impl Lower for ast::ArrayValue {
     llvm_values.reserve(self.elements.len());
 
     for element in &self.elements {
-      llvm_values.push(element.kind.lower(generator, cache).unwrap());
+      llvm_values.push(element.lower(generator, cache).unwrap());
     }
 
     // TODO: Is this cast (usize -> u32) safe?
@@ -398,8 +475,11 @@ impl Lower for ast::BinaryExpr {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_left_value = self.left.kind.lower(generator, cache).unwrap();
-    let llvm_right_value = self.right.kind.lower(generator, cache).unwrap();
+    let mut llvm_left_value = self.left.lower(generator, cache).unwrap();
+    let mut llvm_right_value = self.right.lower(generator, cache).unwrap();
+
+    llvm_left_value = generator.attempt_access(llvm_left_value);
+    llvm_right_value = generator.attempt_access(llvm_right_value);
 
     // NOTE: By this point, we assume that both values are of the same type.
     let is_int_values = llvm_left_value.is_int_value();
@@ -621,61 +701,18 @@ impl Lower for ast::Reference {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // FIXME: Verify that the logic for automatic access is correct in this function.
-    // FIXME: When string variables are referenced, they are accessed and demoted to `i8`. This is a bug!
-
-    let target_key = self.0.target_key.unwrap();
-    let value_node = cache.declarations.get(&target_key).unwrap().borrow();
-    let value_node_type = value_node.infer_type(cache);
-
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
-    let mut llvm_value = generator
-      .memoize_or_retrieve(target_key, cache, false)
+
+    // FIXME: [!!] Investigate+Revise: What about if there's a nested reference? Will it be intercepted by the flag? Perhaps we can capture the flag here immediately? But wouldn't this affect the order of which reference is actually not lowered, ex. first one in `foo.bar`, which is incorrect?
+    let llvm_target = generator
+      .memoize_or_retrieve_value(self.0.target_id.unwrap(), cache, false)
       .unwrap();
 
-    // FIXME: Temporary hot-fix.
-    if matches!(*value_node, ast::NodeKind::LetStmt(_)) && generator.assign_flag {
-      return Some(llvm_value);
-    }
+    // FIXME: [!] Investigate+Revise: Usage of a flag may cause trouble if the buffer is modified several times.
+    // Perhaps since the llvm target's buffers aren't saved, it's fine?
 
-    let mut access_path = self.0.member_path.clone();
-
-    // If there's any member access present, we assume that the value
-    // is a struct, and therefore an LLVM pointer value.
-    while let Some(field) = access_path.pop() {
-      // FIXME: [!!] Bug: Sometimes, the index is the wrong one. This is because for some reason the lowered struct type index order changes every X build. Find what's causing this and how to fix it.
-
-      llvm_value = generator
-        .llvm_builder
-        .build_struct_gep(
-          llvm_value.into_pointer_value(),
-          field.1.unwrap(),
-          format!("struct.field.{}.gep", field.0).as_str(),
-        )
-        .unwrap()
-        .as_basic_value_enum();
-    }
-
-    // If the value is not a string, proceed to access it. Strings shouldn't
-    // be accessed, otherwise they'd be demoted to `i8` which is a single
-    // character. Instead, they should remain as `i8*`. This is a special case.
-    if !TypeCheckContext::unify(
-      &value_node_type,
-      &ast::Type::Primitive(ast::PrimitiveType::String),
-      cache,
-    ) {
-      // FIXME: Will this work as expected for strings?
-      // NOTE: Not all values will be LLVM pointer values.
-      Some(generator.attempt_access(llvm_value))
-    } else {
-      // FIXME: [!] Bug: Temporary fix, special case for let-statements. Without this, we get an error when a let-statement containing a string is referenced (because of the let-statement's inferred type somehow). First investigate the root of the issue, then fix.
-      if matches!(*value_node, ast::NodeKind::LetStmt(_)) {
-        Some(generator.attempt_access(llvm_value))
-      } else {
-        Some(llvm_value)
-      }
-    }
+    Some(llvm_target)
   }
 }
 
@@ -688,11 +725,7 @@ impl Lower for ast::LoopStmt {
     // FIXME: The condition needs to be re-lowered per iteration.
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
     let llvm_condition = if let Some(condition) = &self.condition {
-      condition
-        .kind
-        .lower(generator, cache)
-        .unwrap()
-        .into_int_value()
+      condition.lower(generator, cache).unwrap().into_int_value()
     } else {
       generator.llvm_context.bool_type().const_int(1, false)
     };
@@ -721,11 +754,7 @@ impl Lower for ast::LoopStmt {
     // Fallthrough or loop if applicable.
     if generator.get_current_block().get_terminator().is_none() {
       let llvm_condition_iter = if let Some(condition) = &self.condition {
-        condition
-          .kind
-          .lower(generator, cache)
-          .unwrap()
-          .into_int_value()
+        condition.lower(generator, cache).unwrap().into_int_value()
       } else {
         generator.llvm_context.bool_type().const_int(1, false)
       };
@@ -750,7 +779,7 @@ impl Lower for ast::IfStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_condition = self.condition.kind.lower(generator, cache).unwrap();
+    let llvm_condition = self.condition.lower(generator, cache).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
     let ty = self.infer_type(cache);
     let yields_expression = !ty.is_unit();
@@ -853,12 +882,7 @@ impl Lower for ast::IfStmt {
     // If an expression is to be yielded, it must be accessed. A pointer
     // shouldn't be yielded.
     if let Some(llvm_if_value) = llvm_if_value {
-      Some(
-        generator
-          .llvm_builder
-          .build_load(llvm_if_value.into_pointer_value(), "if.access")
-          .as_basic_value_enum(),
-      )
+      Some(generator.access(llvm_if_value.into_pointer_value()))
     } else {
       None
     }
@@ -956,12 +980,6 @@ impl Lower for ast::Function {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
-
-    // TODO: Investigate whether this is enough. What about nested pointer types (`**`, etc.)?
-    if let Some(return_type) = llvm_function_type.get_return_type() {
-      generator.return_expects_access = !return_type.is_pointer_type();
-    }
-
     let is_main = self.name == MAIN_FUNCTION_NAME;
 
     // TODO: Prepend `fn` to the name.
@@ -996,17 +1014,25 @@ impl Lower for ast::Function {
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
-    assert_eq!(
-      llvm_function.count_params(),
-      self.prototype.parameters.len() as u32
-    );
+    let mut expected_param_count = self.prototype.parameters.len() as u32;
 
+    if self.prototype.accepts_instance {
+      expected_param_count += 1;
+    }
+
+    assert_eq!(llvm_function.count_params(), expected_param_count);
+
+    // FIXME: [!] Revise: The parameter counts aren't always guaranteed
+    // to be the same, given if the prototype accepts an instance. This zip
+    // might cause unexpected problems.
     llvm_function
       .get_param_iter()
       .zip(self.prototype.parameters.iter())
-      .for_each(|x| {
-        x.1.lower(generator, cache);
-        x.0.set_name(format!("param.{}", x.1 .0).as_str());
+      .for_each(|params| {
+        params.1.lower(generator, cache);
+        params
+          .0
+          .set_name(format!("param.{}", params.1.symbol.as_ref().unwrap().0).as_str());
       });
 
     let llvm_entry_block = generator
@@ -1051,27 +1077,20 @@ impl Lower for ast::Block {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let mut last_statement_value = None;
-    let function_buffer = generator.llvm_function_buffer;
-
     for (index, statement) in self.statements.iter().enumerate() {
-      let statement_value = statement.kind.lower(generator, cache);
+      if index == self.statements.len() - 1 && self.yield_last_expr {
+        return generator.lower_with_access_rules(statement, cache);
+      }
 
-      // TODO: What about other buffers? What if we placed the functionality of stashing and restoring buffers inside the lowering of closures instead?
-      // Restore the original function buffer, in case it was changed
-      // by anything recursively within statement (such as a closure
-      // expression).
-      generator.llvm_function_buffer = function_buffer;
+      statement.lower(generator, cache);
 
-      // Do not continue lowering statements if the current block is terminated.
+      // Do not continue lowering statements if the current block was terminated.
       if generator.get_current_block().get_terminator().is_some() {
         break;
-      } else if index == self.statements.len() - 1 && self.yield_last_expr {
-        last_statement_value = statement_value;
       }
     }
 
-    last_statement_value
+    None
   }
 }
 
@@ -1081,8 +1100,13 @@ impl Lower for ast::ReturnStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // TODO: Simplify.
     let llvm_return_value = if let Some(return_value) = &self.value {
-      Some(return_value.kind.lower(generator, cache).unwrap())
+      Some(
+        generator
+          .lower_with_access_rules(return_value, cache)
+          .unwrap(),
+      )
     } else {
       None
     };
@@ -1101,27 +1125,29 @@ impl Lower for ast::UnaryExpr {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match self.operator {
       ast::OperatorKind::Not => {
-        let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_final_value = generator.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
         generator
           .llvm_builder
-          .build_not(llvm_value.into_int_value(), "not_op")
+          .build_not(llvm_final_value.into_int_value(), "not_op")
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
-        let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_final_value = generator.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be an integer or float. This should be enforced during type-checking.
         if llvm_value.is_int_value() {
           generator
             .llvm_builder
-            .build_int_neg(llvm_value.into_int_value(), "int.negate_op")
+            .build_int_neg(llvm_final_value.into_int_value(), "int.negate_op")
             .as_basic_value_enum()
         } else {
           generator
             .llvm_builder
-            .build_float_neg(llvm_value.into_float_value(), "float.negate_op")
+            .build_float_neg(llvm_final_value.into_float_value(), "float.negate_op")
             .as_basic_value_enum()
         }
       }
@@ -1131,17 +1157,18 @@ impl Lower for ast::UnaryExpr {
         // FIXME: The expression shouldn't be accessed in this case. Find out how to accomplish this.
 
         // TODO: For the time being, this isn't being returned. This should be the return value.
-        self.expr.kind.lower(generator, cache).unwrap();
+        self.expr.lower(generator, cache).unwrap();
 
         todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
-        let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.lower(generator, cache).unwrap();
 
         generator.access(llvm_value.into_pointer_value())
       }
       ast::OperatorKind::Cast => {
-        let llvm_value = self.expr.kind.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_final_value = generator.attempt_access(llvm_value);
         let llvm_to_type = generator.lower_type(self.cast_type.as_ref().unwrap(), cache);
 
         if !llvm_value.is_int_value() {
@@ -1152,7 +1179,7 @@ impl Lower for ast::UnaryExpr {
         generator.llvm_builder.build_cast(
           // FIXME: Different instruction opcodes depending on whether the target type is bigger or smaller (extend vs. truncate). As well as from different types of values, such as when going from int to float, etc.
           inkwell::values::InstructionOpcode::SExt,
-          llvm_value,
+          llvm_final_value,
           llvm_to_type,
           "cast_op",
         )
@@ -1170,41 +1197,31 @@ impl Lower for ast::LetStmt {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let ty = self.ty.as_ref().unwrap();
 
-    // Special case if the value is a closure.
+    // TODO: Do we need to resolve here?
+    // Special cases. The allocation is done elsewhere.
     if matches!(
       TypeCheckContext::resolve_type(ty, cache),
-      ast::Type::Callable(_)
+      ast::Type::Callable(_) | ast::Type::Struct(_)
     ) {
-      let result = self.value.kind.lower(generator, cache);
-      // TODO: Here create a definition for the closure, with the let statement as the name.
+      // TODO: Here create a definition for the closure, with the let statement as the name?
 
-      return result;
+      return self.value.lower(generator, cache);
     }
 
+    // FIXME: [!] Bug: Use type-caching. Declaring multiple variables with the same struct type will cause repeated type definitions.
     let llvm_type = generator.lower_type(ty, cache);
 
-    let llvm_alloca_ptr = generator
+    let llvm_alloca = generator
       .llvm_builder
       .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
 
-    // TODO: Might this affect nested constructs unintentionally. Avoid flags, find a better solution.
-    generator.let_stmt_flag = Some(llvm_alloca_ptr);
+    let llvm_value = generator
+      .lower_with_access_rules(self.value.as_ref(), cache)
+      .unwrap();
 
-    let llvm_value = self.value.kind.lower(generator, cache);
+    generator.llvm_builder.build_store(llvm_alloca, llvm_value);
 
-    generator.let_stmt_flag = None;
-
-    // TODO: Write documentation here about pointer system? Value should choose whether to de-ref. themselves or not. Not the let-statement.
-
-    // FIXME: How about we handle that special case here instead of deferring it else where? Is it possible and practical? Investigate.
-    // NOTE: Some values (such as `StructValue`) work on the allocated type, and do not produce any value.
-    if let Some(llvm_value) = llvm_value {
-      generator
-        .llvm_builder
-        .build_store(llvm_alloca_ptr, llvm_value);
-    }
-
-    Some(llvm_alloca_ptr.as_basic_value_enum())
+    Some(llvm_alloca.as_basic_value_enum())
   }
 }
 
@@ -1214,17 +1231,29 @@ impl Lower for ast::CallExpr {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_arguments = self
+    let mut llvm_arguments = self
       .arguments
       .iter()
-      .map(|x| x.kind.lower(generator, cache).unwrap().into())
+      .map(|x| generator.lower_with_access_rules(x, cache).unwrap().into())
       .collect::<Vec<_>>();
+
+    // Insert the instance pointer as the first argument, if applicable.
+    if let ast::NodeKind::MemberAccess(member_access) = &self.callee_expr.kind {
+      // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
+      llvm_arguments.insert(
+        0,
+        member_access
+          .base_expr
+          .lower(generator, cache)
+          .unwrap()
+          .into(),
+      );
+    }
 
     // FIXME: It seems that this is causing stack-overflow because results aren't cached? What's going on? Or maybe it's the parser?
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_callable = self
       .callee_expr
-      .kind
       .lower(generator, cache)
       .unwrap()
       .into_pointer_value();
@@ -1268,17 +1297,18 @@ impl Lower for ast::Definition {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let node = self.node_ref_cell.borrow();
+    let node_kind = &(&*node).kind;
 
     // FIXME: What about closures?
     // Set the pending function definition key to cache the function early.
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
-    if let ast::NodeKind::Function(_) = &*node {
+    if let ast::NodeKind::Function(_) = node_kind {
       generator.pending_function_unique_id = Some(self.unique_id);
     }
 
     // TODO: Is there a need to return a value for the main function? Even for `Definition`?
-    generator.memoize_or_retrieve(self.unique_id, cache, true)
+    generator.memoize_or_retrieve_value(self.unique_id, cache, true)
   }
 }
 
@@ -1288,14 +1318,12 @@ impl Lower for ast::InlineExprStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.expr.kind.lower(generator, cache)
+    self.expr.lower(generator, cache)
   }
 }
 
 pub struct LlvmGeneratorBuffers<'ctx> {
   current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
-  return_expects_access: bool,
-  let_stmt_flag: Option<inkwell::values::PointerValue<'ctx>>,
   llvm_current_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
 }
@@ -1313,15 +1341,12 @@ pub struct LlvmGenerator<'a, 'ctx> {
     std::collections::HashMap<cache::UniqueId, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
   current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
-  return_expects_access: bool,
-  let_stmt_flag: Option<inkwell::values::PointerValue<'ctx>>,
   /// The definition key of the function currently being emitted (if any).
   /// Used to be able to handle recursive calls.
   pending_function_unique_id: Option<cache::UniqueId>,
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   print_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   mangle_counter: usize,
-  assign_flag: bool,
 }
 
 impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
@@ -1338,13 +1363,41 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_cached_values: std::collections::HashMap::new(),
       llvm_cached_types: std::collections::HashMap::new(),
       current_loop_block: None,
-      return_expects_access: false,
-      let_stmt_flag: None,
       pending_function_unique_id: None,
       panic_function_cache: None,
       print_function_cache: None,
       mangle_counter: 0,
-      assign_flag: false,
+    }
+  }
+
+  /// Lower a node while applying the access rules.
+  fn lower_with_access_rules(
+    &mut self,
+    node: &ast::Node,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let llvm_value_result = node.lower(self, cache);
+    let node_type = TypeCheckContext::resolve_type(&node.infer_type(cache), cache);
+
+    println!("node type: {:?}", node_type);
+
+    // TODO: Is there a need to resolve the type?
+    // FIXME: [!] Bug: This won't work for nested string values. Cannot compare node kind.
+    // Special case for string literals. They shouldn't be
+    // lowered, since they're natural pointers. And for structs,
+    // they must be passed as pointer values.
+    if (matches!(node_type, ast::Type::Primitive(ast::PrimitiveType::String))
+      && !matches!(node.kind, ast::NodeKind::Reference(_)))
+      || matches!(node_type, ast::Type::Struct(_))
+    {
+      return llvm_value_result;
+    }
+
+    if let Some(llvm_value) = llvm_value_result {
+      // FIXME: Strings shouldn't be accessed (exception).
+      Some(self.attempt_access(llvm_value))
+    } else {
+      None
     }
   }
 
@@ -1352,11 +1405,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     inkwell::values::CallableValue::try_from(llvm_value.into_pointer_value()).is_ok()
   }
 
-  fn stash_buffers(&self) -> LlvmGeneratorBuffers<'ctx> {
+  fn copy_buffers(&self) -> LlvmGeneratorBuffers<'ctx> {
     LlvmGeneratorBuffers {
       current_loop_block: self.current_loop_block,
-      return_expects_access: self.return_expects_access,
-      let_stmt_flag: self.let_stmt_flag,
       llvm_current_block: self.llvm_builder.get_insert_block(),
       llvm_function_buffer: self.llvm_function_buffer,
     }
@@ -1364,8 +1415,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   fn restore_buffers(&mut self, buffers: LlvmGeneratorBuffers<'ctx>) {
     self.current_loop_block = buffers.current_loop_block;
-    self.return_expects_access = buffers.return_expects_access;
-    self.let_stmt_flag = buffers.let_stmt_flag;
     self.llvm_function_buffer = buffers.llvm_function_buffer;
 
     if let Some(llvm_current_block) = buffers.llvm_current_block {
@@ -1530,6 +1579,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     ty: &ast::Type,
     cache: &cache::Cache,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
+    // FIXME: [!] Bug: Use type-caching HERE (for structs, or any type that needs to be cached). Declaring multiple variables with the same struct type will cause repeated type definitions.
+
     match ty {
       ast::Type::Primitive(primitive_type) => match primitive_type {
         ast::PrimitiveType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
@@ -1573,62 +1624,60 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
       // FIXME: Is this redundant (because of `UserDefined`)?
-      ast::Type::Struct(struct_type) => self
-        .lower_struct_type(struct_type, cache)
-        .as_basic_type_enum(),
-      // FIXME: Why not resolve the type if it is a stub type, then proceed to lower it?
-      ast::Type::Stub(stub_type) => {
-        let target_key = stub_type.target_key.unwrap();
-
-        // If the type has been cached previously, simply retrieve it.
-        if let Some(llvm_cached_type) = self.llvm_cached_types.get(&target_key) {
-          return llvm_cached_type.clone();
-        }
-
-        // Otherwise, lower and cache the target type.
-        let cached_type_node = cache.force_get(&target_key);
-
-        let llvm_type = match &*cached_type_node {
-          ast::NodeKind::StructType(struct_type) => self
-            .lower_struct_type(struct_type, cache)
-            .as_basic_type_enum(),
-          ast::NodeKind::TypeAlias(type_alias) => {
-            // FIXME: Non-tail-recursive recursive call!
-            self.lower_type(&type_alias.ty, cache).as_basic_type_enum()
-          }
-          _ => unreachable!(),
-        };
-
-        self.llvm_cached_types.insert(target_key, llvm_type.clone());
-
-        llvm_type
-      }
-      ast::Type::Callable(callable_type) => {
-        let prototype_parameters = callable_type
-          .parameters
+      ast::Type::Struct(struct_type) => {
+        let llvm_field_types = struct_type
+          .fields
           .iter()
-          .map(|x| (String::default(), x.clone(), 0))
-          .collect();
+          .map(|field| self.lower_type(&field.1, cache))
+          .collect::<Vec<_>>();
 
-        let prototype = ast::Prototype {
-          parameters: prototype_parameters,
-          return_type: Some(callable_type.return_type.as_ref().clone()),
-          // TODO: Support for variadic closure type lowering?
-          is_variadic: false,
-        };
+        // TODO: Consider caching the struct type here?
 
-        self
-          .lower_prototype(&prototype, cache)
+        let name = self.mangle_name(&format!("struct.{}", struct_type.name));
+        let llvm_struct_type = self.llvm_context.opaque_struct_type(name.as_str());
+
+        llvm_struct_type.set_body(llvm_field_types.as_slice(), false);
+
+        // All struct types should be pointer types.
+        llvm_struct_type
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum()
       }
+      // FIXME: Why not resolve the type if it is a stub type, then proceed to lower it?
+      ast::Type::Stub(stub_type) => {
+        self.memoize_or_retrieve_type(stub_type.target_id.unwrap(), cache)
+      }
+      ast::Type::Callable(callable_type) => self
+        .lower_callable_type(callable_type, cache)
+        .ptr_type(inkwell::AddressSpace::Generic)
+        .as_basic_type_enum(),
       // TODO: Implement.
       ast::Type::Reference(_reference_type) => todo!(),
+      // FIXME: Implement.
+      ast::Type::This(this_type) => {
+        self.memoize_or_retrieve_type(this_type.target_id.unwrap(), cache)
+      }
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
       // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
-      // NOTE: The unit type is never lowered.
-      ast::Type::Unit => unreachable!(),
+      // NOTE: These types are never lowered.
+      ast::Type::Unit | ast::Type::Error => unreachable!(),
     }
+  }
+
+  fn lower_callable_type(
+    &mut self,
+    callable_type: &ast::CallableType,
+    cache: &cache::Cache,
+  ) -> inkwell::types::FunctionType<'ctx> {
+    let llvm_parameter_types = callable_type
+      .parameter_types
+      .iter()
+      .map(|parameter_type| self.lower_type(&parameter_type, cache).into())
+      .collect::<Vec<_>>();
+
+    let llvm_return_type = self.lower_type(&callable_type.return_type, cache);
+
+    llvm_return_type.fn_type(llvm_parameter_types.as_slice(), callable_type.is_variadic)
   }
 
   fn lower_prototype(
@@ -1636,11 +1685,24 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     prototype: &ast::Prototype,
     cache: &cache::Cache,
   ) -> inkwell::types::FunctionType<'ctx> {
-    let llvm_parameter_types = prototype
+    let mut llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|x| self.lower_type(&x.1, cache).into())
+      .map(|x| self.lower_type(&x.infer_type(cache), cache).into())
       .collect::<Vec<_>>();
+
+    if prototype.accepts_instance {
+      let llvm_instance_type =
+        self.memoize_or_retrieve_type(prototype.instance_type_id.unwrap(), cache);
+
+      // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
+      llvm_parameter_types.insert(
+        0,
+        llvm_instance_type
+          .ptr_type(inkwell::AddressSpace::Generic)
+          .into(),
+      );
+    }
 
     let return_type = prototype.return_type.as_ref().unwrap();
 
@@ -1666,25 +1728,30 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     .into_function_type()
   }
 
-  fn lower_struct_type(
+  fn memoize_or_retrieve_type(
     &mut self,
-    struct_type: &ast::StructType,
+    unique_id: cache::UniqueId,
     cache: &cache::Cache,
-  ) -> inkwell::types::StructType<'ctx> {
-    let llvm_field_types = struct_type
-      .fields
-      .iter()
-      .map(|field| self.lower_type(&field.1, cache))
-      .collect::<Vec<_>>();
+  ) -> inkwell::types::BasicTypeEnum<'ctx> {
+    if let Some(existing_definition) = self.llvm_cached_types.get(&unique_id) {
+      return existing_definition.clone();
+    }
 
-    // TODO: Consider caching the struct type here?
+    // TODO: Consider making a separate map for types in the cache.
 
-    let name = self.mangle_name(&format!("struct.{}", struct_type.name));
-    let llvm_struct_type = self.llvm_context.opaque_struct_type(name.as_str());
+    let node = cache.force_get(&unique_id);
 
-    llvm_struct_type.set_body(llvm_field_types.as_slice(), false);
+    let ty = match &(&*node).kind {
+      ast::NodeKind::StructType(struct_type) => struct_type,
+      // TODO: Any more?
+      _ => unreachable!(),
+    };
 
-    llvm_struct_type
+    let llvm_type = self.lower_type(&ast::Type::Struct(ty.clone()), cache);
+
+    self.llvm_cached_types.insert(unique_id, llvm_type);
+
+    llvm_type
   }
 
   fn get_current_block(&self) -> inkwell::basic_block::BasicBlock<'ctx> {
@@ -1703,13 +1770,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
+  // TODO: Shouldn't this be used for any and all lowering? Possible problems with closures and/or structs if not?
   // TODO: Accept reference for key?
   /// Attempt to retrieve an existing definition, otherwise proceed to
   /// lowering it and memoizing it under the current module.
   ///
   /// If specified, any modified buffers during the process will be kept,
   /// otherwise they will all be restored.
-  fn memoize_or_retrieve(
+  fn memoize_or_retrieve_value(
     &mut self,
     unique_id: cache::UniqueId,
     cache: &cache::Cache,
@@ -1721,7 +1789,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       return Some(existing_definition.clone());
     }
 
-    let buffers = self.stash_buffers();
+    let buffers = self.copy_buffers();
     let llvm_value = cache.force_get(&unique_id).lower(self, cache);
 
     if let Some(llvm_value) = llvm_value {

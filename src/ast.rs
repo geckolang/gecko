@@ -34,6 +34,9 @@ macro_rules! dispatch {
       ast::NodeKind::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -85,7 +88,10 @@ pub enum Type {
   /// A type that may need to be resolved.
   Stub(StubType),
   Callable(CallableType),
+  This(ThisType),
   Unit,
+  // FIXME: [!!] Investigate: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
+  Error,
 }
 
 impl Type {
@@ -127,6 +133,9 @@ pub enum NodeKind {
   Pattern(Pattern),
   TypeAlias(TypeAlias),
   Closure(Closure),
+  MemberAccess(MemberAccess),
+  StructImpl(StructImpl),
+  Trait(Trait),
 }
 
 #[derive(Debug)]
@@ -134,6 +143,12 @@ pub struct Node {
   pub kind: NodeKind,
   // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
   pub span: diagnostic::Span,
+  /// Whether the node was used as an rvalue, and thus must be
+  /// internally accessed during the lowering step.
+  ///
+  /// This only applies to nodes that aren't natural values (such as
+  /// literals).
+  pub as_rvalue: bool,
 }
 
 #[derive(Debug)]
@@ -146,21 +161,23 @@ pub struct Closure {
 #[derive(PartialEq, Clone, Debug)]
 pub struct CallableType {
   pub return_type: Box<Type>,
-  pub parameters: Vec<Type>,
+  pub parameter_types: Vec<Type>,
   pub is_variadic: bool,
 }
 
+#[derive(PartialEq, Clone, Debug)]
+pub struct ThisType {
+  pub target_id: Option<cache::UniqueId>,
+}
+
+// FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
 #[derive(Debug)]
 pub struct Pattern {
   pub module_name: Option<String>,
   pub base_name: String,
-  /// A list of pairs containing both the name and index
-  /// position of nested structs and their fields. These
-  /// indexes will be filled out during name resolution.
-  pub member_path: Vec<(String, Option<u32>)>,
   pub symbol_kind: name_resolution::SymbolKind,
-  pub target_key: Option<cache::UniqueId>,
+  pub target_id: Option<cache::UniqueId>,
 }
 
 impl Pattern {
@@ -168,9 +185,8 @@ impl Pattern {
     Pattern {
       module_name: None,
       base_name,
-      member_path: Vec::new(),
       symbol_kind,
-      target_key: None,
+      target_id: None,
     }
   }
 }
@@ -189,16 +205,30 @@ impl ToString for Pattern {
 #[derive(PartialEq, Clone, Debug)]
 pub struct StubType {
   pub name: String,
-  pub target_key: Option<cache::UniqueId>,
+  pub target_id: Option<cache::UniqueId>,
 }
 
 #[derive(Debug)]
 pub struct StructValue {
-  pub name: String,
+  pub struct_name: String,
   pub fields: Vec<Node>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
-  pub target_key: Option<cache::UniqueId>,
+  pub target_id: Option<cache::UniqueId>,
+}
+
+#[derive(Debug)]
+pub struct StructImpl {
+  pub is_default: bool,
+  pub target_struct_pattern: Pattern,
+  pub trait_pattern: Option<Pattern>,
+  pub methods: Vec<Definition>,
+}
+
+#[derive(Debug)]
+pub struct Trait {
+  pub name: String,
+  pub methods: Vec<(String, Prototype)>,
 }
 
 #[derive(Debug)]
@@ -214,7 +244,7 @@ pub struct ContinueStmt;
 pub struct ArrayIndexing {
   pub name: String,
   pub index_expr: Box<Node>,
-  pub target_key: Option<cache::UniqueId>,
+  pub target_id: Option<cache::UniqueId>,
 }
 
 #[derive(Debug)]
@@ -246,11 +276,14 @@ pub enum Literal {
   Nullptr,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Prototype {
-  pub parameters: Vec<Parameter>,
+  pub parameters: Vec<Definition>,
   pub return_type: Option<Type>,
   pub is_variadic: bool,
+  pub accepts_instance: bool,
+  pub instance_type_id: Option<cache::UniqueId>,
+  pub this_parameter: Option<Parameter>,
 }
 
 #[derive(Debug)]
@@ -298,6 +331,7 @@ pub struct ReturnStmt {
 #[derive(Debug)]
 pub struct LetStmt {
   pub name: String,
+  // TODO: Since there's no use for explicit type, simply assume its always inferred. Same for prototype return types.
   pub ty: Option<Type>,
   pub value: Box<Node>,
   pub is_mutable: bool,
@@ -340,8 +374,9 @@ pub struct IntrinsicCall {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructType {
+  pub unique_id: cache::UniqueId,
   pub name: String,
-  pub fields: std::collections::HashMap<String, Type>,
+  pub fields: Vec<(String, Type)>,
 }
 
 #[derive(Debug)]
@@ -397,8 +432,20 @@ pub struct Definition {
   pub unique_id: cache::UniqueId,
 }
 
+impl Definition {
+  // TODO: Unconventional, also cloning types.
+  pub fn force_get_param_type(&self) -> Type {
+    let node = &*self.node_ref_cell.borrow();
+
+    match &node.kind {
+      NodeKind::Parameter(parameter) => parameter.1.clone(),
+      _ => panic!("expected node kind to be parameter"),
+    }
+  }
+}
+
 #[derive(Debug)]
 pub struct MemberAccess {
-  pub scope_qualifier: Pattern,
-  pub target_key: Option<cache::UniqueId>,
+  pub base_expr: Box<Node>,
+  pub member_name: String,
 }

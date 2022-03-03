@@ -4,6 +4,7 @@ pub struct TypeCheckContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   in_loop: bool,
   in_unsafe_block: bool,
+  in_impl: bool,
   current_function_key: Option<cache::UniqueId>,
 }
 
@@ -13,8 +14,53 @@ impl TypeCheckContext {
       diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
       in_loop: false,
       in_unsafe_block: false,
+      in_impl: false,
       current_function_key: None,
     }
+  }
+
+  // TODO: Find instances and replace old usages with this function.
+  pub fn infer_and_resolve_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
+    TypeCheckContext::resolve_type(&node.infer_type(cache), cache)
+  }
+
+  // TODO: Consider using `Result` instead of `Option`.
+  pub fn unify_prototypes(
+    prototype_a: &ast::Prototype,
+    prototype_b: &ast::Prototype,
+    cache: &cache::Cache,
+  ) -> Option<String> {
+    if prototype_a.parameters.len() != prototype_b.parameters.len() {
+      return Some("parameter count".to_string());
+    }
+
+    let parameter_types = prototype_a
+      .parameters
+      .iter()
+      .zip(prototype_b.parameters.iter())
+      .map(|(param_def_a, param_def_b)| {
+        (
+          param_def_a.force_get_param_type(),
+          param_def_b.force_get_param_type(),
+        )
+      });
+
+    for (param_type_a, param_type_b) in parameter_types {
+      if !Self::unify(&param_type_a, &param_type_b, cache) {
+        // TODO: Be more specific.
+        return Some("parameter type".to_string());
+      }
+    }
+
+    if !Self::unify(
+      prototype_a.return_type.as_ref().unwrap(),
+      prototype_b.return_type.as_ref().unwrap(),
+      cache,
+    ) {
+      return Some("return type".to_string());
+    }
+
+    None
   }
 
   // TODO: Create a `finalize` method to ensure that the main function was defined.
@@ -22,19 +68,29 @@ impl TypeCheckContext {
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
   /// Resolve a possible user-defined type, so it can be used properly.
   pub fn resolve_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
+    // TODO: Cleanup.
+
     // TODO: What if it's a pointer to a user-defined type?
     if let ast::Type::Stub(stub_type) = ty {
-      let target_type = cache.force_get(&stub_type.target_key.unwrap());
+      let target_type = cache.force_get(&stub_type.target_id.unwrap());
 
-      return match &*target_type {
+      return match &(&*target_type).kind {
         // TODO: Cloning struct type.
         ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
         ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
         _ => unreachable!(),
       };
+    } else if let ast::Type::This(this_type) = ty {
+      let target_type = cache.force_get(&this_type.target_id.unwrap());
+
+      return match &(&*target_type).kind {
+        // TODO: Cloning struct type.
+        ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
+        _ => unreachable!(),
+      };
     }
 
-    // FIXME: Do not clone. Find a better alternative.
+    // FIXME: Do not clone by default. Find a better alternative.
     ty.clone()
   }
 
@@ -46,9 +102,13 @@ impl TypeCheckContext {
     let resolved_type_a = Self::resolve_type(type_a, cache);
     let resolved_type_b = Self::resolve_type(type_b, cache);
 
+    // The error type does not unify with anything.
+    if matches!(resolved_type_a, ast::Type::Error) || matches!(resolved_type_b, ast::Type::Error) {
+      return false;
+    }
     // If both types are pointers, and at least one is a null pointer type, then always unify.
     // This is because null pointers unify with any pointer type (any pointer can be null).
-    if matches!(resolved_type_a, ast::Type::Pointer(_))
+    else if matches!(resolved_type_a, ast::Type::Pointer(_))
       && matches!(resolved_type_a, ast::Type::Pointer(_))
       && (Self::is_null_pointer_type(&resolved_type_a)
         || Self::is_null_pointer_type(&resolved_type_b))
@@ -69,13 +129,7 @@ impl TypeCheckContext {
 }
 
 pub trait TypeCheck {
-  /// Fill-in any inferred types waiting to be resolved. This occurs
-  /// after name resolution, so all the types and expressions have been
-  /// both declared and resolved.
-  fn prelude(&mut self, _cache: &cache::Cache) {
-    //
-  }
-
+  // TODO: Consider caching inference results here, if they are indeed costly.
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Unit
   }
@@ -85,49 +139,144 @@ pub trait TypeCheck {
   }
 }
 
-impl TypeCheck for ast::NodeKind {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    dispatch!(self, TypeCheck::prelude, cache);
-  }
-
+impl TypeCheck for ast::Node {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    dispatch!(self, TypeCheck::type_check, type_context, cache);
+    dispatch!(&self.kind, TypeCheck::type_check, type_context, cache);
   }
 
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    dispatch!(self, TypeCheck::infer_type, cache)
+    dispatch!(&self.kind, TypeCheck::infer_type, cache)
+  }
+}
+
+impl TypeCheck for ast::Trait {
+  //
+}
+
+impl TypeCheck for ast::StructImpl {
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
+    type_context.in_impl = true;
+
+    for method in &self.methods {
+      method.type_check(type_context, cache);
+    }
+
+    let target_node = cache.force_get(&self.target_struct_pattern.target_id.unwrap());
+
+    // TODO: Cleanup.
+    if let ast::NodeKind::StructType(_target_struct_type) = &target_node.kind {
+      if let Some(trait_pattern) = &self.trait_pattern {
+        let trait_node = cache.force_get(&trait_pattern.target_id.unwrap());
+
+        if let ast::NodeKind::Trait(trait_type) = &trait_node.kind {
+          for trait_method in &trait_type.methods {
+            let impl_method_result = self
+              .methods
+              .iter()
+              .find(|x| x.symbol.as_ref().unwrap().0 == trait_method.0);
+
+            if let Some(_impl_method) = impl_method_result {
+              // TODO: Finish implementing.
+              let prototype_unification_result =
+                // TypeCheckContext::unify_prototypes(&trait_method.1, impl_method, cache);
+                Some("pending error".to_string());
+
+              if let Some(error) = prototype_unification_result {
+                // TODO: Use expected/got system.
+                type_context.diagnostic_builder.error(format!(
+                  "prototype of implementation method `{}` for trait `{}` mismatch in {}",
+                  "pending impl method name", trait_type.name, error
+                ));
+              }
+            } else {
+              type_context.diagnostic_builder.error(format!(
+                "required method `{}` not implemented",
+                trait_method.0
+              ));
+            }
+          }
+        } else {
+          type_context.diagnostic_builder.error(format!(
+            "cannot implement non-trait `{}`",
+            &trait_pattern.base_name
+          ));
+        }
+      }
+    } else {
+      type_context.diagnostic_builder.error(format!(
+        "cannot implement for a non-struct type `{}`",
+        self.target_struct_pattern.base_name
+      ));
+    }
+
+    type_context.in_impl = false;
+  }
+}
+
+impl TypeCheck for ast::MemberAccess {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    let struct_type = match self.base_expr.infer_type(cache) {
+      ast::Type::Struct(struct_type) => struct_type,
+      // TODO: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
+      _ => return ast::Type::Error,
+    };
+
+    let struct_field_result = struct_type.fields.iter().find(|x| x.0 == self.member_name);
+
+    if let Some(struct_field) = struct_field_result {
+      return struct_field.1.clone();
+    }
+
+    // TODO: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
+    // TODO: Lookup implementation, and attempt to match a method.
+    if let Some(struct_impls) = cache.get_struct_impls(&struct_type.unique_id) {
+      for (method_unique_id, method_name) in struct_impls {
+        if method_name == &self.member_name {
+          return cache.force_get(&method_unique_id).infer_type(cache);
+        }
+      }
+    }
+
+    return ast::Type::Error;
+  }
+
+  fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
+    let struct_type = match self.base_expr.infer_type(cache) {
+      ast::Type::Struct(struct_type) => struct_type,
+      // TODO: Implement
+      ast::Type::This(_) => return,
+      // TODO: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
+      _ => {
+        type_context
+          .diagnostic_builder
+          .error("expression is not a struct".to_string());
+
+        return;
+      }
+    };
+
+    if !struct_type.fields.iter().any(|x| x.0 == self.member_name) {
+      // type_context.diagnostic_builder.error(format!(
+      //   "struct type `{}` does not contain a field named `{}`",
+      //   struct_type.name, self.member_name
+      // ));
+    }
   }
 }
 
 impl TypeCheck for ast::Closure {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    // Infer the prototype's return value, if it was omitted by the user.
-    if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(self.body.infer_type(cache));
-    }
-
-    self.body.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let parameters = self
-      .prototype
-      .parameters
-      .iter()
-      .map(|x| x.1.clone())
-      .collect::<Vec<_>>();
-
-    let return_type = self.body.infer_type(cache);
-
-    ast::Type::Callable(ast::CallableType {
-      parameters,
-      return_type: Box::new(return_type.clone()),
-      is_variadic: false,
-    })
+    self.prototype.infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     // TODO: Might need to mirror `Function`'s type check.
+
+    if self.prototype.accepts_instance {
+      type_context
+        .diagnostic_builder
+        .error("closures cannot accept instances".to_string());
+    }
 
     self.prototype.type_check(type_context, cache);
     self.body.type_check(type_context, cache);
@@ -151,16 +300,10 @@ impl TypeCheck for ast::ExternStatic {
 }
 
 impl TypeCheck for ast::StructValue {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    for field in &mut self.fields {
-      field.kind.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type_node = cache.force_get(&self.target_key.unwrap());
+    let struct_type_node = cache.force_get(&self.target_id.unwrap());
 
-    let struct_type = match &*struct_type_node {
+    let struct_type = match &(&*struct_type_node).kind {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -170,9 +313,9 @@ impl TypeCheck for ast::StructValue {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let struct_type_node = cache.force_get(&self.target_key.unwrap());
+    let struct_type_node = cache.force_get(&self.target_id.unwrap());
 
-    let struct_type = match &*struct_type_node {
+    let struct_type = match &(&*struct_type_node).kind {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -208,13 +351,23 @@ impl TypeCheck for ast::StructValue {
 
 impl TypeCheck for ast::Prototype {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    // TODO: Simplify.
     ast::Type::Callable(ast::CallableType {
       return_type: Box::new(self.return_type.as_ref().unwrap().clone()),
-      parameters: self
+      parameter_types: self
         .parameters
         .iter()
-        .cloned()
-        .map(|x| x.1.clone())
+        .map(|param_def| match &*param_def.node_ref_cell.borrow() {
+          ast::Node {
+            kind,
+            span: _,
+            as_rvalue: _,
+          } => match kind {
+            ast::NodeKind::Parameter((_, ty, _)) => ty.clone(),
+            _ => unreachable!(),
+          },
+          _ => unreachable!(),
+        })
         .collect(),
       is_variadic: self.is_variadic,
     })
@@ -230,12 +383,8 @@ impl TypeCheck for ast::StructType {
 }
 
 impl TypeCheck for ast::UnaryExpr {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.expr.kind.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let expr_type = self.expr.kind.infer_type(cache);
+    let expr_type = self.expr.infer_type(cache);
 
     // Short-circuit if the expression's type is unit.
     if expr_type.is_unit() {
@@ -252,7 +401,7 @@ impl TypeCheck for ast::UnaryExpr {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let expr_type = self.expr.kind.infer_type(cache);
+    let expr_type = self.expr.infer_type(cache);
 
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
@@ -286,7 +435,7 @@ impl TypeCheck for ast::UnaryExpr {
           // TODO: Error message too similar to the boolean negation case.
           type_context
             .diagnostic_builder
-            .error("can only negate integers or float expressions".to_string());
+            .error("can only negate integer or float expressions".to_string());
         }
       }
       ast::OperatorKind::AddressOf => {
@@ -317,24 +466,35 @@ impl TypeCheck for ast::Enum {
 }
 
 impl TypeCheck for ast::AssignStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.assignee_expr.kind.prelude(cache);
-    self.value.kind.prelude(cache);
-  }
-
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    // TODO: Need to unify the value and the target's type, as well as ensuring that the target is mutable.
+    // TODO: Need to unify the value and the target's type.
 
-    let assignee_type = self.assignee_expr.kind.infer_type(cache);
-    let is_pointer_or_ref_expr = matches!(assignee_type, ast::Type::Pointer(_));
+    let assignee_type = self.assignee_expr.infer_type(cache);
+
+    if matches!(
+      TypeCheckContext::resolve_type(&assignee_type, cache),
+      ast::Type::Reference(_)
+    ) {
+      type_context
+        .diagnostic_builder
+        .error("can't assign to a reference; references cannot be reseated".to_string());
+
+      // TODO: We should continue gathering other diagnostics (ex. immutable)?
+      return;
+    }
+
+    // NOTE: References cannot be reseated/assigned-to, only pointers.
+    let is_pointer = matches!(assignee_type, ast::Type::Pointer(_));
+
+    // FIXME: [!!] Revise: This checks are superficial. They do not
+    // consider that expressions may be nested (ie. parentheses expr.).
     let is_array_indexing = matches!(self.assignee_expr.kind, ast::NodeKind::ArrayIndexing(_));
-
     let is_variable_ref = matches!(self.assignee_expr.kind, ast::NodeKind::Reference(_));
 
     // TODO: Missing member access (struct fields) support.
     // NOTE: The assignee expression may only be an expression of type `Pointer`
     // or `Reference`, a variable reference, or an array indexing.
-    if !is_pointer_or_ref_expr && !is_variable_ref && !is_array_indexing {
+    if !is_pointer && !is_variable_ref && !is_array_indexing {
       type_context
         .diagnostic_builder
         .error("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing expression".to_string());
@@ -342,9 +502,9 @@ impl TypeCheck for ast::AssignStmt {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match &self.assignee_expr.kind {
         ast::NodeKind::Reference(variable_ref) => {
-          let declaration = cache.force_get(&variable_ref.0.target_key.unwrap());
+          let declaration = cache.force_get(&variable_ref.0.target_id.unwrap());
 
-          match &*declaration {
+          match &(&*declaration).kind {
             ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
               type_context
                 .diagnostic_builder
@@ -358,7 +518,7 @@ impl TypeCheck for ast::AssignStmt {
       };
     }
 
-    self.value.kind.type_check(type_context, cache);
+    self.value.type_check(type_context, cache);
   }
 }
 
@@ -373,14 +533,10 @@ impl TypeCheck for ast::ContinueStmt {
 }
 
 impl TypeCheck for ast::ArrayIndexing {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.index_expr.kind.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_array_variable = &*cache.force_get(&self.target_key.unwrap());
+    let target_array_variable = &*cache.force_get(&self.target_id.unwrap());
 
-    let array_type = match target_array_variable {
+    let array_type = match &target_array_variable.kind {
       ast::NodeKind::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
       ast::NodeKind::Parameter(parameter) => &parameter.1,
       _ => unreachable!(),
@@ -395,7 +551,7 @@ impl TypeCheck for ast::ArrayIndexing {
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let index_expr_type = self.index_expr.kind.infer_type(cache);
+    let index_expr_type = self.index_expr.infer_type(cache);
 
     let is_unsigned_int_type =
       // TODO: Should we be using `unify` here, instead?
@@ -414,17 +570,11 @@ impl TypeCheck for ast::ArrayIndexing {
         .error("array index expression must evaluate to an unsigned integer".to_string());
     }
 
-    self.index_expr.kind.type_check(type_context, cache);
+    self.index_expr.type_check(type_context, cache);
   }
 }
 
 impl TypeCheck for ast::ArrayValue {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    for element in &mut self.elements {
-      element.kind.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // TODO: Temporary, until type-inference is implemented.
     // We assume that the length is `0` if the explicit type is provided, otherwise
@@ -432,7 +582,7 @@ impl TypeCheck for ast::ArrayValue {
     let array_element_type = if let Some(explicit_type) = &self.explicit_type {
       explicit_type.clone()
     } else {
-      self.elements.first().unwrap().kind.infer_type(cache)
+      self.elements.first().unwrap().infer_type(cache)
     };
 
     // TODO: Is the length conversion safe?
@@ -446,13 +596,13 @@ impl TypeCheck for ast::ArrayValue {
     let expected_element_type = if let Some(explicit_type) = &self.explicit_type {
       explicit_type.clone()
     } else {
-      self.elements.first().unwrap().kind.infer_type(cache)
+      self.elements.first().unwrap().infer_type(cache)
     };
 
     // TODO: Skip the first element during iteration, as it is redundant.
     for element in &self.elements {
       // Report this error only once.
-      if !mixed_elements_flag && element.kind.infer_type(cache) != expected_element_type {
+      if !mixed_elements_flag && element.infer_type(cache) != expected_element_type {
         type_context
           .diagnostic_builder
           .error("array elements must all be of the same type".to_string());
@@ -460,16 +610,12 @@ impl TypeCheck for ast::ArrayValue {
         mixed_elements_flag = true;
       }
 
-      element.kind.type_check(type_context, cache);
+      element.type_check(type_context, cache);
     }
   }
 }
 
 impl TypeCheck for ast::UnsafeBlockStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.0.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.0.infer_type(cache)
   }
@@ -486,6 +632,14 @@ impl TypeCheck for ast::ExternFunction {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.prototype.infer_type(cache)
   }
+
+  fn type_check(&self, type_context: &mut TypeCheckContext, _cache: &cache::Cache) {
+    if self.prototype.accepts_instance {
+      type_context
+        .diagnostic_builder
+        .error("extern functions cannot accept instances".to_string());
+    }
+  }
 }
 
 impl TypeCheck for ast::Parameter {
@@ -495,13 +649,6 @@ impl TypeCheck for ast::Parameter {
 }
 
 impl TypeCheck for ast::Block {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    // Invoke prelude for any let-statements.
-    for statement in &mut self.statements {
-      statement.kind.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // If the last expression isn't yielded, then the block's type
     // defaults to unit. If there's no statements on the block, the
@@ -521,12 +668,12 @@ impl TypeCheck for ast::Block {
       return ast::Type::Unit;
     }
 
-    self.statements.last().unwrap().kind.infer_type(cache)
+    self.statements.last().unwrap().infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     for statement in &self.statements {
-      statement.kind.type_check(type_context, cache);
+      statement.type_check(type_context, cache);
     }
   }
 }
@@ -534,7 +681,7 @@ impl TypeCheck for ast::Block {
 impl TypeCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     (&*cache)
-      .force_get(&self.0.target_key.unwrap())
+      .force_get(&self.0.target_id.unwrap())
       .infer_type(cache)
   }
 }
@@ -555,15 +702,6 @@ impl TypeCheck for ast::Literal {
 }
 
 impl TypeCheck for ast::IfStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.condition.kind.prelude(cache);
-    self.then_block.prelude(cache);
-
-    if let Some(else_block) = &mut self.else_block {
-      else_block.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // Both branches must be present in order for a value
     // to possibly evaluate.
@@ -585,7 +723,7 @@ impl TypeCheck for ast::IfStmt {
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     if !TypeCheckContext::unify(
-      &self.condition.kind.infer_type(cache),
+      &self.condition.infer_type(cache),
       &ast::Type::Primitive(ast::PrimitiveType::Bool),
       cache,
     ) {
@@ -594,7 +732,7 @@ impl TypeCheck for ast::IfStmt {
         .error("if statement condition must evaluate to a boolean".to_string());
     }
 
-    self.condition.kind.type_check(type_context, cache);
+    self.condition.type_check(type_context, cache);
     self.then_block.type_check(type_context, cache);
 
     if let Some(else_block) = &self.else_block {
@@ -604,11 +742,6 @@ impl TypeCheck for ast::IfStmt {
 }
 
 impl TypeCheck for ast::BinaryExpr {
-  fn prelude(&mut self, _cache: &cache::Cache) {
-    self.left.kind.prelude(_cache);
-    self.right.kind.prelude(_cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     match self.operator {
       ast::OperatorKind::LessThan
@@ -619,13 +752,13 @@ impl TypeCheck for ast::BinaryExpr {
       | ast::OperatorKind::Nand
       | ast::OperatorKind::Nor
       | ast::OperatorKind::Xor => ast::Type::Primitive(ast::PrimitiveType::Bool),
-      _ => self.left.kind.infer_type(cache),
+      _ => self.left.infer_type(cache),
     }
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let left_type = self.left.kind.infer_type(cache);
-    let right_type = self.right.kind.infer_type(cache);
+    let left_type = self.left.infer_type(cache);
+    let right_type = self.right.infer_type(cache);
 
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
@@ -659,8 +792,8 @@ impl TypeCheck for ast::BinaryExpr {
       _ => {}
     };
 
-    self.left.kind.type_check(type_context, cache);
-    self.right.kind.type_check(type_context, cache);
+    self.left.type_check(type_context, cache);
+    self.right.type_check(type_context, cache);
   }
 }
 
@@ -675,10 +808,6 @@ impl TypeCheck for ast::BreakStmt {
 }
 
 impl TypeCheck for ast::Definition {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.node_ref_cell.borrow_mut().prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.node_ref_cell.borrow().infer_type(cache)
   }
@@ -687,7 +816,7 @@ impl TypeCheck for ast::Definition {
     let node = self.node_ref_cell.borrow();
 
     if matches!(
-      &*node,
+      (&*node).kind,
       ast::NodeKind::Function(_) | ast::NodeKind::Closure(_)
     ) {
       type_context.current_function_key = Some(self.unique_id);
@@ -698,36 +827,23 @@ impl TypeCheck for ast::Definition {
 }
 
 impl TypeCheck for ast::InlineExprStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.expr.kind.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.expr.kind.infer_type(cache)
+    self.expr.infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    self.expr.kind.type_check(type_context, cache);
+    self.expr.type_check(type_context, cache);
   }
 }
 
 impl TypeCheck for ast::LetStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    // If the type was explicitly given, proceed to resolve it.
-    // Otherwise, infer the type from the resolved value.
-    if self.ty.is_none() {
-      // FIXME: Usage of inference. What if the value's type can only be inferred after ALL the symbols have been resolved?
-      self.ty = Some(self.value.kind.infer_type(cache));
-    }
-  }
-
   // FIXME: [!] This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.value.kind.infer_type(&cache)
+    self.value.infer_type(&cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let value_type = self.value.kind.infer_type(cache);
+    let value_type = self.value.infer_type(cache);
 
     if !TypeCheckContext::unify(self.ty.as_ref().unwrap(), &value_type, cache) {
       type_context.diagnostic_builder.error(format!(
@@ -736,17 +852,11 @@ impl TypeCheck for ast::LetStmt {
       ));
     }
 
-    self.value.kind.type_check(type_context, cache);
+    self.value.type_check(type_context, cache);
   }
 }
 
 impl TypeCheck for ast::ReturnStmt {
-  fn prelude(&mut self, _cache: &cache::Cache) {
-    if let Some(value) = &mut self.value {
-      value.kind.prelude(_cache);
-    }
-  }
-
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let current_function_node = cache
       .declarations
@@ -757,7 +867,7 @@ impl TypeCheck for ast::ReturnStmt {
     let mut name = None;
     let prototype;
 
-    match &*current_function_node {
+    match &(&*current_function_node).kind {
       ast::NodeKind::Function(function) => {
         name = Some(function.name.clone());
         prototype = &function.prototype;
@@ -785,7 +895,7 @@ impl TypeCheck for ast::ReturnStmt {
     }
 
     if let Some(value) = &self.value {
-      let value_type = value.kind.infer_type(cache);
+      let value_type = value.infer_type(cache);
 
       if !TypeCheckContext::unify(return_type, &value_type, cache) {
         type_context.diagnostic_builder.error(format!(
@@ -798,26 +908,23 @@ impl TypeCheck for ast::ReturnStmt {
         ));
       }
 
-      value.kind.type_check(type_context, cache);
+      value.type_check(type_context, cache);
     }
   }
 }
 
 impl TypeCheck for ast::Function {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    // Infer the prototype's return value, if it was omitted by the user.
-    if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(self.body.infer_type(cache));
-    }
-
-    self.body.prelude(cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.prototype.infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
+    if self.prototype.accepts_instance && !type_context.in_impl {
+      type_context
+        .diagnostic_builder
+        .error("cannot accept instance in a non-impl function".to_string());
+    }
+
     let return_type = self.prototype.return_type.as_ref().unwrap();
 
     // TODO: Special case for the `main` function. Unify expected signature.
@@ -861,9 +968,13 @@ impl TypeCheck for ast::Function {
           ast::IntSize::I32,
         ))),
         is_variadic: false,
+        accepts_instance: false,
+        instance_type_id: None,
+        this_parameter: None,
       };
 
-      if self.prototype != main_prototype {
+      // TODO: Simplify.
+      if self.prototype.infer_type(cache) != main_prototype.infer_type(cache) {
         type_context
           .diagnostic_builder
           .error(format!("the `main` function has an invalid signature"));
@@ -876,32 +987,22 @@ impl TypeCheck for ast::Function {
 }
 
 impl TypeCheck for ast::CallExpr {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    self.callee_expr.kind.prelude(cache);
-
-    for argument in &mut self.arguments {
-      argument.kind.prelude(cache);
-    }
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let callee_expr_type = self.callee_expr.kind.infer_type(cache);
+    let callee_expr_type = self.callee_expr.infer_type(cache);
 
     match callee_expr_type {
       ast::Type::Callable(callable_type) => callable_type.return_type.as_ref().clone(),
-      // If the callee is not a function, return the callee's type
-      // by default.
-      _ => callee_expr_type,
+      _ => ast::Type::Error,
     }
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    self.callee_expr.kind.type_check(type_context, cache);
+    self.callee_expr.type_check(type_context, cache);
 
     // TODO: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
     // TODO: Need access to the current function?
 
-    let callee_expr_type = self.callee_expr.kind.infer_type(cache);
+    let callee_expr_type = self.callee_expr.infer_type(cache);
 
     if !matches!(callee_expr_type, ast::Type::Callable(_)) {
       type_context
@@ -955,7 +1056,7 @@ impl TypeCheck for ast::CallExpr {
     //   };
     // }
 
-    let min_arg_count = callee_type.parameters.len();
+    let min_arg_count = callee_type.parameter_types.len();
     let actual_arg_count = self.arguments.len();
 
     // Verify argument count.
@@ -986,18 +1087,10 @@ impl TypeCheck for ast::CallExpr {
 }
 
 impl TypeCheck for ast::LoopStmt {
-  fn prelude(&mut self, cache: &cache::Cache) {
-    if let Some(condition) = &mut self.condition {
-      condition.kind.prelude(cache);
-    }
-
-    self.body.prelude(cache);
-  }
-
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
       if !TypeCheckContext::unify(
-        &condition.kind.infer_type(cache),
+        &condition.infer_type(cache),
         &ast::Type::Primitive(ast::PrimitiveType::Bool),
         cache,
       ) {
@@ -1006,7 +1099,7 @@ impl TypeCheck for ast::LoopStmt {
           .error("loop condition must evaluate to a boolean".to_string());
       }
 
-      condition.kind.type_check(type_context, cache);
+      condition.type_check(type_context, cache);
     }
 
     // TODO: To avoid problems with nested cases, save a buffer here, then restore?
