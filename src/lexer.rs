@@ -1,6 +1,81 @@
-use crate::{diagnostic, token};
+use crate::diagnostic;
 
-// TODO: Document (or consider merging) the `index` and `read_index` fields.
+pub type Token = (TokenKind, usize);
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum TokenKind {
+  /// A special token emitted when there are no more tokens to lex.
+  EOF,
+  Illegal(char),
+  Identifier(String),
+  Whitespace(String),
+  Comment(String),
+  LiteralString(String),
+  LiteralInt(rug::Integer),
+  LiteralBool(bool),
+  LiteralChar(char),
+  LiteralNullptr,
+  KeywordFn,
+  KeywordExtern,
+  KeywordReturn,
+  KeywordLet,
+  KeywordIf,
+  KeywordElse,
+  KeywordBreak,
+  KeywordContinue,
+  KeywordUnsafe,
+  KeywordEnum,
+  KeywordStruct,
+  KeywordMut,
+  KeywordNew,
+  KeywordLoop,
+  KeywordAnd,
+  KeywordOr,
+  KeywordStatic,
+  KeywordNand,
+  KeywordNor,
+  KeywordXor,
+  KeywordType,
+  TypeSignedInt8,
+  TypeSignedInt16,
+  TypeSignedInt32,
+  TypeSignedInt64,
+  TypeUnsignedInt8,
+  TypeUnsignedInt16,
+  TypeUnsignedInt32,
+  TypeUnsignedInt64,
+  TypeBool,
+  TypeString,
+  SymbolBraceL,
+  SymbolBraceR,
+  SymbolParenthesesL,
+  SymbolParenthesesR,
+  SymbolTilde,
+  SymbolColon,
+  SymbolAmpersand,
+  SymbolComma,
+  SymbolPlus,
+  SymbolMinus,
+  SymbolAsterisk,
+  SymbolSlash,
+  SymbolBang,
+  SymbolEqual,
+  SymbolSemiColon,
+  SymbolLessThan,
+  SymbolGreaterThan,
+  SymbolBracketL,
+  SymbolBracketR,
+  SymbolDot,
+  SymbolAt,
+  SymbolBacktick,
+}
+
+impl std::fmt::Display for TokenKind {
+  fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(formatter, "{:?}", self)
+  }
+}
+
 pub struct Lexer {
   input: Vec<char>,
   index: usize,
@@ -67,20 +142,28 @@ impl Lexer {
     self.current_char
   }
 
-  pub fn collect_tokens(&mut self) -> Result<Vec<token::Token>, diagnostic::Diagnostic> {
+  /// Attempt to lex all possible tokens until reaching `EOF`.
+  pub fn lex_all(&mut self) -> Result<Vec<Token>, diagnostic::Diagnostic> {
     let mut tokens = Vec::new();
 
     loop {
-      match self.lex_token()? {
-        Some(token) => tokens.push(token),
-        None => break,
-      };
+      let start_position = self.index;
+      let token = self.lex_token()?;
+
+      if token == TokenKind::EOF {
+        break;
+      }
+
+      tokens.push((token, start_position));
     }
 
     Ok(tokens)
   }
 
-  // TODO: Is this function needed? Why not just expand its contents for readability?
+  fn get_span(&self) -> Option<diagnostic::Span> {
+    Some(self.index..self.index)
+  }
+
   /// Determine if the current character is unset, and therefore
   /// signifies the end of the input string.
   fn is_eof(&self) -> bool {
@@ -96,7 +179,6 @@ impl Lexer {
       }
 
       result.push(character);
-
       self.read_char();
     }
 
@@ -116,6 +198,7 @@ impl Lexer {
       return Err(diagnostic::Diagnostic {
         message: "number might be too large or invalid".to_string(),
         severity: diagnostic::Severity::Error,
+        span: self.get_span(),
       });
     }
 
@@ -133,19 +216,55 @@ impl Lexer {
     self.read_while(is_whitespace)
   }
 
-  fn read_string(&mut self) -> String {
+  // TODO: Need tests implemented for this.
+  fn read_string(&mut self) -> Result<String, diagnostic::Diagnostic> {
     // Skip the opening double-quote.
     self.read_char();
 
-    let string = self.read_while(|character| character != '"');
+    let mut string = String::new();
 
-    // FIXME: Need to ensure that EOF was not met (which is a possibility).
+    loop {
+      string += self.read_while(|char| char != '"' && char != '\\').as_str();
 
-    // FIXME: Temporary fix for the closing quote being skipped twice (as a simple token).
-    // Skip the closing quote.
-    // self.read_char();
+      // We've reached the end of the string.
+      if self.current_char == Some('"') {
+        break;
+      }
 
-    string
+      // Otherwise, there is an escape sequence. Skip the escape character.
+      self.read_char();
+
+      // TODO: Escape sequences may also occur for chars (single-characters).
+      string += match self.current_char {
+        Some('n') => "\n",
+        Some('t') => "\t",
+        Some('r') => "\r",
+        Some('\\') => "\\",
+        // TODO: Are we missing any other important escape sequence codes?
+        Some(char) => {
+          return Err(diagnostic::Diagnostic {
+            message: format!("`{}` is not a valid string escape sequence", char),
+            severity: diagnostic::Severity::Error,
+            span: self.get_span(),
+          })
+        }
+        None => {
+          return Err(diagnostic::Diagnostic {
+            message: "unexpected end of input, expected character".to_string(),
+            severity: diagnostic::Severity::Error,
+            span: self.get_span(),
+          })
+        }
+      };
+
+      // Move on from the matched character (if any).
+      self.read_char();
+    }
+
+    // TODO: We SHOULD be skipping the closing double-quote here (independent function).
+    // No need to skip the closing double-quote.
+
+    Ok(string)
   }
 
   fn read_character(&mut self) -> Result<char, diagnostic::Diagnostic> {
@@ -156,6 +275,7 @@ impl Lexer {
       return Err(diagnostic::Diagnostic {
         message: "unexpected end of input, expected character".to_string(),
         severity: diagnostic::Severity::Error,
+        span: self.get_span(),
       });
     }
 
@@ -168,68 +288,129 @@ impl Lexer {
   /// returned. If the current character is neither an identifier nor a
   /// digit, an [`Illegal`] token with the encountered character as its
   /// value will be returned.
-  fn lex_token(&mut self) -> Result<Option<token::Token>, diagnostic::Diagnostic> {
+  fn lex_token(&mut self) -> Result<TokenKind, diagnostic::Diagnostic> {
     if self.is_eof() {
-      return Ok(None);
+      return Ok(TokenKind::EOF);
     }
 
     let current_char = self.current_char.unwrap();
 
-    let token: token::Token = if is_whitespace(current_char) {
-      token::Token::Whitespace(self.read_whitespace())
+    // TODO: Simplify this chunk of code.
+    let token = if is_whitespace(current_char) {
+      TokenKind::Whitespace(self.read_whitespace())
     } else {
       let final_token = match current_char {
-        '#' => token::Token::Comment(self.read_comment()),
-        '"' => token::Token::LiteralString(self.read_string()),
-        '\'' => token::Token::LiteralChar(self.read_character()?),
-        '{' => token::Token::SymbolBraceL,
-        '}' => token::Token::SymbolBraceR,
-        '(' => token::Token::SymbolParenthesesL,
-        ')' => token::Token::SymbolParenthesesR,
-        '~' => token::Token::SymbolTilde,
-        ':' => token::Token::SymbolColon,
-        '&' => token::Token::SymbolAmpersand,
-        ',' => token::Token::SymbolComma,
-        '.' => token::Token::SymbolDot,
-        '+' => token::Token::SymbolPlus,
-        '-' => token::Token::SymbolMinus,
-        '*' => token::Token::SymbolAsterisk,
-        '/' => token::Token::SymbolSlash,
-        '!' => token::Token::SymbolBang,
-        '=' => token::Token::SymbolEqual,
-        ';' => token::Token::SymbolSemiColon,
-        '<' => token::Token::SymbolLessThan,
-        '>' => token::Token::SymbolGreaterThan,
+        '#' => TokenKind::Comment(self.read_comment()),
+        '"' => TokenKind::LiteralString(self.read_string()?),
+        '\'' => TokenKind::LiteralChar(self.read_character()?),
+        '{' => TokenKind::SymbolBraceL,
+        '}' => TokenKind::SymbolBraceR,
+        '(' => TokenKind::SymbolParenthesesL,
+        ')' => TokenKind::SymbolParenthesesR,
+        '~' => TokenKind::SymbolTilde,
+        ':' => TokenKind::SymbolColon,
+        '&' => TokenKind::SymbolAmpersand,
+        ',' => TokenKind::SymbolComma,
+        '+' => TokenKind::SymbolPlus,
+        '-' => TokenKind::SymbolMinus,
+        '*' => TokenKind::SymbolAsterisk,
+        '/' => TokenKind::SymbolSlash,
+        '!' => TokenKind::SymbolBang,
+        '=' => TokenKind::SymbolEqual,
+        ';' => TokenKind::SymbolSemiColon,
+        '<' => TokenKind::SymbolLessThan,
+        '>' => TokenKind::SymbolGreaterThan,
+        '[' => TokenKind::SymbolBracketL,
+        ']' => TokenKind::SymbolBracketR,
+        '.' => TokenKind::SymbolDot,
+        '@' => TokenKind::SymbolAt,
+        '`' => TokenKind::SymbolBacktick,
         _ => {
           // NOTE: Identifiers will never start with a digit.
           return if current_char == '_' || is_letter(current_char) {
             let identifier = self.read_identifier();
 
-            match token::get_keyword_or_type_token(identifier.as_str()) {
-              Some(keyword_token) => Ok(Some(keyword_token)),
-              None => Ok(Some(token::Token::Identifier(identifier))),
+            match match_token(identifier.as_str()) {
+              Some(keyword_token) => Ok(keyword_token),
+              None => Ok(TokenKind::Identifier(identifier)),
             }
           } else if is_digit(current_char) {
-            Ok(Some(token::Token::LiteralInt(self.read_integer()?)))
+            Ok(TokenKind::LiteralInt(self.read_integer()?))
           } else {
             let illegal_char = current_char;
 
             self.read_char();
 
-            Ok(Some(token::Token::Illegal(illegal_char)))
+            Ok(TokenKind::Illegal(illegal_char))
           };
         }
       };
 
-      // FIXME: This isn't always the case (for example string's closing quotes).
-      // Skip simple matched token.
+      // Skip simple matched token (or in the case of a string, its closing quote).
       self.read_char();
 
       final_token
     };
 
-    Ok(Some(token))
+    Ok(token)
   }
+}
+
+// TODO: Is this implementation practical? If not, simply remove.
+impl Iterator for Lexer {
+  type Item = Result<TokenKind, diagnostic::Diagnostic>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    let token = self.lex_token();
+
+    if token.is_err() {
+      return Some(Err(token.err().unwrap()));
+    }
+
+    Some(Ok(token.unwrap()))
+  }
+}
+
+// TODO: Should these functions be moved into the implementation of `Lexer`?
+
+fn match_token(identifier: &str) -> Option<TokenKind> {
+  Some(match identifier {
+    "fn" => TokenKind::KeywordFn,
+    "extern" => TokenKind::KeywordExtern,
+    "let" => TokenKind::KeywordLet,
+    "return" => TokenKind::KeywordReturn,
+    "if" => TokenKind::KeywordIf,
+    "else" => TokenKind::KeywordElse,
+    "break" => TokenKind::KeywordBreak,
+    "continue" => TokenKind::KeywordContinue,
+    "unsafe" => TokenKind::KeywordUnsafe,
+    "enum" => TokenKind::KeywordEnum,
+    "struct" => TokenKind::KeywordStruct,
+    "mut" => TokenKind::KeywordMut,
+    "new" => TokenKind::KeywordNew,
+    "loop" => TokenKind::KeywordLoop,
+    "and" => TokenKind::KeywordAnd,
+    "or" => TokenKind::KeywordOr,
+    "static" => TokenKind::KeywordStatic,
+    "nand" => TokenKind::KeywordNand,
+    "nor" => TokenKind::KeywordNor,
+    "xor" => TokenKind::KeywordXor,
+    "type" => TokenKind::KeywordType,
+    "nullptr" => TokenKind::LiteralNullptr,
+    "i8" => TokenKind::TypeSignedInt8,
+    "i16" => TokenKind::TypeSignedInt16,
+    "i32" => TokenKind::TypeSignedInt32,
+    "i64" => TokenKind::TypeSignedInt64,
+    "u8" => TokenKind::TypeUnsignedInt8,
+    "u16" => TokenKind::TypeUnsignedInt16,
+    "u32" => TokenKind::TypeUnsignedInt32,
+    "u64" => TokenKind::TypeUnsignedInt64,
+    "bool" => TokenKind::TypeBool,
+    "str" => TokenKind::TypeString,
+    "true" => TokenKind::LiteralBool(true),
+    "false" => TokenKind::LiteralBool(false),
+    _ => return None,
+  })
 }
 
 #[cfg(test)]
@@ -271,7 +452,7 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(
-      Ok(Some(token::Token::Identifier("a".to_string()))),
+      Ok(TokenKind::Identifier("a".to_string())),
       lexer.lex_token()
     );
   }
@@ -283,7 +464,7 @@ mod tests {
     assert_eq!(true, lexer.lex_token().is_ok());
 
     assert_eq!(
-      Ok(Some(token::Token::Identifier("abc".to_string()))),
+      Ok(TokenKind::Identifier("abc".to_string())),
       lexer.lex_token()
     );
   }
@@ -293,7 +474,7 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a', 'b', 'c']);
 
     assert_eq!(
-      Ok(Some(token::Token::Identifier("abc".to_string()))),
+      Ok(TokenKind::Identifier("abc".to_string())),
       lexer.lex_token()
     );
   }
@@ -303,21 +484,21 @@ mod tests {
     let mut lexer = Lexer::new(vec!['a']);
 
     assert_eq!(true, lexer.lex_token().is_ok());
-    assert_eq!(Ok(None), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::EOF), lexer.lex_token());
   }
 
   #[test]
   fn lex_empty() {
     let mut lexer = Lexer::new(vec![]);
 
-    assert_eq!(Ok(None), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::EOF), lexer.lex_token());
   }
 
   #[test]
   fn lex_illegal() {
     let mut lexer = Lexer::new(vec!['?']);
 
-    assert_eq!(Ok(Some(token::Token::Illegal('?'))), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Illegal('?')), lexer.lex_token());
   }
 
   #[test]
@@ -354,7 +535,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#test");
 
     assert_eq!(
-      Ok(Some(token::Token::Comment("test".to_string()))),
+      Ok(TokenKind::Comment("test".to_string())),
       lexer.lex_token()
     );
   }
@@ -364,7 +545,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#hello world");
 
     assert_eq!(
-      Ok(Some(token::Token::Comment("hello world".to_string()))),
+      Ok(TokenKind::Comment("hello world".to_string())),
       lexer.lex_token()
     );
   }
@@ -374,7 +555,7 @@ mod tests {
     let mut lexer = Lexer::from_str("#hello\n world");
 
     assert_eq!(
-      Ok(Some(token::Token::Comment("hello".to_string()))),
+      Ok(TokenKind::Comment("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -386,7 +567,7 @@ mod tests {
     assert_eq!(true, lexer.lex_token().is_ok());
 
     assert_eq!(
-      Ok(Some(token::Token::Comment("hello".to_string()))),
+      Ok(TokenKind::Comment("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -396,7 +577,7 @@ mod tests {
     let mut lexer = Lexer::from_str("\"hello\"");
 
     assert_eq!(
-      Ok(Some(token::Token::LiteralString("hello".to_string()))),
+      Ok(TokenKind::LiteralString("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -405,59 +586,41 @@ mod tests {
   fn lex_number_single_digit() {
     let mut lexer = Lexer::from_str("1");
 
-    assert_eq!(
-      Ok(Some(token::Token::LiteralInt(rug::Integer::from(1)))),
-      lexer.lex_token()
-    );
+    assert_eq!(Ok(TokenKind::LiteralInt(1.into())), lexer.lex_token());
   }
 
   #[test]
   fn lex_integer() {
     let mut lexer = Lexer::from_str("123");
 
-    assert_eq!(
-      Ok(Some(token::Token::LiteralInt(rug::Integer::from(123)))),
-      lexer.lex_token()
-    );
+    assert_eq!(Ok(TokenKind::LiteralInt(123.into())), lexer.lex_token());
   }
   #[test]
   fn lex_float1() {
     let mut lexer = Lexer::from_str("42.69");
-    assert_eq!(
-      lexer.lex_token(),
-      Ok(Some(token::Token::LiteralInt(rug::Integer::from(42))))
-    );
-    assert_eq!(lexer.lex_token(), Ok(Some(token::Token::SymbolDot)));
-    assert_eq!(
-      lexer.lex_token(),
-      Ok(Some(token::Token::LiteralInt(rug::Integer::from(69))))
-    );
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::LiteralInt(42.into())));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::SymbolDot));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::LiteralInt(69.into())));
   }
 
   #[test]
   fn lex_float2() {
     let mut lexer = Lexer::from_str("42.");
-    assert_eq!(
-      lexer.lex_token(),
-      Ok(Some(token::Token::LiteralInt(rug::Integer::from(42))))
-    );
-    assert_eq!(lexer.lex_token(), Ok(Some(token::Token::SymbolDot)));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::LiteralInt(42.into())));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::SymbolDot));
   }
 
   #[test]
   fn lex_float3() {
     let mut lexer = Lexer::from_str(".69");
-    assert_eq!(lexer.lex_token(), Ok(Some(token::Token::SymbolDot)));
-    assert_eq!(
-      lexer.lex_token(),
-      Ok(Some(token::Token::LiteralInt(rug::Integer::from(69))))
-    );
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::SymbolDot));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::LiteralInt(69.into())));
   }
 
   #[test]
-  fn collect_tokens() {
+  fn lex_all() {
     let mut lexer = Lexer::from_str("let one = 1");
-    let tokens_result = lexer.collect_tokens();
+    let tokens_result = lexer.lex_all();
 
     assert_eq!(true, tokens_result.is_ok());
     assert_eq!(7, tokens_result.unwrap().len());
