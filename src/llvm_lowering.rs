@@ -43,11 +43,11 @@ impl Lower for ast::Closure {
       let computed_parameter_index = self.prototype.parameters.len() as usize + index;
 
       // TODO: Is the parameter position correct?
-      modified_prototype.parameters.push((
-        format!("capture.{}", capture.0),
-        capture_node_type,
-        computed_parameter_index as u32,
-      ))
+      modified_prototype.parameters.push(ast::Parameter {
+        name: format!("capture.{}", capture.0),
+        type_: capture_node_type,
+        position: computed_parameter_index as u32,
+      })
     }
 
     let llvm_function_type = generator.lower_prototype(&modified_prototype, cache);
@@ -376,7 +376,7 @@ impl Lower for ast::Parameter {
       generator
         .llvm_function_buffer
         .unwrap()
-        .get_nth_param(self.2)
+        .get_nth_param(self.position)
         .unwrap(),
     )
   }
@@ -981,7 +981,7 @@ impl Lower for ast::Function {
       .zip(self.prototype.parameters.iter())
       .for_each(|x| {
         x.1.lower(generator, cache);
-        x.0.set_name(format!("param.{}", x.1 .0).as_str());
+        x.0.set_name(format!("param.{}", x.1.name).as_str());
       });
 
     let llvm_entry_block = generator
@@ -1573,7 +1573,11 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         let prototype_parameters = callable_type
           .parameters
           .iter()
-          .map(|x| (String::default(), x.clone(), 0))
+          .map(|x| ast::Parameter {
+            name: String::default(),
+            type_: x.clone(),
+            position: 0,
+          })
           .collect();
 
         let prototype = ast::Prototype {
@@ -1605,7 +1609,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|x| self.lower_type(&x.1, cache).into())
+      .map(|x| self.lower_type(&x.type_, cache).into())
       .collect::<Vec<_>>();
 
     let return_type = prototype.return_type.as_ref().unwrap();

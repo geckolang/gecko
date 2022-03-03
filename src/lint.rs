@@ -206,20 +206,13 @@ impl Lint for ast::Definition {
     // TODO: Simplify. Abstract the map, then process.
     match node {
       ast::NodeKind::Function(_) => {
-        if !context
-          .function_references
-          .contains_key(&self.unique_id)
-        {
-          context
-            .function_references
-            .insert(self.unique_id, false);
+        if !context.function_references.contains_key(&self.unique_id) {
+          context.function_references.insert(self.unique_id, false);
         }
       }
       ast::NodeKind::LetStmt(_) => {
         // NOTE: Variable declarations always occur before their usage.
-        context
-          .variable_references
-          .insert(self.unique_id, false);
+        context.variable_references.insert(self.unique_id, false);
       }
       // TODO: Lint other definitions.
       _ => {}
@@ -312,7 +305,7 @@ impl Lint for ast::Literal {
 
 impl Lint for ast::Parameter {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
-    context.lint_name_casing("parameter", &self.0, convert_case::Case::Snake);
+    context.lint_name_casing("parameter", &self.name, convert_case::Case::Snake);
   }
 }
 

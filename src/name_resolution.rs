@@ -123,7 +123,7 @@ impl Resolve for ast::Pattern {
         let cached_struct_type_node = cache.force_get(&last_struct_value.target_key.unwrap());
 
         // TODO: What if it hasn't been resolved by now?
-        let mut last_struct_type = match &*cached_struct_type_node {
+        let last_struct_type = match &*cached_struct_type_node {
           ast::NodeKind::StructType(struct_type) => struct_type,
           _ => unreachable!(),
         };
@@ -176,7 +176,7 @@ impl Resolve for ast::Prototype {
       // Create and process an anonymous definition per-parameter.
       let key = cache.create_unique_id();
       ast::Definition {
-        symbol: Some((parameter.0.clone(), SymbolKind::Definition)),
+        symbol: Some((parameter.name.clone(), SymbolKind::Definition)),
         // TODO: Cloning parameter.
         node_ref_cell: cache::create_cached_node(ast::NodeKind::Parameter(parameter.clone())),
         // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
@@ -188,7 +188,7 @@ impl Resolve for ast::Prototype {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for parameter in &mut self.parameters {
-      parameter.1.resolve(resolver, cache);
+      parameter.type_.resolve(resolver, cache);
     }
 
     // NOTE: The prototype is manually resolved after its body is resolved.

@@ -39,7 +39,12 @@ macro_rules! dispatch {
 }
 
 /// A parameter containing its name, type, and index position.
-pub type Parameter = (String, Type, u32);
+#[derive(Clone, Debug, PartialEq)]
+pub struct Parameter {
+  pub name: String,
+  pub type_: Type,
+  pub position: u32,
+}
 
 #[derive(PartialEq, PartialOrd, Clone, Debug)]
 pub enum IntSize {
