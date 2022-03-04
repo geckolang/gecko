@@ -239,7 +239,7 @@ impl Resolve for ast::Prototype {
   fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     // FIXME: [!!] Bug: Cloning the parameter before it has been resolved.
     if self.accepts_instance {
-      let this_parameter = self.this_parameter.as_ref().unwrap();
+      let _this_parameter = self.this_parameter.as_ref().unwrap();
 
       // TODO: Re-implement.
       // ast::Definition {

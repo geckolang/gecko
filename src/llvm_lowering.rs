@@ -101,7 +101,7 @@ impl Lower for ast::Closure {
     let buffers = generator.copy_buffers();
     // let mut modified_prototype = self.prototype.clone();
 
-    for (index, capture) in self.captures.iter().enumerate() {
+    for (_index, _capture) in self.captures.iter().enumerate() {
       // let capture_node = cache.force_get(&capture.1.unwrap());
       // let capture_node_type = (&*capture_node).infer_type(cache);
       // let computed_parameter_index = self.prototype.parameters.len() as usize + index;

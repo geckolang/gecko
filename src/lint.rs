@@ -17,7 +17,7 @@ impl LintContext {
     }
   }
 
-  pub fn finalize(&mut self, cache: &cache::Cache) {
+  pub fn finalize(&mut self, _cache: &cache::Cache) {
     // TODO: Re-implement.
   }
 
