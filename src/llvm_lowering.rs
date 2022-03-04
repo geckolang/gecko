@@ -453,7 +453,7 @@ impl Lower for ast::Parameter {
       generator
         .llvm_function_buffer
         .unwrap()
-        .get_nth_param(self.2)
+        .get_nth_param(self.position)
         .unwrap(),
     )
   }

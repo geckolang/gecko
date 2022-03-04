@@ -240,7 +240,7 @@ impl Resolve for ast::Prototype {
       let this_parameter = self.this_parameter.as_ref().unwrap();
 
       ast::Definition {
-        symbol: Some((this_parameter.0.clone(), SymbolKind::Definition)),
+        symbol: Some((this_parameter.name.clone(), SymbolKind::Definition)),
         node_ref_cell: cache::create_cached_node(ast::Node {
           // TODO: Cloning parameter.
           kind: ast::NodeKind::Parameter(this_parameter.clone()),
@@ -365,7 +365,7 @@ impl Resolve for ast::UnsafeBlockStmt {
 
 impl Resolve for ast::Parameter {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.1.resolve(resolver);
+    self.ty.resolve(resolver);
   }
 }
 

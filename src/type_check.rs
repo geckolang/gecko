@@ -538,7 +538,7 @@ impl TypeCheck for ast::ArrayIndexing {
 
     let array_type = match &target_array_variable.kind {
       ast::NodeKind::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
-      ast::NodeKind::Parameter(parameter) => &parameter.1,
+      ast::NodeKind::Parameter(parameter) => &parameter.ty,
       _ => unreachable!(),
     };
 
@@ -644,7 +644,7 @@ impl TypeCheck for ast::ExternFunction {
 
 impl TypeCheck for ast::Parameter {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    self.1.clone()
+    self.ty.clone()
   }
 }
 
