@@ -484,7 +484,11 @@ impl<'a> Parser<'a> {
 
     let ty = self.parse_type()?;
 
-    Ok((name, ty, index))
+    Ok(ast::Parameter {
+      name,
+      ty,
+      position: index,
+    })
   }
 
   /// '(' {%parameter* (,)} (+) ')' ':' %type
@@ -503,14 +507,14 @@ impl<'a> Parser<'a> {
       parameter_index_counter += 1;
       accepts_instance = true;
 
-      this_parameter = Some((
-        THIS_IDENTIFIER.to_string(),
-        ast::Type::This(ast::ThisType {
+      this_parameter = Some(ast::Parameter {
+        name: THIS_IDENTIFIER.to_string(),
+        ty: ast::Type::This(ast::ThisType {
           target_id: None,
           ty: None,
         }),
-        0,
-      ));
+        position: 0,
+      });
 
       if !self.is(&lexer::TokenKind::SymbolParenthesesR) {
         self.skip_past(&lexer::TokenKind::SymbolComma)?;

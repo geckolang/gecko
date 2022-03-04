@@ -282,7 +282,7 @@ impl Lint for ast::Literal {
 
 impl Lint for ast::Parameter {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
-    context.lint_name_casing("parameter", &self.0, convert_case::Case::Snake);
+    context.lint_name_casing("parameter", &self.name, convert_case::Case::Snake);
   }
 }
 

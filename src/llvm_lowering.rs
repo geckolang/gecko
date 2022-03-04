@@ -453,7 +453,7 @@ impl Lower for ast::Parameter {
       generator
         .llvm_function_buffer
         .unwrap()
-        .get_nth_param(self.2)
+        .get_nth_param(self.position)
         .unwrap(),
     )
   }
@@ -1005,7 +1005,9 @@ impl Lower for ast::Function {
       .zip(self.prototype.parameters.iter())
       .for_each(|params| {
         params.1.lower(generator, cache);
-        params.0.set_name(format!("param.{}", params.1 .0).as_str());
+        params
+          .0
+          .set_name(format!("param.{}", params.1.name).as_str());
       });
 
     let llvm_entry_block = generator

@@ -368,7 +368,7 @@ impl Resolve for ast::UnsafeBlockStmt {
 
 impl Resolve for ast::Parameter {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.1.resolve(resolver);
+    self.ty.resolve(resolver);
   }
 }
 
