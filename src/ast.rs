@@ -42,7 +42,12 @@ macro_rules! dispatch {
 }
 
 /// A parameter containing its name, type, and index position.
-pub type Parameter = (String, Type, u32);
+#[derive(Clone, Debug, PartialEq)]
+pub struct Parameter {
+  pub name: String,
+  pub ty: Type,
+  pub position: u32,
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub enum IntSize {
@@ -143,12 +148,7 @@ pub struct Node {
   pub kind: NodeKind,
   // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
   pub span: diagnostic::Span,
-  /// Whether the node was used as an rvalue, and thus must be
-  /// internally accessed during the lowering step.
-  ///
-  /// This only applies to nodes that aren't natural values (such as
-  /// literals).
-  pub as_rvalue: bool,
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]
@@ -168,6 +168,7 @@ pub struct CallableType {
 #[derive(PartialEq, Clone, Debug)]
 pub struct ThisType {
   pub target_id: Option<cache::UniqueId>,
+  pub ty: Option<Box<Type>>,
 }
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
@@ -206,6 +207,7 @@ impl ToString for Pattern {
 pub struct StubType {
   pub name: String,
   pub target_id: Option<cache::UniqueId>,
+  pub ty: Option<Box<Type>>,
 }
 
 #[derive(Debug)]
@@ -222,7 +224,7 @@ pub struct StructImpl {
   pub is_default: bool,
   pub target_struct_pattern: Pattern,
   pub trait_pattern: Option<Pattern>,
-  pub methods: Vec<Definition>,
+  pub methods: Vec<Function>,
 }
 
 #[derive(Debug)]
@@ -278,7 +280,7 @@ pub enum Literal {
 
 #[derive(Debug)]
 pub struct Prototype {
-  pub parameters: Vec<Definition>,
+  pub parameters: Vec<Parameter>,
   pub return_type: Option<Type>,
   pub is_variadic: bool,
   pub accepts_instance: bool,
@@ -438,7 +440,7 @@ impl Definition {
     let node = &*self.node_ref_cell.borrow();
 
     match &node.kind {
-      NodeKind::Parameter(parameter) => parameter.1.clone(),
+      NodeKind::Parameter(parameter) => parameter.ty.clone(),
       _ => panic!("expected node kind to be parameter"),
     }
   }

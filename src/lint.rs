@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, llvm_lowering};
+use crate::{ast, cache, diagnostic};
 
 pub struct LintContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
@@ -17,44 +17,8 @@ impl LintContext {
     }
   }
 
-  pub fn finalize(&mut self, cache: &cache::Cache) {
-    for (function_key, was_called) in &self.function_references {
-      // TODO: Dereferencing value.
-      if *was_called {
-        continue;
-      }
-
-      let function_or_extern_node = cache.force_get(&function_key);
-
-      let name = match &(&*function_or_extern_node).kind {
-        ast::NodeKind::Function(function) => &function.name,
-        ast::NodeKind::ExternFunction(extern_) => &extern_.name,
-        _ => unreachable!(),
-      };
-
-      if name != llvm_lowering::MAIN_FUNCTION_NAME {
-        self
-          .diagnostic_builder
-          .warning(format!("function `{}` is never called", name));
-      }
-    }
-
-    for (variable_def_key, was_used) in &self.variable_references {
-      if *was_used {
-        continue;
-      }
-
-      let variable_def_node = cache.force_get(&variable_def_key);
-
-      let name = match &(&*variable_def_node).kind {
-        ast::NodeKind::LetStmt(let_stmt) => &let_stmt.name,
-        _ => unreachable!(),
-      };
-
-      self
-        .diagnostic_builder
-        .warning(format!("variable `{}` is never used", name));
-    }
+  pub fn finalize(&mut self, _cache: &cache::Cache) {
+    // TODO: Re-implement.
   }
 
   fn lint_name_casing(&mut self, subject: &str, name: &str, case: convert_case::Case) {
@@ -318,7 +282,7 @@ impl Lint for ast::Literal {
 
 impl Lint for ast::Parameter {
   fn lint(&self, _cache: &mut cache::Cache, context: &mut LintContext) {
-    context.lint_name_casing("parameter", &self.0, convert_case::Case::Snake);
+    context.lint_name_casing("parameter", &self.name, convert_case::Case::Snake);
   }
 }
 

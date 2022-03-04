@@ -7,17 +7,19 @@ pub type UniqueId = usize;
 pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::Node>>;
 
 pub struct Cache {
-  unique_id_counter: usize,
   pub declarations: std::collections::HashMap<UniqueId, CachedNode>,
   pub struct_impls: std::collections::HashMap<UniqueId, Vec<(UniqueId, String)>>,
+  pub new_symbol_table: std::collections::HashMap<UniqueId, ast::Node>,
+  unique_id_counter: usize,
 }
 
 impl Cache {
   pub fn new() -> Self {
     Self {
-      unique_id_counter: 0,
       declarations: std::collections::HashMap::new(),
       struct_impls: std::collections::HashMap::new(),
+      new_symbol_table: std::collections::HashMap::new(),
+      unique_id_counter: 0,
     }
   }
 

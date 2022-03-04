@@ -3,7 +3,8 @@ use crate::{ast, cache, diagnostic, type_check::TypeCheck};
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
   Definition,
-  // A global type. Can be a struct, or enum.
+  // TODO: Can be more than that. Do not lie.
+  /// A global type. Can be a struct, or enum.
   Type,
 }
 
@@ -12,7 +13,7 @@ pub type Symbol = (String, SymbolKind);
 type Scope = std::collections::HashMap<Symbol, cache::UniqueId>;
 
 pub trait Resolve {
-  fn declare(&self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, _resolver: &mut NameResolver, _cache: &cache::Cache) {
     //
   }
 
@@ -22,7 +23,7 @@ pub trait Resolve {
 
   /// Used to fill-in inferred types, as well as any other resolution
   /// that needs to occur with access to the cache's `.force_get` method.
-  fn post_resolve(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, _resolver: &mut NameResolver, _cache: &cache::Cache) {
     //
   }
 }
@@ -43,7 +44,7 @@ impl Resolve for ast::Type {
 impl Resolve for ast::Node {
   // TODO: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     crate::dispatch!(&self.kind, Resolve::declare, resolver, cache);
   }
 
@@ -51,7 +52,7 @@ impl Resolve for ast::Node {
     crate::dispatch!(&mut self.kind, Resolve::resolve, resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     crate::dispatch!(&mut self.kind, Resolve::post_resolve, resolver, cache);
   }
 }
@@ -73,7 +74,7 @@ impl Resolve for ast::ThisType {
 }
 
 impl Resolve for ast::StructImpl {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     resolver.push_scope();
 
     for method in &self.methods {
@@ -106,7 +107,7 @@ impl Resolve for ast::StructImpl {
     }
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     resolver.current_struct_type_id = Some(self.target_struct_pattern.target_id.unwrap());
 
     for method in &mut self.methods {
@@ -115,14 +116,15 @@ impl Resolve for ast::StructImpl {
 
     resolver.current_struct_type_id = None;
 
-    cache.add_struct_impl(
-      self.target_struct_pattern.target_id.unwrap(),
-      self
-        .methods
-        .iter()
-        .map(|x| (x.unique_id, x.symbol.as_ref().unwrap().0.clone()))
-        .collect(),
-    );
+    // FIXME: Commented out for fix.
+    // cache.add_struct_impl(
+    //   self.target_struct_pattern.target_id.unwrap(),
+    //   self
+    //     .methods
+    //     .iter()
+    //     .map(|x| (x.unique_id, x.symbol.as_ref().unwrap().0.clone()))
+    //     .collect(),
+    // );
   }
 }
 
@@ -133,7 +135,7 @@ impl Resolve for ast::MemberAccess {
 }
 
 impl Resolve for ast::Closure {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     // TODO: Here, captures should be force-declared.
     // FIXME: The body is resolved within a virtual environment. This means that declarations from here may not be accessible. To solve this, perhaps we may virtualize all but the last scope (this declaration's body's scope).
 
@@ -168,7 +170,7 @@ impl Resolve for ast::Closure {
     self.prototype.resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     if self.prototype.return_type.is_none() {
       self.prototype.return_type = Some(NameResolver::infer_return_type(&self.body, cache));
     }
@@ -226,7 +228,7 @@ impl Resolve for ast::StructValue {
     }
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     for field in &mut self.fields {
       field.post_resolve(resolver, cache);
     }
@@ -234,24 +236,25 @@ impl Resolve for ast::StructValue {
 }
 
 impl Resolve for ast::Prototype {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     // FIXME: [!!] Bug: Cloning the parameter before it has been resolved.
     if self.accepts_instance {
-      let this_parameter = self.this_parameter.as_ref().unwrap();
+      let _this_parameter = self.this_parameter.as_ref().unwrap();
 
-      ast::Definition {
-        symbol: Some((this_parameter.0.clone(), SymbolKind::Definition)),
-        node_ref_cell: cache::create_cached_node(ast::Node {
-          // TODO: Cloning parameter.
-          kind: ast::NodeKind::Parameter(this_parameter.clone()),
-          // TODO: Span.
-          span: 0..0,
-          as_rvalue: false,
-        }),
-        // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
-        unique_id: cache.create_unique_id(),
-      }
-      .declare(resolver, cache);
+      // TODO: Re-implement.
+      // ast::Definition {
+      //   symbol: Some((this_parameter.0.clone(), SymbolKind::Definition)),
+      //   node_ref_cell: cache::create_cached_node(ast::Node {
+      //     // TODO: Cloning parameter.
+      //     kind: ast::NodeKind::Parameter(this_parameter.clone()),
+      //     // TODO: Span.
+      //     span: 0..0,
+      //     unique_id: cache.create_unique_id(),
+      //   }),
+      //   // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
+      //   unique_id: cache.create_unique_id(),
+      // }
+      // .declare(resolver, cache);
     }
 
     // FIXME: [!!] Investigate: This might be causing the unwrap problem, probably because of the cloning?
@@ -273,7 +276,7 @@ impl Resolve for ast::Prototype {
     // NOTE: The prototype is manually resolved after its body is resolved.
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, _cache: &cache::Cache) {
     if self.accepts_instance {
       self.instance_type_id = Some(resolver.current_struct_type_id.unwrap());
     }
@@ -281,7 +284,7 @@ impl Resolve for ast::Prototype {
 }
 
 impl Resolve for ast::StructType {
-  fn declare(&self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, _resolver: &mut NameResolver, _cache: &cache::Cache) {
     // TODO: Implement?
   }
 
@@ -297,7 +300,7 @@ impl Resolve for ast::UnaryExpr {
     self.expr.resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.expr.post_resolve(resolver, cache);
   }
 }
@@ -312,7 +315,7 @@ impl Resolve for ast::AssignStmt {
     self.value.resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.assignee_expr.post_resolve(resolver, cache);
     self.value.post_resolve(resolver, cache);
   }
@@ -330,7 +333,7 @@ impl Resolve for ast::ArrayIndexing {
       resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Definition));
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.index_expr.post_resolve(resolver, cache);
   }
 }
@@ -342,7 +345,7 @@ impl Resolve for ast::ArrayValue {
     }
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     for element in &mut self.elements {
       element.post_resolve(resolver, cache);
     }
@@ -350,7 +353,7 @@ impl Resolve for ast::ArrayValue {
 }
 
 impl Resolve for ast::UnsafeBlockStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.0.declare(resolver, cache);
   }
 
@@ -358,14 +361,14 @@ impl Resolve for ast::UnsafeBlockStmt {
     self.0.resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.0.post_resolve(resolver, cache);
   }
 }
 
 impl Resolve for ast::Parameter {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.1.resolve(resolver);
+    self.ty.resolve(resolver);
   }
 }
 
@@ -380,7 +383,7 @@ impl Resolve for ast::BreakStmt {
 }
 
 impl Resolve for ast::LoopStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
       condition.declare(resolver, cache);
     }
@@ -396,7 +399,7 @@ impl Resolve for ast::LoopStmt {
     self.body.resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     if let Some(condition) = &mut self.condition {
       condition.post_resolve(resolver, cache);
     }
@@ -406,7 +409,7 @@ impl Resolve for ast::LoopStmt {
 }
 
 impl Resolve for ast::IfStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.condition.declare(resolver, cache);
     self.then_block.declare(resolver, cache);
 
@@ -424,7 +427,7 @@ impl Resolve for ast::IfStmt {
     }
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.condition.post_resolve(resolver, cache);
     self.then_block.post_resolve(resolver, cache);
 
@@ -435,7 +438,7 @@ impl Resolve for ast::IfStmt {
 }
 
 impl Resolve for ast::LetStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.value.declare(resolver, cache);
   }
 
@@ -448,7 +451,7 @@ impl Resolve for ast::LetStmt {
     }
   }
 
-  fn post_resolve(&mut self, _resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, _resolver: &mut NameResolver, cache: &cache::Cache) {
     // If the type was explicitly given, proceed to resolve it.
     // Otherwise, infer the type from the resolved value.
     if self.ty.is_none() {
@@ -459,7 +462,7 @@ impl Resolve for ast::LetStmt {
 }
 
 impl Resolve for ast::ReturnStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     if let Some(value) = &self.value {
       value.declare(resolver, cache);
     }
@@ -471,7 +474,7 @@ impl Resolve for ast::ReturnStmt {
     }
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     if let Some(value) = &mut self.value {
       value.post_resolve(resolver, cache);
     }
@@ -479,7 +482,7 @@ impl Resolve for ast::ReturnStmt {
 }
 
 impl Resolve for ast::Block {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     resolver.push_scope();
 
     for statement in &self.statements {
@@ -498,7 +501,7 @@ impl Resolve for ast::Block {
     }
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     // Invoke prelude for any let-statements.
     for statement in &mut self.statements {
       statement.post_resolve(resolver, cache);
@@ -511,7 +514,7 @@ impl Resolve for ast::Literal {
 }
 
 impl Resolve for ast::Function {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     // FIXME: [!] Revise: Ensure the order is correct (test nested parameter, references, etc.).
 
     // Parameter scope.
@@ -543,7 +546,7 @@ impl Resolve for ast::Function {
     self.body.resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     // Infer the prototype's return value, if it was omitted by the user.
     if self.prototype.return_type.is_none() {
       self.prototype.return_type = Some(NameResolver::infer_return_type(&self.body, cache));
@@ -561,7 +564,7 @@ impl Resolve for ast::ExternFunction {
 }
 
 impl Resolve for ast::Definition {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     // TODO: In the future, we'd like to warn against shadowed names. This can be accomplished simply, by using `resolver.contains_relative`.
     if let Some(symbol) = &self.symbol {
       // Check for existing definitions.
@@ -578,9 +581,6 @@ impl Resolve for ast::Definition {
       resolver.bind(symbol.clone(), self.unique_id);
     }
 
-    // Register the node on the cache for lowering lookup.
-    cache.bind(self.unique_id, std::rc::Rc::clone(&self.node_ref_cell));
-
     self.node_ref_cell.borrow().declare(resolver, cache);
   }
 
@@ -588,7 +588,7 @@ impl Resolve for ast::Definition {
     self.node_ref_cell.borrow_mut().resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self
       .node_ref_cell
       .borrow_mut()
@@ -597,7 +597,7 @@ impl Resolve for ast::Definition {
 }
 
 impl Resolve for ast::CallExpr {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     // Declare any possible `Definition` nodes in the arguments
     // (such as inline closures, etc.).
     for argument in &self.arguments {
@@ -613,7 +613,7 @@ impl Resolve for ast::CallExpr {
     }
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.callee_expr.post_resolve(resolver, cache);
 
     for argument in &mut self.arguments {
@@ -623,7 +623,7 @@ impl Resolve for ast::CallExpr {
 }
 
 impl Resolve for ast::InlineExprStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.expr.declare(resolver, cache);
   }
 
@@ -631,13 +631,13 @@ impl Resolve for ast::InlineExprStmt {
     self.expr.resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.expr.post_resolve(resolver, cache);
   }
 }
 
 impl Resolve for ast::BinaryExpr {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.left.declare(resolver, cache);
     self.right.declare(resolver, cache);
   }
@@ -647,7 +647,7 @@ impl Resolve for ast::BinaryExpr {
     self.right.resolve(resolver);
   }
 
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
     self.left.post_resolve(resolver, cache);
     self.right.post_resolve(resolver, cache);
   }
