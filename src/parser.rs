@@ -472,7 +472,11 @@ impl<'a> Parser<'a> {
 
     let type_group = self.parse_type()?;
 
-    Ok((name, type_group, index))
+    Ok(ast::Parameter {
+      name,
+      ty: type_group,
+      position: index,
+    })
   }
 
   /// '(' {%parameter* (,)} (+) ')' ':' %type

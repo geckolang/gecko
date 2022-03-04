@@ -114,7 +114,7 @@ impl TypeCheck for ast::Closure {
       .prototype
       .parameters
       .iter()
-      .map(|x| x.1.clone())
+      .map(|x| x.ty.clone())
       .collect::<Vec<_>>();
 
     let return_type = self.body.infer_type(cache);
@@ -210,12 +210,7 @@ impl TypeCheck for ast::Prototype {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Callable(ast::CallableType {
       return_type: Box::new(self.return_type.as_ref().unwrap().clone()),
-      parameters: self
-        .parameters
-        .iter()
-        .cloned()
-        .map(|x| x.1.clone())
-        .collect(),
+      parameters: self.parameters.iter().cloned().map(|x| x.ty).collect(),
       is_variadic: self.is_variadic,
     })
   }
@@ -382,7 +377,7 @@ impl TypeCheck for ast::ArrayIndexing {
 
     let array_type = match target_array_variable {
       ast::NodeKind::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
-      ast::NodeKind::Parameter(parameter) => &parameter.1,
+      ast::NodeKind::Parameter(parameter) => &parameter.ty,
       _ => unreachable!(),
     };
 
@@ -490,7 +485,7 @@ impl TypeCheck for ast::ExternFunction {
 
 impl TypeCheck for ast::Parameter {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    self.1.clone()
+    self.ty.clone()
   }
 }
 
@@ -533,7 +528,9 @@ impl TypeCheck for ast::Block {
 
 impl TypeCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    (&*cache).force_get(&self.0.target_key.unwrap()).infer_type(cache)
+    (&*cache)
+      .force_get(&self.0.target_key.unwrap())
+      .infer_type(cache)
   }
 }
 
