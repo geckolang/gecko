@@ -65,6 +65,28 @@ impl<'a> Parser<'a> {
     Self::new(tokens, cache)
   }
 
+  // TODO: Consider removing the `token` parameter, and adjust the binary expression parsing function accordingly. Or is a better decision to have it the other way around?
+  /// Determine whether the given token is considered a valid binary
+  /// operator.
+  fn is_binary_operator(token_kind: &lexer::TokenKind) -> bool {
+    // TODO: Support for GTOE and LTOE operators.
+    matches!(
+      token_kind,
+      lexer::TokenKind::SymbolPlus
+        | lexer::TokenKind::SymbolMinus
+        | lexer::TokenKind::SymbolAsterisk
+        | lexer::TokenKind::SymbolSlash
+        | lexer::TokenKind::SymbolLessThan
+        | lexer::TokenKind::SymbolGreaterThan
+        | lexer::TokenKind::KeywordAnd
+        | lexer::TokenKind::KeywordOr
+        | lexer::TokenKind::KeywordNand
+        | lexer::TokenKind::KeywordNor
+        | lexer::TokenKind::KeywordXor
+        | lexer::TokenKind::SymbolEqual
+    )
+  }
+
   /// Parse all top-level definitions.
   pub fn parse_all(&mut self) -> ParserResult<Vec<ast::Node>> {
     let mut result = Vec::new();
@@ -99,28 +121,6 @@ impl<'a> Parser<'a> {
       severity: diagnostic::Severity::Error,
       span: self.get_span(),
     }
-  }
-
-  // TODO: Consider removing the `token` parameter, and adjust the binary expression parsing function accordingly.
-  /// Determine whether the given token is considered a valid binary
-  /// operator.
-  fn is_binary_operator(&self, token: &lexer::TokenKind) -> bool {
-    // TODO: Attempt to simplify.
-    // TODO: Support for GTOE and LTOE operators.
-    matches!(
-      token,
-      lexer::TokenKind::SymbolPlus
-        | lexer::TokenKind::SymbolMinus
-        | lexer::TokenKind::SymbolAsterisk
-        | lexer::TokenKind::SymbolSlash
-        | lexer::TokenKind::SymbolLessThan
-        | lexer::TokenKind::SymbolGreaterThan
-        | lexer::TokenKind::KeywordAnd
-        | lexer::TokenKind::KeywordOr
-        | lexer::TokenKind::KeywordNand
-        | lexer::TokenKind::KeywordNor
-        | lexer::TokenKind::KeywordXor
-    ) || matches!(token, lexer::TokenKind::SymbolEqual if self.peek_is(&lexer::TokenKind::SymbolEqual))
   }
 
   fn is_unary_operator(&self) -> bool {
@@ -546,14 +546,9 @@ impl<'a> Parser<'a> {
     }
 
     self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
+    self.skip_past(&lexer::TokenKind::SymbolColon);
 
-    let return_type = if self.is(&lexer::TokenKind::SymbolColon) {
-      self.skip();
-
-      Some(self.parse_type()?)
-    } else {
-      None
-    };
+    let return_type = self.parse_type()?;
 
     Ok(ast::Prototype {
       parameters,
@@ -594,12 +589,6 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
-
-    // Extern functions must provide an explicit return type for their
-    // prototypes.
-    if prototype.return_type.is_none() {
-      return Err(self.expected("explicit return type"));
-    }
 
     Ok(ast::ExternFunction {
       name: name.clone(),
@@ -667,7 +656,6 @@ impl<'a> Parser<'a> {
 
     while self.is(&lexer::TokenKind::SymbolAt) {
       let span_start = self.index;
-
       let attribute = self.parse_attribute()?;
 
       if attributes.iter().any(|x| x.name == x.name) {
@@ -766,12 +754,10 @@ impl<'a> Parser<'a> {
     };
 
     let name = self.parse_name()?;
-    let mut ty = None;
 
-    if self.is(&lexer::TokenKind::SymbolColon) {
-      self.skip();
-      ty = Some(self.parse_type()?);
-    }
+    self.skip_past(&lexer::TokenKind::SymbolColon)?;
+
+    let ty = self.parse_type()?;
 
     self.skip_past(&lexer::TokenKind::SymbolEqual)?;
 
@@ -793,12 +779,14 @@ impl<'a> Parser<'a> {
 
     let condition = self.parse_expr()?;
     let then_block = self.parse_block()?;
-    let mut else_block = None;
 
-    if self.is(&lexer::TokenKind::KeywordElse) {
+    let else_block = if self.is(&lexer::TokenKind::KeywordElse) {
       self.skip();
-      else_block = Some(self.parse_block()?);
-    }
+
+      Some(self.parse_block()?)
+    } else {
+      None
+    };
 
     Ok(ast::IfStmt {
       condition: Box::new(condition),
@@ -889,36 +877,16 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::LiteralInt(value) => {
         self.skip();
 
-        // TODO: Temporary syntax, until casting is implemented.
-        let int_type = if self.is(&lexer::TokenKind::SymbolParenthesesL) {
-          self.skip();
-
-          let int_type = self.parse_int_type()?;
-
-          self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
-
-          Some(int_type)
-        } else {
-          None
-        };
-
-        let mut size = minimum_int_size_of(&value)
-          .expect("Integer literal too big to fit in any builtin integer type");
-
+        let minimum_size = minimum_int_size_of(&value);
+        
+        // TODO: What about integers that don't fit in ANY size (too large)?
         // TODO: Deal with unsigned integers here?
         // Default size to 32 bit-width.
-        if size < ast::IntSize::I32 {
-          size = ast::IntSize::I32;
-        }
-
-        // TODO: Temporary.
-        if let Some(int_type) = int_type {
-          if let ast::Type::Primitive(ast::PrimitiveType::Int(type_size)) = int_type {
-            size = type_size;
-          } else {
-            unreachable!();
-          }
-        }
+        let size = if minimum_size < ast::IntSize::I32 {
+          ast::IntSize::I32
+        } else {
+          minimum_size
+        };
 
         ast::Literal::Int(value, size)
       }
@@ -1127,11 +1095,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
       lexer::TokenKind::SymbolAmpersand => ast::OperatorKind::AddressOf,
       lexer::TokenKind::SymbolBacktick => ast::OperatorKind::Cast,
-      lexer::TokenKind::SymbolEqual if self.peek_is(&lexer::TokenKind::SymbolEqual) => {
-        self.skip();
-
-        ast::OperatorKind::Equality
-      }
+      lexer::TokenKind::SymbolEqual => ast::OperatorKind::Equality,
       // TODO: Implement logic for GTE & LTE.
       _ => return Err(self.expected("operator")),
     };
@@ -1154,13 +1118,13 @@ impl<'a> Parser<'a> {
     let precedence = get_token_precedence(&token_buffer);
     let mut buffer = left;
 
-    while self.is_binary_operator(token_buffer) && (precedence > min_precedence) {
+    while Parser::is_binary_operator(token_buffer) && (precedence > min_precedence) {
       let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
 
       token_buffer = self.force_get();
 
-      while self.is_binary_operator(&token_buffer)
+      while Parser::is_binary_operator(&token_buffer)
         && get_token_precedence(&token_buffer) > precedence
       {
         // TODO: Are we adding the correct amount of precedence here? Shouldn't there be a higher difference in precedence?
@@ -1570,18 +1534,13 @@ mod tests {
 
   #[test]
   fn is_binary_operator() {
-    let mut context = cache::Cache::new();
-    let mut parser = Parser::new(Vec::new(), &mut context);
+    assert!(!Parser::is_binary_operator(&lexer::TokenKind::SymbolBraceL));
+    assert!(Parser::is_binary_operator(&lexer::TokenKind::SymbolPlus));
+    assert!(Parser::is_binary_operator(&lexer::TokenKind::SymbolEqual));
+    assert!(Parser::is_binary_operator(&lexer::TokenKind::KeywordAnd));
+    assert!(!Parser::is_binary_operator(&lexer::TokenKind::EOF));
 
-    assert!(!parser.is_binary_operator(&lexer::TokenKind::SymbolBraceL));
-    assert!(parser.is_binary_operator(&lexer::TokenKind::SymbolPlus));
-    assert!(!parser.is_binary_operator(&lexer::TokenKind::SymbolEqual));
-    parser.tokens.push((lexer::TokenKind::SymbolEqual, 0));
-    assert!(!parser.is_binary_operator(&lexer::TokenKind::SymbolEqual));
-    parser.tokens.push((lexer::TokenKind::SymbolEqual, 0));
-    assert!(parser.is_binary_operator(&lexer::TokenKind::SymbolEqual));
-    assert!(parser.is_binary_operator(&lexer::TokenKind::KeywordAnd));
-    assert!(!parser.is_binary_operator(&lexer::TokenKind::EOF));
+    // TODO: More.
   }
 
   #[test]

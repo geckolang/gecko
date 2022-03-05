@@ -46,10 +46,7 @@ impl TypeCheckContext {
       }
     }
 
-    if !Self::unify(
-      prototype_a.return_type.as_ref().unwrap(),
-      prototype_b.return_type.as_ref().unwrap(),
-    ) {
+    if !Self::unify(&prototype_a.return_type, &prototype_b.return_type) {
       return Some("return type".to_string());
     }
 
@@ -335,7 +332,7 @@ impl TypeCheck for ast::Prototype {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     // TODO: Simplify.
     ast::Type::Callable(ast::CallableType {
-      return_type: Box::new(self.return_type.as_ref().unwrap().clone()),
+      return_type: Box::new(self.return_type.clone()),
       parameter_types: self
         .parameters
         .iter()
@@ -505,7 +502,7 @@ impl TypeCheck for ast::ArrayIndexing {
     let target_array_variable = &*cache.force_get(&self.target_id.unwrap());
 
     let array_type = match &target_array_variable.kind {
-      ast::NodeKind::LetStmt(let_stmt) => let_stmt.ty.as_ref().unwrap(),
+      ast::NodeKind::LetStmt(let_stmt) => &let_stmt.ty,
       ast::NodeKind::Parameter(parameter) => &parameter.ty,
       _ => unreachable!(),
     };
@@ -776,20 +773,18 @@ impl TypeCheck for ast::BreakStmt {
 
 impl TypeCheck for ast::Definition {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.node_ref_cell.borrow().infer_type(cache)
+    self.node.infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let node = self.node_ref_cell.borrow();
-
     if matches!(
-      (&*node).kind,
+      self.node.kind,
       ast::NodeKind::Function(_) | ast::NodeKind::Closure(_)
     ) {
       type_context.current_function_key = Some(self.unique_id);
     }
 
-    node.type_check(type_context, cache);
+    self.node.type_check(type_context, cache);
   }
 }
 
@@ -812,7 +807,7 @@ impl TypeCheck for ast::LetStmt {
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
     let value_type = self.value.infer_type(cache);
 
-    if !TypeCheckContext::unify(self.ty.as_ref().unwrap(), &value_type) {
+    if !TypeCheckContext::unify(&self.ty, &value_type) {
       type_context.diagnostic_builder.error(format!(
         "variable declaration of `{}` value and type mismatch",
         self.name
@@ -828,8 +823,7 @@ impl TypeCheck for ast::ReturnStmt {
     let current_function_node = cache
       .declarations
       .get(&type_context.current_function_key.unwrap())
-      .unwrap()
-      .borrow();
+      .unwrap();
 
     let mut name = None;
     let prototype;
@@ -845,14 +839,12 @@ impl TypeCheck for ast::ReturnStmt {
       _ => unreachable!(),
     };
 
-    let return_type = prototype.return_type.as_ref().unwrap();
-
     // TODO: Whether a function returns is already checked. Limit this to unifying the types only.
-    if !return_type.is_unit() && self.value.is_none() {
+    if !prototype.return_type.is_unit() && self.value.is_none() {
       type_context
         .diagnostic_builder
         .error("return statement must return a value".to_string());
-    } else if return_type.is_unit() && self.value.is_some() {
+    } else if prototype.return_type.is_unit() && self.value.is_some() {
       type_context
         .diagnostic_builder
         .error("return statement must not return a value".to_string());
@@ -864,7 +856,7 @@ impl TypeCheck for ast::ReturnStmt {
     if let Some(value) = &self.value {
       let value_type = value.infer_type(cache);
 
-      if !TypeCheckContext::unify(return_type, &value_type) {
+      if !TypeCheckContext::unify(&prototype.return_type, &value_type) {
         type_context.diagnostic_builder.error(format!(
           "return statement value and prototype return type mismatch for {}",
           if let Some(name) = name {
@@ -892,11 +884,9 @@ impl TypeCheck for ast::Function {
         .error("cannot accept instance in a non-impl function".to_string());
     }
 
-    let return_type = self.prototype.return_type.as_ref().unwrap();
-
     // TODO: Special case for the `main` function. Unify expected signature.
     // If applicable, the function's body must return a value.
-    if !return_type.is_unit()
+    if !self.prototype.return_type.is_unit()
       && !self.body.yield_last_expr
       && !self
         .body
@@ -918,7 +908,7 @@ impl TypeCheck for ast::Function {
     }
 
     if self.body.yield_last_expr
-      && !TypeCheckContext::unify(return_type, &self.body.infer_type(cache))
+      && !TypeCheckContext::unify(&self.prototype.return_type, &self.body.infer_type(cache))
     {
       // TODO: Improve error message.
       type_context.diagnostic_builder.error(format!(
@@ -931,9 +921,7 @@ impl TypeCheck for ast::Function {
       let main_prototype = ast::Prototype {
         // TODO: Parameters. Also, the comparison should ignore parameter names.
         parameters: vec![],
-        return_type: Some(ast::Type::Primitive(ast::PrimitiveType::Int(
-          ast::IntSize::I32,
-        ))),
+        return_type: ast::Type::Primitive(ast::PrimitiveType::Int(ast::IntSize::I32)),
         is_variadic: false,
         accepts_instance: false,
         instance_type_id: None,

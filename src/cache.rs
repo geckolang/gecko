@@ -3,11 +3,8 @@ use std::cell::Ref;
 
 pub type UniqueId = usize;
 
-// TODO: For the `Cache` struct, we might not need a `RefCell<>`, since there are no mutable borrows.
-pub type CachedNode = std::rc::Rc<std::cell::RefCell<ast::Node>>;
-
 pub struct Cache {
-  pub declarations: std::collections::HashMap<UniqueId, CachedNode>,
+  pub declarations: std::collections::HashMap<UniqueId, ast::Node>,
   pub struct_impls: std::collections::HashMap<UniqueId, Vec<(UniqueId, String)>>,
   pub new_symbol_table: std::collections::HashMap<UniqueId, ast::Node>,
   unique_id_counter: usize,
@@ -24,11 +21,11 @@ impl Cache {
   }
 
   // TODO: Use this function as a guide to ensure that nothing is looked up or inferred before its actually resolved. Within the type-checker.
-  pub fn force_get(&self, key: &UniqueId) -> Ref<'_, ast::Node> {
-    self.declarations.get(key).unwrap().as_ref().borrow()
+  pub fn force_get(&self, key: &UniqueId) -> &ast::Node {
+    self.declarations.get(key).unwrap()
   }
 
-  pub fn bind(&mut self, unique_id: UniqueId, node: CachedNode) {
+  pub fn bind(&mut self, unique_id: UniqueId, node: ast::Node) {
     self.declarations.insert(unique_id, node);
   }
 
@@ -56,8 +53,4 @@ impl Cache {
 
     self.struct_impls.insert(struct_unique_id, methods);
   }
-}
-
-pub fn create_cached_node(node: ast::Node) -> CachedNode {
-  std::rc::Rc::new(std::cell::RefCell::new(node))
 }

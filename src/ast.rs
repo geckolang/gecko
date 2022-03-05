@@ -281,7 +281,7 @@ pub enum Literal {
 #[derive(Debug)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
-  pub return_type: Option<Type>,
+  pub return_type: Type,
   pub is_variadic: bool,
   pub accepts_instance: bool,
   pub instance_type_id: Option<cache::UniqueId>,
@@ -334,7 +334,7 @@ pub struct ReturnStmt {
 pub struct LetStmt {
   pub name: String,
   // TODO: Since there's no use for explicit type, simply assume its always inferred. Same for prototype return types.
-  pub ty: Option<Type>,
+  pub ty: Type,
   pub value: Box<Node>,
   pub is_mutable: bool,
 }
@@ -430,20 +430,8 @@ pub struct UnaryExpr {
 #[derive(Debug)]
 pub struct Definition {
   pub symbol: Option<name_resolution::Symbol>,
-  pub node_ref_cell: cache::CachedNode,
+  pub node: Box<Node>,
   pub unique_id: cache::UniqueId,
-}
-
-impl Definition {
-  // TODO: Unconventional, also cloning types.
-  pub fn force_get_param_type(&self) -> Type {
-    let node = &*self.node_ref_cell.borrow();
-
-    match &node.kind {
-      NodeKind::Parameter(parameter) => parameter.ty.clone(),
-      _ => panic!("expected node kind to be parameter"),
-    }
-  }
 }
 
 #[derive(Debug)]
