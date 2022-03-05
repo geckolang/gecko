@@ -547,18 +547,15 @@ impl Resolve for ast::Definition {
       resolver.bind(symbol.clone(), self.unique_id);
     }
 
-    self.node_ref_cell.borrow().declare(resolver, cache);
+    self.node.declare(resolver, cache);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.node_ref_cell.borrow_mut().resolve(resolver);
+    self.node.resolve(resolver);
   }
 
   fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self
-      .node_ref_cell
-      .borrow_mut()
-      .post_resolve(resolver, cache);
+    self.node.post_resolve(resolver, cache);
   }
 }
 

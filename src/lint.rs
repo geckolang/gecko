@@ -185,10 +185,8 @@ impl Lint for ast::ContinueStmt {
 
 impl Lint for ast::Definition {
   fn lint(&self, cache: &mut cache::Cache, context: &mut LintContext) {
-    let node = &*self.node_ref_cell.borrow();
-
     // TODO: Simplify. Abstract the map, then process.
-    match node.kind {
+    match self.node.kind {
       ast::NodeKind::Function(_) => {
         if !context.function_references.contains_key(&self.unique_id) {
           context.function_references.insert(self.unique_id, false);
@@ -202,7 +200,7 @@ impl Lint for ast::Definition {
       _ => {}
     };
 
-    node.lint(cache, context);
+    self.node.lint(cache, context);
   }
 }
 

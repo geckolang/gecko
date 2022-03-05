@@ -772,20 +772,18 @@ impl TypeCheck for ast::BreakStmt {
 
 impl TypeCheck for ast::Definition {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.node_ref_cell.borrow().infer_type(cache)
+    self.node.infer_type(cache)
   }
 
   fn type_check(&self, type_context: &mut TypeCheckContext, cache: &cache::Cache) {
-    let node = self.node_ref_cell.borrow();
-
     if matches!(
-      (&*node).kind,
+      self.node.kind,
       ast::NodeKind::Function(_) | ast::NodeKind::Closure(_)
     ) {
       type_context.current_function_key = Some(self.unique_id);
     }
 
-    node.type_check(type_context, cache);
+    self.node.type_check(type_context, cache);
   }
 }
 
@@ -824,8 +822,7 @@ impl TypeCheck for ast::ReturnStmt {
     let current_function_node = cache
       .declarations
       .get(&type_context.current_function_key.unwrap())
-      .unwrap()
-      .borrow();
+      .unwrap();
 
     let mut name = None;
     let prototype;

@@ -1269,14 +1269,11 @@ impl Lower for ast::Definition {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let node = self.node_ref_cell.borrow();
-    let node_kind = &(&*node).kind;
-
     // FIXME: What about closures?
     // Set the pending function definition key to cache the function early.
     // This eliminates problems with multi-borrows that may occur when lowering
     // recursive functions.
-    if let ast::NodeKind::Function(_) = node_kind {
+    if let ast::NodeKind::Function(_) = self.node.kind {
       generator.pending_function_unique_id = Some(self.unique_id);
     }
 
