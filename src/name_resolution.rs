@@ -20,12 +20,6 @@ pub trait Resolve {
   fn resolve(&mut self, _resolver: &mut NameResolver) {
     //
   }
-
-  /// Used to fill-in inferred types, as well as any other resolution
-  /// that needs to occur with access to the cache's `.force_get` method.
-  fn post_resolve(&mut self, _resolver: &mut NameResolver, _cache: &cache::Cache) {
-    //
-  }
 }
 
 impl Resolve for ast::Type {
@@ -50,10 +44,6 @@ impl Resolve for ast::Node {
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
     crate::dispatch!(&mut self.kind, Resolve::resolve, resolver);
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    crate::dispatch!(&mut self.kind, Resolve::post_resolve, resolver, cache);
   }
 }
 
@@ -105,26 +95,6 @@ impl Resolve for ast::StructImpl {
 
       resolver.current_struct_type_id = None;
     }
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    resolver.current_struct_type_id = Some(self.target_struct_pattern.target_id.unwrap());
-
-    for method in &mut self.methods {
-      method.post_resolve(resolver, cache);
-    }
-
-    resolver.current_struct_type_id = None;
-
-    // FIXME: Commented out for fix.
-    // cache.add_struct_impl(
-    //   self.target_struct_pattern.target_id.unwrap(),
-    //   self
-    //     .methods
-    //     .iter()
-    //     .map(|x| (x.unique_id, x.symbol.as_ref().unwrap().0.clone()))
-    //     .collect(),
-    // );
   }
 }
 
@@ -219,12 +189,6 @@ impl Resolve for ast::StructValue {
       field.resolve(resolver);
     }
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    for field in &mut self.fields {
-      field.post_resolve(resolver, cache);
-    }
-  }
 }
 
 impl Resolve for ast::Prototype {
@@ -267,12 +231,6 @@ impl Resolve for ast::Prototype {
     // TODO: Be a bit more specific.
     // NOTE: The prototype's return type is manually resolved after its body is resolved.
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, _cache: &cache::Cache) {
-    if self.accepts_instance {
-      self.instance_type_id = Some(resolver.current_struct_type_id.unwrap());
-    }
-  }
 }
 
 impl Resolve for ast::StructType {
@@ -291,10 +249,6 @@ impl Resolve for ast::UnaryExpr {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.expr.resolve(resolver);
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.expr.post_resolve(resolver, cache);
-  }
 }
 
 impl Resolve for ast::Enum {
@@ -305,11 +259,6 @@ impl Resolve for ast::AssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.assignee_expr.resolve(resolver);
     self.value.resolve(resolver);
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.assignee_expr.post_resolve(resolver, cache);
-    self.value.post_resolve(resolver, cache);
   }
 }
 
@@ -324,22 +273,12 @@ impl Resolve for ast::ArrayIndexing {
     self.target_id =
       resolver.relative_lookup_or_error(&(self.name.clone(), SymbolKind::Definition));
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.index_expr.post_resolve(resolver, cache);
-  }
 }
 
 impl Resolve for ast::ArrayValue {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     for element in &mut self.elements {
       element.resolve(resolver);
-    }
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    for element in &mut self.elements {
-      element.post_resolve(resolver, cache);
     }
   }
 }
@@ -351,10 +290,6 @@ impl Resolve for ast::UnsafeBlockStmt {
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.0.resolve(resolver);
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.0.post_resolve(resolver, cache);
   }
 }
 
@@ -390,14 +325,6 @@ impl Resolve for ast::LoopStmt {
 
     self.body.resolve(resolver);
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    if let Some(condition) = &mut self.condition {
-      condition.post_resolve(resolver, cache);
-    }
-
-    self.body.post_resolve(resolver, cache);
-  }
 }
 
 impl Resolve for ast::IfStmt {
@@ -416,15 +343,6 @@ impl Resolve for ast::IfStmt {
 
     if let Some(else_block) = &mut self.else_block {
       else_block.resolve(resolver);
-    }
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.condition.post_resolve(resolver, cache);
-    self.then_block.post_resolve(resolver, cache);
-
-    if let Some(else_block) = &mut self.else_block {
-      else_block.post_resolve(resolver, cache);
     }
   }
 }
@@ -452,12 +370,6 @@ impl Resolve for ast::ReturnStmt {
       value.resolve(resolver);
     }
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    if let Some(value) = &mut self.value {
-      value.post_resolve(resolver, cache);
-    }
-  }
 }
 
 impl Resolve for ast::Block {
@@ -477,13 +389,6 @@ impl Resolve for ast::Block {
     // TODO:
     for statement in &mut self.statements {
       statement.resolve(resolver);
-    }
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    // Invoke prelude for any let-statements.
-    for statement in &mut self.statements {
-      statement.post_resolve(resolver, cache);
     }
   }
 }
@@ -553,10 +458,6 @@ impl Resolve for ast::Definition {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.node.resolve(resolver);
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.node.post_resolve(resolver, cache);
-  }
 }
 
 impl Resolve for ast::CallExpr {
@@ -575,14 +476,6 @@ impl Resolve for ast::CallExpr {
       argument.resolve(resolver);
     }
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.callee_expr.post_resolve(resolver, cache);
-
-    for argument in &mut self.arguments {
-      argument.post_resolve(resolver, cache);
-    }
-  }
 }
 
 impl Resolve for ast::InlineExprStmt {
@@ -592,10 +485,6 @@ impl Resolve for ast::InlineExprStmt {
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.expr.resolve(resolver);
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.expr.post_resolve(resolver, cache);
   }
 }
 
@@ -608,11 +497,6 @@ impl Resolve for ast::BinaryExpr {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.left.resolve(resolver);
     self.right.resolve(resolver);
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    self.left.post_resolve(resolver, cache);
-    self.right.post_resolve(resolver, cache);
   }
 }
 
