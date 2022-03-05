@@ -1170,12 +1170,10 @@ impl Lower for ast::LetStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let ty = self.ty.as_ref().unwrap();
-
     // TODO: Do we need to resolve here?
     // Special cases. The allocation is done elsewhere.
     if matches!(
-      TypeCheckContext::flatten_type(ty),
+      TypeCheckContext::flatten_type(&self.ty),
       ast::Type::Callable(_) | ast::Type::Struct(_)
     ) {
       // TODO: Here create a definition for the closure, with the let statement as the name?
@@ -1184,7 +1182,7 @@ impl Lower for ast::LetStmt {
     }
 
     // FIXME: [!] Bug: Use type-caching. Declaring multiple variables with the same struct type will cause repeated type definitions.
-    let llvm_type = generator.lower_type(ty, cache);
+    let llvm_type = generator.lower_type(&self.ty, cache);
 
     let llvm_alloca = generator
       .llvm_builder
@@ -1670,12 +1668,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       );
     }
 
-    let return_type = prototype.return_type.as_ref().unwrap();
-
     // TODO: Simplify code (find common ground between `void` and `basic` types).
-    if !return_type.is_unit() {
+    if !prototype.return_type.is_unit() {
       self
-        .lower_type(return_type, cache)
+        .lower_type(&prototype.return_type, cache)
         // TODO: Is `is_variadic` being copied?
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)

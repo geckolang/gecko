@@ -169,14 +169,6 @@ impl Resolve for ast::Closure {
 
     self.prototype.resolve(resolver);
   }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(NameResolver::infer_return_type(&self.body, cache));
-    }
-
-    self.body.post_resolve(resolver, cache);
-  }
 }
 
 impl Resolve for ast::TypeAlias {
@@ -272,8 +264,8 @@ impl Resolve for ast::Prototype {
       self.this_parameter.as_mut().unwrap().resolve(resolver);
     }
 
-    // TODO: What exactly is manually resolved?
-    // NOTE: The prototype is manually resolved after its body is resolved.
+    // TODO: Be a bit more specific.
+    // NOTE: The prototype's return type is manually resolved after its body is resolved.
   }
 
   fn post_resolve(&mut self, resolver: &mut NameResolver, _cache: &cache::Cache) {
@@ -444,20 +436,7 @@ impl Resolve for ast::LetStmt {
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.value.resolve(resolver);
-
-    // If the type was explicitly given, proceed to resolve it.
-    if let Some(ty) = &mut self.ty {
-      ty.resolve(resolver);
-    }
-  }
-
-  fn post_resolve(&mut self, _resolver: &mut NameResolver, cache: &cache::Cache) {
-    // If the type was explicitly given, proceed to resolve it.
-    // Otherwise, infer the type from the resolved value.
-    if self.ty.is_none() {
-      // FIXME: Usage of inference. What if the value's type can only be inferred after ALL the symbols have been resolved?
-      self.ty = Some(self.value.infer_type(cache));
-    }
+    self.ty.resolve(resolver);
   }
 }
 
@@ -536,24 +515,11 @@ impl Resolve for ast::Function {
 
     // TODO: Do we need scope management here, for the prototype's parameters?
     self.prototype.resolve(resolver);
-
-    if let Some(return_type) = &mut self.prototype.return_type {
-      return_type.resolve(resolver);
-    }
+    self.prototype.return_type.resolve(resolver);
 
     // Finally, after both the prototype and its return type have been resolved,
     // proceed to resolve the body.
     self.body.resolve(resolver);
-  }
-
-  fn post_resolve(&mut self, resolver: &mut NameResolver, cache: &cache::Cache) {
-    // Infer the prototype's return value, if it was omitted by the user.
-    if self.prototype.return_type.is_none() {
-      self.prototype.return_type = Some(NameResolver::infer_return_type(&self.body, cache));
-    }
-
-    self.prototype.post_resolve(resolver, cache);
-    self.body.post_resolve(resolver, cache);
   }
 }
 

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{ast, cache, diagnostic};
 
 pub struct LintContext {
@@ -21,13 +23,18 @@ impl LintContext {
     // TODO: Re-implement.
   }
 
+  /// Attempt to lint a name and subject with the provided casing.
+  ///
+  /// If there isn't a name for the specified casing, `unknown` will
+  /// be used instead. The supported casings are limited to only snake
+  /// and pascal casing.
   fn lint_name_casing(&mut self, subject: &str, name: &str, case: convert_case::Case) {
     use convert_case::Casing;
 
     let case_name = match case {
       convert_case::Case::Snake => "snake",
       convert_case::Case::Pascal => "pascal",
-      _ => unreachable!(),
+      _ => "unknown",
     };
 
     if !name.is_case(case) {

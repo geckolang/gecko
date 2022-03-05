@@ -271,7 +271,7 @@ pub enum Literal {
 #[derive(Debug)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
-  pub return_type: Option<Type>,
+  pub return_type: Type,
   pub is_variadic: bool,
   pub accepts_instance: bool,
   pub instance_type_id: Option<cache::UniqueId>,
@@ -324,7 +324,7 @@ pub struct ReturnStmt {
 pub struct LetStmt {
   pub name: String,
   // TODO: Since there's no use for explicit type, simply assume its always inferred. Same for prototype return types.
-  pub ty: Option<Type>,
+  pub ty: Type,
   pub value: Box<Node>,
   pub is_mutable: bool,
 }
