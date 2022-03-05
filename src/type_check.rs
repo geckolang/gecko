@@ -658,6 +658,7 @@ impl TypeCheck for ast::Literal {
       ast::Literal::Char(_) => ast::PrimitiveType::Char,
       ast::Literal::Int(_, size) => ast::PrimitiveType::Int(size.clone()),
       ast::Literal::String(_) => ast::PrimitiveType::String,
+      ast::Literal::Float(_, size) => ast::PrimitiveType::Float(size.clone()),
       ast::Literal::Nullptr => {
         return ast::Type::Pointer(Box::new(ast::Type::Primitive(ast::PrimitiveType::Null)))
       }

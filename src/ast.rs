@@ -49,7 +49,7 @@ pub struct Parameter {
   pub position: u32,
 }
 
-#[derive(PartialEq, PartialOrd, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
 pub enum IntSize {
   U8,
   U16,
@@ -63,9 +63,18 @@ pub enum IntSize {
   Isize,
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+pub enum FloatSize {
+  F16,
+  F32,
+  F64,
+  F128,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum PrimitiveType {
   Int(IntSize),
+  Float(FloatSize),
   Bool,
   Char,
   String,
@@ -262,7 +271,8 @@ pub struct AssignStmt {
 #[derive(Debug)]
 pub enum Literal {
   Bool(bool),
-  Int(u64, IntSize),
+  Int(rug::Integer, IntSize),
+  Float(rug::Float, FloatSize),
   Char(char),
   String(String),
   Nullptr,

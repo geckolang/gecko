@@ -11,7 +11,7 @@ pub enum TokenKind {
   Whitespace(String),
   Comment(String),
   LiteralString(String),
-  LiteralInt(u64),
+  LiteralInt(rug::Integer),
   LiteralBool(bool),
   LiteralChar(char),
   LiteralNullptr,
@@ -88,6 +88,24 @@ pub struct Lexer {
   /// If the input string was empty, or if the index is out of
   /// bounds, it will be `None`.
   current_char: Option<char>,
+}
+
+/// Determine whether a character is a letter, and within
+/// the range of a-Z, or is _.
+fn is_letter(character: char) -> bool {
+  character.is_ascii_alphabetic() || character == '_'
+}
+
+/// Determine if the character is a digit within the range
+/// of 0-9.
+fn is_digit(character: char) -> bool {
+  character.is_digit(10)
+}
+
+/// Determine if the current character is a whitespace
+/// character.
+fn is_whitespace(character: char) -> bool {
+  character.is_whitespace()
 }
 
 impl Lexer {
@@ -177,8 +195,8 @@ impl Lexer {
     })
   }
 
-  fn read_number(&mut self) -> Result<u64, diagnostic::Diagnostic> {
-    let number_result = self.read_while(is_digit).parse::<u64>();
+  fn read_integer(&mut self) -> Result<rug::Integer, diagnostic::Diagnostic> {
+    let number_result = self.read_while(is_digit).parse::<rug::Integer>();
 
     if let Err(_) = number_result {
       return Err(diagnostic::Diagnostic {
@@ -321,7 +339,7 @@ impl Lexer {
               None => Ok(TokenKind::Identifier(identifier)),
             }
           } else if is_digit(current_char) {
-            Ok(TokenKind::LiteralInt(self.read_number()?))
+            Ok(TokenKind::LiteralInt(self.read_integer()?))
           } else {
             let illegal_char = current_char;
 
@@ -401,29 +419,6 @@ fn match_token(identifier: &str) -> Option<TokenKind> {
     "false" => TokenKind::LiteralBool(false),
     _ => return None,
   })
-}
-
-/// Determine whether a character is a letter, and within
-/// the range of a-Z, or is _.
-fn is_letter(character: char) -> bool {
-  ('a' <= character && character <= 'z')
-    || ('A' <= character && character <= 'Z')
-    || character == '_'
-}
-
-/// Determine if the character is a digit within the range
-/// of 0-9.
-fn is_digit(character: char) -> bool {
-  character.is_digit(10)
-}
-
-/// Determine if the current character is a whitespace
-/// character.
-fn is_whitespace(character: char) -> bool {
-  match character {
-    ' ' | '\t' | '\n' | '\r' => true,
-    _ => false,
-  }
 }
 
 #[cfg(test)]
@@ -599,14 +594,35 @@ mod tests {
   fn lex_number_single_digit() {
     let mut lexer = Lexer::from_str("1");
 
-    assert_eq!(Ok(TokenKind::LiteralInt(1)), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::LiteralInt(1.into())), lexer.lex_token());
   }
 
   #[test]
-  fn lex_number() {
+  fn lex_integer() {
     let mut lexer = Lexer::from_str("123");
 
-    assert_eq!(Ok(TokenKind::LiteralInt(123)), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::LiteralInt(123.into())), lexer.lex_token());
+  }
+  #[test]
+  fn lex_float1() {
+    let mut lexer = Lexer::from_str("42.69");
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::LiteralInt(42.into())));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::SymbolDot));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::LiteralInt(69.into())));
+  }
+
+  #[test]
+  fn lex_float2() {
+    let mut lexer = Lexer::from_str("42.");
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::LiteralInt(42.into())));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::SymbolDot));
+  }
+
+  #[test]
+  fn lex_float3() {
+    let mut lexer = Lexer::from_str(".69");
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::SymbolDot));
+    assert_eq!(lexer.lex_token(), Ok(TokenKind::LiteralInt(69.into())));
   }
 
   #[test]

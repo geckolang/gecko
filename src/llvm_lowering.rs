@@ -896,6 +896,18 @@ impl Lower for ast::Literal {
     _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match self {
+      ast::Literal::Float(value, float_kind) => {
+        let llvm_float_type = match float_kind {
+          ast::FloatSize::F16 => generator.llvm_context.f16_type(),
+          ast::FloatSize::F32 => generator.llvm_context.f32_type(),
+          ast::FloatSize::F64 => generator.llvm_context.f64_type(),
+          ast::FloatSize::F128 => generator.llvm_context.f128_type(),
+        };
+
+        llvm_float_type
+          .const_float_from_string(&value.to_string_radix(16, None))
+          .as_basic_value_enum()
+      }
       ast::Literal::Int(value, integer_kind) => {
         let llvm_int_type = generator
           .llvm_context
@@ -909,7 +921,9 @@ impl Lower for ast::Literal {
 
         llvm_int_type
           .const_int(
-            value.clone(),
+            value
+              .to_u64()
+              .expect("Number cannot fit in an 64bit integer"),
             match integer_kind {
               ast::IntSize::I8
               | ast::IntSize::I16
@@ -927,16 +941,19 @@ impl Lower for ast::Literal {
         // TODO: Is this cloning?
         .const_int(*value as u64, false)
         .as_basic_value_enum(),
+
       ast::Literal::Bool(value) => generator
         .llvm_context
         .bool_type()
         // TODO: Is this cloning?
         .const_int(*value as u64, false)
         .as_basic_value_enum(),
+
       ast::Literal::String(value) => generator
         .llvm_builder
         .build_global_string_ptr(value.as_str(), "string_literal")
         .as_basic_value_enum(),
+
       ast::Literal::Nullptr => generator
         .llvm_context
         // FIXME: The type should be correct. Otherwise, we'll get a type mismatch error when compiling the LLVM IR.
@@ -1573,6 +1590,15 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .i8_type()
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum(),
+        ast::PrimitiveType::Float(float_kind) => {
+          let llvm_float_type = match float_kind {
+            ast::FloatSize::F16 => self.llvm_context.f16_type(),
+            ast::FloatSize::F32 => self.llvm_context.f32_type(),
+            ast::FloatSize::F64 => self.llvm_context.f64_type(),
+            ast::FloatSize::F128 => self.llvm_context.f128_type(),
+          };
+          llvm_float_type.as_basic_type_enum()
+        }
         // NOTE: The null primitive type is never lowered, only the nullptr value.
         ast::PrimitiveType::Null => unreachable!(),
       },

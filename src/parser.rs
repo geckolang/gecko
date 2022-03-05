@@ -4,20 +4,19 @@ pub const THIS_IDENTIFIER: &str = "this";
 
 // TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
 /// Determine the minimum bit-size in which a number can fit.
-fn minimum_int_size_of(number: &u64) -> ast::IntSize {
-  let log2_result = f64::log2(*number as f64 + 1_f64);
-  let minimum_bit_size = f64::floor(log2_result) as u64;
+fn minimum_int_size_of(number: &rug::Integer) -> Option<ast::IntSize> {
+  let minimum_bit_size = number.significant_bits();
 
   if minimum_bit_size <= 8 {
-    ast::IntSize::I8
+    Some(ast::IntSize::I8)
   } else if minimum_bit_size <= 16 {
-    ast::IntSize::I16
+    Some(ast::IntSize::I16)
   } else if minimum_bit_size <= 32 {
-    ast::IntSize::I32
+    Some(ast::IntSize::I32)
   } else if minimum_bit_size <= 64 {
-    ast::IntSize::I64
+    Some(ast::IntSize::I64)
   } else {
-    panic!("expected minimum bit-size to be smaller than 64");
+    None
   }
 }
 
@@ -389,7 +388,13 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::SymbolComma)?;
 
     let size = match self.force_get() {
-      lexer::TokenKind::LiteralInt(value) => value.clone() as u32,
+      lexer::TokenKind::LiteralInt(value) => {
+        if let Some(value) = value.to_u32() {
+          value
+        } else {
+          return Err(self.expected("array size too big"));
+        }
+      }
       _ => return Err(self.expected("array size")),
     };
 
@@ -840,6 +845,32 @@ impl<'a> Parser<'a> {
     })
   }
 
+  fn parse_float_literal(&mut self) -> ParserResult<ast::Literal> {
+    match self.tokens.get(self.index..self.index + 3) {
+      Some(
+        [(lexer::TokenKind::LiteralInt(ref whole), _), (lexer::TokenKind::SymbolDot, _), (lexer::TokenKind::LiteralInt(ref decimal), _)],
+      ) => {
+        let mut result = rug::Float::new(rug::float::prec_max());
+        result += whole;
+        result += decimal.clone() / {
+          let mut tmp = rug::Float::new(rug::float::prec_max());
+          tmp += decimal;
+          tmp.log10().ceil()
+        };
+        // we consume 3 tokens
+        self.skip();
+        self.skip();
+        self.skip();
+        Ok(ast::Literal::Float(result, ast::FloatSize::F128))
+      }
+      _ => Err(diagnostic::Diagnostic {
+        message: "float literal malformed".to_string(),
+        severity: diagnostic::Severity::Error,
+        span: None,
+      }),
+    }
+  }
+
   /// 0-9+
   fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
     Ok(match self.force_get().clone() {
@@ -847,7 +878,8 @@ impl<'a> Parser<'a> {
         self.skip();
 
         let minimum_size = minimum_int_size_of(&value);
-
+        
+        // TODO: What about integers that don't fit in ANY size (too large)?
         // TODO: Deal with unsigned integers here?
         // Default size to 32 bit-width.
         let size = if minimum_size < ast::IntSize::I32 {
