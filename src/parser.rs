@@ -280,17 +280,15 @@ impl<'a> Parser<'a> {
     Ok(ast::Node {
       kind,
       span: self.close_span(span_start),
-      unique_id: self.cache.create_unique_id(),
     })
   }
 
   /// {'{' (%statement+) '}' | '=' {%statement | %expr}}
-  fn parse_block(&mut self) -> ParserResult<ast::Block> {
+  fn parse_block_expr(&mut self) -> ParserResult<ast::BlockExpr> {
     // TODO: Simplify.
     // Support for short syntax.
     if self.is(&lexer::TokenKind::SymbolEqual) {
       self.skip();
-      self.skip_past(&lexer::TokenKind::SymbolGreaterThan)?;
 
       let statement = self.parse_statement()?;
 
@@ -304,9 +302,9 @@ impl<'a> Parser<'a> {
       };
 
       // TODO: Must ensure a semi-colon always follows (for if statements, loops, etc.)?
-      return Ok(ast::Block {
+      return Ok(ast::BlockExpr {
         statements: vec![statement],
-        yield_last_expr,
+        yields_last_expr: yield_last_expr,
         unique_id: self.cache.create_unique_id(),
       });
     }
@@ -333,9 +331,9 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
 
-    Ok(ast::Block {
+    Ok(ast::BlockExpr {
       statements,
-      yield_last_expr,
+      yields_last_expr: yield_last_expr,
       unique_id: self.cache.create_unique_id(),
     })
   }
@@ -562,13 +560,17 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
-    let body = self.parse_block()?;
+
+    self.skip_past(&lexer::TokenKind::SymbolEqual)?;
+
+    let value = self.parse_expr()?;
 
     Ok(ast::Function {
-      name: name.clone(),
+      name,
       prototype,
-      body,
+      body_value: Box::new(value),
       attributes,
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -589,6 +591,7 @@ impl<'a> Parser<'a> {
       name: name.clone(),
       prototype,
       attributes,
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -603,7 +606,11 @@ impl<'a> Parser<'a> {
 
     let ty = self.parse_type()?;
 
-    Ok(ast::ExternStatic(name.clone(), ty))
+    Ok(ast::ExternStatic {
+      name: name.clone(),
+      ty,
+      unique_id: self.cache.create_unique_id(),
+    })
   }
 
   /// '@' %name ('(' (%literal (','))* ')')
@@ -699,7 +706,6 @@ impl<'a> Parser<'a> {
     Ok(ast::Node {
       kind,
       span: self.close_span(span_start),
-      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -717,6 +723,7 @@ impl<'a> Parser<'a> {
     Ok(ast::TypeAlias {
       name: name.clone(),
       ty,
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -724,14 +731,13 @@ impl<'a> Parser<'a> {
   fn parse_return_stmt(&mut self) -> ParserResult<ast::ReturnStmt> {
     self.skip_past(&lexer::TokenKind::KeywordReturn)?;
 
-    let mut value = None;
-
-    // TODO: Does this cover all cases?
-    if !self.is(&lexer::TokenKind::SymbolSemiColon) {
-      value = Some(Box::new(self.parse_expr()?));
+    let value = if !self.is(&lexer::TokenKind::SymbolSemiColon) {
+      Some(Box::new(self.parse_expr()?))
     } else {
       self.skip();
-    }
+
+      None
+    };
 
     Ok(ast::ReturnStmt { value })
   }
@@ -761,32 +767,36 @@ impl<'a> Parser<'a> {
     // TODO: Value should be treated as rvalue, unless its using an address-of operator. Find out how to translate this to logic.
 
     Ok(ast::LetStmt {
-      name: name.clone(),
+      name,
       ty,
       value: Box::new(value),
       is_mutable,
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
   /// if %expr %block (else %block)
-  fn parse_if_expr(&mut self) -> ParserResult<ast::IfStmt> {
+  fn parse_if_expr(&mut self) -> ParserResult<ast::IfExpr> {
     self.skip_past(&lexer::TokenKind::KeywordIf)?;
 
     let condition = self.parse_expr()?;
-    let then_block = self.parse_block()?;
 
-    let else_block = if self.is(&lexer::TokenKind::KeywordElse) {
+    self.skip_past(&lexer::TokenKind::KeywordThen)?;
+
+    let then_value = self.parse_expr()?;
+
+    let else_value = if self.is(&lexer::TokenKind::KeywordElse) {
       self.skip();
 
-      Some(self.parse_block()?)
+      Some(Box::new(self.parse_expr()?))
     } else {
       None
     };
 
-    Ok(ast::IfStmt {
+    Ok(ast::IfExpr {
       condition: Box::new(condition),
-      then_block,
-      else_block,
+      then_value: Box::new(then_value),
+      else_value,
     })
   }
 
@@ -800,7 +810,7 @@ impl<'a> Parser<'a> {
       Some(Box::new(self.parse_expr()?))
     };
 
-    let body = self.parse_block()?;
+    let body = self.parse_block_expr()?;
 
     Ok(ast::LoopStmt { condition, body })
   }
@@ -825,7 +835,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::KeywordUnsafe)?;
 
-    Ok(ast::UnsafeBlockStmt(self.parse_block()?))
+    Ok(ast::UnsafeBlockStmt(self.parse_block_expr()?))
   }
 
   /// {true | false}
@@ -999,17 +1009,15 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
       lexer::TokenKind::SymbolBracketL => ast::NodeKind::ArrayValue(self.parse_array_value()?),
       lexer::TokenKind::KeywordNew => ast::NodeKind::StructValue(self.parse_struct_value()?),
+      lexer::TokenKind::SymbolBraceL => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
       _ if self.is_unary_operator() => ast::NodeKind::UnaryExpr(self.parse_unary_expr()?),
       // Default to a literal if nothing else matched.
       _ => ast::NodeKind::Literal(self.parse_literal()?),
     };
 
-    let unique_id = self.cache.create_unique_id();
-
     let mut node = ast::Node {
       kind,
       span: self.close_span(span_start),
-      unique_id,
     };
 
     // Promote the node to a chain, if applicable.
@@ -1026,7 +1034,6 @@ impl<'a> Parser<'a> {
       node = ast::Node {
         kind,
         span: self.close_span(span_start),
-        unique_id,
       };
     }
 
@@ -1110,7 +1117,6 @@ impl<'a> Parser<'a> {
       buffer = ast::Node {
         kind,
         span: self.close_span(span_start),
-        unique_id,
       };
     }
 
@@ -1254,6 +1260,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Enum {
       name: name.clone(),
       variants,
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
@@ -1337,7 +1344,7 @@ impl<'a> Parser<'a> {
     }
 
     let prototype = self.parse_prototype()?;
-    let body = self.parse_block()?;
+    let body = self.parse_block_expr()?;
 
     Ok(ast::Closure {
       captures,
@@ -1403,8 +1410,9 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
 
     Ok(ast::Trait {
-      name: name.clone(),
+      name,
       methods,
+      unique_id: self.cache.create_unique_id(),
     })
   }
 }

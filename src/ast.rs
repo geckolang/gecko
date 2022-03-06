@@ -8,7 +8,7 @@ macro_rules! dispatch {
       ast::NodeKind::ExternFunction(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ExternStatic(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Function(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Block(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::BlockExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
@@ -18,7 +18,6 @@ macro_rules! dispatch {
       ast::NodeKind::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Definition(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Reference(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::AssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
@@ -103,17 +102,16 @@ pub enum NodeKind {
   ExternFunction(ExternFunction),
   ExternStatic(ExternStatic),
   Function(Function),
-  Block(Block),
+  BlockExpr(BlockExpr),
   ReturnStmt(ReturnStmt),
   LetStmt(LetStmt),
-  IfStmt(IfStmt),
+  IfStmt(IfExpr),
   LoopStmt(LoopStmt),
   CallExpr(CallExpr),
   IntrinsicCall(IntrinsicCall),
   BreakStmt(BreakStmt),
   ContinueStmt(ContinueStmt),
   InlineExprStmt(InlineExprStmt),
-  Definition(Definition),
   Reference(Reference),
   AssignStmt(AssignStmt),
   BinaryExpr(BinaryExpr),
@@ -139,14 +137,13 @@ pub struct Node {
   pub kind: NodeKind,
   // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
   pub span: diagnostic::Span,
-  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]
 pub struct Closure {
   pub captures: Vec<(String, Option<cache::UniqueId>)>,
   pub prototype: Prototype,
-  pub body: Block,
+  pub body: BlockExpr,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -222,12 +219,14 @@ pub struct StructImpl {
 pub struct Trait {
   pub name: String,
   pub methods: Vec<(String, Prototype)>,
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]
 pub struct Enum {
   pub name: String,
   pub variants: Vec<String>,
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]
@@ -248,7 +247,7 @@ pub struct ArrayValue {
 }
 
 #[derive(Debug)]
-pub struct UnsafeBlockStmt(pub Block);
+pub struct UnsafeBlockStmt(pub BlockExpr);
 
 #[derive(Debug)]
 pub struct Reference(pub Pattern);
@@ -283,10 +282,15 @@ pub struct ExternFunction {
   pub name: String,
   pub prototype: Prototype,
   pub attributes: Vec<Attribute>,
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]
-pub struct ExternStatic(pub String, pub Type);
+pub struct ExternStatic {
+  pub name: String,
+  pub ty: Type,
+  pub unique_id: cache::UniqueId,
+}
 
 #[derive(Debug)]
 pub struct Attribute {
@@ -298,15 +302,15 @@ pub struct Attribute {
 pub struct Function {
   pub name: String,
   pub prototype: Prototype,
-  pub body: Block,
+  pub body_value: Box<Node>,
   pub attributes: Vec<Attribute>,
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]
-pub struct Block {
+pub struct BlockExpr {
   pub statements: Vec<Node>,
-  /// Whether the last expression is yielded by the block.
-  pub yield_last_expr: bool,
+  pub yields_last_expr: bool,
   pub unique_id: cache::UniqueId,
 }
 
@@ -327,19 +331,21 @@ pub struct LetStmt {
   pub ty: Type,
   pub value: Box<Node>,
   pub is_mutable: bool,
+  // FIXME: [!!] Bug: Let statements are not registered on the cache, because they are not top-level nodes.
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]
-pub struct IfStmt {
+pub struct IfExpr {
   pub condition: Box<Node>,
-  pub then_block: Block,
-  pub else_block: Option<Block>,
+  pub then_value: Box<Node>,
+  pub else_value: Option<Box<Node>>,
 }
 
 #[derive(Debug)]
 pub struct LoopStmt {
   pub condition: Option<Box<Node>>,
-  pub body: Block,
+  pub body: BlockExpr,
 }
 
 #[derive(Debug)]
@@ -375,6 +381,7 @@ pub struct StructType {
 pub struct TypeAlias {
   pub name: String,
   pub ty: Type,
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(PartialEq, Debug)]
@@ -413,15 +420,6 @@ pub struct UnaryExpr {
   ///
   /// Only available when the unary expression is a cast.
   pub cast_type: Option<Type>,
-}
-
-/// Represents an accessible definition. Acts as a transient
-/// value helper.
-#[derive(Debug)]
-pub struct Definition {
-  pub symbol: Option<name_resolution::Symbol>,
-  pub node: Box<Node>,
-  pub unique_id: cache::UniqueId,
 }
 
 #[derive(Debug)]

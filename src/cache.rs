@@ -1,10 +1,8 @@
 use crate::ast;
-use std::cell::Ref;
 
 pub type UniqueId = usize;
 
 pub struct Cache {
-  pub declarations: std::collections::HashMap<UniqueId, ast::Node>,
   pub struct_impls: std::collections::HashMap<UniqueId, Vec<(UniqueId, String)>>,
   pub new_symbol_table: std::collections::HashMap<UniqueId, ast::Node>,
   unique_id_counter: usize,
@@ -13,7 +11,6 @@ pub struct Cache {
 impl Cache {
   pub fn new() -> Self {
     Self {
-      declarations: std::collections::HashMap::new(),
       struct_impls: std::collections::HashMap::new(),
       new_symbol_table: std::collections::HashMap::new(),
       unique_id_counter: 0,
@@ -22,11 +19,11 @@ impl Cache {
 
   // TODO: Use this function as a guide to ensure that nothing is looked up or inferred before its actually resolved. Within the type-checker.
   pub fn force_get(&self, key: &UniqueId) -> &ast::Node {
-    self.declarations.get(key).unwrap()
+    self.new_symbol_table.get(key).unwrap()
   }
 
   pub fn bind(&mut self, unique_id: UniqueId, node: ast::Node) {
-    self.declarations.insert(unique_id, node);
+    self.new_symbol_table.insert(unique_id, node);
   }
 
   pub fn create_unique_id(&mut self) -> UniqueId {

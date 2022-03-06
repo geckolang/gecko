@@ -9,4 +9,4 @@ pub mod lint;
 pub mod llvm_lowering;
 pub mod name_resolution;
 pub mod parser;
-pub mod type_check;
+pub mod semantic_check;

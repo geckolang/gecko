@@ -6,7 +6,7 @@ mod tests {
   use gecko::lint::Lint;
   use gecko::llvm_lowering::Lower;
   use gecko::name_resolution::Resolve;
-  use gecko::type_check::TypeCheck;
+  use gecko::semantic_check::SemanticCheck;
   use std::io::Read;
 
   fn load_test_file(name: &str) -> String {
@@ -61,7 +61,7 @@ mod tests {
     let mut name_resolver = gecko::name_resolution::NameResolver::new();
     let mut lint_context = gecko::lint::LintContext::new();
     let mut llvm_generator = gecko::llvm_lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
-    let mut type_context = gecko::type_check::TypeCheckContext::new();
+    let mut type_context = gecko::semantic_check::SemanticCheckContext::new();
     let mut ast = std::collections::HashMap::new();
     let mut diagnostics = Vec::new();
 
@@ -112,7 +112,7 @@ mod tests {
     // Once symbols are resolved, we can proceed to the other phases.
     for inner_ast in ast.values_mut() {
       for top_level_node in inner_ast {
-        top_level_node.type_check(&mut type_context, &mut cache);
+        top_level_node.check(&mut type_context, &mut cache);
 
         // TODO: Can we mix linting with type-checking without any problems?
         top_level_node.lint(&mut cache, &mut lint_context);

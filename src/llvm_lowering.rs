@@ -1,6 +1,6 @@
 use crate::{
   ast, cache, dispatch,
-  type_check::{TypeCheck, TypeCheckContext},
+  semantic_check::{SemanticCheck, SemanticCheckContext},
 };
 
 use inkwell::{types::BasicType, values::BasicValue};
@@ -59,7 +59,7 @@ impl Lower for ast::MemberAccess {
       .into_pointer_value();
 
     // TODO: Should we reposition this to the name resolution step (post-resolve), and include a `Option<u32>` index field in `MemberAccess`?
-    let struct_type = match TypeCheckContext::infer_and_resolve_type(&self.base_expr, cache) {
+    let struct_type = match SemanticCheckContext::infer_and_resolve_type(&self.base_expr, cache) {
       ast::Type::Struct(struct_type) => struct_type,
       // FIXME: What about `This` type? Parameter `this` is of `This` type.
       _ => unreachable!(),
@@ -98,6 +98,8 @@ impl Lower for ast::Closure {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // FIXME: [!!] Investigate: Closures don't have a unique id. Don't we need to set the buffer unique id for closures as well?
+
     let buffers = generator.copy_buffers();
     // let mut modified_prototype = self.prototype.clone();
 
@@ -210,10 +212,11 @@ impl Lower for ast::ExternStatic {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_global_value =
-      generator
-        .llvm_module
-        .add_global(generator.lower_type(&self.1, cache), None, self.0.as_str());
+    let llvm_global_value = generator.llvm_module.add_global(
+      generator.lower_type(&self.ty, cache),
+      None,
+      self.name.as_str(),
+    );
 
     Some(llvm_global_value.as_basic_value_enum())
   }
@@ -768,12 +771,13 @@ impl Lower for ast::LoopStmt {
     }
 
     generator.llvm_builder.position_at_end(llvm_after_block);
+    generator.current_loop_block = None;
 
     None
   }
 }
 
-impl Lower for ast::IfStmt {
+impl Lower for ast::IfExpr {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -808,7 +812,7 @@ impl Lower for ast::IfStmt {
     let mut llvm_else_block_value = None;
 
     // TODO: Simplify (use a buffer for the next block onto build the cond. br. to).
-    if let Some(else_block) = &self.else_block {
+    if let Some(else_block) = &self.else_value {
       let llvm_else_block = generator
         .llvm_context
         .append_basic_block(llvm_current_function, "if.else");
@@ -842,7 +846,7 @@ impl Lower for ast::IfStmt {
 
     generator.llvm_builder.position_at_end(llvm_then_block);
 
-    let llvm_then_block_value = self.then_block.lower(generator, cache);
+    let llvm_then_block_value = self.then_value.lower(generator, cache);
 
     // FIXME: Is this correct? Or should we be using `get_current_block()` here? Or maybe this is just a special case to not leave the `then` block without a terminator? Investigate.
     // Fallthrough if applicable.
@@ -985,7 +989,7 @@ impl Lower for ast::Function {
     // FIXME: Still getting stack-overflow errors when using recursive functions (specially multiple of them at the same time). Investigate whether that's caused here or elsewhere.
     // Manually cache the function now to allow for recursive function calls.
     generator.llvm_cached_values.insert(
-      generator.pending_function_unique_id.unwrap(),
+      self.unique_id,
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
@@ -1016,9 +1020,10 @@ impl Lower for ast::Function {
 
     generator.llvm_builder.position_at_end(llvm_entry_block);
 
-    let yielded_result = self.body.lower(generator, cache);
+    let yielded_result = self.body_value.lower(generator, cache);
 
     generator.attempt_build_return(yielded_result);
+    generator.llvm_function_buffer = None;
 
     Some(llvm_function.as_global_value().as_basic_value_enum())
   }
@@ -1046,14 +1051,14 @@ impl Lower for ast::ExternFunction {
   }
 }
 
-impl Lower for ast::Block {
+impl Lower for ast::BlockExpr {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for (index, statement) in self.statements.iter().enumerate() {
-      if index == self.statements.len() - 1 && self.yield_last_expr {
+      if index == self.statements.len() - 1 && self.yields_last_expr {
         return generator.lower_with_access_rules(statement, cache);
       }
 
@@ -1173,7 +1178,7 @@ impl Lower for ast::LetStmt {
     // TODO: Do we need to resolve here?
     // Special cases. The allocation is done elsewhere.
     if matches!(
-      TypeCheckContext::flatten_type(&self.ty),
+      SemanticCheckContext::flatten_type(&self.ty),
       ast::Type::Callable(_) | ast::Type::Struct(_)
     ) {
       // TODO: Here create a definition for the closure, with the let statement as the name?
@@ -1263,25 +1268,6 @@ impl Lower for ast::BreakStmt {
   }
 }
 
-impl Lower for ast::Definition {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &cache::Cache,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // FIXME: What about closures?
-    // Set the pending function definition key to cache the function early.
-    // This eliminates problems with multi-borrows that may occur when lowering
-    // recursive functions.
-    if let ast::NodeKind::Function(_) = self.node.kind {
-      generator.pending_function_unique_id = Some(self.unique_id);
-    }
-
-    // TODO: Is there a need to return a value for the main function? Even for `Definition`?
-    generator.memoize_or_retrieve_value(self.unique_id, cache, true)
-  }
-}
-
 impl Lower for ast::InlineExprStmt {
   fn lower<'a, 'ctx>(
     &self,
@@ -1311,9 +1297,6 @@ pub struct LlvmGenerator<'a, 'ctx> {
     std::collections::HashMap<cache::UniqueId, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
   current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
-  /// The definition key of the function currently being emitted (if any).
-  /// Used to be able to handle recursive calls.
-  pending_function_unique_id: Option<cache::UniqueId>,
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   print_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   mangle_counter: usize,
@@ -1333,7 +1316,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_cached_values: std::collections::HashMap::new(),
       llvm_cached_types: std::collections::HashMap::new(),
       current_loop_block: None,
-      pending_function_unique_id: None,
       panic_function_cache: None,
       print_function_cache: None,
       mangle_counter: 0,
@@ -1347,9 +1329,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value_result = node.lower(self, cache);
-    let node_type = TypeCheckContext::flatten_type(&node.infer_type(cache));
-
-    println!("node type: {:?}", node_type);
+    let node_type = SemanticCheckContext::flatten_type(&node.infer_type(cache));
 
     // TODO: Is there a need to resolve the type?
     // FIXME: [!] Bug: This won't work for nested string values. Cannot compare node kind.
@@ -1700,13 +1680,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     let node = cache.force_get(&unique_id);
 
-    let ty = match &(&*node).kind {
-      ast::NodeKind::StructType(struct_type) => struct_type,
+    let ty = match &node.kind {
+      ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
+      ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
       // TODO: Any more?
       _ => unreachable!(),
     };
 
-    let llvm_type = self.lower_type(&ast::Type::Struct(ty.clone()), cache);
+    let llvm_type = self.lower_type(&ty, cache);
 
     self.llvm_cached_types.insert(unique_id, llvm_type);
 

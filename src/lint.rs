@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{ast, cache, diagnostic};
 
 pub struct LintContext {
@@ -142,7 +140,7 @@ impl Lint for ast::BinaryExpr {
   }
 }
 
-impl Lint for ast::Block {
+impl Lint for ast::BlockExpr {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     let mut did_return = false;
 
@@ -183,26 +181,26 @@ impl Lint for ast::ContinueStmt {
   //
 }
 
-impl Lint for ast::Definition {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    // TODO: Simplify. Abstract the map, then process.
-    match self.node.kind {
-      ast::NodeKind::Function(_) => {
-        if !context.function_references.contains_key(&self.unique_id) {
-          context.function_references.insert(self.unique_id, false);
-        }
-      }
-      ast::NodeKind::LetStmt(_) => {
-        // NOTE: Variable declarations always occur before their usage.
-        context.variable_references.insert(self.unique_id, false);
-      }
-      // TODO: Lint other definitions.
-      _ => {}
-    };
+// impl Lint for ast::Definition {
+//   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
+//     // TODO: Simplify. Abstract the map, then process.
+//     match self.node.kind {
+//       ast::NodeKind::Function(_) => {
+//         if !context.function_references.contains_key(&self.unique_id) {
+//           context.function_references.insert(self.unique_id, false);
+//         }
+//       }
+//       ast::NodeKind::LetStmt(_) => {
+//         // NOTE: Variable declarations always occur before their usage.
+//         context.variable_references.insert(self.unique_id, false);
+//       }
+//       // TODO: Lint other definitions.
+//       _ => {}
+//     };
 
-    self.node.lint(cache, context);
-  }
-}
+//     self.node.lint(cache, context);
+//   }
+// }
 
 impl Lint for ast::Enum {
   fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
@@ -242,7 +240,7 @@ impl Lint for ast::Function {
         .warning("function has more than 4 parameters".to_string());
     }
 
-    self.body.lint(cache, context);
+    self.body_value.lint(cache, context);
   }
 }
 
@@ -255,7 +253,7 @@ impl Lint for ast::CallExpr {
   }
 }
 
-impl Lint for ast::IfStmt {
+impl Lint for ast::IfExpr {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     // TODO: Add a helper method to "unbox" expressions? (e.g. case for `(true)`).
@@ -265,12 +263,12 @@ impl Lint for ast::IfStmt {
         .warning("if condition is a constant expression".to_string());
     }
 
-    if let Some(else_block) = &self.else_block {
+    if let Some(else_block) = &self.else_value {
       else_block.lint(cache, context);
     }
 
     self.condition.lint(cache, context);
-    self.then_block.lint(cache, context);
+    self.then_value.lint(cache, context);
   }
 }
 
