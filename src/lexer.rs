@@ -10,69 +10,73 @@ pub enum TokenKind {
   Identifier(String),
   Whitespace(String),
   Comment(String),
-  LiteralString(String),
-  LiteralInt(u64),
-  LiteralBool(bool),
-  LiteralChar(char),
-  LiteralNullptr,
-  KeywordFn,
-  KeywordExtern,
-  KeywordReturn,
-  KeywordLet,
-  KeywordIf,
-  KeywordElse,
-  KeywordBreak,
-  KeywordContinue,
-  KeywordUnsafe,
-  KeywordEnum,
-  KeywordStruct,
-  KeywordMut,
-  KeywordNew,
-  KeywordLoop,
-  KeywordAnd,
-  KeywordOr,
-  KeywordStatic,
-  KeywordNand,
-  KeywordNor,
-  KeywordXor,
-  KeywordType,
-  KeywordImpl,
-  KeywordFor,
-  KeywordTrait,
-  KeywordThen,
-  TypeSignedInt8,
-  TypeSignedInt16,
-  TypeSignedInt32,
-  TypeSignedInt64,
-  TypeUnsignedInt8,
-  TypeUnsignedInt16,
-  TypeUnsignedInt32,
-  TypeUnsignedInt64,
+  String(String),
+  Int(u64),
+  Bool(bool),
+  Char(char),
+  Nullptr,
+  Fn,
+  Extern,
+  Return,
+  Let,
+  If,
+  Else,
+  Break,
+  Continue,
+  Unsafe,
+  Enum,
+  Struct,
+  Mut,
+  New,
+  Loop,
+  And,
+  Or,
+  Static,
+  Nand,
+  Nor,
+  Xor,
+  Type,
+  Impl,
+  For,
+  Trait,
+  Then,
+  TypeInt8,
+  TypeInt16,
+  TypeInt32,
+  TypeInt64,
+  TypeUint8,
+  TypeUint16,
+  TypeUint32,
+  TypeUint64,
   TypeBool,
   TypeString,
   TypeThis,
-  SymbolBraceL,
-  SymbolBraceR,
-  SymbolParenthesesL,
-  SymbolParenthesesR,
-  SymbolTilde,
-  SymbolColon,
-  SymbolAmpersand,
-  SymbolComma,
-  SymbolPlus,
-  SymbolMinus,
-  SymbolAsterisk,
-  SymbolSlash,
-  SymbolBang,
-  SymbolEqual,
-  SymbolSemiColon,
-  SymbolLessThan,
-  SymbolGreaterThan,
-  SymbolBracketL,
-  SymbolBracketR,
-  SymbolDot,
-  SymbolAt,
-  SymbolBacktick,
+  TypeUnit,
+  BraceL,
+  BraceR,
+  ParenthesesL,
+  ParenthesesR,
+  Tilde,
+  Colon,
+  Ampersand,
+  Comma,
+  Plus,
+  Minus,
+  Asterisk,
+  Slash,
+  Bang,
+  Equal,
+  SemiColon,
+  LessThan,
+  GreaterThan,
+  BracketL,
+  BracketR,
+  Dot,
+  At,
+  Backtick,
+  Arrow,
+  LessThanEqualTo,
+  GreaterThanEqualTo,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -155,6 +159,11 @@ impl Lexer {
   /// signifies the end of the input string.
   fn is_eof(&self) -> bool {
     self.current_char.is_none()
+  }
+
+  /// Determine if there is a next character.
+  fn is_next_eof(&self) -> bool {
+    self.index + 1 >= self.input.len()
   }
 
   fn read_while(&mut self, predicate: fn(char) -> bool) -> String {
@@ -269,6 +278,14 @@ impl Lexer {
     Ok(character.unwrap())
   }
 
+  fn peek_char(&self) -> Option<char> {
+    if self.is_next_eof() {
+      return None;
+    }
+
+    Some(self.input[self.index + 1])
+  }
+
   /// Attempt to retrieve the next token.
   ///
   /// If the end of the input string has been reached, `None` will be
@@ -288,30 +305,45 @@ impl Lexer {
     } else {
       let final_token = match current_char {
         '#' => TokenKind::Comment(self.read_comment()),
-        '"' => TokenKind::LiteralString(self.read_string()?),
-        '\'' => TokenKind::LiteralChar(self.read_character()?),
-        '{' => TokenKind::SymbolBraceL,
-        '}' => TokenKind::SymbolBraceR,
-        '(' => TokenKind::SymbolParenthesesL,
-        ')' => TokenKind::SymbolParenthesesR,
-        '~' => TokenKind::SymbolTilde,
-        ':' => TokenKind::SymbolColon,
-        '&' => TokenKind::SymbolAmpersand,
-        ',' => TokenKind::SymbolComma,
-        '+' => TokenKind::SymbolPlus,
-        '-' => TokenKind::SymbolMinus,
-        '*' => TokenKind::SymbolAsterisk,
-        '/' => TokenKind::SymbolSlash,
-        '!' => TokenKind::SymbolBang,
-        '=' => TokenKind::SymbolEqual,
-        ';' => TokenKind::SymbolSemiColon,
-        '<' => TokenKind::SymbolLessThan,
-        '>' => TokenKind::SymbolGreaterThan,
-        '[' => TokenKind::SymbolBracketL,
-        ']' => TokenKind::SymbolBracketR,
-        '.' => TokenKind::SymbolDot,
-        '@' => TokenKind::SymbolAt,
-        '`' => TokenKind::SymbolBacktick,
+        '"' => TokenKind::String(self.read_string()?),
+        '\'' => TokenKind::Char(self.read_character()?),
+        '{' => TokenKind::BraceL,
+        '}' => TokenKind::BraceR,
+        '(' => TokenKind::ParenthesesL,
+        ')' => TokenKind::ParenthesesR,
+        '~' => TokenKind::Tilde,
+        ':' => TokenKind::Colon,
+        '&' => TokenKind::Ampersand,
+        ',' => TokenKind::Comma,
+        '+' => TokenKind::Plus,
+        '-' if self.peek_char() == Some('>') => {
+          self.read_char();
+
+          TokenKind::Arrow
+        }
+        '-' => TokenKind::Minus,
+        '*' => TokenKind::Asterisk,
+        '/' => TokenKind::Slash,
+        '!' => TokenKind::Bang,
+        '=' => TokenKind::Equal,
+        ';' => TokenKind::SemiColon,
+        '<' if self.peek_char() == Some('=') => {
+          self.read_char();
+
+          TokenKind::LessThanEqualTo
+        }
+        '<' => TokenKind::LessThan,
+        '>' if self.peek_char() == Some('=') => {
+          self.read_char();
+
+          TokenKind::LessThanEqualTo
+        }
+        '>' => TokenKind::GreaterThan,
+        '[' => TokenKind::BracketL,
+        ']' => TokenKind::BracketR,
+        '.' => TokenKind::Dot,
+        '@' => TokenKind::At,
+        '`' => TokenKind::Backtick,
         _ => {
           // NOTE: Identifiers will never start with a digit.
           return if current_char == '_' || is_letter(current_char) {
@@ -322,7 +354,7 @@ impl Lexer {
               None => Ok(TokenKind::Identifier(identifier)),
             }
           } else if is_digit(current_char) {
-            Ok(TokenKind::LiteralInt(self.read_number()?))
+            Ok(TokenKind::Int(self.read_number()?))
           } else {
             let illegal_char = current_char;
 
@@ -362,45 +394,46 @@ impl Iterator for Lexer {
 
 fn match_token(identifier: &str) -> Option<TokenKind> {
   Some(match identifier {
-    "fn" => TokenKind::KeywordFn,
-    "extern" => TokenKind::KeywordExtern,
-    "let" => TokenKind::KeywordLet,
-    "return" => TokenKind::KeywordReturn,
-    "if" => TokenKind::KeywordIf,
-    "else" => TokenKind::KeywordElse,
-    "break" => TokenKind::KeywordBreak,
-    "continue" => TokenKind::KeywordContinue,
-    "unsafe" => TokenKind::KeywordUnsafe,
-    "enum" => TokenKind::KeywordEnum,
-    "struct" => TokenKind::KeywordStruct,
-    "mut" => TokenKind::KeywordMut,
-    "new" => TokenKind::KeywordNew,
-    "loop" => TokenKind::KeywordLoop,
-    "and" => TokenKind::KeywordAnd,
-    "or" => TokenKind::KeywordOr,
-    "static" => TokenKind::KeywordStatic,
-    "nand" => TokenKind::KeywordNand,
-    "nor" => TokenKind::KeywordNor,
-    "xor" => TokenKind::KeywordXor,
-    "type" => TokenKind::KeywordType,
-    "impl" => TokenKind::KeywordImpl,
-    "for" => TokenKind::KeywordFor,
-    "trait" => TokenKind::KeywordTrait,
-    "then" => TokenKind::KeywordThen,
-    "nullptr" => TokenKind::LiteralNullptr,
-    "I8" => TokenKind::TypeSignedInt8,
-    "I16" => TokenKind::TypeSignedInt16,
-    "Int" => TokenKind::TypeSignedInt32,
-    "I64" => TokenKind::TypeSignedInt64,
-    "U8" => TokenKind::TypeUnsignedInt8,
-    "U16" => TokenKind::TypeUnsignedInt16,
-    "U32" => TokenKind::TypeUnsignedInt32,
-    "U64" => TokenKind::TypeUnsignedInt64,
+    "fn" => TokenKind::Fn,
+    "extern" => TokenKind::Extern,
+    "let" => TokenKind::Let,
+    "return" => TokenKind::Return,
+    "if" => TokenKind::If,
+    "else" => TokenKind::Else,
+    "break" => TokenKind::Break,
+    "continue" => TokenKind::Continue,
+    "unsafe" => TokenKind::Unsafe,
+    "enum" => TokenKind::Enum,
+    "struct" => TokenKind::Struct,
+    "mut" => TokenKind::Mut,
+    "new" => TokenKind::New,
+    "loop" => TokenKind::Loop,
+    "and" => TokenKind::And,
+    "or" => TokenKind::Or,
+    "static" => TokenKind::Static,
+    "nand" => TokenKind::Nand,
+    "nor" => TokenKind::Nor,
+    "xor" => TokenKind::Xor,
+    "type" => TokenKind::Type,
+    "impl" => TokenKind::Impl,
+    "for" => TokenKind::For,
+    "trait" => TokenKind::Trait,
+    "then" => TokenKind::Then,
+    "nullptr" => TokenKind::Nullptr,
+    "I8" => TokenKind::TypeInt8,
+    "I16" => TokenKind::TypeInt16,
+    "Int" => TokenKind::TypeInt32,
+    "I64" => TokenKind::TypeInt64,
+    "U8" => TokenKind::TypeUint8,
+    "U16" => TokenKind::TypeUint16,
+    "U32" => TokenKind::TypeUint32,
+    "U64" => TokenKind::TypeUint64,
     "Bool" => TokenKind::TypeBool,
     "Str" => TokenKind::TypeString,
     "This" => TokenKind::TypeThis,
-    "true" => TokenKind::LiteralBool(true),
-    "false" => TokenKind::LiteralBool(false),
+    "Unit" => TokenKind::TypeUnit,
+    "true" => TokenKind::Bool(true),
+    "false" => TokenKind::Bool(false),
     _ => return None,
   })
 }
@@ -592,7 +625,7 @@ mod tests {
     let mut lexer = Lexer::from_str("\"hello\"");
 
     assert_eq!(
-      Ok(TokenKind::LiteralString("hello".to_string())),
+      Ok(TokenKind::String("hello".to_string())),
       lexer.lex_token()
     );
   }
@@ -601,14 +634,14 @@ mod tests {
   fn lex_number_single_digit() {
     let mut lexer = Lexer::from_str("1");
 
-    assert_eq!(Ok(TokenKind::LiteralInt(1)), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Int(1)), lexer.lex_token());
   }
 
   #[test]
   fn lex_number() {
     let mut lexer = Lexer::from_str("123");
 
-    assert_eq!(Ok(TokenKind::LiteralInt(123)), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Int(123)), lexer.lex_token());
   }
 
   #[test]

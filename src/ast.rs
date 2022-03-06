@@ -46,6 +46,8 @@ pub struct Parameter {
   pub name: String,
   pub ty: Type,
   pub position: u32,
+  // FIXME: [!!] Bug: Parameters are not registered on the cache, because they aren't top-level nodes.
+  pub unique_id: cache::UniqueId,
 }
 
 #[derive(PartialEq, PartialOrd, Clone, Debug)]

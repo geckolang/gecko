@@ -25,17 +25,17 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
 fn get_token_precedence(token: &lexer::TokenKind) -> usize {
   // FIXME: What about the `not` operator, and others?
   match token {
-    lexer::TokenKind::SymbolPlus
-    | lexer::TokenKind::SymbolMinus
-    | lexer::TokenKind::SymbolEqual
-    | lexer::TokenKind::SymbolLessThan
-    | lexer::TokenKind::SymbolGreaterThan
-    | lexer::TokenKind::KeywordAnd
-    | lexer::TokenKind::KeywordOr
-    | lexer::TokenKind::KeywordNand
-    | lexer::TokenKind::KeywordNor
-    | lexer::TokenKind::KeywordXor => 1,
-    lexer::TokenKind::SymbolAsterisk | lexer::TokenKind::SymbolSlash => 2,
+    lexer::TokenKind::Plus
+    | lexer::TokenKind::Minus
+    | lexer::TokenKind::Equal
+    | lexer::TokenKind::LessThan
+    | lexer::TokenKind::GreaterThan
+    | lexer::TokenKind::And
+    | lexer::TokenKind::Or
+    | lexer::TokenKind::Nand
+    | lexer::TokenKind::Nor
+    | lexer::TokenKind::Xor => 1,
+    lexer::TokenKind::Asterisk | lexer::TokenKind::Slash => 2,
     _ => 0,
   }
 }
@@ -73,18 +73,18 @@ impl<'a> Parser<'a> {
     // TODO: Support for GTOE and LTOE operators.
     matches!(
       token_kind,
-      lexer::TokenKind::SymbolPlus
-        | lexer::TokenKind::SymbolMinus
-        | lexer::TokenKind::SymbolAsterisk
-        | lexer::TokenKind::SymbolSlash
-        | lexer::TokenKind::SymbolLessThan
-        | lexer::TokenKind::SymbolGreaterThan
-        | lexer::TokenKind::KeywordAnd
-        | lexer::TokenKind::KeywordOr
-        | lexer::TokenKind::KeywordNand
-        | lexer::TokenKind::KeywordNor
-        | lexer::TokenKind::KeywordXor
-        | lexer::TokenKind::SymbolEqual
+      lexer::TokenKind::Plus
+        | lexer::TokenKind::Minus
+        | lexer::TokenKind::Asterisk
+        | lexer::TokenKind::Slash
+        | lexer::TokenKind::LessThan
+        | lexer::TokenKind::GreaterThan
+        | lexer::TokenKind::And
+        | lexer::TokenKind::Or
+        | lexer::TokenKind::Nand
+        | lexer::TokenKind::Nor
+        | lexer::TokenKind::Xor
+        | lexer::TokenKind::Equal
     )
   }
 
@@ -127,11 +127,11 @@ impl<'a> Parser<'a> {
   fn is_unary_operator(&self) -> bool {
     matches!(
       self.force_get(),
-      lexer::TokenKind::SymbolMinus
-        | lexer::TokenKind::SymbolBang
-        | lexer::TokenKind::SymbolAmpersand
-        | lexer::TokenKind::SymbolAsterisk
-        | lexer::TokenKind::SymbolBacktick
+      lexer::TokenKind::Minus
+        | lexer::TokenKind::Bang
+        | lexer::TokenKind::Ampersand
+        | lexer::TokenKind::Asterisk
+        | lexer::TokenKind::Backtick
     )
   }
 
@@ -216,7 +216,7 @@ impl<'a> Parser<'a> {
   ) -> ParserResult<ast::Pattern> {
     let starting_name = self.parse_name()?;
 
-    let module_name = if self.is(&lexer::TokenKind::SymbolColon) {
+    let module_name = if self.is(&lexer::TokenKind::Colon) {
       self.skip();
 
       Some(starting_name.clone())
@@ -255,19 +255,17 @@ impl<'a> Parser<'a> {
     let span_start = self.index;
 
     let kind = match self.force_get() {
-      lexer::TokenKind::KeywordReturn => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
-      lexer::TokenKind::KeywordLet => ast::NodeKind::LetStmt(self.parse_let_stmt()?),
-      lexer::TokenKind::KeywordLoop => ast::NodeKind::LoopStmt(self.parse_loop_stmt()?),
-      lexer::TokenKind::KeywordBreak => ast::NodeKind::BreakStmt(self.parse_break_stmt()?),
-      lexer::TokenKind::KeywordContinue => ast::NodeKind::ContinueStmt(self.parse_continue_stmt()?),
-      lexer::TokenKind::KeywordUnsafe => {
-        ast::NodeKind::UnsafeBlock(self.parse_unsafe_block_stmt()?)
-      }
+      lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
+      lexer::TokenKind::Let => ast::NodeKind::LetStmt(self.parse_let_stmt()?),
+      lexer::TokenKind::Loop => ast::NodeKind::LoopStmt(self.parse_loop_stmt()?),
+      lexer::TokenKind::Break => ast::NodeKind::BreakStmt(self.parse_break_stmt()?),
+      lexer::TokenKind::Continue => ast::NodeKind::ContinueStmt(self.parse_continue_stmt()?),
+      lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeBlock(self.parse_unsafe_block_stmt()?),
       _ => {
         let expr = self.parse_expr()?;
 
         // Promote the inline expression to an assignment statement, if applicable.
-        if self.is(&lexer::TokenKind::SymbolEqual) {
+        if self.is(&lexer::TokenKind::Equal) {
           ast::NodeKind::AssignStmt(self.parse_assign_stmt(expr)?)
         } else {
           ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
@@ -287,13 +285,13 @@ impl<'a> Parser<'a> {
   fn parse_block_expr(&mut self) -> ParserResult<ast::BlockExpr> {
     // TODO: Simplify.
     // Support for short syntax.
-    if self.is(&lexer::TokenKind::SymbolEqual) {
+    if self.is(&lexer::TokenKind::Equal) {
       self.skip();
 
       let statement = self.parse_statement()?;
 
       // FIXME: Is this correct for all cases?
-      let yield_last_expr = if self.is(&lexer::TokenKind::SymbolSemiColon) {
+      let yield_last_expr = if self.is(&lexer::TokenKind::SemiColon) {
         self.skip();
 
         false
@@ -309,19 +307,17 @@ impl<'a> Parser<'a> {
       });
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
+    self.skip_past(&lexer::TokenKind::BraceL)?;
 
     let mut statements = Vec::new();
     let mut yield_last_expr = true;
 
     // FIXME: What if the last statement is a let-statement? Let-statements have inferrable types, used internally. Review this.
     // FIXME: This may be the reason why let-statements shouldn't have inferrable types (only internally).
-    while self.until(&lexer::TokenKind::SymbolBraceR)? {
+    while self.until(&lexer::TokenKind::BraceR)? {
       let statement = self.parse_statement()?;
 
-      if self.peek_is(&lexer::TokenKind::SymbolBraceR)
-        && self.is(&lexer::TokenKind::SymbolSemiColon)
-      {
+      if self.peek_is(&lexer::TokenKind::BraceR) && self.is(&lexer::TokenKind::SemiColon) {
         self.skip();
         yield_last_expr = false;
       }
@@ -329,7 +325,7 @@ impl<'a> Parser<'a> {
       statements.push(statement);
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
+    self.skip_past(&lexer::TokenKind::BraceR)?;
 
     Ok(ast::BlockExpr {
       statements,
@@ -343,14 +339,14 @@ impl<'a> Parser<'a> {
     let current_token = self.force_get();
 
     let size = match current_token {
-      lexer::TokenKind::TypeSignedInt8 => ast::IntSize::I8,
-      lexer::TokenKind::TypeSignedInt16 => ast::IntSize::I16,
-      lexer::TokenKind::TypeSignedInt32 => ast::IntSize::I32,
-      lexer::TokenKind::TypeSignedInt64 => ast::IntSize::I64,
-      lexer::TokenKind::TypeUnsignedInt8 => ast::IntSize::U8,
-      lexer::TokenKind::TypeUnsignedInt16 => ast::IntSize::U16,
-      lexer::TokenKind::TypeUnsignedInt32 => ast::IntSize::U32,
-      lexer::TokenKind::TypeUnsignedInt64 => ast::IntSize::U64,
+      lexer::TokenKind::TypeInt8 => ast::IntSize::I8,
+      lexer::TokenKind::TypeInt16 => ast::IntSize::I16,
+      lexer::TokenKind::TypeInt32 => ast::IntSize::I32,
+      lexer::TokenKind::TypeInt64 => ast::IntSize::I64,
+      lexer::TokenKind::TypeUint8 => ast::IntSize::U8,
+      lexer::TokenKind::TypeUint16 => ast::IntSize::U16,
+      lexer::TokenKind::TypeUint32 => ast::IntSize::U32,
+      lexer::TokenKind::TypeUint64 => ast::IntSize::U64,
       // TODO: Add unsigned type tokens.
       _ => return Err(self.expected("integer type")),
     };
@@ -380,19 +376,19 @@ impl<'a> Parser<'a> {
 
   /// '[' %type, 0-9+ ']'
   fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
-    self.skip_past(&lexer::TokenKind::SymbolBracketL)?;
+    self.skip_past(&lexer::TokenKind::BracketL)?;
 
     let element_type = self.parse_type()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolComma)?;
+    self.skip_past(&lexer::TokenKind::Comma)?;
 
     let size = match self.force_get() {
-      lexer::TokenKind::LiteralInt(value) => value.clone() as u32,
+      lexer::TokenKind::Int(value) => value.clone() as u32,
       _ => return Err(self.expected("array size")),
     };
 
     self.skip();
-    self.skip_past(&lexer::TokenKind::SymbolBracketR)?;
+    self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::Type::Array(Box::new(element_type), size))
   }
@@ -402,20 +398,21 @@ impl<'a> Parser<'a> {
     // TODO: Support for more types.
     match self.force_get() {
       // TODO: Other types as well.
-      lexer::TokenKind::KeywordFn => self.parse_callable_type(),
-      lexer::TokenKind::TypeSignedInt8
-      | lexer::TokenKind::TypeSignedInt16
-      | lexer::TokenKind::TypeSignedInt32
-      | lexer::TokenKind::TypeSignedInt64
-      | lexer::TokenKind::TypeUnsignedInt8
-      | lexer::TokenKind::TypeUnsignedInt16
-      | lexer::TokenKind::TypeUnsignedInt32
-      | lexer::TokenKind::TypeUnsignedInt64 => self.parse_int_type(),
+      lexer::TokenKind::Fn => self.parse_callable_type(),
+      lexer::TokenKind::TypeInt8
+      | lexer::TokenKind::TypeInt16
+      | lexer::TokenKind::TypeInt32
+      | lexer::TokenKind::TypeInt64
+      | lexer::TokenKind::TypeUint8
+      | lexer::TokenKind::TypeUint16
+      | lexer::TokenKind::TypeUint32
+      | lexer::TokenKind::TypeUint64 => self.parse_int_type(),
       lexer::TokenKind::TypeBool => self.parse_bool_type(),
       lexer::TokenKind::Identifier(_) => self.parse_stub_type(),
-      lexer::TokenKind::SymbolBracketL => self.parse_array_type(),
+      lexer::TokenKind::BracketL => self.parse_array_type(),
       lexer::TokenKind::TypeThis => self.parse_this_type(),
-      lexer::TokenKind::SymbolAsterisk => {
+      lexer::TokenKind::TypeUnit => self.parse_unit_type(),
+      lexer::TokenKind::Asterisk => {
         self.skip();
 
         Ok(ast::Type::Pointer(Box::new(self.parse_type()?)))
@@ -429,31 +426,44 @@ impl<'a> Parser<'a> {
     }
   }
 
+  fn parse_unit_type(&mut self) -> ParserResult<ast::Type> {
+    // TODO: Do we need to ensure that nothing is applied to the unit type?
+
+    self.skip_past(&lexer::TokenKind::TypeUnit)?;
+
+    Ok(ast::Type::Unit)
+  }
+
   /// fn '(' (%type (','))* ')' ('[' %type ']')
   fn parse_callable_type(&mut self) -> ParserResult<ast::Type> {
-    self.skip_past(&lexer::TokenKind::KeywordFn)?;
-    self.skip_past(&lexer::TokenKind::SymbolParenthesesL)?;
+    self.skip_past(&lexer::TokenKind::Fn)?;
+    self.skip_past(&lexer::TokenKind::BracketL)?;
+
+    // FIXME: [!!] Implement: Complete implementation.
+    todo!();
 
     let mut parameter_types = Vec::new();
+    let mut return_type = None::<ast::Type>;
 
-    while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
+    while self.until(&lexer::TokenKind::BracketR)? {
       parameter_types.push(self.parse_type()?);
 
-      if !self.peek_is(&lexer::TokenKind::SymbolParenthesesR) {
-        self.skip_past(&lexer::TokenKind::SymbolComma)?;
+      if !self.peek_is(&lexer::TokenKind::BracketR) {
+        self.skip_past(&lexer::TokenKind::Arrow)?;
       }
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
-    self.skip_past(&lexer::TokenKind::SymbolBracketL)?;
-
-    let return_type = if self.is(&lexer::TokenKind::SymbolBracketR) {
-      ast::Type::Unit
+    let return_type = if return_type.is_some() {
+      return_type.unwrap()
     } else {
-      self.parse_type()?
+      return Err(diagnostic::Diagnostic {
+        message: "callable types must have at least one type".to_string(),
+        span: self.get_span(),
+        severity: diagnostic::Severity::Error,
+      });
     };
 
-    self.skip_past(&lexer::TokenKind::SymbolBracketR)?;
+    self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::Type::Callable(ast::CallableType {
       parameter_types,
@@ -475,23 +485,24 @@ impl<'a> Parser<'a> {
   }
 
   /// %name ':' %type
-  fn parse_parameter(&mut self, index: u32) -> ParserResult<ast::Parameter> {
+  fn parse_parameter(&mut self, position: u32) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolColon)?;
+    self.skip_past(&lexer::TokenKind::Colon)?;
 
     let ty = self.parse_type()?;
 
     Ok(ast::Parameter {
       name,
       ty,
-      position: index,
+      position,
+      unique_id: self.cache.create_unique_id(),
     })
   }
 
   /// '(' {%parameter* (,)} (+) ')' ':' %type
   fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
-    self.skip_past(&lexer::TokenKind::SymbolParenthesesL)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
     // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
     let mut parameters = vec![];
@@ -512,16 +523,17 @@ impl<'a> Parser<'a> {
           ty: None,
         }),
         position: 0,
+        unique_id: self.cache.create_unique_id(),
       });
 
-      if !self.is(&lexer::TokenKind::SymbolParenthesesR) {
-        self.skip_past(&lexer::TokenKind::SymbolComma)?;
+      if !self.is(&lexer::TokenKind::ParenthesesR) {
+        self.skip_past(&lexer::TokenKind::Comma)?;
       }
     }
 
     // TODO: Analyze, and remove possibility of lonely comma.
-    while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
-      if self.is(&lexer::TokenKind::SymbolPlus) {
+    while self.until(&lexer::TokenKind::ParenthesesR)? {
+      if self.is(&lexer::TokenKind::Plus) {
         is_variadic = true;
         self.skip();
 
@@ -531,15 +543,15 @@ impl<'a> Parser<'a> {
       parameters.push(self.parse_parameter(parameter_index_counter)?);
       parameter_index_counter += 1;
 
-      if !self.is(&lexer::TokenKind::SymbolComma) {
+      if !self.is(&lexer::TokenKind::Comma) {
         break;
       }
 
       self.skip();
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
-    self.skip_past(&lexer::TokenKind::SymbolColon);
+    self.skip_past(&lexer::TokenKind::ParenthesesR)?;
+    self.skip_past(&lexer::TokenKind::Colon);
 
     let return_type = self.parse_type()?;
 
@@ -556,12 +568,12 @@ impl<'a> Parser<'a> {
   /// fn %prototype %block
   fn parse_function(&mut self, attributes: Vec<ast::Attribute>) -> ParserResult<ast::Function> {
     // TODO: Support for visibility.
-    self.skip_past(&lexer::TokenKind::KeywordFn)?;
+    self.skip_past(&lexer::TokenKind::Fn)?;
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolEqual)?;
+    self.skip_past(&lexer::TokenKind::Equal)?;
 
     let value = self.parse_expr()?;
 
@@ -581,14 +593,14 @@ impl<'a> Parser<'a> {
   ) -> ParserResult<ast::ExternFunction> {
     // TODO: Support for visibility?
 
-    self.skip_past(&lexer::TokenKind::KeywordExtern)?;
-    self.skip_past(&lexer::TokenKind::KeywordFn)?;
+    self.skip_past(&lexer::TokenKind::Extern)?;
+    self.skip_past(&lexer::TokenKind::Fn)?;
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype()?;
 
     Ok(ast::ExternFunction {
-      name: name.clone(),
+      name,
       prototype,
       attributes,
       unique_id: self.cache.create_unique_id(),
@@ -597,17 +609,17 @@ impl<'a> Parser<'a> {
 
   /// extern static %name ':' %type
   fn parse_extern_static(&mut self) -> ParserResult<ast::ExternStatic> {
-    self.skip_past(&lexer::TokenKind::KeywordExtern)?;
-    self.skip_past(&lexer::TokenKind::KeywordStatic)?;
+    self.skip_past(&lexer::TokenKind::Extern)?;
+    self.skip_past(&lexer::TokenKind::Static)?;
 
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolColon)?;
+    self.skip_past(&lexer::TokenKind::Colon)?;
 
     let ty = self.parse_type()?;
 
     Ok(ast::ExternStatic {
-      name: name.clone(),
+      name,
       ty,
       unique_id: self.cache.create_unique_id(),
     })
@@ -615,26 +627,26 @@ impl<'a> Parser<'a> {
 
   /// '@' %name ('(' (%literal (','))* ')')
   fn parse_attribute(&mut self) -> ParserResult<ast::Attribute> {
-    self.skip_past(&lexer::TokenKind::SymbolAt)?;
+    self.skip_past(&lexer::TokenKind::At)?;
 
     let name = self.parse_name()?;
     let mut values = Vec::new();
 
-    if self.is(&lexer::TokenKind::SymbolParenthesesL) {
+    if self.is(&lexer::TokenKind::ParenthesesL) {
       self.skip();
 
-      while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
+      while self.until(&lexer::TokenKind::ParenthesesR)? {
         values.push(self.parse_literal()?);
 
         // TODO: Review this comma-skipping system.
-        if !self.is(&lexer::TokenKind::SymbolComma) {
+        if !self.is(&lexer::TokenKind::Comma) {
           break;
         }
 
         self.skip();
       }
 
-      self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
+      self.skip_past(&lexer::TokenKind::ParenthesesR)?;
     }
 
     Ok(ast::Attribute { name, values })
@@ -656,7 +668,7 @@ impl<'a> Parser<'a> {
 
     let mut attributes: Vec<ast::Attribute> = Vec::new();
 
-    while self.is(&lexer::TokenKind::SymbolAt) {
+    while self.is(&lexer::TokenKind::At) {
       let span_start = self.index;
       let attribute = self.parse_attribute()?;
 
@@ -673,7 +685,7 @@ impl<'a> Parser<'a> {
 
     let is_attributable = matches!(
       self.force_get(),
-      lexer::TokenKind::KeywordFn | lexer::TokenKind::KeywordExtern
+      lexer::TokenKind::Fn | lexer::TokenKind::Extern
     );
 
     if !attributes.is_empty() && !is_attributable {
@@ -688,18 +700,18 @@ impl<'a> Parser<'a> {
 
     let kind = match token {
       // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
-      lexer::TokenKind::KeywordFn => ast::NodeKind::Function(self.parse_function(attributes)?),
-      lexer::TokenKind::KeywordExtern if self.peek_is(&lexer::TokenKind::KeywordFn) => {
+      lexer::TokenKind::Fn => ast::NodeKind::Function(self.parse_function(attributes)?),
+      lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Fn) => {
         ast::NodeKind::ExternFunction(self.parse_extern_function(attributes)?)
       }
-      lexer::TokenKind::KeywordExtern if self.peek_is(&lexer::TokenKind::KeywordStatic) => {
+      lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Static) => {
         ast::NodeKind::ExternStatic(self.parse_extern_static()?)
       }
-      lexer::TokenKind::KeywordEnum => ast::NodeKind::Enum(self.parse_enum()?),
-      lexer::TokenKind::KeywordStruct => ast::NodeKind::StructType(self.parse_struct_type()?),
-      lexer::TokenKind::KeywordType => ast::NodeKind::TypeAlias(self.parse_type_alias()?),
-      lexer::TokenKind::KeywordImpl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
-      lexer::TokenKind::KeywordTrait => ast::NodeKind::Trait(self.parse_trait()?),
+      lexer::TokenKind::Enum => ast::NodeKind::Enum(self.parse_enum()?),
+      lexer::TokenKind::Struct => ast::NodeKind::StructType(self.parse_struct_type()?),
+      lexer::TokenKind::Type => ast::NodeKind::TypeAlias(self.parse_type_alias()?),
+      lexer::TokenKind::Impl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
+      lexer::TokenKind::Trait => ast::NodeKind::Trait(self.parse_trait()?),
       _ => return Err(self.expected("top-level construct")),
     };
 
@@ -711,17 +723,17 @@ impl<'a> Parser<'a> {
 
   /// type %name = %type
   fn parse_type_alias(&mut self) -> ParserResult<ast::TypeAlias> {
-    self.skip_past(&lexer::TokenKind::KeywordType)?;
+    self.skip_past(&lexer::TokenKind::Type)?;
 
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolEqual)?;
+    self.skip_past(&lexer::TokenKind::Equal)?;
 
     // FIXME: Recursive type aliases are possible, and cause stack-overflow. Fix this bug. This bug possibly exist for any other thing that uses deferred-resolved types.
     let ty = self.parse_type()?;
 
     Ok(ast::TypeAlias {
-      name: name.clone(),
+      name,
       ty,
       unique_id: self.cache.create_unique_id(),
     })
@@ -729,9 +741,9 @@ impl<'a> Parser<'a> {
 
   /// return (%expr)
   fn parse_return_stmt(&mut self) -> ParserResult<ast::ReturnStmt> {
-    self.skip_past(&lexer::TokenKind::KeywordReturn)?;
+    self.skip_past(&lexer::TokenKind::Return)?;
 
-    let value = if !self.is(&lexer::TokenKind::SymbolSemiColon) {
+    let value = if !self.is(&lexer::TokenKind::SemiColon) {
       Some(Box::new(self.parse_expr()?))
     } else {
       self.skip();
@@ -744,9 +756,9 @@ impl<'a> Parser<'a> {
 
   /// let (mut) %name (':' %type) '=' %expr
   fn parse_let_stmt(&mut self) -> ParserResult<ast::LetStmt> {
-    self.skip_past(&lexer::TokenKind::KeywordLet)?;
+    self.skip_past(&lexer::TokenKind::Let)?;
 
-    let is_mutable = if self.is(&lexer::TokenKind::KeywordMut) {
+    let is_mutable = if self.is(&lexer::TokenKind::Mut) {
       self.skip();
 
       true
@@ -756,11 +768,11 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolColon)?;
+    self.skip_past(&lexer::TokenKind::Colon)?;
 
     let ty = self.parse_type()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolEqual)?;
+    self.skip_past(&lexer::TokenKind::Equal)?;
 
     let value = self.parse_expr()?;
 
@@ -777,15 +789,15 @@ impl<'a> Parser<'a> {
 
   /// if %expr %block (else %block)
   fn parse_if_expr(&mut self) -> ParserResult<ast::IfExpr> {
-    self.skip_past(&lexer::TokenKind::KeywordIf)?;
+    self.skip_past(&lexer::TokenKind::If)?;
 
     let condition = self.parse_expr()?;
 
-    self.skip_past(&lexer::TokenKind::KeywordThen)?;
+    self.skip_past(&lexer::TokenKind::Then)?;
 
     let then_value = self.parse_expr()?;
 
-    let else_value = if self.is(&lexer::TokenKind::KeywordElse) {
+    let else_value = if self.is(&lexer::TokenKind::Else) {
       self.skip();
 
       Some(Box::new(self.parse_expr()?))
@@ -802,9 +814,9 @@ impl<'a> Parser<'a> {
 
   /// loop (%expr) %block
   fn parse_loop_stmt(&mut self) -> ParserResult<ast::LoopStmt> {
-    self.skip_past(&lexer::TokenKind::KeywordLoop)?;
+    self.skip_past(&lexer::TokenKind::Loop)?;
 
-    let condition = if self.is(&lexer::TokenKind::SymbolBraceL) {
+    let condition = if self.is(&lexer::TokenKind::BraceL) {
       None
     } else {
       Some(Box::new(self.parse_expr()?))
@@ -817,14 +829,14 @@ impl<'a> Parser<'a> {
 
   /// break
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
-    self.skip_past(&lexer::TokenKind::KeywordBreak)?;
+    self.skip_past(&lexer::TokenKind::Break)?;
 
     Ok(ast::BreakStmt {})
   }
 
   /// continue
   fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
-    self.skip_past(&lexer::TokenKind::KeywordContinue)?;
+    self.skip_past(&lexer::TokenKind::Continue)?;
 
     Ok(ast::ContinueStmt)
   }
@@ -833,7 +845,7 @@ impl<'a> Parser<'a> {
   fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlockStmt> {
     // TODO: Why not merge this with the normal block, and just have a flag?
 
-    self.skip_past(&lexer::TokenKind::KeywordUnsafe)?;
+    self.skip_past(&lexer::TokenKind::Unsafe)?;
 
     Ok(ast::UnsafeBlockStmt(self.parse_block_expr()?))
   }
@@ -841,7 +853,7 @@ impl<'a> Parser<'a> {
   /// {true | false}
   fn parse_bool_literal(&mut self) -> ParserResult<ast::Literal> {
     Ok(match self.force_get().clone() {
-      lexer::TokenKind::LiteralBool(value) => {
+      lexer::TokenKind::Bool(value) => {
         self.skip();
 
         ast::Literal::Bool(value.clone())
@@ -853,7 +865,7 @@ impl<'a> Parser<'a> {
   /// 0-9+
   fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
     Ok(match self.force_get().clone() {
-      lexer::TokenKind::LiteralInt(value) => {
+      lexer::TokenKind::Int(value) => {
         self.skip();
 
         let minimum_size = minimum_int_size_of(&value);
@@ -875,7 +887,7 @@ impl<'a> Parser<'a> {
   /// '"' [^"]* '"'
   fn parse_string_literal(&mut self) -> ParserResult<ast::Literal> {
     let result = match self.force_get() {
-      lexer::TokenKind::LiteralString(value) => ast::Literal::String(value.clone()),
+      lexer::TokenKind::String(value) => ast::Literal::String(value.clone()),
       _ => return Err(self.expected("string literal")),
     };
 
@@ -888,13 +900,13 @@ impl<'a> Parser<'a> {
   fn parse_array_value(&mut self) -> ParserResult<ast::ArrayValue> {
     let mut elements = Vec::new();
 
-    self.skip_past(&lexer::TokenKind::SymbolBracketL)?;
+    self.skip_past(&lexer::TokenKind::BracketL)?;
 
-    while self.until(&lexer::TokenKind::SymbolBracketR)? {
+    while self.until(&lexer::TokenKind::BracketR)? {
       elements.push(self.parse_expr()?);
 
       // TODO: What if the comma isn't provided?
-      if self.is(&lexer::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::Comma) {
         self.skip();
       }
     }
@@ -920,11 +932,11 @@ impl<'a> Parser<'a> {
     // TODO: Work with a pattern instead.
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolBracketL)?;
+    self.skip_past(&lexer::TokenKind::BracketL)?;
 
     let index = Box::new(self.parse_expr()?);
 
-    self.skip_past(&lexer::TokenKind::SymbolBracketR)?;
+    self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::ArrayIndexing {
       name,
@@ -937,10 +949,10 @@ impl<'a> Parser<'a> {
     let current_token = self.force_get();
 
     Ok(match current_token {
-      lexer::TokenKind::LiteralBool(_) => self.parse_bool_literal()?,
-      lexer::TokenKind::LiteralInt(_) => self.parse_int_literal()?,
-      lexer::TokenKind::LiteralString(_) => self.parse_string_literal()?,
-      lexer::TokenKind::LiteralNullptr => {
+      lexer::TokenKind::Bool(_) => self.parse_bool_literal()?,
+      lexer::TokenKind::Int(_) => self.parse_int_literal()?,
+      lexer::TokenKind::String(_) => self.parse_string_literal()?,
+      lexer::TokenKind::Nullptr => {
         self.skip();
 
         ast::Literal::Nullptr
@@ -959,7 +971,7 @@ impl<'a> Parser<'a> {
     // FIXME: Ensure this works as expected with the modifications done.
     while !is_past_eof_at(index)
       && match self.tokens.get(index).unwrap().0 {
-        lexer::TokenKind::SymbolDot | lexer::TokenKind::SymbolColon if delimiter_switch => true,
+        lexer::TokenKind::Dot | lexer::TokenKind::Colon if delimiter_switch => true,
         lexer::TokenKind::Identifier(_) if !delimiter_switch => true,
         _ => false,
       }
@@ -983,7 +995,7 @@ impl<'a> Parser<'a> {
 
     matches!(
       self.force_get(),
-      lexer::TokenKind::SymbolDot | lexer::TokenKind::SymbolParenthesesL
+      lexer::TokenKind::Dot | lexer::TokenKind::ParenthesesL
     )
   }
 
@@ -992,24 +1004,22 @@ impl<'a> Parser<'a> {
 
     let kind = match self.force_get() {
       // FIXME: Possible redundant check after the fn keyword. But how do we know we're still not on a block and accidentally parse a function as a closure?
-      lexer::TokenKind::KeywordFn
-        if (self.peek_is(&lexer::TokenKind::SymbolBracketL)
-          || self.peek_is(&lexer::TokenKind::SymbolParenthesesL)) =>
+      lexer::TokenKind::Fn
+        if (self.peek_is(&lexer::TokenKind::BracketL)
+          || self.peek_is(&lexer::TokenKind::ParenthesesL)) =>
       {
         ast::NodeKind::Closure(self.parse_closure()?)
       }
-      lexer::TokenKind::KeywordIf => ast::NodeKind::IfStmt(self.parse_if_expr()?),
-      lexer::TokenKind::SymbolTilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
+      lexer::TokenKind::If => ast::NodeKind::IfStmt(self.parse_if_expr()?),
+      lexer::TokenKind::Tilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       // TODO: Change this syntax to the same treatment as call expressions (check afterwards).
-      lexer::TokenKind::Identifier(_)
-        if self.after_pattern_is(&lexer::TokenKind::SymbolBracketL) =>
-      {
+      lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::BracketL) => {
         ast::NodeKind::ArrayIndexing(self.parse_array_indexing()?)
       }
       lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
-      lexer::TokenKind::SymbolBracketL => ast::NodeKind::ArrayValue(self.parse_array_value()?),
-      lexer::TokenKind::KeywordNew => ast::NodeKind::StructValue(self.parse_struct_value()?),
-      lexer::TokenKind::SymbolBraceL => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
+      lexer::TokenKind::BracketL => ast::NodeKind::ArrayValue(self.parse_array_value()?),
+      lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
+      lexer::TokenKind::BraceL => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
       _ if self.is_unary_operator() => ast::NodeKind::UnaryExpr(self.parse_unary_expr()?),
       // Default to a literal if nothing else matched.
       _ => ast::NodeKind::Literal(self.parse_literal()?),
@@ -1023,10 +1033,8 @@ impl<'a> Parser<'a> {
     // Promote the node to a chain, if applicable.
     while self.is_chain() {
       let kind = match self.force_get() {
-        lexer::TokenKind::SymbolParenthesesL => {
-          ast::NodeKind::CallExpr(self.parse_call_expr(node)?)
-        }
-        lexer::TokenKind::SymbolDot => ast::NodeKind::MemberAccess(self.parse_member_access(node)?),
+        lexer::TokenKind::ParenthesesL => ast::NodeKind::CallExpr(self.parse_call_expr(node)?),
+        lexer::TokenKind::Dot => ast::NodeKind::MemberAccess(self.parse_member_access(node)?),
         _ => unreachable!(),
       };
 
@@ -1042,7 +1050,7 @@ impl<'a> Parser<'a> {
 
   /// %expr '.' %name
   fn parse_member_access(&mut self, base_expr: ast::Node) -> ParserResult<ast::MemberAccess> {
-    self.skip_past(&lexer::TokenKind::SymbolDot)?;
+    self.skip_past(&lexer::TokenKind::Dot)?;
 
     Ok(ast::MemberAccess {
       base_expr: Box::new(base_expr),
@@ -1056,21 +1064,21 @@ impl<'a> Parser<'a> {
     let current_token = self.force_get().clone();
 
     let operator = match current_token {
-      lexer::TokenKind::KeywordAnd => ast::OperatorKind::And,
-      lexer::TokenKind::KeywordOr => ast::OperatorKind::Or,
-      lexer::TokenKind::KeywordNand => ast::OperatorKind::Nand,
-      lexer::TokenKind::KeywordNor => ast::OperatorKind::Nor,
-      lexer::TokenKind::KeywordXor => ast::OperatorKind::Xor,
-      lexer::TokenKind::SymbolBang => ast::OperatorKind::Not,
-      lexer::TokenKind::SymbolPlus => ast::OperatorKind::Add,
-      lexer::TokenKind::SymbolMinus => ast::OperatorKind::SubtractOrNegate,
-      lexer::TokenKind::SymbolAsterisk => ast::OperatorKind::MultiplyOrDereference,
-      lexer::TokenKind::SymbolSlash => ast::OperatorKind::Divide,
-      lexer::TokenKind::SymbolLessThan => ast::OperatorKind::LessThan,
-      lexer::TokenKind::SymbolGreaterThan => ast::OperatorKind::GreaterThan,
-      lexer::TokenKind::SymbolAmpersand => ast::OperatorKind::AddressOf,
-      lexer::TokenKind::SymbolBacktick => ast::OperatorKind::Cast,
-      lexer::TokenKind::SymbolEqual => ast::OperatorKind::Equality,
+      lexer::TokenKind::And => ast::OperatorKind::And,
+      lexer::TokenKind::Or => ast::OperatorKind::Or,
+      lexer::TokenKind::Nand => ast::OperatorKind::Nand,
+      lexer::TokenKind::Nor => ast::OperatorKind::Nor,
+      lexer::TokenKind::Xor => ast::OperatorKind::Xor,
+      lexer::TokenKind::Bang => ast::OperatorKind::Not,
+      lexer::TokenKind::Plus => ast::OperatorKind::Add,
+      lexer::TokenKind::Minus => ast::OperatorKind::SubtractOrNegate,
+      lexer::TokenKind::Asterisk => ast::OperatorKind::MultiplyOrDereference,
+      lexer::TokenKind::Slash => ast::OperatorKind::Divide,
+      lexer::TokenKind::LessThan => ast::OperatorKind::LessThan,
+      lexer::TokenKind::GreaterThan => ast::OperatorKind::GreaterThan,
+      lexer::TokenKind::Ampersand => ast::OperatorKind::AddressOf,
+      lexer::TokenKind::Backtick => ast::OperatorKind::Cast,
+      lexer::TokenKind::Equal => ast::OperatorKind::Equality,
       // TODO: Implement logic for GTE & LTE.
       _ => return Err(self.expected("operator")),
     };
@@ -1166,20 +1174,20 @@ impl<'a> Parser<'a> {
     // FIXME: On the expressions being parsed, the pattern may not be parsed as a pattern linking to a function or extern. Ensure this is actually the case.
     // let callee_pattern = self.parse_pattern(name_resolution::SymbolKind::FunctionOrExtern)?;
 
-    self.skip_past(&lexer::TokenKind::SymbolParenthesesL)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
     let mut arguments = vec![];
 
-    while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
+    while self.until(&lexer::TokenKind::ParenthesesR)? {
       arguments.push(self.parse_expr()?);
 
       // TODO: What if the comma is omitted?
-      if self.is(&lexer::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::Comma) {
         self.skip();
       }
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
     Ok(ast::CallExpr {
       callee_expr: Box::new(callee_expr),
@@ -1189,27 +1197,27 @@ impl<'a> Parser<'a> {
 
   /// '~' %name '(' (%expr (,))* ')'
   fn parse_intrinsic_call(&mut self) -> ParserResult<ast::IntrinsicCall> {
-    self.skip_past(&lexer::TokenKind::SymbolTilde)?;
+    self.skip_past(&lexer::TokenKind::Tilde)?;
 
     let kind = match self.parse_name()?.as_str() {
       "panic" => ast::IntrinsicKind::Panic,
       _ => return Err(self.expected("valid intrinsic name")),
     };
 
-    self.skip_past(&lexer::TokenKind::SymbolParenthesesL)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
     let mut arguments = vec![];
 
-    while self.until(&lexer::TokenKind::SymbolParenthesesR)? {
+    while self.until(&lexer::TokenKind::ParenthesesR)? {
       arguments.push(self.parse_expr()?);
 
       // TODO: What if the comma is omitted?
-      if self.is(&lexer::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::Comma) {
         self.skip();
       }
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolParenthesesR)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
     Ok(ast::IntrinsicCall { kind, arguments })
   }
@@ -1223,7 +1231,7 @@ impl<'a> Parser<'a> {
 
   /// %expr '=' %expr
   fn parse_assign_stmt(&mut self, assignee_expr: ast::Node) -> ParserResult<ast::AssignStmt> {
-    self.skip_past(&lexer::TokenKind::SymbolEqual)?;
+    self.skip_past(&lexer::TokenKind::Equal)?;
 
     let value = Box::new(self.parse_expr()?);
 
@@ -1235,19 +1243,19 @@ impl<'a> Parser<'a> {
 
   /// enum %name '{' (%name (','))* '}'
   fn parse_enum(&mut self) -> ParserResult<ast::Enum> {
-    self.skip_past(&lexer::TokenKind::KeywordEnum)?;
+    self.skip_past(&lexer::TokenKind::Enum)?;
 
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
+    self.skip_past(&lexer::TokenKind::BraceL)?;
 
     let mut variants = vec![];
 
-    while self.until(&lexer::TokenKind::SymbolBraceR)? {
+    while self.until(&lexer::TokenKind::BraceR)? {
       variants.push(self.parse_name()?);
 
       // TODO: Iron out case for lonely comma.
-      if self.is(&lexer::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::Comma) {
         self.skip();
       }
     }
@@ -1258,7 +1266,7 @@ impl<'a> Parser<'a> {
     self.skip();
 
     Ok(ast::Enum {
-      name: name.clone(),
+      name,
       variants,
       unique_id: self.cache.create_unique_id(),
     })
@@ -1266,22 +1274,22 @@ impl<'a> Parser<'a> {
 
   /// struct %name '{' (%name ':' %type ';')* '}'
   fn parse_struct_type(&mut self) -> ParserResult<ast::StructType> {
-    self.skip_past(&lexer::TokenKind::KeywordStruct)?;
+    self.skip_past(&lexer::TokenKind::Struct)?;
 
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
+    self.skip_past(&lexer::TokenKind::BraceL)?;
 
     let mut fields = Vec::new();
 
-    while self.until(&lexer::TokenKind::SymbolBraceR)? {
+    while self.until(&lexer::TokenKind::BraceR)? {
       let field_name = self.parse_name()?;
 
-      self.skip_past(&lexer::TokenKind::SymbolColon)?;
+      self.skip_past(&lexer::TokenKind::Colon)?;
 
       let field_type = self.parse_type()?;
 
-      self.skip_past(&lexer::TokenKind::SymbolComma)?;
+      self.skip_past(&lexer::TokenKind::Comma)?;
       fields.push((field_name, field_type));
     }
 
@@ -1289,7 +1297,7 @@ impl<'a> Parser<'a> {
     self.skip();
 
     Ok(ast::StructType {
-      name: name.clone(),
+      name,
       fields,
       unique_id: self.cache.create_unique_id(),
     })
@@ -1297,22 +1305,22 @@ impl<'a> Parser<'a> {
 
   /// new %name '{' (%name ':' %expr ',')* '}'
   fn parse_struct_value(&mut self) -> ParserResult<ast::StructValue> {
-    self.skip_past(&lexer::TokenKind::KeywordNew)?;
+    self.skip_past(&lexer::TokenKind::New)?;
 
     // TODO: Shouldn't it be `ScopeQualifier`?
     let struct_name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
+    self.skip_past(&lexer::TokenKind::BraceL)?;
 
     let mut fields = Vec::new();
 
-    while self.until(&lexer::TokenKind::SymbolBraceR)? {
+    while self.until(&lexer::TokenKind::BraceR)? {
       let field = self.parse_expr()?;
 
       fields.push(field);
 
       // TODO: Disallow trailing comma.
-      if self.is(&lexer::TokenKind::SymbolComma) {
+      if self.is(&lexer::TokenKind::Comma) {
         self.skip();
       }
     }
@@ -1329,14 +1337,14 @@ impl<'a> Parser<'a> {
 
   /// fn '[' (%name (','))* ']' %prototype %block
   fn parse_closure(&mut self) -> ParserResult<ast::Closure> {
-    self.skip_past(&lexer::TokenKind::KeywordFn)?;
+    self.skip_past(&lexer::TokenKind::Fn)?;
 
     let mut captures = Vec::new();
 
-    if self.is(&lexer::TokenKind::SymbolBracketL) {
+    if self.is(&lexer::TokenKind::BracketL) {
       self.skip();
 
-      while self.until(&lexer::TokenKind::SymbolBracketR)? {
+      while self.until(&lexer::TokenKind::BracketR)? {
         captures.push((self.parse_name()?, None));
       }
 
@@ -1354,31 +1362,31 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_struct_impl(&mut self) -> ParserResult<ast::StructImpl> {
-    self.skip_past(&lexer::TokenKind::KeywordImpl)?;
+    self.skip_past(&lexer::TokenKind::Impl)?;
 
     let mut struct_pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
     let mut trait_pattern = None;
 
-    if self.is(&lexer::TokenKind::KeywordFor) {
+    if self.is(&lexer::TokenKind::For) {
       trait_pattern = Some(struct_pattern);
       self.skip();
       struct_pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
+    self.skip_past(&lexer::TokenKind::BraceL)?;
 
     // TODO: Support for trait specifications/implementations.
 
     let mut methods = Vec::new();
 
-    while self.until(&lexer::TokenKind::SymbolBraceR)? {
+    while self.until(&lexer::TokenKind::BraceR)? {
       // TODO: Support for attributes.
       let method = self.parse_function(Vec::new())?;
 
       methods.push(method);
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
+    self.skip_past(&lexer::TokenKind::BraceR)?;
 
     Ok(ast::StructImpl {
       // TODO: Support for trait specialization.
@@ -1390,16 +1398,16 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_trait(&mut self) -> ParserResult<ast::Trait> {
-    self.skip_past(&lexer::TokenKind::KeywordTrait)?;
+    self.skip_past(&lexer::TokenKind::Trait)?;
 
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceL)?;
+    self.skip_past(&lexer::TokenKind::BraceL)?;
 
     let mut methods = Vec::new();
 
-    while self.until(&lexer::TokenKind::SymbolBraceR)? {
-      self.skip_past(&lexer::TokenKind::KeywordFn)?;
+    while self.until(&lexer::TokenKind::BraceR)? {
+      self.skip_past(&lexer::TokenKind::Fn)?;
 
       let method_name = self.parse_name()?;
       let prototype = self.parse_prototype()?;
@@ -1407,7 +1415,7 @@ impl<'a> Parser<'a> {
       methods.push((method_name, prototype));
     }
 
-    self.skip_past(&lexer::TokenKind::SymbolBraceR)?;
+    self.skip_past(&lexer::TokenKind::BraceR)?;
 
     Ok(ast::Trait {
       name,
@@ -1438,8 +1446,8 @@ mod tests {
     parser.index = 1;
     assert!(!parser.is(&lexer::TokenKind::EOF));
     parser.index = 0;
-    parser.tokens.push((lexer::TokenKind::KeywordFn, 0));
-    assert!(parser.is(&lexer::TokenKind::KeywordFn));
+    parser.tokens.push((lexer::TokenKind::Fn, 0));
+    assert!(parser.is(&lexer::TokenKind::Fn));
   }
 
   #[test]
@@ -1447,7 +1455,7 @@ mod tests {
     let mut context = cache::Cache::new();
     let parser = Parser::new(vec![], &mut context);
 
-    assert_eq!(false, parser.is(&lexer::TokenKind::KeywordFn));
+    assert_eq!(false, parser.is(&lexer::TokenKind::Fn));
   }
 
   #[test]
@@ -1455,7 +1463,7 @@ mod tests {
     let mut context = cache::Cache::new();
 
     let mut parser = Parser::from_tokens(
-      vec![lexer::TokenKind::KeywordFn, lexer::TokenKind::KeywordFn],
+      vec![lexer::TokenKind::Fn, lexer::TokenKind::Fn],
       &mut context,
     );
 
@@ -1466,7 +1474,7 @@ mod tests {
   #[test]
   fn skip_out_of_bounds() {
     let mut context = cache::Cache::new();
-    let mut parser = Parser::from_tokens(vec![lexer::TokenKind::KeywordFn], &mut context);
+    let mut parser = Parser::from_tokens(vec![lexer::TokenKind::Fn], &mut context);
 
     parser.skip();
     assert_eq!(0, parser.index);
@@ -1478,9 +1486,9 @@ mod tests {
     let mut parser = Parser::new(vec![], &mut context);
 
     assert!(parser.is_eof());
-    parser.tokens.push((lexer::TokenKind::KeywordFn, 0));
+    parser.tokens.push((lexer::TokenKind::Fn, 0));
     assert!(parser.is_eof());
-    parser.tokens.push((lexer::TokenKind::KeywordFn, 0));
+    parser.tokens.push((lexer::TokenKind::Fn, 0));
     assert!(!parser.is_eof());
     parser.skip();
     assert!(parser.is_eof());
@@ -1495,25 +1503,25 @@ mod tests {
       &mut context,
     );
 
-    parser.tokens.push((lexer::TokenKind::SymbolBraceL, 0));
-    assert!(parser.after_pattern_is(&lexer::TokenKind::SymbolBraceL));
+    parser.tokens.push((lexer::TokenKind::BraceL, 0));
+    assert!(parser.after_pattern_is(&lexer::TokenKind::BraceL));
     parser.tokens.pop();
-    parser.tokens.push((lexer::TokenKind::SymbolDot, 0));
+    parser.tokens.push((lexer::TokenKind::Dot, 0));
 
     parser
       .tokens
       .push((lexer::TokenKind::Identifier("foo".to_string()), 0));
 
-    parser.tokens.push((lexer::TokenKind::SymbolBraceL, 0));
-    assert!(parser.after_pattern_is(&lexer::TokenKind::SymbolBraceL));
+    parser.tokens.push((lexer::TokenKind::BraceL, 0));
+    assert!(parser.after_pattern_is(&lexer::TokenKind::BraceL));
   }
 
   #[test]
   fn is_binary_operator() {
-    assert!(!Parser::is_binary_operator(&lexer::TokenKind::SymbolBraceL));
-    assert!(Parser::is_binary_operator(&lexer::TokenKind::SymbolPlus));
-    assert!(Parser::is_binary_operator(&lexer::TokenKind::SymbolEqual));
-    assert!(Parser::is_binary_operator(&lexer::TokenKind::KeywordAnd));
+    assert!(!Parser::is_binary_operator(&lexer::TokenKind::BraceL));
+    assert!(Parser::is_binary_operator(&lexer::TokenKind::Plus));
+    assert!(Parser::is_binary_operator(&lexer::TokenKind::Equal));
+    assert!(Parser::is_binary_operator(&lexer::TokenKind::And));
     assert!(!Parser::is_binary_operator(&lexer::TokenKind::EOF));
 
     // TODO: More.
@@ -1524,11 +1532,11 @@ mod tests {
     let mut context = cache::Cache::new();
     let mut parser = Parser::new(Vec::new(), &mut context);
 
-    assert!(!parser.peek_is(&lexer::TokenKind::SymbolBraceL));
-    parser.tokens.push((lexer::TokenKind::SymbolBraceL, 0));
-    assert!(!parser.peek_is(&lexer::TokenKind::SymbolBraceL));
-    parser.tokens.push((lexer::TokenKind::SymbolBraceL, 0));
-    assert!(parser.peek_is(&lexer::TokenKind::SymbolBraceL));
+    assert!(!parser.peek_is(&lexer::TokenKind::BraceL));
+    parser.tokens.push((lexer::TokenKind::BraceL, 0));
+    assert!(!parser.peek_is(&lexer::TokenKind::BraceL));
+    parser.tokens.push((lexer::TokenKind::BraceL, 0));
+    assert!(parser.peek_is(&lexer::TokenKind::BraceL));
   }
 
   // TODO: Add more tests.

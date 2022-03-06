@@ -275,7 +275,9 @@ impl Resolve for ast::ContinueStmt {
 }
 
 impl Resolve for ast::ArrayIndexing {
-  // FIXME: [!] Bug: What if the index expression contains a call expression (which needs the declare step)?
+  fn declare(&self, resolver: &mut NameResolver, cache: &cache::Cache) {
+    self.index_expr.declare(resolver, cache);
+  }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.index_expr.resolve(resolver);
@@ -284,6 +286,8 @@ impl Resolve for ast::ArrayIndexing {
 }
 
 impl Resolve for ast::ArrayValue {
+  // TODO: Do we need to declare the struct value's expressions?
+
   fn resolve(&mut self, resolver: &mut NameResolver) {
     for element in &mut self.elements {
       element.resolve(resolver);
@@ -302,6 +306,10 @@ impl Resolve for ast::UnsafeBlockStmt {
 }
 
 impl Resolve for ast::Parameter {
+  fn declare(&self, resolver: &mut NameResolver, _cache: &cache::Cache) {
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
+  }
+
   fn resolve(&mut self, resolver: &mut NameResolver) {
     self.ty.resolve(resolver);
   }
