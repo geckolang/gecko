@@ -301,29 +301,6 @@ impl Lower for ast::Enum {
   }
 }
 
-impl Lower for ast::AssignStmt {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &cache::Cache,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_value = generator
-      .lower_with_access_rules(self.value.as_ref(), cache)
-      .unwrap();
-
-    // NOTE: In the case that our target is a let-statement (through
-    // a reference), memoization or retrieval will occur on the lowering
-    // step of the reference.
-    let llvm_assignee = self.assignee_expr.lower(generator, cache).unwrap();
-
-    generator
-      .llvm_builder
-      .build_store(llvm_assignee.into_pointer_value(), llvm_value);
-
-    None
-  }
-}
-
 impl Lower for ast::ContinueStmt {
   fn lower<'a, 'ctx>(
     &self,

@@ -19,7 +19,6 @@ macro_rules! dispatch {
       ast::NodeKind::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Reference(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::AssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
@@ -115,7 +114,6 @@ pub enum NodeKind {
   ContinueStmt(ContinueStmt),
   InlineExprStmt(InlineExprStmt),
   Reference(Reference),
-  AssignStmt(AssignStmt),
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
   Parameter(Parameter),
@@ -253,12 +251,6 @@ pub struct UnsafeBlockStmt(pub BlockExpr);
 
 #[derive(Debug)]
 pub struct Reference(pub Pattern);
-
-#[derive(Debug)]
-pub struct AssignStmt {
-  pub assignee_expr: Box<Node>,
-  pub value: Box<Node>,
-}
 
 #[derive(Debug)]
 pub enum Literal {

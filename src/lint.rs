@@ -303,12 +303,6 @@ impl Lint for ast::UnsafeBlockStmt {
   }
 }
 
-impl Lint for ast::AssignStmt {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    self.value.lint(cache, context);
-  }
-}
-
 impl Lint for ast::Reference {
   fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
     context

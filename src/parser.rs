@@ -261,18 +261,9 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Break => ast::NodeKind::BreakStmt(self.parse_break_stmt()?),
       lexer::TokenKind::Continue => ast::NodeKind::ContinueStmt(self.parse_continue_stmt()?),
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeBlock(self.parse_unsafe_block_stmt()?),
-      _ => {
-        let expr = self.parse_expr()?;
-
-        // Promote the inline expression to an assignment statement, if applicable.
-        if self.is(&lexer::TokenKind::Equal) {
-          ast::NodeKind::AssignStmt(self.parse_assign_stmt(expr)?)
-        } else {
-          ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
-            expr: Box::new(expr),
-          })
-        }
-      }
+      _ => ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
+        expr: Box::new(self.parse_expr()?),
+      }),
     };
 
     Ok(ast::Node {
@@ -1227,18 +1218,6 @@ impl<'a> Parser<'a> {
     let pattern = self.parse_pattern(name_resolution::SymbolKind::Definition)?;
 
     Ok(ast::Reference(pattern))
-  }
-
-  /// %expr '=' %expr
-  fn parse_assign_stmt(&mut self, assignee_expr: ast::Node) -> ParserResult<ast::AssignStmt> {
-    self.skip_past(&lexer::TokenKind::Equal)?;
-
-    let value = Box::new(self.parse_expr()?);
-
-    Ok(ast::AssignStmt {
-      assignee_expr: Box::new(assignee_expr),
-      value,
-    })
   }
 
   /// enum %name '{' (%name (','))* '}'

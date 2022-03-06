@@ -263,13 +263,6 @@ impl Resolve for ast::Enum {
   }
 }
 
-impl Resolve for ast::AssignStmt {
-  fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.assignee_expr.resolve(resolver);
-    self.value.resolve(resolver);
-  }
-}
-
 impl Resolve for ast::ContinueStmt {
   //
 }

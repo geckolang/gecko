@@ -431,63 +431,6 @@ impl SemanticCheck for ast::Enum {
   //
 }
 
-impl SemanticCheck for ast::AssignStmt {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    // TODO: Need to unify the value and the target's type.
-
-    let assignee_type = self.assignee_expr.infer_type(cache);
-
-    if matches!(
-      SemanticCheckContext::flatten_type(&assignee_type),
-      ast::Type::Reference(_)
-    ) {
-      context
-        .diagnostic_builder
-        .error("can't assign to a reference; references cannot be reseated".to_string());
-
-      // TODO: We should continue gathering other diagnostics (ex. immutable)?
-      return;
-    }
-
-    // NOTE: References cannot be reseated/assigned-to, only pointers.
-    let is_pointer = matches!(assignee_type, ast::Type::Pointer(_));
-
-    // FIXME: [!!] Revise: This checks are superficial. They do not
-    // consider that expressions may be nested (ie. parentheses expr.).
-    let is_array_indexing = matches!(self.assignee_expr.kind, ast::NodeKind::ArrayIndexing(_));
-    let is_variable_ref = matches!(self.assignee_expr.kind, ast::NodeKind::Reference(_));
-
-    // TODO: Missing member access (struct fields) support.
-    // NOTE: The assignee expression may only be an expression of type `Pointer`
-    // or `Reference`, a variable reference, or an array indexing.
-    if !is_pointer && !is_variable_ref && !is_array_indexing {
-      context
-        .diagnostic_builder
-        .error("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing expression".to_string());
-    } else if is_variable_ref {
-      // If the assignee is a variable reference, ensure that the variable is mutable.
-      match &self.assignee_expr.kind {
-        ast::NodeKind::Reference(variable_ref) => {
-          let declaration = cache.force_get(&variable_ref.0.target_id.unwrap());
-
-          match &(&*declaration).kind {
-            ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
-              context
-                .diagnostic_builder
-                .error("assignee is immutable".to_string());
-            }
-            // TODO: Parameters should be immutable by default.
-            _ => {}
-          };
-        }
-        _ => unreachable!(),
-      };
-    }
-
-    self.value.check(context, cache);
-  }
-}
-
 impl SemanticCheck for ast::ContinueStmt {
   fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
     if !context.in_loop {
