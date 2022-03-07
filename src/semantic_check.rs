@@ -2,9 +2,7 @@ use crate::{ast, cache, diagnostic, dispatch, llvm_lowering};
 
 pub struct SemanticCheckContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
-  in_loop: bool,
   in_unsafe_block: bool,
-  in_impl: bool,
   current_function_key: Option<cache::UniqueId>,
 }
 
@@ -12,9 +10,7 @@ impl SemanticCheckContext {
   pub fn new() -> Self {
     Self {
       diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
-      in_loop: false,
       in_unsafe_block: false,
-      in_impl: false,
       current_function_key: None,
     }
   }
@@ -64,9 +60,6 @@ impl SemanticCheckContext {
     if let ast::Type::Stub(stub_type) = ty {
       // TODO: No need to clone.
       return stub_type.ty.as_ref().unwrap().as_ref().clone();
-    } else if let ast::Type::This(this_type) = ty {
-      // TODO: No need to clone.
-      return this_type.ty.as_ref().unwrap().as_ref().clone();
     }
 
     // FIXME: Do not clone by default. Find a better alternative.
@@ -100,7 +93,7 @@ impl SemanticCheckContext {
 
   fn is_null_pointer_type(ty: &ast::Type) -> bool {
     if let ast::Type::Pointer(ty) = ty {
-      return matches!(ty.as_ref(), ast::Type::Primitive(ast::PrimitiveType::Null));
+      return matches!(ty.as_ref(), ast::Type::Primitive(ast::BasicType::Null));
     }
 
     false
@@ -128,118 +121,13 @@ impl SemanticCheck for ast::Node {
   }
 }
 
-impl SemanticCheck for ast::Trait {
-  //
-}
-
-impl SemanticCheck for ast::StructImpl {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    context.in_impl = true;
-
-    for method in &self.methods {
-      method.check(context, cache);
-    }
-
-    let target_node = cache.force_get(&self.target_struct_pattern.target_id.unwrap());
-
-    // TODO: Cleanup.
-    if let ast::NodeKind::StructType(_target_struct_type) = &target_node.kind {
-      if let Some(trait_pattern) = &self.trait_pattern {
-        let trait_node = cache.force_get(&trait_pattern.target_id.unwrap());
-
-        if let ast::NodeKind::Trait(trait_type) = &trait_node.kind {
-          for trait_method in &trait_type.methods {
-            let impl_method_result = self
-              .methods
-              .iter()
-              .find(|impl_method| impl_method.name == trait_method.0);
-
-            if let Some(_impl_method) = impl_method_result {
-              // TODO: Finish implementing.
-              let prototype_unification_result =
-                // TypeCheckContext::unify_prototypes(&trait_method.1, impl_method, cache);
-                Some("pending error".to_string());
-
-              if let Some(error) = prototype_unification_result {
-                // TODO: Use expected/got system.
-                context.diagnostic_builder.error(format!(
-                  "prototype of implementation method `{}` for trait `{}` mismatch in {}",
-                  "pending impl method name", trait_type.name, error
-                ));
-              }
-            } else {
-              context.diagnostic_builder.error(format!(
-                "required method `{}` not implemented",
-                trait_method.0
-              ));
-            }
-          }
-        } else {
-          context.diagnostic_builder.error(format!(
-            "cannot implement non-trait `{}`",
-            &trait_pattern.base_name
-          ));
-        }
-      }
-    } else {
-      context.diagnostic_builder.error(format!(
-        "cannot implement for a non-struct type `{}`",
-        self.target_struct_pattern.base_name
-      ));
-    }
-
-    context.in_impl = false;
-  }
-}
-
-impl SemanticCheck for ast::MemberAccess {
+impl SemanticCheck for ast::ParenthesesExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type = match self.base_expr.infer_type(cache) {
-      ast::Type::Struct(struct_type) => struct_type,
-      // TODO: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
-      _ => return ast::Type::Error,
-    };
-
-    let struct_field_result = struct_type.fields.iter().find(|x| x.0 == self.member_name);
-
-    if let Some(struct_field) = struct_field_result {
-      return struct_field.1.clone();
-    }
-
-    // TODO: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
-    // TODO: Lookup implementation, and attempt to match a method.
-    if let Some(struct_impls) = cache.get_struct_impls(&struct_type.unique_id) {
-      for (method_unique_id, method_name) in struct_impls {
-        if method_name == &self.member_name {
-          return cache.force_get(&method_unique_id).infer_type(cache);
-        }
-      }
-    }
-
-    return ast::Type::Error;
+    self.0.infer_type(cache)
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let struct_type = match self.base_expr.infer_type(cache) {
-      ast::Type::Struct(struct_type) => struct_type,
-      // TODO: Implement
-      ast::Type::This(_) => return,
-      // TODO: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
-      _ => {
-        context
-          .diagnostic_builder
-          .error("expression is not a struct".to_string());
-
-        return;
-      }
-    };
-
-    if !struct_type.fields.iter().any(|x| x.0 == self.member_name) {
-      // context.diagnostic_builder.error(format!(
-      //   "struct type `{}` does not contain a field named `{}`",
-      //   struct_type.name, self.member_name
-      // ));
-    }
+    self.0.check(context, cache);
   }
 }
 
@@ -251,18 +139,12 @@ impl SemanticCheck for ast::Closure {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     // TODO: Might need to mirror `Function`'s type check.
 
-    if self.prototype.accepts_instance {
-      context
-        .diagnostic_builder
-        .error("closures cannot accept instances".to_string());
-    }
-
     self.prototype.check(context, cache);
-    self.body.check(context, cache);
+    self.body_value.check(context, cache);
   }
 }
 
-impl SemanticCheck for ast::TypeAlias {
+impl SemanticCheck for ast::TypeDef {
   // TODO: Don't we need to implement `infer_type` here? Seems like not. Confirm.
 }
 
@@ -270,15 +152,11 @@ impl SemanticCheck for ast::Pattern {
   //
 }
 
-impl SemanticCheck for ast::IntrinsicCall {
-  // TODO: Implement.
-}
-
 impl SemanticCheck for ast::ExternStatic {
   //
 }
 
-impl SemanticCheck for ast::StructValue {
+impl SemanticCheck for ast::Record {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let struct_type_node = cache.force_get(&self.target_id.unwrap());
 
@@ -331,7 +209,7 @@ impl SemanticCheck for ast::StructValue {
 impl SemanticCheck for ast::Prototype {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     // TODO: Simplify.
-    ast::Type::Callable(ast::CallableType {
+    ast::Type::Callable(ast::FunctionType {
       return_type: Box::new(self.return_type.clone()),
       parameter_types: self
         .parameters
@@ -347,7 +225,7 @@ impl SemanticCheck for ast::Prototype {
   }
 }
 
-impl SemanticCheck for ast::StructType {
+impl SemanticCheck for ast::RecordType {
   // TODO: Implement.
 }
 
@@ -363,7 +241,7 @@ impl SemanticCheck for ast::UnaryExpr {
     return match self.operator {
       ast::OperatorKind::AddressOf => ast::Type::Pointer(Box::new(expr_type)),
       ast::OperatorKind::Cast => self.cast_type.as_ref().unwrap().clone(),
-      ast::OperatorKind::Not => ast::Type::Primitive(ast::PrimitiveType::Bool),
+      ast::OperatorKind::Not => ast::Type::Primitive(ast::BasicType::Bool),
       ast::OperatorKind::SubtractOrNegate => expr_type,
       _ => unreachable!(),
     };
@@ -387,8 +265,7 @@ impl SemanticCheck for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Primitive(ast::PrimitiveType::Bool))
-        {
+        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Primitive(ast::BasicType::Bool)) {
           context
             .diagnostic_builder
             .error("can only negate boolean expressions".to_string());
@@ -397,7 +274,7 @@ impl SemanticCheck for ast::UnaryExpr {
       ast::OperatorKind::SubtractOrNegate => {
         // TODO: Include floats.
         // FIXME: Shouldn't we be using `unify` here? What about types that need to be resolved? How do we pass-in a variant tho.? Or maybe the inferred type is already at its simplest form? Verify.
-        if !matches!(expr_type, ast::Type::Primitive(ast::PrimitiveType::Int(_))) {
+        if !matches!(expr_type, ast::Type::Primitive(ast::BasicType::Int(_))) {
           // TODO: Error message too similar to the boolean negation case.
           context
             .diagnostic_builder
@@ -431,16 +308,6 @@ impl SemanticCheck for ast::Enum {
   //
 }
 
-impl SemanticCheck for ast::ContinueStmt {
-  fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
-    if !context.in_loop {
-      context
-        .diagnostic_builder
-        .error("continue statement may only occur inside loops".to_string());
-    }
-  }
-}
-
 impl SemanticCheck for ast::ArrayIndexing {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let target_array_variable = &*cache.force_get(&self.target_id.unwrap());
@@ -464,7 +331,7 @@ impl SemanticCheck for ast::ArrayIndexing {
 
     let is_unsigned_int_type =
       // TODO: Should we be using `unify` here, instead?
-      if let ast::Type::Primitive(ast::PrimitiveType::Int(int_size)) = index_expr_type {
+      if let ast::Type::Primitive(ast::BasicType::Int(int_size)) = index_expr_type {
         matches!(int_size, ast::IntSize::U8)
           || matches!(int_size, ast::IntSize::U16)
           || matches!(int_size, ast::IntSize::U32)
@@ -541,14 +408,6 @@ impl SemanticCheck for ast::ExternFunction {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.prototype.infer_type(cache)
   }
-
-  fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
-    if self.prototype.accepts_instance {
-      context
-        .diagnostic_builder
-        .error("extern functions cannot accept instances".to_string());
-    }
-  }
 }
 
 impl SemanticCheck for ast::Parameter {
@@ -559,24 +418,6 @@ impl SemanticCheck for ast::Parameter {
 
 impl SemanticCheck for ast::BlockExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // If the last expression isn't yielded, then the block's type
-    // defaults to unit. If there's no statements on the block, the
-    // type of the block will logically be unit. Finally, if there is
-    // at least a single return statement in the block, the block's type
-    // will also be unit. Note that a return statement does not affect
-    // the block's type, because the function is terminated, and not the
-    // individual block. In other words, the block type is only determined
-    // when an expression is yielded.
-    if !self.yields_last_expr
-      || self.statements.is_empty()
-      || self
-        .statements
-        .iter()
-        .any(|x| matches!(x.kind, ast::NodeKind::ReturnStmt(_)))
-    {
-      return ast::Type::Unit;
-    }
-
     self.statements.last().unwrap().infer_type(cache)
   }
 
@@ -598,12 +439,12 @@ impl SemanticCheck for ast::Reference {
 impl SemanticCheck for ast::Literal {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Primitive(match self {
-      ast::Literal::Bool(_) => ast::PrimitiveType::Bool,
-      ast::Literal::Char(_) => ast::PrimitiveType::Char,
-      ast::Literal::Int(_, size) => ast::PrimitiveType::Int(size.clone()),
-      ast::Literal::String(_) => ast::PrimitiveType::String,
+      ast::Literal::Bool(_) => ast::BasicType::Bool,
+      ast::Literal::Char(_) => ast::BasicType::Char,
+      ast::Literal::Int(_, size) => ast::BasicType::Int(size.clone()),
+      ast::Literal::String(_) => ast::BasicType::String,
       ast::Literal::Nullptr => {
-        return ast::Type::Pointer(Box::new(ast::Type::Primitive(ast::PrimitiveType::Null)))
+        return ast::Type::Pointer(Box::new(ast::Type::Primitive(ast::BasicType::Null)))
       }
     })
   }
@@ -632,7 +473,7 @@ impl SemanticCheck for ast::IfExpr {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     if !SemanticCheckContext::unify(
       &self.condition.infer_type(cache),
-      &ast::Type::Primitive(ast::PrimitiveType::Bool),
+      &ast::Type::Primitive(ast::BasicType::Bool),
     ) {
       context
         .diagnostic_builder
@@ -658,7 +499,7 @@ impl SemanticCheck for ast::BinaryExpr {
       | ast::OperatorKind::Or
       | ast::OperatorKind::Nand
       | ast::OperatorKind::Nor
-      | ast::OperatorKind::Xor => ast::Type::Primitive(ast::PrimitiveType::Bool),
+      | ast::OperatorKind::Xor => ast::Type::Primitive(ast::BasicType::Bool),
       _ => self.left.infer_type(cache),
     }
   }
@@ -689,7 +530,7 @@ impl SemanticCheck for ast::BinaryExpr {
       | ast::OperatorKind::LessThan
       | ast::OperatorKind::GreaterThan => {
         // TODO: What about floats?
-        if !matches!(left_type, ast::Type::Primitive(ast::PrimitiveType::Int(_))) {
+        if !matches!(left_type, ast::Type::Primitive(ast::BasicType::Int(_))) {
           context
             .diagnostic_builder
             .error("binary expression operands must be both integers".to_string());
@@ -701,16 +542,6 @@ impl SemanticCheck for ast::BinaryExpr {
 
     self.left.check(context, cache);
     self.right.check(context, cache);
-  }
-}
-
-impl SemanticCheck for ast::BreakStmt {
-  fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
-    if !context.in_loop {
-      context
-        .diagnostic_builder
-        .error("break statement may only occur inside loops".to_string());
-    }
   }
 }
 
@@ -744,56 +575,6 @@ impl SemanticCheck for ast::LetStmt {
   }
 }
 
-impl SemanticCheck for ast::ReturnStmt {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let current_function_node = cache.force_get(&context.current_function_key.unwrap());
-    let mut name = None;
-    let prototype;
-
-    match &current_function_node.kind {
-      ast::NodeKind::Function(function) => {
-        name = Some(function.name.clone());
-        prototype = &function.prototype;
-      }
-      ast::NodeKind::Closure(closure) => {
-        prototype = &closure.prototype;
-      }
-      _ => unreachable!(),
-    };
-
-    // TODO: Whether a function returns is already checked. Limit this to unifying the types only.
-    if !prototype.return_type.is_unit() && self.value.is_none() {
-      context
-        .diagnostic_builder
-        .error("return statement must return a value".to_string());
-    } else if prototype.return_type.is_unit() && self.value.is_some() {
-      context
-        .diagnostic_builder
-        .error("return statement must not return a value".to_string());
-
-      // TODO: Returning at this point. Is this okay?
-      return;
-    }
-
-    if let Some(value) = &self.value {
-      let value_type = value.infer_type(cache);
-
-      if !SemanticCheckContext::unify(&prototype.return_type, &value_type) {
-        context.diagnostic_builder.error(format!(
-          "return statement value and prototype return type mismatch for {}",
-          if let Some(name) = name {
-            format!("function `{}`", name)
-          } else {
-            "closure".to_string()
-          }
-        ));
-      }
-
-      value.check(context, cache);
-    }
-  }
-}
-
 impl SemanticCheck for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.prototype.infer_type(cache)
@@ -801,12 +582,6 @@ impl SemanticCheck for ast::Function {
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     context.current_function_key = Some(self.unique_id);
-
-    if self.prototype.accepts_instance && !context.in_impl {
-      context
-        .diagnostic_builder
-        .error("cannot accept instance in a non-impl function".to_string());
-    }
 
     // TODO: Special case for the `main` function. Unify expected signature?
 
@@ -831,11 +606,8 @@ impl SemanticCheck for ast::Function {
       let main_prototype = ast::Prototype {
         // TODO: Parameters. Also, the comparison should ignore parameter names.
         parameters: vec![],
-        return_type: ast::Type::Primitive(ast::PrimitiveType::Int(ast::IntSize::I32)),
+        return_type: ast::Type::Primitive(ast::BasicType::Int(ast::IntSize::I32)),
         is_variadic: false,
-        accepts_instance: false,
-        instance_type_id: None,
-        this_parameter: None,
       };
 
       // TODO: Simplify.
@@ -949,27 +721,5 @@ impl SemanticCheck for ast::CallExpr {
     //     ));
     //   }
     // }
-  }
-}
-
-impl SemanticCheck for ast::LoopStmt {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    if let Some(condition) = &self.condition {
-      if !SemanticCheckContext::unify(
-        &condition.infer_type(cache),
-        &ast::Type::Primitive(ast::PrimitiveType::Bool),
-      ) {
-        context
-          .diagnostic_builder
-          .error("loop condition must evaluate to a boolean".to_string());
-      }
-
-      condition.check(context, cache);
-    }
-
-    // TODO: To avoid problems with nested cases, save a buffer here, then restore?
-    context.in_loop = true;
-    self.body.check(context, cache);
-    context.in_loop = false;
   }
 }

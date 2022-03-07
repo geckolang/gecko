@@ -9,14 +9,9 @@ macro_rules! dispatch {
       ast::NodeKind::ExternStatic(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Function(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::BlockExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::IfStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Reference(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
@@ -28,13 +23,11 @@ macro_rules! dispatch {
       ast::NodeKind::Enum(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::StructType(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::Record(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -64,7 +57,7 @@ pub enum IntSize {
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub enum PrimitiveType {
+pub enum BasicType {
   Int(IntSize),
   Bool,
   Char,
@@ -75,16 +68,15 @@ pub enum PrimitiveType {
 #[derive(PartialEq, Clone, Debug)]
 pub enum Type {
   Array(Box<Type>, u32),
-  Primitive(PrimitiveType),
+  Primitive(BasicType),
   Pointer(Box<Type>),
   // TODO: Consider merging with `Pointer` type, since they have common functionality. Ensure all cases conform if so.
   Reference(Box<Type>),
   // TODO: Isn't this incompatible with `UserDefined`?
-  Struct(StructType),
+  Struct(RecordType),
   /// A type that may need to be resolved.
   Stub(StubType),
-  Callable(CallableType),
-  This(ThisType),
+  Callable(FunctionType),
   Unit,
   // FIXME: [!!] Investigate: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
   Error,
@@ -104,14 +96,9 @@ pub enum NodeKind {
   ExternStatic(ExternStatic),
   Function(Function),
   BlockExpr(BlockExpr),
-  ReturnStmt(ReturnStmt),
   LetStmt(LetStmt),
   IfStmt(IfExpr),
-  LoopStmt(LoopStmt),
   CallExpr(CallExpr),
-  IntrinsicCall(IntrinsicCall),
-  BreakStmt(BreakStmt),
-  ContinueStmt(ContinueStmt),
   InlineExprStmt(InlineExprStmt),
   Reference(Reference),
   BinaryExpr(BinaryExpr),
@@ -121,15 +108,13 @@ pub enum NodeKind {
   ArrayValue(ArrayValue),
   ArrayIndexing(ArrayIndexing),
   Enum(Enum),
-  StructType(StructType),
+  StructType(RecordType),
   Prototype(Prototype),
-  StructValue(StructValue),
+  Record(Record),
   Pattern(Pattern),
-  TypeAlias(TypeAlias),
+  TypeAlias(TypeDef),
   Closure(Closure),
-  MemberAccess(MemberAccess),
-  StructImpl(StructImpl),
-  Trait(Trait),
+  ParenthesesExpr(ParenthesesExpr),
 }
 
 #[derive(Debug)]
@@ -140,23 +125,20 @@ pub struct Node {
 }
 
 #[derive(Debug)]
+pub struct ParenthesesExpr(pub Box<Node>);
+
+#[derive(Debug)]
 pub struct Closure {
   pub captures: Vec<(String, Option<cache::UniqueId>)>,
   pub prototype: Prototype,
-  pub body: BlockExpr,
+  pub body_value: Box<Node>,
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct CallableType {
+pub struct FunctionType {
   pub return_type: Box<Type>,
   pub parameter_types: Vec<Type>,
   pub is_variadic: bool,
-}
-
-#[derive(PartialEq, Clone, Debug)]
-pub struct ThisType {
-  pub target_id: Option<cache::UniqueId>,
-  pub ty: Option<Box<Type>>,
 }
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
@@ -199,7 +181,7 @@ pub struct StubType {
 }
 
 #[derive(Debug)]
-pub struct StructValue {
+pub struct Record {
   pub struct_name: String,
   pub fields: Vec<Node>,
   /// A unique id targeting the struct value's type. Resolved
@@ -208,29 +190,11 @@ pub struct StructValue {
 }
 
 #[derive(Debug)]
-pub struct StructImpl {
-  pub is_default: bool,
-  pub target_struct_pattern: Pattern,
-  pub trait_pattern: Option<Pattern>,
-  pub methods: Vec<Function>,
-}
-
-#[derive(Debug)]
-pub struct Trait {
-  pub name: String,
-  pub methods: Vec<(String, Prototype)>,
-  pub unique_id: cache::UniqueId,
-}
-
-#[derive(Debug)]
 pub struct Enum {
   pub name: String,
   pub variants: Vec<String>,
   pub unique_id: cache::UniqueId,
 }
-
-#[derive(Debug)]
-pub struct ContinueStmt;
 
 #[derive(Debug)]
 pub struct ArrayIndexing {
@@ -266,16 +230,12 @@ pub struct Prototype {
   pub parameters: Vec<Parameter>,
   pub return_type: Type,
   pub is_variadic: bool,
-  pub accepts_instance: bool,
-  pub instance_type_id: Option<cache::UniqueId>,
-  pub this_parameter: Option<Parameter>,
 }
 
 #[derive(Debug)]
 pub struct ExternFunction {
   pub name: String,
   pub prototype: Prototype,
-  pub attributes: Vec<Attribute>,
   pub unique_id: cache::UniqueId,
 }
 
@@ -287,17 +247,10 @@ pub struct ExternStatic {
 }
 
 #[derive(Debug)]
-pub struct Attribute {
-  pub name: String,
-  pub values: Vec<Literal>,
-}
-
-#[derive(Debug)]
 pub struct Function {
   pub name: String,
   pub prototype: Prototype,
   pub body_value: Box<Node>,
-  pub attributes: Vec<Attribute>,
   pub unique_id: cache::UniqueId,
 }
 
@@ -306,16 +259,6 @@ pub struct BlockExpr {
   pub statements: Vec<Node>,
   pub yields_last_expr: bool,
   pub unique_id: cache::UniqueId,
-}
-
-#[derive(Debug)]
-pub struct BreakStmt {
-  //
-}
-
-#[derive(Debug)]
-pub struct ReturnStmt {
-  pub value: Option<Box<Node>>,
 }
 
 #[derive(Debug)]
@@ -337,12 +280,6 @@ pub struct IfExpr {
 }
 
 #[derive(Debug)]
-pub struct LoopStmt {
-  pub condition: Option<Box<Node>>,
-  pub body: BlockExpr,
-}
-
-#[derive(Debug)]
 pub struct InlineExprStmt {
   pub expr: Box<Node>,
 }
@@ -353,26 +290,15 @@ pub struct CallExpr {
   pub arguments: Vec<Node>,
 }
 
-#[derive(Debug)]
-pub enum IntrinsicKind {
-  Panic,
-}
-
-#[derive(Debug)]
-pub struct IntrinsicCall {
-  pub kind: IntrinsicKind,
-  pub arguments: Vec<Node>,
-}
-
 #[derive(PartialEq, Clone, Debug)]
-pub struct StructType {
+pub struct RecordType {
   pub unique_id: cache::UniqueId,
   pub name: String,
   pub fields: Vec<(String, Type)>,
 }
 
 #[derive(Debug)]
-pub struct TypeAlias {
+pub struct TypeDef {
   pub name: String,
   pub ty: Type,
   pub unique_id: cache::UniqueId,
@@ -414,10 +340,4 @@ pub struct UnaryExpr {
   ///
   /// Only available when the unary expression is a cast.
   pub cast_type: Option<Type>,
-}
-
-#[derive(Debug)]
-pub struct MemberAccess {
-  pub base_expr: Box<Node>,
-  pub member_name: String,
 }

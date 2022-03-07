@@ -3,7 +3,6 @@ use crate::{ast, cache, diagnostic};
 pub struct LintContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   block_depth: usize,
-  function_references: std::collections::HashMap<cache::UniqueId, bool>,
   variable_references: std::collections::HashMap<cache::UniqueId, bool>,
 }
 
@@ -12,7 +11,6 @@ impl LintContext {
     Self {
       diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
       block_depth: 0,
-      function_references: std::collections::HashMap::new(),
       variable_references: std::collections::HashMap::new(),
     }
   }
@@ -57,15 +55,7 @@ impl Lint for ast::Node {
   }
 }
 
-impl Lint for ast::Trait {
-  //
-}
-
-impl Lint for ast::StructImpl {
-  //
-}
-
-impl Lint for ast::MemberAccess {
+impl Lint for ast::ParenthesesExpr {
   //
 }
 
@@ -73,7 +63,7 @@ impl Lint for ast::Closure {
   //
 }
 
-impl Lint for ast::TypeAlias {
+impl Lint for ast::TypeDef {
   //
 }
 
@@ -83,17 +73,13 @@ impl Lint for ast::Pattern {
   }
 }
 
-impl Lint for ast::IntrinsicCall {
-  //
-}
-
 impl Lint for ast::ExternStatic {
   fn lint(&self, _cache: &cache::Cache, _context: &mut LintContext) {
     //
   }
 }
 
-impl Lint for ast::StructValue {
+impl Lint for ast::Record {
   //
 }
 
@@ -101,7 +87,7 @@ impl Lint for ast::Prototype {
   //
 }
 
-impl Lint for ast::StructType {
+impl Lint for ast::RecordType {
   fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
     context.lint_name_casing("struct", &self.name, convert_case::Case::Pascal);
 
@@ -142,8 +128,6 @@ impl Lint for ast::BinaryExpr {
 
 impl Lint for ast::BlockExpr {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    let mut did_return = false;
-
     // TODO: Might be repetitive for subsequent nested blocks.
     if context.block_depth > 4 {
       context
@@ -154,31 +138,11 @@ impl Lint for ast::BlockExpr {
     context.block_depth += 1;
 
     for statement in &self.statements {
-      if did_return {
-        context
-          .diagnostic_builder
-          .warning("unreachable code after return statement".to_string());
-
-        // TODO: Consider whether we should stop linting the block at this point.
-      }
-
-      if matches!(statement.kind, ast::NodeKind::ReturnStmt(_)) {
-        did_return = true;
-      }
-
       statement.lint(cache, context);
     }
 
     context.block_depth -= 1;
   }
-}
-
-impl Lint for ast::BreakStmt {
-  //
-}
-
-impl Lint for ast::ContinueStmt {
-  //
 }
 
 // impl Lint for ast::Definition {
@@ -289,14 +253,6 @@ impl Lint for ast::Parameter {
   }
 }
 
-impl Lint for ast::ReturnStmt {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    if let Some(value) = &self.value {
-      value.lint(cache, context);
-    }
-  }
-}
-
 impl Lint for ast::UnsafeBlockStmt {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     self.0.lint(cache, context);
@@ -308,15 +264,5 @@ impl Lint for ast::Reference {
     context
       .variable_references
       .insert(self.0.target_id.unwrap(), true);
-  }
-}
-
-impl Lint for ast::LoopStmt {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    if let Some(condition) = &self.condition {
-      condition.lint(cache, context);
-    }
-
-    self.body.lint(cache, context);
   }
 }
