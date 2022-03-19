@@ -449,7 +449,7 @@ fn is_letter(character: char) -> bool {
 /// Determine if the character is a digit within the range
 /// of 0-9.
 fn is_digit(character: char) -> bool {
-  character.is_digit(10)
+  '0' <= character && character <= '9'
 }
 
 /// Determine if the current character is a whitespace
