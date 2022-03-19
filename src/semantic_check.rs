@@ -100,7 +100,7 @@ impl SemanticCheckContext {
 
   fn is_null_pointer_type(ty: &ast::Type) -> bool {
     if let ast::Type::Pointer(ty) = ty {
-      return matches!(ty.as_ref(), ast::Type::Primitive(ast::PrimitiveType::Null));
+      return matches!(ty.as_ref(), ast::Type::Basic(ast::BasicType::Null));
     }
 
     false
@@ -331,7 +331,7 @@ impl SemanticCheck for ast::StructValue {
 impl SemanticCheck for ast::Prototype {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     // TODO: Simplify.
-    ast::Type::Callable(ast::CallableType {
+    ast::Type::Function(ast::FunctionType {
       return_type: Box::new(self.return_type.clone()),
       parameter_types: self
         .parameters
@@ -363,7 +363,7 @@ impl SemanticCheck for ast::UnaryExpr {
     return match self.operator {
       ast::OperatorKind::AddressOf => ast::Type::Pointer(Box::new(expr_type)),
       ast::OperatorKind::Cast => self.cast_type.as_ref().unwrap().clone(),
-      ast::OperatorKind::Not => ast::Type::Primitive(ast::PrimitiveType::Bool),
+      ast::OperatorKind::Not => ast::Type::Basic(ast::BasicType::Bool),
       ast::OperatorKind::SubtractOrNegate => expr_type,
       _ => unreachable!(),
     };
@@ -387,7 +387,7 @@ impl SemanticCheck for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Primitive(ast::PrimitiveType::Bool))
+        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Basic(ast::BasicType::Bool))
         {
           context
             .diagnostic_builder
@@ -397,7 +397,7 @@ impl SemanticCheck for ast::UnaryExpr {
       ast::OperatorKind::SubtractOrNegate => {
         // TODO: Include floats.
         // FIXME: Shouldn't we be using `unify` here? What about types that need to be resolved? How do we pass-in a variant tho.? Or maybe the inferred type is already at its simplest form? Verify.
-        if !matches!(expr_type, ast::Type::Primitive(ast::PrimitiveType::Int(_))) {
+        if !matches!(expr_type, ast::Type::Basic(ast::BasicType::Int(_))) {
           // TODO: Error message too similar to the boolean negation case.
           context
             .diagnostic_builder
@@ -410,8 +410,8 @@ impl SemanticCheck for ast::UnaryExpr {
       }
       ast::OperatorKind::Cast => {
         // FIXME: What if it's an alias?
-        if !matches!(expr_type, ast::Type::Primitive(_))
-          || !matches!(self.cast_type.as_ref().unwrap(), ast::Type::Primitive(_))
+        if !matches!(expr_type, ast::Type::Basic(_))
+          || !matches!(self.cast_type.as_ref().unwrap(), ast::Type::Basic(_))
         {
           context
             .diagnostic_builder
@@ -521,7 +521,7 @@ impl SemanticCheck for ast::ArrayIndexing {
 
     let is_unsigned_int_type =
       // TODO: Should we be using `unify` here, instead?
-      if let ast::Type::Primitive(ast::PrimitiveType::Int(int_size)) = index_expr_type {
+      if let ast::Type::Basic(ast::BasicType::Int(int_size)) = index_expr_type {
         matches!(int_size, ast::IntSize::U8)
           || matches!(int_size, ast::IntSize::U16)
           || matches!(int_size, ast::IntSize::U32)
@@ -654,13 +654,13 @@ impl SemanticCheck for ast::Reference {
 
 impl SemanticCheck for ast::Literal {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    ast::Type::Primitive(match self {
-      ast::Literal::Bool(_) => ast::PrimitiveType::Bool,
-      ast::Literal::Char(_) => ast::PrimitiveType::Char,
-      ast::Literal::Int(_, size) => ast::PrimitiveType::Int(size.clone()),
-      ast::Literal::String(_) => ast::PrimitiveType::String,
+    ast::Type::Basic(match self {
+      ast::Literal::Bool(_) => ast::BasicType::Bool,
+      ast::Literal::Char(_) => ast::BasicType::Char,
+      ast::Literal::Int(_, size) => ast::BasicType::Int(size.clone()),
+      ast::Literal::String(_) => ast::BasicType::String,
       ast::Literal::Nullptr => {
-        return ast::Type::Pointer(Box::new(ast::Type::Primitive(ast::PrimitiveType::Null)))
+        return ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::Null)))
       }
     })
   }
@@ -689,7 +689,7 @@ impl SemanticCheck for ast::IfExpr {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     if !SemanticCheckContext::unify(
       &self.condition.infer_type(cache),
-      &ast::Type::Primitive(ast::PrimitiveType::Bool),
+      &ast::Type::Basic(ast::BasicType::Bool),
     ) {
       context
         .diagnostic_builder
@@ -715,7 +715,7 @@ impl SemanticCheck for ast::BinaryExpr {
       | ast::OperatorKind::Or
       | ast::OperatorKind::Nand
       | ast::OperatorKind::Nor
-      | ast::OperatorKind::Xor => ast::Type::Primitive(ast::PrimitiveType::Bool),
+      | ast::OperatorKind::Xor => ast::Type::Basic(ast::BasicType::Bool),
       _ => self.left.infer_type(cache),
     }
   }
@@ -746,7 +746,7 @@ impl SemanticCheck for ast::BinaryExpr {
       | ast::OperatorKind::LessThan
       | ast::OperatorKind::GreaterThan => {
         // TODO: What about floats?
-        if !matches!(left_type, ast::Type::Primitive(ast::PrimitiveType::Int(_))) {
+        if !matches!(left_type, ast::Type::Basic(ast::BasicType::Int(_))) {
           context
             .diagnostic_builder
             .error("binary expression operands must be both integers".to_string());
@@ -888,7 +888,7 @@ impl SemanticCheck for ast::Function {
       let main_prototype = ast::Prototype {
         // TODO: Parameters. Also, the comparison should ignore parameter names.
         parameters: vec![],
-        return_type: ast::Type::Primitive(ast::PrimitiveType::Int(ast::IntSize::I32)),
+        return_type: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
         is_variadic: false,
         accepts_instance: false,
         instance_type_id: None,
@@ -914,7 +914,7 @@ impl SemanticCheck for ast::CallExpr {
     let callee_expr_type = self.callee_expr.infer_type(cache);
 
     match callee_expr_type {
-      ast::Type::Callable(callable_type) => callable_type.return_type.as_ref().clone(),
+      ast::Type::Function(callable_type) => callable_type.return_type.as_ref().clone(),
       _ => ast::Type::Error,
     }
   }
@@ -927,7 +927,7 @@ impl SemanticCheck for ast::CallExpr {
 
     let callee_expr_type = self.callee_expr.infer_type(cache);
 
-    if !matches!(callee_expr_type, ast::Type::Callable(_)) {
+    if !matches!(callee_expr_type, ast::Type::Function(_)) {
       context
         .diagnostic_builder
         .error("call expression's callee is not actually callable".to_string());
@@ -937,7 +937,7 @@ impl SemanticCheck for ast::CallExpr {
     }
 
     let callee_type = match callee_expr_type {
-      ast::Type::Callable(callable_type) => callable_type,
+      ast::Type::Function(callable_type) => callable_type,
       _ => unreachable!(),
     };
 
@@ -1014,7 +1014,7 @@ impl SemanticCheck for ast::LoopStmt {
     if let Some(condition) = &self.condition {
       if !SemanticCheckContext::unify(
         &condition.infer_type(cache),
-        &ast::Type::Primitive(ast::PrimitiveType::Bool),
+        &ast::Type::Basic(ast::BasicType::Bool),
       ) {
         context
           .diagnostic_builder

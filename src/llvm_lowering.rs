@@ -1179,7 +1179,7 @@ impl Lower for ast::LetStmt {
     // Special cases. The allocation is done elsewhere.
     if matches!(
       SemanticCheckContext::flatten_type(&self.ty),
-      ast::Type::Callable(_) | ast::Type::Struct(_)
+      ast::Type::Function(_) | ast::Type::Struct(_)
     ) {
       // TODO: Here create a definition for the closure, with the let statement as the name?
 
@@ -1336,7 +1336,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // Special case for string literals. They shouldn't be
     // lowered, since they're natural pointers. And for structs,
     // they must be passed as pointer values.
-    if (matches!(node_type, ast::Type::Primitive(ast::PrimitiveType::String))
+    if (matches!(node_type, ast::Type::Basic(ast::BasicType::String))
       && !matches!(node.kind, ast::NodeKind::Reference(_)))
       || matches!(node_type, ast::Type::Struct(_))
     {
@@ -1532,9 +1532,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // FIXME: [!] Bug: Use type-caching HERE (for structs, or any type that needs to be cached). Declaring multiple variables with the same struct type will cause repeated type definitions.
 
     match ty {
-      ast::Type::Primitive(primitive_type) => match primitive_type {
-        ast::PrimitiveType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
-        ast::PrimitiveType::Int(size) => {
+      ast::Type::Basic(primitive_type) => match primitive_type {
+        ast::BasicType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
+        ast::BasicType::Int(size) => {
           // TODO: Should we handle unsigned integers here?
 
           let llvm_int_type = self.llvm_context.custom_width_int_type(match size {
@@ -1547,14 +1547,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
           llvm_int_type.as_basic_type_enum()
         }
-        ast::PrimitiveType::Char => self.llvm_context.i8_type().as_basic_type_enum(),
-        ast::PrimitiveType::String => self
+        ast::BasicType::Char => self.llvm_context.i8_type().as_basic_type_enum(),
+        ast::BasicType::String => self
           .llvm_context
           .i8_type()
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum(),
         // NOTE: The null primitive type is never lowered, only the nullptr value.
-        ast::PrimitiveType::Null => unreachable!(),
+        ast::BasicType::Null => unreachable!(),
       },
       ast::Type::Array(element_type, size) => self
         .lower_type(&element_type, cache)
@@ -1588,7 +1588,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::Stub(stub_type) => {
         self.memoize_or_retrieve_type(stub_type.target_id.unwrap(), cache)
       }
-      ast::Type::Callable(callable_type) => self
+      ast::Type::Function(callable_type) => self
         .lower_callable_type(callable_type, cache)
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
@@ -1607,18 +1607,18 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   fn lower_callable_type(
     &mut self,
-    callable_type: &ast::CallableType,
+    function_type: &ast::FunctionType,
     cache: &cache::Cache,
   ) -> inkwell::types::FunctionType<'ctx> {
-    let llvm_parameter_types = callable_type
+    let llvm_parameter_types = function_type
       .parameter_types
       .iter()
       .map(|parameter_type| self.lower_type(&parameter_type, cache).into())
       .collect::<Vec<_>>();
 
-    let llvm_return_type = self.lower_type(&callable_type.return_type, cache);
+    let llvm_return_type = self.lower_type(&function_type.return_type, cache);
 
-    llvm_return_type.fn_type(llvm_parameter_types.as_slice(), callable_type.is_variadic)
+    llvm_return_type.fn_type(llvm_parameter_types.as_slice(), function_type.is_variadic)
   }
 
   fn lower_prototype(

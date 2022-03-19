@@ -65,7 +65,7 @@ pub enum IntSize {
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub enum PrimitiveType {
+pub enum BasicType {
   Int(IntSize),
   Bool,
   Char,
@@ -76,7 +76,7 @@ pub enum PrimitiveType {
 #[derive(PartialEq, Clone, Debug)]
 pub enum Type {
   Array(Box<Type>, u32),
-  Primitive(PrimitiveType),
+  Basic(BasicType),
   Pointer(Box<Type>),
   // TODO: Consider merging with `Pointer` type, since they have common functionality. Ensure all cases conform if so.
   Reference(Box<Type>),
@@ -84,7 +84,7 @@ pub enum Type {
   Struct(StructType),
   /// A type that may need to be resolved.
   Stub(StubType),
-  Callable(CallableType),
+  Function(FunctionType),
   This(ThisType),
   Unit,
   // FIXME: [!!] Investigate: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
@@ -149,7 +149,7 @@ pub struct Closure {
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct CallableType {
+pub struct FunctionType {
   pub return_type: Box<Type>,
   pub parameter_types: Vec<Type>,
   pub is_variadic: bool,

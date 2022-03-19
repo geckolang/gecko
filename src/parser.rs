@@ -110,7 +110,7 @@ impl<'a> Parser<'a> {
       return Err(self.expected(format!("token `{}`", token_kind).as_str()));
     }
 
-    self.skip();
+    self.try_skip();
 
     Ok(())
   }
@@ -171,7 +171,7 @@ impl<'a> Parser<'a> {
   /// Returns whether the index was repositioned. If false, it indicates
   /// that the end of file was reached (`EOF`), and the current character
   /// cannot be skipped-over.
-  fn skip(&mut self) -> bool {
+  fn try_skip(&mut self) -> bool {
     if self.is_eof() {
       return false;
     }
@@ -217,7 +217,7 @@ impl<'a> Parser<'a> {
     let starting_name = self.parse_name()?;
 
     let module_name = if self.is(&lexer::TokenKind::Colon) {
-      self.skip();
+      self.try_skip();
 
       Some(starting_name.clone())
     } else {
@@ -246,7 +246,7 @@ impl<'a> Parser<'a> {
       _ => return Err(self.expected("identifier")),
     };
 
-    self.skip();
+    self.try_skip();
 
     Ok(name)
   }
@@ -286,13 +286,13 @@ impl<'a> Parser<'a> {
     // TODO: Simplify.
     // Support for short syntax.
     if self.is(&lexer::TokenKind::Equal) {
-      self.skip();
+      self.try_skip();
 
       let statement = self.parse_statement()?;
 
       // FIXME: Is this correct for all cases?
       let yield_last_expr = if self.is(&lexer::TokenKind::SemiColon) {
-        self.skip();
+        self.try_skip();
 
         false
       } else {
@@ -318,7 +318,7 @@ impl<'a> Parser<'a> {
       let statement = self.parse_statement()?;
 
       if self.peek_is(&lexer::TokenKind::BraceR) && self.is(&lexer::TokenKind::SemiColon) {
-        self.skip();
+        self.try_skip();
         yield_last_expr = false;
       }
 
@@ -351,9 +351,9 @@ impl<'a> Parser<'a> {
       _ => return Err(self.expected("integer type")),
     };
 
-    self.skip();
+    self.try_skip();
 
-    Ok(ast::Type::Primitive(ast::PrimitiveType::Int(size)))
+    Ok(ast::Type::Basic(ast::BasicType::Int(size)))
   }
 
   // TODO: Merge with the `parse_type` function (too small)?
@@ -361,7 +361,7 @@ impl<'a> Parser<'a> {
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::TypeBool)?;
 
-    Ok(ast::Type::Primitive(ast::PrimitiveType::Bool))
+    Ok(ast::Type::Basic(ast::BasicType::Bool))
   }
 
   // TODO: Specialize return types of the `parse_type_x` functions to their actual types instead of the `ast::Type` enum wrapper?
@@ -387,18 +387,19 @@ impl<'a> Parser<'a> {
       _ => return Err(self.expected("array size")),
     };
 
-    self.skip();
+    self.try_skip();
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::Type::Array(Box::new(element_type), size))
   }
 
   fn parse_type(&mut self) -> ParserResult<ast::Type> {
-    // TODO: Check if the index is valid?
+    // TODO: Unsafe access.
     // TODO: Support for more types.
-    match self.force_get() {
+    let mut ty = match self.force_get() {
       // TODO: Other types as well.
-      lexer::TokenKind::Fn => self.parse_callable_type(),
+      // TODO: Parse function types.
+      // lexer::TokenKind::Fn => self.parse_callable_type(),
       lexer::TokenKind::TypeInt8
       | lexer::TokenKind::TypeInt16
       | lexer::TokenKind::TypeInt32
@@ -410,20 +411,26 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::TypeBool => self.parse_bool_type(),
       lexer::TokenKind::Identifier(_) => self.parse_stub_type(),
       lexer::TokenKind::BracketL => self.parse_array_type(),
-      lexer::TokenKind::TypeThis => self.parse_this_type(),
       lexer::TokenKind::TypeUnit => self.parse_unit_type(),
       lexer::TokenKind::Asterisk => {
-        self.skip();
+        self.try_skip();
 
         Ok(ast::Type::Pointer(Box::new(self.parse_type()?)))
       }
       lexer::TokenKind::TypeString => {
-        self.skip();
+        self.try_skip();
 
-        Ok(ast::Type::Primitive(ast::PrimitiveType::String))
+        Ok(ast::Type::Basic(ast::BasicType::String))
       }
       _ => return Err(self.expected("type")),
+    }?;
+
+    // Upgrade to a function type, if applicable.
+    if self.is(&lexer::TokenKind::Arrow) {
+      ty = self.parse_function_type(ty)?;
     }
+
+    Ok(ty)
   }
 
   fn parse_unit_type(&mut self) -> ParserResult<ast::Type> {
@@ -435,37 +442,24 @@ impl<'a> Parser<'a> {
   }
 
   /// fn '(' (%type (','))* ')' ('[' %type ']')
-  fn parse_callable_type(&mut self) -> ParserResult<ast::Type> {
-    self.skip_past(&lexer::TokenKind::Fn)?;
-    self.skip_past(&lexer::TokenKind::BracketL)?;
+  fn parse_function_type(&mut self, first_type: ast::Type) -> ParserResult<ast::Type> {
+    self.skip_past(&lexer::TokenKind::Arrow)?;
 
-    // FIXME: [!!] Implement: Complete implementation.
-    todo!();
+    let mut parameter_types = vec![first_type, self.parse_type()?];
 
-    let mut parameter_types = Vec::new();
-    let mut return_type = None::<ast::Type>;
-
-    while self.until(&lexer::TokenKind::BracketR)? {
+    while self.is(&lexer::TokenKind::Arrow) {
+      self.try_skip();
       parameter_types.push(self.parse_type()?);
-
-      if !self.peek_is(&lexer::TokenKind::BracketR) {
-        self.skip_past(&lexer::TokenKind::Arrow)?;
-      }
     }
 
-    let return_type = if return_type.is_some() {
-      return_type.unwrap()
-    } else {
-      return Err(diagnostic::Diagnostic {
-        message: "callable types must have at least one type".to_string(),
-        span: self.get_span(),
-        severity: diagnostic::Severity::Error,
-      });
-    };
+    let return_type = parameter_types.remove(parameter_types.len() - 1);
 
-    self.skip_past(&lexer::TokenKind::BracketR)?;
+    // Support for no parameters.
+    if parameter_types.len() == 1 && parameter_types[0] == ast::Type::Unit {
+      parameter_types.clear();
+    }
 
-    Ok(ast::Type::Callable(ast::CallableType {
+    Ok(ast::Type::Function(ast::FunctionType {
       parameter_types,
       return_type: Box::new(return_type),
       // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
@@ -512,7 +506,7 @@ impl<'a> Parser<'a> {
     let mut this_parameter = None;
 
     if self.is(&lexer::TokenKind::Identifier(THIS_IDENTIFIER.to_string())) {
-      self.skip();
+      self.try_skip();
       parameter_index_counter += 1;
       accepts_instance = true;
 
@@ -535,7 +529,7 @@ impl<'a> Parser<'a> {
     while self.until(&lexer::TokenKind::ParenthesesR)? {
       if self.is(&lexer::TokenKind::Plus) {
         is_variadic = true;
-        self.skip();
+        self.try_skip();
 
         break;
       }
@@ -547,7 +541,7 @@ impl<'a> Parser<'a> {
         break;
       }
 
-      self.skip();
+      self.try_skip();
     }
 
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
@@ -633,7 +627,7 @@ impl<'a> Parser<'a> {
     let mut values = Vec::new();
 
     if self.is(&lexer::TokenKind::ParenthesesL) {
-      self.skip();
+      self.try_skip();
 
       while self.until(&lexer::TokenKind::ParenthesesR)? {
         values.push(self.parse_literal()?);
@@ -643,7 +637,7 @@ impl<'a> Parser<'a> {
           break;
         }
 
-        self.skip();
+        self.try_skip();
       }
 
       self.skip_past(&lexer::TokenKind::ParenthesesR)?;
@@ -746,7 +740,7 @@ impl<'a> Parser<'a> {
     let value = if !self.is(&lexer::TokenKind::SemiColon) {
       Some(Box::new(self.parse_expr()?))
     } else {
-      self.skip();
+      self.try_skip();
 
       None
     };
@@ -759,7 +753,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Let)?;
 
     let is_mutable = if self.is(&lexer::TokenKind::Mut) {
-      self.skip();
+      self.try_skip();
 
       true
     } else {
@@ -798,7 +792,7 @@ impl<'a> Parser<'a> {
     let then_value = self.parse_expr()?;
 
     let else_value = if self.is(&lexer::TokenKind::Else) {
-      self.skip();
+      self.try_skip();
 
       Some(Box::new(self.parse_expr()?))
     } else {
@@ -854,7 +848,7 @@ impl<'a> Parser<'a> {
   fn parse_bool_literal(&mut self) -> ParserResult<ast::Literal> {
     Ok(match self.force_get().clone() {
       lexer::TokenKind::Bool(value) => {
-        self.skip();
+        self.try_skip();
 
         ast::Literal::Bool(value.clone())
       }
@@ -866,7 +860,7 @@ impl<'a> Parser<'a> {
   fn parse_int_literal(&mut self) -> ParserResult<ast::Literal> {
     Ok(match self.force_get().clone() {
       lexer::TokenKind::Int(value) => {
-        self.skip();
+        self.try_skip();
 
         let minimum_size = minimum_int_size_of(&value);
 
@@ -891,7 +885,7 @@ impl<'a> Parser<'a> {
       _ => return Err(self.expected("string literal")),
     };
 
-    self.skip();
+    self.try_skip();
 
     Ok(result)
   }
@@ -907,12 +901,12 @@ impl<'a> Parser<'a> {
 
       // TODO: What if the comma isn't provided?
       if self.is(&lexer::TokenKind::Comma) {
-        self.skip();
+        self.try_skip();
       }
     }
 
     // Skip the closing bracket.
-    self.skip();
+    self.try_skip();
 
     // TODO: In the future, the type of an empty array will be inferred.
     let explicit_type = if elements.is_empty() {
@@ -953,7 +947,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Int(_) => self.parse_int_literal()?,
       lexer::TokenKind::String(_) => self.parse_string_literal()?,
       lexer::TokenKind::Nullptr => {
-        self.skip();
+        self.try_skip();
 
         ast::Literal::Nullptr
       }
@@ -1083,7 +1077,7 @@ impl<'a> Parser<'a> {
       _ => return Err(self.expected("operator")),
     };
 
-    self.skip();
+    self.try_skip();
 
     Ok(operator)
   }
@@ -1183,7 +1177,7 @@ impl<'a> Parser<'a> {
 
       // TODO: What if the comma is omitted?
       if self.is(&lexer::TokenKind::Comma) {
-        self.skip();
+        self.try_skip();
       }
     }
 
@@ -1213,7 +1207,7 @@ impl<'a> Parser<'a> {
 
       // TODO: What if the comma is omitted?
       if self.is(&lexer::TokenKind::Comma) {
-        self.skip();
+        self.try_skip();
       }
     }
 
@@ -1256,14 +1250,14 @@ impl<'a> Parser<'a> {
 
       // TODO: Iron out case for lonely comma.
       if self.is(&lexer::TokenKind::Comma) {
-        self.skip();
+        self.try_skip();
       }
     }
 
     // TODO: What if we reach `EOF` before closing brace?
 
     // Skip the closing brace symbol.
-    self.skip();
+    self.try_skip();
 
     Ok(ast::Enum {
       name,
@@ -1294,7 +1288,7 @@ impl<'a> Parser<'a> {
     }
 
     // Skip the closing brace symbol.
-    self.skip();
+    self.try_skip();
 
     Ok(ast::StructType {
       name,
@@ -1321,12 +1315,12 @@ impl<'a> Parser<'a> {
 
       // TODO: Disallow trailing comma.
       if self.is(&lexer::TokenKind::Comma) {
-        self.skip();
+        self.try_skip();
       }
     }
 
     // Skip the closing brace symbol.
-    self.skip();
+    self.try_skip();
 
     Ok(ast::StructValue {
       struct_name,
@@ -1342,13 +1336,13 @@ impl<'a> Parser<'a> {
     let mut captures = Vec::new();
 
     if self.is(&lexer::TokenKind::BracketL) {
-      self.skip();
+      self.try_skip();
 
       while self.until(&lexer::TokenKind::BracketR)? {
         captures.push((self.parse_name()?, None));
       }
 
-      self.skip();
+      self.try_skip();
     }
 
     let prototype = self.parse_prototype()?;
@@ -1369,7 +1363,7 @@ impl<'a> Parser<'a> {
 
     if self.is(&lexer::TokenKind::For) {
       trait_pattern = Some(struct_pattern);
-      self.skip();
+      self.try_skip();
       struct_pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
     }
 
@@ -1467,7 +1461,7 @@ mod tests {
       &mut context,
     );
 
-    parser.skip();
+    parser.try_skip();
     assert_eq!(1, parser.index);
   }
 
@@ -1476,7 +1470,7 @@ mod tests {
     let mut context = cache::Cache::new();
     let mut parser = Parser::from_tokens(vec![lexer::TokenKind::Fn], &mut context);
 
-    parser.skip();
+    parser.try_skip();
     assert_eq!(0, parser.index);
   }
 
@@ -1490,7 +1484,7 @@ mod tests {
     assert!(parser.is_eof());
     parser.tokens.push((lexer::TokenKind::Fn, 0));
     assert!(!parser.is_eof());
-    parser.skip();
+    parser.try_skip();
     assert!(parser.is_eof());
   }
 
