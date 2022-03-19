@@ -1678,7 +1678,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     // TODO: Consider making a separate map for types in the cache.
 
-    let node = cache.force_get(&unique_id);
+    let node = cache.unsafe_get(&unique_id);
 
     let ty = match &node.kind {
       ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
@@ -1730,7 +1730,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
 
     let buffers = self.copy_buffers();
-    let llvm_value = cache.force_get(&unique_id).lower(self, cache);
+    let llvm_value = cache.unsafe_get(&unique_id).lower(self, cache);
 
     if let Some(llvm_value) = llvm_value {
       self.llvm_cached_values.insert(unique_id, llvm_value);

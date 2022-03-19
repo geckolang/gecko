@@ -639,7 +639,7 @@ impl NameResolver {
     self.get_current_scope().insert(symbol, unique_id);
   }
 
-  fn produce_lookup_error(&mut self, name: &String) {
+  fn produce_lookup_error(&mut self, name: &str) {
     self
       .diagnostic_builder
       .error(format!("undefined reference to `{}`", name));

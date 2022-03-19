@@ -474,7 +474,6 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Stub(ast::StubType {
       name,
       target_id: None,
-      ty: None,
     }))
   }
 

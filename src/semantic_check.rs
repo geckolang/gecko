@@ -61,9 +61,10 @@ impl SemanticCheckContext {
     // TODO: Cleanup.
 
     // TODO: What if it's a pointer to a user-defined type?
-    if let ast::Type::Stub(stub_type) = ty {
+    if let ast::Type::Stub(_stub_type) = ty {
       // TODO: No need to clone.
-      return stub_type.ty.as_ref().unwrap().as_ref().clone();
+      // return stub_type.ty.as_ref().unwrap().as_ref().clone();
+      todo!();
     } else if let ast::Type::This(this_type) = ty {
       // TODO: No need to clone.
       return this_type.ty.as_ref().unwrap().as_ref().clone();
@@ -78,24 +79,22 @@ impl SemanticCheckContext {
   /// The types passed-in will be resolved if needed before
   /// the comparison takes place.
   pub fn unify(type_a: &ast::Type, type_b: &ast::Type) -> bool {
-    let resolved_type_a = Self::flatten_type(type_a);
-    let resolved_type_b = Self::flatten_type(type_b);
-
     // The error type does not unify with anything.
-    if matches!(resolved_type_a, ast::Type::Error) || matches!(resolved_type_b, ast::Type::Error) {
+    if matches!(type_a, ast::Type::Error) || matches!(type_b, ast::Type::Error) {
       return false;
     }
     // If both types are pointers, and at least one is a null pointer type, then always unify.
     // This is because null pointers unify with any pointer type (any pointer can be null).
-    else if matches!(resolved_type_a, ast::Type::Pointer(_))
-      && matches!(resolved_type_a, ast::Type::Pointer(_))
-      && (Self::is_null_pointer_type(&resolved_type_a)
-        || Self::is_null_pointer_type(&resolved_type_b))
+    else if matches!(type_a, ast::Type::Pointer(_))
+      && matches!(type_a, ast::Type::Pointer(_))
+      && (Self::is_null_pointer_type(&type_a) || Self::is_null_pointer_type(&type_b))
     {
       return true;
     }
 
-    resolved_type_a == resolved_type_b
+    // FIXME: [!!] Bug: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
+    // NOTE: Stub types will also work, because their target ids will be compared.
+    type_a == type_b
   }
 
   fn is_null_pointer_type(ty: &ast::Type) -> bool {
@@ -140,12 +139,12 @@ impl SemanticCheck for ast::StructImpl {
       method.check(context, cache);
     }
 
-    let target_node = cache.force_get(&self.target_struct_pattern.target_id.unwrap());
+    let target_node = cache.unsafe_get(&self.target_struct_pattern.target_id.unwrap());
 
     // TODO: Cleanup.
     if let ast::NodeKind::StructType(_target_struct_type) = &target_node.kind {
       if let Some(trait_pattern) = &self.trait_pattern {
-        let trait_node = cache.force_get(&trait_pattern.target_id.unwrap());
+        let trait_node = cache.unsafe_get(&trait_pattern.target_id.unwrap());
 
         if let ast::NodeKind::Trait(trait_type) = &trait_node.kind {
           for trait_method in &trait_type.methods {
@@ -211,7 +210,7 @@ impl SemanticCheck for ast::MemberAccess {
     if let Some(struct_impls) = cache.get_struct_impls(&struct_type.unique_id) {
       for (method_unique_id, method_name) in struct_impls {
         if method_name == &self.member_name {
-          return cache.force_get(&method_unique_id).infer_type(cache);
+          return cache.unsafe_get(&method_unique_id).infer_type(cache);
         }
       }
     }
@@ -280,7 +279,7 @@ impl SemanticCheck for ast::ExternStatic {
 
 impl SemanticCheck for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type_node = cache.force_get(&self.target_id.unwrap());
+    let struct_type_node = cache.unsafe_get(&self.target_id.unwrap());
 
     let struct_type = match &(&*struct_type_node).kind {
       ast::NodeKind::StructType(struct_type) => struct_type,
@@ -292,7 +291,7 @@ impl SemanticCheck for ast::StructValue {
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let struct_type_node = cache.force_get(&self.target_id.unwrap());
+    let struct_type_node = cache.unsafe_get(&self.target_id.unwrap());
 
     let struct_type = match &(&*struct_type_node).kind {
       ast::NodeKind::StructType(struct_type) => struct_type,
@@ -387,8 +386,7 @@ impl SemanticCheck for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Basic(ast::BasicType::Bool))
-        {
+        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Basic(ast::BasicType::Bool)) {
           context
             .diagnostic_builder
             .error("can only negate boolean expressions".to_string());
@@ -468,7 +466,7 @@ impl SemanticCheck for ast::AssignStmt {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match &self.assignee_expr.kind {
         ast::NodeKind::Reference(variable_ref) => {
-          let declaration = cache.force_get(&variable_ref.0.target_id.unwrap());
+          let declaration = cache.unsafe_get(&variable_ref.0.target_id.unwrap());
 
           match &(&*declaration).kind {
             ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
@@ -500,7 +498,7 @@ impl SemanticCheck for ast::ContinueStmt {
 
 impl SemanticCheck for ast::ArrayIndexing {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_array_variable = &*cache.force_get(&self.target_id.unwrap());
+    let target_array_variable = &*cache.unsafe_get(&self.target_id.unwrap());
 
     let array_type = match &target_array_variable.kind {
       ast::NodeKind::LetStmt(let_stmt) => &let_stmt.ty,
@@ -647,7 +645,7 @@ impl SemanticCheck for ast::BlockExpr {
 impl SemanticCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     (&*cache)
-      .force_get(&self.0.target_id.unwrap())
+      .unsafe_get(&self.0.target_id.unwrap())
       .infer_type(cache)
   }
 }
@@ -803,7 +801,7 @@ impl SemanticCheck for ast::LetStmt {
 
 impl SemanticCheck for ast::ReturnStmt {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let current_function_node = cache.force_get(&context.current_function_key.unwrap());
+    let current_function_node = cache.unsafe_get(&context.current_function_key.unwrap());
     let mut name = None;
     let prototype;
 

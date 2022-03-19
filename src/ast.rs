@@ -197,7 +197,6 @@ impl ToString for Pattern {
 pub struct StubType {
   pub name: String,
   pub target_id: Option<cache::UniqueId>,
-  pub ty: Option<Box<Type>>,
 }
 
 #[derive(Debug)]
