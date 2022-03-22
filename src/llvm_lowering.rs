@@ -238,11 +238,15 @@ impl Lower for ast::StructValue {
 
     // Populate struct fields.
     for (index, field) in self.fields.iter().enumerate() {
+      println!("index: {} | {:?}", index, llvm_struct_alloca);
+      // FIXME: [!!] Bug: Struct isn't being accessed, or rather it is a pointer to a struct. (Struct**).
+
+      let e = generator.access(llvm_struct_alloca).into_pointer_value();
       let struct_field_gep = generator
         .llvm_builder
         // TODO: Is this conversion safe?
         // TODO: Better name.
-        .build_struct_gep(llvm_struct_alloca, index as u32, "struct.alloca.field.gep")
+        .build_struct_gep(e, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
       let llvm_field_value = generator.lower_with_access_rules(field, cache).unwrap();
@@ -1178,7 +1182,7 @@ impl Lower for ast::LetStmt {
     // TODO: Do we need to resolve here?
     // Special cases. The allocation is done elsewhere.
     if matches!(
-      SemanticCheckContext::flatten_type(&self.ty),
+      SemanticCheckContext::flatten_type(&self.ty, cache),
       ast::Type::Function(_) | ast::Type::Struct(_)
     ) {
       // TODO: Here create a definition for the closure, with the let statement as the name?
@@ -1329,7 +1333,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value_result = node.lower(self, cache);
-    let node_type = SemanticCheckContext::flatten_type(&node.infer_type(cache));
+    let node_type = SemanticCheckContext::flatten_type(&node.infer_type(cache), cache);
 
     // TODO: Is there a need to resolve the type?
     // FIXME: [!] Bug: This won't work for nested string values. Cannot compare node kind.

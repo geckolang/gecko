@@ -95,6 +95,10 @@ impl Type {
   pub fn is_unit(&self) -> bool {
     matches!(self, Type::Unit)
   }
+
+  pub fn is_stub(&self) -> bool {
+    matches!(self, Type::Stub(_))
+  }
 }
 
 // TODO: Write a macro that both defines this and `as_x_node()` (which alternatively yields `unreachable!()`) methods.
@@ -169,28 +173,6 @@ pub struct Pattern {
   pub base_name: String,
   pub symbol_kind: name_resolution::SymbolKind,
   pub target_id: Option<cache::UniqueId>,
-}
-
-impl Pattern {
-  pub fn new(base_name: String, symbol_kind: name_resolution::SymbolKind) -> Self {
-    Pattern {
-      module_name: None,
-      base_name,
-      symbol_kind,
-      target_id: None,
-    }
-  }
-}
-
-// TODO: Consider switching to `Display` trait.
-impl ToString for Pattern {
-  fn to_string(&self) -> String {
-    // TODO: Missing the module name.
-    // TODO: Hard-coded character.
-    // TODO: Properly implement. Also, consider if this is even needed. If not, remove this trait implementation.
-    // self.base_name.clone() + self.member_path.join(".").as_str()
-    String::from("pending_implementation")
-  }
 }
 
 #[derive(PartialEq, Clone, Debug)]

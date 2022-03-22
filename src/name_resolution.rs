@@ -403,7 +403,6 @@ impl Resolve for ast::BlockExpr {
   fn resolve(&mut self, resolver: &mut NameResolver) {
     resolver.current_block_unique_id = Some(self.unique_id);
 
-    // TODO:
     for statement in &mut self.statements {
       statement.resolve(resolver);
     }
@@ -549,6 +548,8 @@ impl NameResolver {
     true
   }
 
+  // FIXME: What about registering on the cache? If this is implemented, there is no longer a need to register
+  // the root nodes on the cache.
   fn declare_symbol(&mut self, symbol: Symbol, unique_id: cache::UniqueId) {
     // Check for existing definitions.
     if self.contains_current_scope(&symbol) {

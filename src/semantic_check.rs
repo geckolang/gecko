@@ -21,13 +21,14 @@ impl SemanticCheckContext {
 
   // TODO: Find instances and replace old usages with this function.
   pub fn infer_and_resolve_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
-    SemanticCheckContext::flatten_type(&node.infer_type(cache))
+    SemanticCheckContext::flatten_type(&node.infer_type(cache), cache)
   }
 
   // TODO: Consider using `Result` instead of `Option`.
   pub fn unify_prototypes(
     prototype_a: &ast::Prototype,
     prototype_b: &ast::Prototype,
+    cache: &cache::Cache,
   ) -> Option<String> {
     if prototype_a.parameters.len() != prototype_b.parameters.len() {
       return Some("parameter count".to_string());
@@ -40,31 +41,39 @@ impl SemanticCheckContext {
       .map(|(param_def_a, param_def_b)| (param_def_a.ty.clone(), param_def_b.ty.clone()));
 
     for (param_type_a, param_type_b) in parameter_types {
-      if !Self::unify(&param_type_a, &param_type_b) {
+      if !Self::unify(&param_type_a, &param_type_b, cache) {
         // TODO: Be more specific.
         return Some("parameter type".to_string());
       }
     }
 
-    if !Self::unify(&prototype_a.return_type, &prototype_b.return_type) {
+    if !Self::unify(&prototype_a.return_type, &prototype_b.return_type, cache) {
       return Some("return type".to_string());
     }
 
     None
   }
 
-  // TODO: Create a `finalize` method to ensure that the main function was defined.
+  // TODO: Create a `finalize` method step to ensure that the main function was defined.
 
+  // TODO: Need to handle cyclic types. Currently, stack is overflown. One example would be cyclic type aliases.
   // TODO: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
   /// Resolve a possible user-defined type, so it can be used properly.
-  pub fn flatten_type(ty: &ast::Type) -> ast::Type {
+  pub fn flatten_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
     // TODO: Cleanup.
 
     // TODO: What if it's a pointer to a user-defined type?
-    if let ast::Type::Stub(_stub_type) = ty {
-      // TODO: No need to clone.
-      // return stub_type.ty.as_ref().unwrap().as_ref().clone();
-      todo!();
+    if let ast::Type::Stub(stub_type) = ty {
+      let target_node = cache.unsafe_get(&stub_type.target_id.unwrap());
+
+      // TODO: What about type aliases, and other types that might be encountered in the future?
+
+      // TODO: Cleanup!
+      if let ast::NodeKind::TypeAlias(type_alias) = &target_node.kind {
+        return Self::flatten_type(&type_alias.ty, cache);
+      } else if let ast::NodeKind::StructType(target_type) = &target_node.kind {
+        return Self::flatten_type(&ast::Type::Struct(target_type.clone()), cache);
+      }
     } else if let ast::Type::This(this_type) = ty {
       // TODO: No need to clone.
       return this_type.ty.as_ref().unwrap().as_ref().clone();
@@ -78,23 +87,26 @@ impl SemanticCheckContext {
   ///
   /// The types passed-in will be resolved if needed before
   /// the comparison takes place.
-  pub fn unify(type_a: &ast::Type, type_b: &ast::Type) -> bool {
+  pub fn unify(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
+    let flat_type_a = Self::flatten_type(type_a, cache);
+    let flat_type_b = Self::flatten_type(type_b, cache);
+
     // The error type does not unify with anything.
-    if matches!(type_a, ast::Type::Error) || matches!(type_b, ast::Type::Error) {
+    if matches!(flat_type_a, ast::Type::Error) || matches!(type_b, ast::Type::Error) {
       return false;
     }
     // If both types are pointers, and at least one is a null pointer type, then always unify.
     // This is because null pointers unify with any pointer type (any pointer can be null).
-    else if matches!(type_a, ast::Type::Pointer(_))
-      && matches!(type_a, ast::Type::Pointer(_))
-      && (Self::is_null_pointer_type(&type_a) || Self::is_null_pointer_type(&type_b))
+    else if matches!(flat_type_a, ast::Type::Pointer(_))
+      && matches!(flat_type_a, ast::Type::Pointer(_))
+      && (Self::is_null_pointer_type(&flat_type_a) || Self::is_null_pointer_type(&type_b))
     {
       return true;
     }
 
     // FIXME: [!!] Bug: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
     // NOTE: Stub types will also work, because their target ids will be compared.
-    type_a == type_b
+    flat_type_a == flat_type_b
   }
 
   fn is_null_pointer_type(ty: &ast::Type) -> bool {
@@ -199,9 +211,11 @@ impl SemanticCheck for ast::MemberAccess {
       _ => return ast::Type::Error,
     };
 
-    let struct_field_result = struct_type.fields.iter().find(|x| x.0 == self.member_name);
-
-    if let Some(struct_field) = struct_field_result {
+    if let Some(struct_field) = struct_type
+      .fields
+      .iter()
+      .find(|field| field.0 == self.member_name)
+    {
       return struct_field.1.clone();
     }
 
@@ -386,7 +400,8 @@ impl SemanticCheck for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Basic(ast::BasicType::Bool)) {
+        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Basic(ast::BasicType::Bool), cache)
+        {
           context
             .diagnostic_builder
             .error("can only negate boolean expressions".to_string());
@@ -414,7 +429,7 @@ impl SemanticCheck for ast::UnaryExpr {
           context
             .diagnostic_builder
             .error("can only cast between primitive types".to_string());
-        } else if SemanticCheckContext::unify(&expr_type, self.cast_type.as_ref().unwrap()) {
+        } else if SemanticCheckContext::unify(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
           context
             .diagnostic_builder
             .warning("redundant cast to the same type".to_string());
@@ -436,7 +451,7 @@ impl SemanticCheck for ast::AssignStmt {
     let assignee_type = self.assignee_expr.infer_type(cache);
 
     if matches!(
-      SemanticCheckContext::flatten_type(&assignee_type),
+      SemanticCheckContext::flatten_type(&assignee_type, cache),
       ast::Type::Reference(_)
     ) {
       context
@@ -644,7 +659,7 @@ impl SemanticCheck for ast::BlockExpr {
 
 impl SemanticCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    (&*cache)
+    cache
       .unsafe_get(&self.0.target_id.unwrap())
       .infer_type(cache)
   }
@@ -677,7 +692,7 @@ impl SemanticCheck for ast::IfExpr {
 
     // FIXME: Perhaps make a special case for let-statement? Its type inference is used internally, but they should yield 'Unit' for the user.
     // In case of a type-mismatch between branches, simply return the unit type.
-    if !SemanticCheckContext::unify(&then_block_type, &else_block.infer_type(cache)) {
+    if !SemanticCheckContext::unify(&then_block_type, &else_block.infer_type(cache), cache) {
       return ast::Type::Unit;
     }
 
@@ -688,6 +703,7 @@ impl SemanticCheck for ast::IfExpr {
     if !SemanticCheckContext::unify(
       &self.condition.infer_type(cache),
       &ast::Type::Basic(ast::BasicType::Bool),
+      cache,
     ) {
       context
         .diagnostic_builder
@@ -725,7 +741,7 @@ impl SemanticCheck for ast::BinaryExpr {
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
     // TODO: If we require both operands to  be of the same type, then operator overloading isn't possible with mixed operands as parameters.
-    if !SemanticCheckContext::unify(&left_type, &right_type) {
+    if !SemanticCheckContext::unify(&left_type, &right_type, cache) {
       context
         .diagnostic_builder
         .error("binary expression operands must be the same type".to_string());
@@ -788,7 +804,7 @@ impl SemanticCheck for ast::LetStmt {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     let value_type = self.value.infer_type(cache);
 
-    if !SemanticCheckContext::unify(&self.ty, &value_type) {
+    if !SemanticCheckContext::unify(&self.ty, &value_type, cache) {
       context.diagnostic_builder.error(format!(
         "variable declaration of `{}` value and type mismatch",
         self.name
@@ -833,7 +849,7 @@ impl SemanticCheck for ast::ReturnStmt {
     if let Some(value) = &self.value {
       let value_type = value.infer_type(cache);
 
-      if !SemanticCheckContext::unify(&prototype.return_type, &value_type) {
+      if !SemanticCheckContext::unify(&prototype.return_type, &value_type, cache) {
         context.diagnostic_builder.error(format!(
           "return statement value and prototype return type mismatch for {}",
           if let Some(name) = name {
@@ -868,6 +884,7 @@ impl SemanticCheck for ast::Function {
     if !SemanticCheckContext::unify(
       &self.prototype.return_type,
       &self.body_value.infer_type(cache),
+      cache,
     ) {
       context.diagnostic_builder.error(format!(
         "function body and prototype return type mismatch for function `{}`",
@@ -1013,6 +1030,7 @@ impl SemanticCheck for ast::LoopStmt {
       if !SemanticCheckContext::unify(
         &condition.infer_type(cache),
         &ast::Type::Basic(ast::BasicType::Bool),
+        cache,
       ) {
         context
           .diagnostic_builder
