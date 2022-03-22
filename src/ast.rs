@@ -102,7 +102,7 @@ impl Type {
 }
 
 // TODO: Write a macro that both defines this and `as_x_node()` (which alternatively yields `unreachable!()`) methods.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NodeKind {
   Literal(Literal),
   ExternFunction(ExternFunction),
@@ -138,14 +138,14 @@ pub enum NodeKind {
   Trait(Trait),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
   pub kind: NodeKind,
   // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
   pub span: diagnostic::Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Closure {
   pub captures: Vec<(String, Option<cache::UniqueId>)>,
   pub prototype: Prototype,
@@ -167,7 +167,7 @@ pub struct ThisType {
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Pattern {
   pub module_name: Option<String>,
   pub base_name: String,
@@ -181,7 +181,7 @@ pub struct StubType {
   pub target_id: Option<cache::UniqueId>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructValue {
   pub struct_name: String,
   pub fields: Vec<Node>,
@@ -190,7 +190,7 @@ pub struct StructValue {
   pub target_id: Option<cache::UniqueId>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructImpl {
   pub is_default: bool,
   pub target_struct_pattern: Pattern,
@@ -198,50 +198,50 @@ pub struct StructImpl {
   pub methods: Vec<Function>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Trait {
   pub name: String,
   pub methods: Vec<(String, Prototype)>,
   pub unique_id: cache::UniqueId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Enum {
   pub name: String,
   pub variants: Vec<String>,
   pub unique_id: cache::UniqueId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ContinueStmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ArrayIndexing {
   pub name: String,
   pub index_expr: Box<Node>,
   pub target_id: Option<cache::UniqueId>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ArrayValue {
   pub elements: Vec<Node>,
   /// Holds the type of the array, in case it is an empty array.
   pub explicit_type: Option<Type>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnsafeBlockStmt(pub BlockExpr);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Reference(pub Pattern);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AssignStmt {
   pub assignee_expr: Box<Node>,
   pub value: Box<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
   Bool(bool),
   Int(u64, IntSize),
@@ -250,7 +250,7 @@ pub enum Literal {
   Nullptr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
   pub return_type: Type,
@@ -260,7 +260,7 @@ pub struct Prototype {
   pub this_parameter: Option<Parameter>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExternFunction {
   pub name: String,
   pub prototype: Prototype,
@@ -268,20 +268,20 @@ pub struct ExternFunction {
   pub unique_id: cache::UniqueId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExternStatic {
   pub name: String,
   pub ty: Type,
   pub unique_id: cache::UniqueId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Attribute {
   pub name: String,
   pub values: Vec<Literal>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
   pub name: String,
   pub prototype: Prototype,
@@ -290,24 +290,22 @@ pub struct Function {
   pub unique_id: cache::UniqueId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockExpr {
   pub statements: Vec<Node>,
   pub yields_last_expr: bool,
   pub unique_id: cache::UniqueId,
 }
 
-#[derive(Debug)]
-pub struct BreakStmt {
-  //
-}
+#[derive(Debug, Clone)]
+pub struct BreakStmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReturnStmt {
   pub value: Option<Box<Node>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LetStmt {
   pub name: String,
   // TODO: Since there's no use for explicit type, simply assume its always inferred. Same for prototype return types.
@@ -318,36 +316,36 @@ pub struct LetStmt {
   pub unique_id: cache::UniqueId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IfExpr {
   pub condition: Box<Node>,
   pub then_value: Box<Node>,
   pub else_value: Option<Box<Node>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoopStmt {
   pub condition: Option<Box<Node>>,
   pub body: BlockExpr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InlineExprStmt {
   pub expr: Box<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CallExpr {
   pub callee_expr: Box<Node>,
   pub arguments: Vec<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IntrinsicKind {
   Panic,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IntrinsicCall {
   pub kind: IntrinsicKind,
   pub arguments: Vec<Node>,
@@ -360,14 +358,14 @@ pub struct StructType {
   pub fields: Vec<(String, Type)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeAlias {
   pub name: String,
   pub ty: Type,
   pub unique_id: cache::UniqueId,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum OperatorKind {
   And,
   Or,
@@ -388,14 +386,14 @@ pub enum OperatorKind {
   Cast,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BinaryExpr {
   pub left: Box<Node>,
   pub right: Box<Node>,
   pub operator: OperatorKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnaryExpr {
   pub expr: Box<Node>,
   pub operator: OperatorKind,
@@ -405,7 +403,7 @@ pub struct UnaryExpr {
   pub cast_type: Option<Type>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MemberAccess {
   pub base_expr: Box<Node>,
   pub member_name: String,

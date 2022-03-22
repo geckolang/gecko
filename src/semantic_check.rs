@@ -69,9 +69,9 @@ impl SemanticCheckContext {
       // TODO: What about type aliases, and other types that might be encountered in the future?
 
       // TODO: Cleanup!
-      if let ast::NodeKind::TypeAlias(type_alias) = &target_node.kind {
+      if let ast::NodeKind::TypeAlias(type_alias) = &target_node {
         return Self::flatten_type(&type_alias.ty, cache);
-      } else if let ast::NodeKind::StructType(target_type) = &target_node.kind {
+      } else if let ast::NodeKind::StructType(target_type) = &target_node {
         return Self::flatten_type(&ast::Type::Struct(target_type.clone()), cache);
       }
     } else if let ast::Type::This(this_type) = ty {
@@ -139,6 +139,16 @@ impl SemanticCheck for ast::Node {
   }
 }
 
+impl SemanticCheck for ast::NodeKind {
+  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+    dispatch!(&self, SemanticCheck::check, context, cache);
+  }
+
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    dispatch!(&self, SemanticCheck::infer_type, cache)
+  }
+}
+
 impl SemanticCheck for ast::Trait {
   //
 }
@@ -154,11 +164,11 @@ impl SemanticCheck for ast::StructImpl {
     let target_node = cache.unsafe_get(&self.target_struct_pattern.target_id.unwrap());
 
     // TODO: Cleanup.
-    if let ast::NodeKind::StructType(_target_struct_type) = &target_node.kind {
+    if let ast::NodeKind::StructType(_target_struct_type) = &target_node {
       if let Some(trait_pattern) = &self.trait_pattern {
         let trait_node = cache.unsafe_get(&trait_pattern.target_id.unwrap());
 
-        if let ast::NodeKind::Trait(trait_type) = &trait_node.kind {
+        if let ast::NodeKind::Trait(trait_type) = &trait_node {
           for trait_method in &trait_type.methods {
             let impl_method_result = self
               .methods
@@ -295,7 +305,7 @@ impl SemanticCheck for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let struct_type_node = cache.unsafe_get(&self.target_id.unwrap());
 
-    let struct_type = match &(&*struct_type_node).kind {
+    let struct_type = match &(&*struct_type_node) {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -307,7 +317,7 @@ impl SemanticCheck for ast::StructValue {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     let struct_type_node = cache.unsafe_get(&self.target_id.unwrap());
 
-    let struct_type = match &(&*struct_type_node).kind {
+    let struct_type = match &(&*struct_type_node) {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -483,7 +493,7 @@ impl SemanticCheck for ast::AssignStmt {
         ast::NodeKind::Reference(variable_ref) => {
           let declaration = cache.unsafe_get(&variable_ref.0.target_id.unwrap());
 
-          match &(&*declaration).kind {
+          match &(&*declaration) {
             ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
               context
                 .diagnostic_builder
@@ -515,7 +525,7 @@ impl SemanticCheck for ast::ArrayIndexing {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let target_array_variable = &*cache.unsafe_get(&self.target_id.unwrap());
 
-    let array_type = match &target_array_variable.kind {
+    let array_type = match &target_array_variable {
       ast::NodeKind::LetStmt(let_stmt) => &let_stmt.ty,
       ast::NodeKind::Parameter(parameter) => &parameter.ty,
       _ => unreachable!(),
@@ -821,7 +831,7 @@ impl SemanticCheck for ast::ReturnStmt {
     let mut name = None;
     let prototype;
 
-    match &current_function_node.kind {
+    match &current_function_node {
       ast::NodeKind::Function(function) => {
         name = Some(function.name.clone());
         prototype = &function.prototype;

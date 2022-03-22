@@ -4,7 +4,7 @@ pub type UniqueId = usize;
 
 pub struct Cache {
   pub struct_impls: std::collections::HashMap<UniqueId, Vec<(UniqueId, String)>>,
-  pub symbols: std::collections::HashMap<UniqueId, ast::Node>,
+  pub symbols: std::collections::HashMap<UniqueId, ast::NodeKind>,
   unique_id_counter: usize,
 }
 
@@ -18,11 +18,11 @@ impl Cache {
   }
 
   // TODO: Use this function as a guide to ensure that nothing is looked up or inferred before its actually resolved. Within the type-checker.
-  pub fn unsafe_get(&self, key: &UniqueId) -> &ast::Node {
+  pub fn unsafe_get(&self, key: &UniqueId) -> &ast::NodeKind {
     self.symbols.get(key).unwrap()
   }
 
-  pub fn bind(&mut self, unique_id: UniqueId, node: ast::Node) {
+  pub fn bind(&mut self, unique_id: UniqueId, node: ast::NodeKind) {
     self.symbols.insert(unique_id, node);
   }
 

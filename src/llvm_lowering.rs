@@ -28,6 +28,16 @@ impl Lower for ast::Node {
   }
 }
 
+impl Lower for ast::NodeKind {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    dispatch!(&self, Lower::lower, generator, cache)
+  }
+}
+
 impl Lower for ast::Trait {
   //
 }
@@ -1684,7 +1694,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     let node = cache.unsafe_get(&unique_id);
 
-    let ty = match &node.kind {
+    let ty = match &node {
       ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
       ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
       // TODO: Any more?
