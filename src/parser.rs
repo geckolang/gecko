@@ -93,7 +93,7 @@ impl<'a> Parser<'a> {
     let mut result = Vec::new();
 
     while !self.is_eof() {
-      result.push(self.parse_top_level_node()?);
+      result.push(self.parse_root_node()?);
 
       // FIXME: Nothing being done to the parsed top-level node.
     }
@@ -645,11 +645,8 @@ impl<'a> Parser<'a> {
     Ok(ast::Attribute { name, values })
   }
 
-  // TODO: Why not build the `Definition` node here? We might require access to the `name` and `symbol_kind`, however.
   /// {%function | %extern_function | %extern_static | %type_alias | %enum | %struct_type}
-  fn parse_top_level_node(&mut self) -> ParserResult<ast::Node> {
-    let span_start = self.index;
-
+  fn parse_root_node(&mut self) -> ParserResult<ast::Node> {
     // TODO: Why not move this check into the `get()` method?
     if self.is_eof() {
       return Err(diagnostic::Diagnostic {
@@ -659,17 +656,21 @@ impl<'a> Parser<'a> {
       });
     }
 
+    let node_span_start = self.index;
     let mut attributes: Vec<ast::Attribute> = Vec::new();
 
     while self.is(&lexer::TokenKind::At) {
-      let span_start = self.index;
+      let attribute_span_start = self.index;
       let attribute = self.parse_attribute()?;
 
-      if attributes.iter().any(|x| x.name == x.name) {
+      if attributes
+        .iter()
+        .any(|attribute| attribute.name == attribute.name)
+      {
         return Err(diagnostic::Diagnostic {
           message: format!("duplicate attribute `{}`", attribute.name),
           severity: diagnostic::Severity::Error,
-          span: Some(self.close_span(span_start)),
+          span: Some(self.close_span(attribute_span_start)),
         });
       }
 
@@ -710,7 +711,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Node {
       kind,
-      span: self.close_span(span_start),
+      span: self.close_span(node_span_start),
     })
   }
 

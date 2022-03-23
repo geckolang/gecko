@@ -104,7 +104,7 @@ impl SemanticCheckContext {
       return true;
     }
 
-    // FIXME: [!!] Bug: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
+    // BUG: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
     // NOTE: Stub types will also work, because their target ids will be compared.
     flat_type_a == flat_type_b
   }
@@ -129,6 +129,7 @@ pub trait SemanticCheck {
   }
 }
 
+// TODO: This is redundant.
 impl SemanticCheck for ast::Node {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     dispatch!(&self.kind, SemanticCheck::check, context, cache);
@@ -245,7 +246,7 @@ impl SemanticCheck for ast::MemberAccess {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     let struct_type = match self.base_expr.infer_type(cache) {
       ast::Type::Struct(struct_type) => struct_type,
-      // TODO: Implement
+      // TODO: Implement.
       ast::Type::This(_) => return,
       // TODO: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
       _ => {
@@ -303,9 +304,7 @@ impl SemanticCheck for ast::ExternStatic {
 
 impl SemanticCheck for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type_node = cache.unsafe_get(&self.target_id.unwrap());
-
-    let struct_type = match &(&*struct_type_node) {
+    let struct_type = match cache.unsafe_get(&self.target_id.unwrap()) {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -317,7 +316,7 @@ impl SemanticCheck for ast::StructValue {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     let struct_type_node = cache.unsafe_get(&self.target_id.unwrap());
 
-    let struct_type = match &(&*struct_type_node) {
+    let struct_type = match struct_type_node {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -475,7 +474,7 @@ impl SemanticCheck for ast::AssignStmt {
     // NOTE: References cannot be reseated/assigned-to, only pointers.
     let is_pointer = matches!(assignee_type, ast::Type::Pointer(_));
 
-    // FIXME: [!!] Revise: This checks are superficial. They do not
+    // REVISE: This checks are superficial. They do not
     // consider that expressions may be nested (ie. parentheses expr.).
     let is_array_indexing = matches!(self.assignee_expr.kind, ast::NodeKind::ArrayIndexing(_));
     let is_variable_ref = matches!(self.assignee_expr.kind, ast::NodeKind::Reference(_));
@@ -493,7 +492,7 @@ impl SemanticCheck for ast::AssignStmt {
         ast::NodeKind::Reference(variable_ref) => {
           let declaration = cache.unsafe_get(&variable_ref.0.target_id.unwrap());
 
-          match &(&*declaration) {
+          match declaration {
             ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
               context
                 .diagnostic_builder
@@ -523,9 +522,9 @@ impl SemanticCheck for ast::ContinueStmt {
 
 impl SemanticCheck for ast::ArrayIndexing {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_array_variable = &*cache.unsafe_get(&self.target_id.unwrap());
+    let target_array_variable = cache.unsafe_get(&self.target_id.unwrap());
 
-    let array_type = match &target_array_variable {
+    let array_type = match target_array_variable {
       ast::NodeKind::LetStmt(let_stmt) => &let_stmt.ty,
       ast::NodeKind::Parameter(parameter) => &parameter.ty,
       _ => unreachable!(),
@@ -669,6 +668,8 @@ impl SemanticCheck for ast::BlockExpr {
 
 impl SemanticCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    // BUG: Should not infer type of something stored in the cache.
+    // ... Because it has not been resolved.
     cache
       .unsafe_get(&self.0.target_id.unwrap())
       .infer_type(cache)

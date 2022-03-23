@@ -108,7 +108,7 @@ impl Lower for ast::Closure {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // FIXME: [!!] Investigate: Closures don't have a unique id. Don't we need to set the buffer unique id for closures as well?
+    // REVIEW: Closures don't have a unique id. Don't we need to set the buffer unique id for closures as well?
 
     let buffers = generator.copy_buffers();
     // let mut modified_prototype = self.prototype.clone();
@@ -119,7 +119,7 @@ impl Lower for ast::Closure {
       // let computed_parameter_index = self.prototype.parameters.len() as usize + index;
 
       // TODO: Is the parameter position correct?
-      // FIXME: Re-implement, after parameters were made definitions.
+      // TODO: Re-implement, after parameters were made definitions.
       // modified_prototype.parameters.push((
       //   format!("capture.{}", capture.0),
       //   capture_node_type,
@@ -248,15 +248,15 @@ impl Lower for ast::StructValue {
 
     // Populate struct fields.
     for (index, field) in self.fields.iter().enumerate() {
-      println!("index: {} | {:?}", index, llvm_struct_alloca);
-      // FIXME: [!!] Bug: Struct isn't being accessed, or rather it is a pointer to a struct. (Struct**).
+      // BUG: Struct isn't being accessed, or rather it is a pointer to a struct. (Struct**).
+      // ... Perhaps this applies to only some cases?
 
-      let e = generator.access(llvm_struct_alloca).into_pointer_value();
+      let struct_access = generator.access(llvm_struct_alloca).into_pointer_value();
       let struct_field_gep = generator
         .llvm_builder
         // TODO: Is this conversion safe?
         // TODO: Better name.
-        .build_struct_gep(e, index as u32, "struct.alloca.field.gep")
+        .build_struct_gep(struct_access, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
       let llvm_field_value = generator.lower_with_access_rules(field, cache).unwrap();
@@ -267,7 +267,7 @@ impl Lower for ast::StructValue {
         .build_store(struct_field_gep, llvm_field_value);
     }
 
-    // FIXME: [!] Revise: Inconsistent. Deals with flag, also what about on the case of an assignment?
+    // REVISE: Inconsistent. Deals with flag, also what about on the case of an assignment?
     // If the array value is being directly assigned to a variable,
     // return the alloca pointer. Otherwise, access the alloca.
     // Some(if generator.let_stmt_flag.is_some() {
@@ -457,7 +457,7 @@ impl Lower for ast::ArrayValue {
   }
 }
 
-// FIXME: [!] Bug: Parameters with the same name on other functions are being resolved elsewhere. This is likely because of the current design of relative scopes. Fix this issue. (May be related to when memoizing or retrieving other functions, then not virtualizing their environment).
+// BUG: Parameters with the same name on other functions are being resolved elsewhere. This is likely because of the current design of relative scopes. Fix this issue. (May be related to when memoizing or retrieving other functions, then not virtualizing their environment).
 impl Lower for ast::Parameter {
   fn lower<'a, 'ctx>(
     &self,
@@ -721,12 +721,12 @@ impl Lower for ast::Reference {
     // TODO: Here we opted not to forward buffers. Ensure this is correct.
     // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
 
-    // FIXME: [!!] Investigate+Revise: What about if there's a nested reference? Will it be intercepted by the flag? Perhaps we can capture the flag here immediately? But wouldn't this affect the order of which reference is actually not lowered, ex. first one in `foo.bar`, which is incorrect?
+    // REVIEW: What about if there's a nested reference? Will it be intercepted by the flag? Perhaps we can capture the flag here immediately? But wouldn't this affect the order of which reference is actually not lowered, ex. first one in `foo.bar`, which is incorrect?
     let llvm_target = generator
       .memoize_or_retrieve_value(self.0.target_id.unwrap(), cache, false)
       .unwrap();
 
-    // FIXME: [!] Investigate+Revise: Usage of a flag may cause trouble if the buffer is modified several times.
+    // REVIEW: Usage of a flag may cause trouble if the buffer is modified several times.
     // Perhaps since the llvm target's buffers aren't saved, it's fine?
 
     Some(llvm_target)
@@ -1015,7 +1015,7 @@ impl Lower for ast::Function {
 
     assert_eq!(llvm_function.count_params(), expected_param_count);
 
-    // FIXME: [!] Revise: The parameter counts aren't always guaranteed
+    // REVISE: The parameter counts aren't always guaranteed
     // to be the same, given if the prototype accepts an instance. This zip
     // might cause unexpected problems.
     llvm_function
@@ -1200,7 +1200,7 @@ impl Lower for ast::LetStmt {
       return self.value.lower(generator, cache);
     }
 
-    // FIXME: [!] Bug: Use type-caching. Declaring multiple variables with the same struct type will cause repeated type definitions.
+    // BUG: Use type-caching. Declaring multiple variables with the same struct type will cause repeated type definitions.
     let llvm_type = generator.lower_type(&self.ty, cache);
 
     let llvm_alloca = generator
@@ -1213,6 +1213,8 @@ impl Lower for ast::LetStmt {
 
     generator.llvm_builder.build_store(llvm_alloca, llvm_value);
 
+    // BUG: This needs to return `Some` for the value of the let-statement to be memoized.
+    // ... However, this also implies that the let-statement itself yields a value!
     Some(llvm_alloca.as_basic_value_enum())
   }
 }
@@ -1346,7 +1348,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let node_type = SemanticCheckContext::flatten_type(&node.infer_type(cache), cache);
 
     // TODO: Is there a need to resolve the type?
-    // FIXME: [!] Bug: This won't work for nested string values. Cannot compare node kind.
+    // BUG: This won't work for nested string values. Cannot compare node kind.
     // Special case for string literals. They shouldn't be
     // lowered, since they're natural pointers. And for structs,
     // they must be passed as pointer values.
@@ -1543,7 +1545,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     ty: &ast::Type,
     cache: &cache::Cache,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
-    // FIXME: [!] Bug: Use type-caching HERE (for structs, or any type that needs to be cached). Declaring multiple variables with the same struct type will cause repeated type definitions.
+    // BUG: Use type-caching HERE (for structs, or any type that needs to be cached). Declaring multiple variables with the same struct type will cause repeated type definitions.
 
     match ty {
       ast::Type::Basic(primitive_type) => match primitive_type {

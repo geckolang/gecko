@@ -46,7 +46,6 @@ pub struct Parameter {
   pub name: String,
   pub ty: Type,
   pub position: u32,
-  // FIXME: [!!] Bug: Parameters are not registered on the cache, because they aren't top-level nodes.
   pub unique_id: cache::UniqueId,
 }
 
@@ -87,7 +86,7 @@ pub enum Type {
   Function(FunctionType),
   This(ThisType),
   Unit,
-  // FIXME: [!!] Investigate: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
+  // REVIEW: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
   Error,
 }
 
@@ -312,7 +311,6 @@ pub struct LetStmt {
   pub ty: Type,
   pub value: Box<Node>,
   pub is_mutable: bool,
-  // FIXME: [!!] Bug: Let statements are not registered on the cache, because they are not top-level nodes.
   pub unique_id: cache::UniqueId,
 }
 

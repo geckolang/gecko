@@ -48,7 +48,12 @@ impl Resolve for ast::Node {
 }
 
 impl Resolve for ast::Trait {
-  // TODO: Implement.
+  fn declare(&self, _resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    cache.bind(self.unique_id, ast::NodeKind::Trait(self.clone()));
+
+    // TODO: Is there a need to declare symbol here?
+    // resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
+  }
 }
 
 impl Resolve for ast::ThisType {
@@ -65,6 +70,8 @@ impl Resolve for ast::ThisType {
 
 impl Resolve for ast::StructImpl {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    // TODO: Is there a need to bind this on the cache?
+
     resolver.push_scope();
 
     for method in &self.methods {
@@ -81,7 +88,7 @@ impl Resolve for ast::StructImpl {
       trait_pattern.resolve(resolver);
     }
 
-    // FIXME: [!] Investigate: We can't unwrap here because the lookup
+    // REVIEW: We can't unwrap here because the lookup
     // might have failed. Is this done in other parts? Certain resolve methods
     // depend on other things being resolved already, this could be dangerous.
     let struct_type_id_result = self.target_struct_pattern.target_id;
@@ -133,7 +140,7 @@ impl Resolve for ast::Closure {
     resolver.relative_scopes.clear();
     self.body.resolve(resolver);
 
-    // FIXME: [!] Investigate: Should this closing of relative scopes occur
+    // REVIEW: Should this closing of relative scopes occur
     // before or after the return type is possibly inferred?
     resolver.relative_scopes = relative_scopes_cache;
 
@@ -142,7 +149,8 @@ impl Resolve for ast::Closure {
 }
 
 impl Resolve for ast::TypeAlias {
-  fn declare(&self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    cache.bind(self.unique_id, ast::NodeKind::TypeAlias(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 
@@ -171,7 +179,8 @@ impl Resolve for ast::IntrinsicCall {
 }
 
 impl Resolve for ast::ExternStatic {
-  fn declare(&self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    cache.bind(self.unique_id, ast::NodeKind::ExternStatic(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
   }
 
@@ -192,7 +201,7 @@ impl Resolve for ast::StructValue {
     // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_id = resolver.lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
 
-    for field in self.fields.iter_mut() {
+    for field in &mut self.fields {
       field.resolve(resolver);
     }
   }
@@ -200,7 +209,7 @@ impl Resolve for ast::StructValue {
 
 impl Resolve for ast::Prototype {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // FIXME: [!!] Bug: Cloning the parameter before it has been resolved.
+    // BUG: Cloning the parameter before it has been resolved.
     if self.accepts_instance {
       let _this_parameter = self.this_parameter.as_ref().unwrap();
 
@@ -220,7 +229,7 @@ impl Resolve for ast::Prototype {
       // .declare(resolver, cache);
     }
 
-    // FIXME: [!!] Investigate: This might be causing the unwrap problem, probably because of the cloning?
+    // REVIEW: This might be causing the unwrap problem, probably because of the cloning?
     for parameter in &self.parameters {
       parameter.declare(resolver, cache);
     }
@@ -240,7 +249,8 @@ impl Resolve for ast::Prototype {
 }
 
 impl Resolve for ast::StructType {
-  fn declare(&self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    cache.bind(self.unique_id, ast::NodeKind::StructType(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 
@@ -258,7 +268,8 @@ impl Resolve for ast::UnaryExpr {
 }
 
 impl Resolve for ast::Enum {
-  fn declare(&self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    cache.bind(self.unique_id, ast::NodeKind::Enum(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 }
@@ -306,7 +317,8 @@ impl Resolve for ast::UnsafeBlockStmt {
 }
 
 impl Resolve for ast::Parameter {
-  fn declare(&self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    cache.bind(self.unique_id, ast::NodeKind::Parameter(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
   }
 
@@ -418,8 +430,6 @@ impl Resolve for ast::Literal {
 
 impl Resolve for ast::Function {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // FIXME: [!] Revise: Ensure the order is correct (test nested parameter, references, etc.).
-
     // Parameter scope.
     // resolver.push_scope();
 
@@ -428,6 +438,7 @@ impl Resolve for ast::Function {
     // prototype's scope tree, instead they will be merged, as expected.
     // resolver.close_scope_tree(self.value.unique_id);
 
+    cache.bind(self.unique_id, ast::NodeKind::Function(self.clone()));
     self.prototype.declare(resolver, cache);
     self.body_value.declare(resolver, cache);
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
@@ -435,7 +446,7 @@ impl Resolve for ast::Function {
 
   // FIXME: This resolve step may need to be repeated for closure.
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    // FIXME: [!] Investigate: Do we need to resolve the prototype first?
+    // REVIEW: Do we need to resolve the prototype first?
     // If so, doesn't the prototype's inferred type depend on the body being
     // resolved first?
 

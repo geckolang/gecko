@@ -4,6 +4,12 @@ pub type UniqueId = usize;
 
 pub struct Cache {
   pub struct_impls: std::collections::HashMap<UniqueId, Vec<(UniqueId, String)>>,
+  /// A map of unique ids to their corresponding `NodeKind` construct.
+  ///
+  /// This serves as a snapshot of the AST, created during the `declare` name
+  /// resolution step, which means that the cached AST has NOT been resolved.
+  /// Any calls to infer the type of a node within this AST snapshot, or any
+  /// other that depends on a node being resolved, will fail.
   pub symbols: std::collections::HashMap<UniqueId, ast::NodeKind>,
   unique_id_counter: usize,
 }
@@ -18,6 +24,9 @@ impl Cache {
   }
 
   // TODO: Use this function as a guide to ensure that nothing is looked up or inferred before its actually resolved. Within the type-checker.
+  /// Forcefully retrieve an unresolved node from the cache.
+  ///
+  /// This function will panic if the given key does not exist.
   pub fn unsafe_get(&self, key: &UniqueId) -> &ast::NodeKind {
     self.symbols.get(key).unwrap()
   }
