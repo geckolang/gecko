@@ -13,7 +13,9 @@ impl _BorrowCheckContext {
     }
   }
 
-  // TODO: If we can't save a reference or some kind of identifier to a let-statement (to define its lifetime), consider adding an `Option<LifeTimeStruct>` field to the let-statement, just for this purpose.
+  // TODO: If we can't save a reference or some kind of identifier to a let-statement
+  // ... (to define its lifetime), consider adding an `Option<LifeTimeStruct>` field
+  // ... to the let-statement, just for this purpose.
   // fn declare(&self, let_stmt: &ast::NodeKind::LetStmt) {
   //   // TODO:
   // }

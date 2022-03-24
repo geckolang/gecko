@@ -230,7 +230,7 @@ impl Lexer {
       // Otherwise, there is an escape sequence. Skip the escape character.
       self.read_char();
 
-      // TODO: Escape sequences may also occur for chars (single-characters).
+      // TODO: Escape sequences should also be possible for chars (single-characters).
       string += match self.current_char {
         Some('n') => "\n",
         Some('t') => "\t",
@@ -257,7 +257,7 @@ impl Lexer {
       self.read_char();
     }
 
-    // TODO: We SHOULD be skipping the closing double-quote here (independent function).
+    // TODO: We SHOULD be skipping the closing double-quote here (function independence).
     // No need to skip the closing double-quote.
 
     Ok(string)
@@ -375,7 +375,7 @@ impl Lexer {
   }
 }
 
-// TODO: Is this implementation practical? If not, simply remove.
+// TODO: Is this implementation practical (even used)? If not, simply remove.
 impl Iterator for Lexer {
   type Item = Result<TokenKind, diagnostic::Diagnostic>;
 
@@ -390,7 +390,8 @@ impl Iterator for Lexer {
   }
 }
 
-// TODO: Should these functions be moved into the implementation of `Lexer`?
+// TODO: Should these functions be moved into the implementation of `Lexer`,
+// ... as associated functions?
 
 fn match_token(identifier: &str) -> Option<TokenKind> {
   Some(match identifier {

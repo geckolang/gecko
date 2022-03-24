@@ -7,10 +7,16 @@ pub struct Cache {
   /// A map of unique ids to their corresponding `NodeKind` construct.
   ///
   /// This serves as a snapshot of the AST, created during the `declare` name
-  /// resolution step, which means that the cached AST has NOT been resolved.
-  /// Any calls to infer the type of a node within this AST snapshot, or any
-  /// other that depends on a node being resolved, will fail.
+  /// resolution step, which has also been resolved.
   pub symbols: std::collections::HashMap<UniqueId, ast::NodeKind>,
+  // REVIEW: Currently, a type-cache is favored under the semantic check context.
+  // ... This is because it's currently only used there. But in the future, for other
+  // ... phases, we might need to store them on a generalized container (this cache).
+  /// A map of unique ids to their corresponding `Type` construct.
+  ///
+  /// This serves as a type cache, to avoid re-inferring the type of a node
+  /// multiple times.
+  pub types: std::collections::HashMap<UniqueId, ast::Type>,
   unique_id_counter: usize,
 }
 
@@ -19,20 +25,18 @@ impl Cache {
     Self {
       struct_impls: std::collections::HashMap::new(),
       symbols: std::collections::HashMap::new(),
+      types: std::collections::HashMap::new(),
       unique_id_counter: 0,
     }
   }
 
-  // TODO: Use this function as a guide to ensure that nothing is looked up or inferred before its actually resolved. Within the type-checker.
-  /// Forcefully retrieve an unresolved node from the cache.
+  // TODO: Use this function as a guide to ensure that nothing is looked up
+  // ... or inferred before its actually resolved. Within the type-checker.
+  /// Forcefully retrieve a node from the cache.
   ///
   /// This function will panic if the given key does not exist.
   pub fn unsafe_get(&self, key: &UniqueId) -> &ast::NodeKind {
     self.symbols.get(key).unwrap()
-  }
-
-  pub fn bind(&mut self, unique_id: UniqueId, node: ast::NodeKind) {
-    self.symbols.insert(unique_id, node);
   }
 
   pub fn create_unique_id(&mut self) -> UniqueId {
@@ -41,13 +45,6 @@ impl Cache {
     self.unique_id_counter += 1;
 
     unique_id
-  }
-
-  /// Retrieve any existing implementations for a given struct type.
-  ///
-  /// If there are none, an empty vector will be returned instead.
-  pub fn get_struct_impls(&self, struct_unique_id: &UniqueId) -> Option<&Vec<(UniqueId, String)>> {
-    self.struct_impls.get(struct_unique_id)
   }
 
   pub fn add_struct_impl(&mut self, struct_unique_id: UniqueId, methods: Vec<(UniqueId, String)>) {

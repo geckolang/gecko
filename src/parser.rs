@@ -21,7 +21,7 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
   }
 }
 
-// TODO: Can't we use this to determine whether a token is an operator or not?
+// REVIEW: Can't we use this to determine whether a token is an operator or not?
 fn get_token_precedence(token: &lexer::TokenKind) -> usize {
   // FIXME: What about the `not` operator, and others?
   match token {
@@ -66,7 +66,7 @@ impl<'a> Parser<'a> {
     Self::new(tokens, cache)
   }
 
-  // TODO: Consider removing the `token` parameter, and adjust the binary expression parsing function accordingly. Or is a better decision to have it the other way around?
+  // REVIEW: Consider removing the `token` parameter, and adjust the binary expression parsing function accordingly. Or is a better decision to have it the other way around?
   /// Determine whether the given token is considered a valid binary
   /// operator.
   fn is_binary_operator(token_kind: &lexer::TokenKind) -> bool {
@@ -141,12 +141,12 @@ impl<'a> Parser<'a> {
   }
 
   fn force_get(&self) -> &lexer::TokenKind {
-    // TODO: Accessing index unsafely. How about using `ParserResult<&lexer::TokenKind>`?
+    // REVIEW: Accessing index unsafely. How about using `ParserResult<&lexer::TokenKind>`?
     &self.tokens.get(self.index).unwrap().0
   }
 
   fn get_span(&self) -> Option<diagnostic::Span> {
-    // TODO: Safety check?
+    // REVIEW: Safety check?
     let position = self.tokens[self.index].1;
 
     Some(position..position)
@@ -164,7 +164,7 @@ impl<'a> Parser<'a> {
     self.force_get() == token
   }
 
-  // TODO: Consider returning a `ParserResult<bool>` instead.
+  // REVIEW: Consider returning a `ParserResult<bool>` instead.
   // TODO: Need testing for this function.
   /// Attempt to reposition the index to the next token (if any).
   ///
@@ -239,7 +239,7 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_name(&mut self) -> ParserResult<String> {
-    // TODO: Illegal/unrecognized tokens MAY also be represented under 'Identifier'? Is this a problem?
+    // REVIEW: Illegal/unrecognized tokens MAY also be represented under 'Identifier'? Is this a problem?
 
     let name = match self.force_get() {
       lexer::TokenKind::Identifier(value) => value.clone(),
@@ -290,7 +290,7 @@ impl<'a> Parser<'a> {
 
       let statement = self.parse_statement()?;
 
-      // FIXME: Is this correct for all cases?
+      // REVIEW: Is this correct for all cases?
       let yield_last_expr = if self.is(&lexer::TokenKind::SemiColon) {
         self.try_skip();
 
@@ -312,8 +312,8 @@ impl<'a> Parser<'a> {
     let mut statements = Vec::new();
     let mut yield_last_expr = true;
 
-    // FIXME: What if the last statement is a let-statement? Let-statements have inferrable types, used internally. Review this.
-    // FIXME: This may be the reason why let-statements shouldn't have inferrable types (only internally).
+    // REVIEW: What if the last statement is a let-statement? Let-statements have inferrable types, used internally.
+    // REVIEW: This may be the reason why let-statements shouldn't have inferrable types (only internally).
     while self.until(&lexer::TokenKind::BraceR)? {
       let statement = self.parse_statement()?;
 
@@ -356,7 +356,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Basic(ast::BasicType::Int(size)))
   }
 
-  // TODO: Merge with the `parse_type` function (too small)?
+  // REVIEW: Merge with the `parse_type` function (too small)?
   /// bool
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::TypeBool)?;
@@ -394,7 +394,7 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_type(&mut self) -> ParserResult<ast::Type> {
-    // TODO: Unsafe access.
+    // REVISE: Unsafe access.
     // TODO: Support for more types.
     let mut ty = match self.force_get() {
       // TODO: Other types as well.
@@ -434,7 +434,7 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_unit_type(&mut self) -> ParserResult<ast::Type> {
-    // TODO: Do we need to ensure that nothing is applied to the unit type?
+    // REVIEW: Do we need to ensure that nothing is applied to the unit type?
 
     self.skip_past(&lexer::TokenKind::TypeUnit)?;
 
@@ -497,7 +497,6 @@ impl<'a> Parser<'a> {
   fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
-    // TODO: Parameters must be a `Declaration` node, in order for their references to be resolved.
     let mut parameters = vec![];
     let mut is_variadic = false;
     let mut parameter_index_counter = 0;
@@ -524,7 +523,7 @@ impl<'a> Parser<'a> {
       }
     }
 
-    // TODO: Analyze, and remove possibility of lonely comma.
+    // REVISE: Analyze, and remove possibility of lonely comma.
     while self.until(&lexer::TokenKind::ParenthesesR)? {
       if self.is(&lexer::TokenKind::Plus) {
         is_variadic = true;
@@ -544,7 +543,7 @@ impl<'a> Parser<'a> {
     }
 
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
-    self.skip_past(&lexer::TokenKind::Colon);
+    self.skip_past(&lexer::TokenKind::Colon)?;
 
     let return_type = self.parse_type()?;
 
@@ -584,7 +583,7 @@ impl<'a> Parser<'a> {
     &mut self,
     attributes: Vec<ast::Attribute>,
   ) -> ParserResult<ast::ExternFunction> {
-    // TODO: Support for visibility?
+    // REVIEW: Support for visibility?
 
     self.skip_past(&lexer::TokenKind::Extern)?;
     self.skip_past(&lexer::TokenKind::Fn)?;
@@ -631,7 +630,7 @@ impl<'a> Parser<'a> {
       while self.until(&lexer::TokenKind::ParenthesesR)? {
         values.push(self.parse_literal()?);
 
-        // TODO: Review this comma-skipping system.
+        // REVIEW: Review this comma-skipping system.
         if !self.is(&lexer::TokenKind::Comma) {
           break;
         }
@@ -647,7 +646,7 @@ impl<'a> Parser<'a> {
 
   /// {%function | %extern_function | %extern_static | %type_alias | %enum | %struct_type}
   fn parse_root_node(&mut self) -> ParserResult<ast::Node> {
-    // TODO: Why not move this check into the `get()` method?
+    // REVIEW: Why not move this check into the `get()` method?
     if self.is_eof() {
       return Err(diagnostic::Diagnostic {
         message: "expected top-level construct but got end of file".to_string(),
@@ -693,7 +692,6 @@ impl<'a> Parser<'a> {
     let token = self.force_get();
 
     let kind = match token {
-      // TODO: Why not create the definition here? That way we allow testability (functions actually return what they parse).
       lexer::TokenKind::Fn => ast::NodeKind::Function(self.parse_function(attributes)?),
       lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Fn) => {
         ast::NodeKind::ExternFunction(self.parse_extern_function(attributes)?)
@@ -723,7 +721,8 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::Equal)?;
 
-    // FIXME: Recursive type aliases are possible, and cause stack-overflow. Fix this bug. This bug possibly exist for any other thing that uses deferred-resolved types.
+    // BUG: Recursive type aliases are possible, and cause stack-overflow.
+    // ... Fix this bug. This bug possibly exist for any other thing that uses deferred-resolved types.
     let ty = self.parse_type()?;
 
     Ok(ast::TypeAlias {
@@ -837,7 +836,7 @@ impl<'a> Parser<'a> {
 
   // unsafe %block
   fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlockStmt> {
-    // TODO: Why not merge this with the normal block, and just have a flag?
+    // REVIEW: Why not merge this with the normal block, and just have a flag?
 
     self.skip_past(&lexer::TokenKind::Unsafe)?;
 
@@ -864,7 +863,7 @@ impl<'a> Parser<'a> {
 
         let minimum_size = minimum_int_size_of(&value);
 
-        // TODO: Deal with unsigned integers here?
+        // REVIEW: Deal with unsigned integers here?
         // Default size to 32 bit-width.
         let size = if minimum_size < ast::IntSize::I32 {
           ast::IntSize::I32
@@ -899,7 +898,7 @@ impl<'a> Parser<'a> {
     while self.until(&lexer::TokenKind::BracketR)? {
       elements.push(self.parse_expr()?);
 
-      // TODO: What if the comma isn't provided?
+      // REVIEW: What if the comma isn't provided?
       if self.is(&lexer::TokenKind::Comma) {
         self.try_skip();
       }
@@ -961,8 +960,8 @@ impl<'a> Parser<'a> {
     let mut delimiter_switch = false;
     let is_past_eof_at = |index: usize| index >= self.tokens.len();
 
-    // FIXME: This is hacky code. Fix up.
-    // FIXME: Ensure this works as expected with the modifications done.
+    // REVISE: This is hacky code. Fix up.
+    // REVIEW: Ensure this works as expected with the modifications done.
     while !is_past_eof_at(index)
       && match self.tokens.get(index).unwrap().0 {
         lexer::TokenKind::Dot | lexer::TokenKind::Colon if delimiter_switch => true,
@@ -997,7 +996,7 @@ impl<'a> Parser<'a> {
     let span_start = self.index;
 
     let kind = match self.force_get() {
-      // FIXME: Possible redundant check after the fn keyword. But how do we know we're still not on a block and accidentally parse a function as a closure?
+      // REVIEW: Possible redundant check after the fn keyword. But how do we know we're still not on a block and accidentally parse a function as a closure?
       lexer::TokenKind::Fn
         if (self.peek_is(&lexer::TokenKind::BracketL)
           || self.peek_is(&lexer::TokenKind::ParenthesesL)) =>
@@ -1006,7 +1005,7 @@ impl<'a> Parser<'a> {
       }
       lexer::TokenKind::If => ast::NodeKind::IfStmt(self.parse_if_expr()?),
       lexer::TokenKind::Tilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
-      // TODO: Change this syntax to the same treatment as call expressions (check afterwards).
+      // REVISE: Change this syntax to the same treatment as call expressions (check afterwards).
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::BracketL) => {
         ast::NodeKind::ArrayIndexing(self.parse_array_indexing()?)
       }
@@ -1032,7 +1031,7 @@ impl<'a> Parser<'a> {
         _ => unreachable!(),
       };
 
-      // TODO: Simplify (DRY)?
+      // REVIEW: Simplify (DRY)?
       node = ast::Node {
         kind,
         span: self.close_span(span_start),
@@ -1082,7 +1081,7 @@ impl<'a> Parser<'a> {
     Ok(operator)
   }
 
-  // TODO: Move to use the Pratt parsing technique instead to replace the non-tail recursive method.
+  // REVISE: Move to use the Pratt-parsing technique instead to replace the non-tail recursive method.
   /// %expr %operator %expr
   fn parse_binary_expr_or_default(
     &mut self,
@@ -1090,7 +1089,6 @@ impl<'a> Parser<'a> {
     min_precedence: usize,
   ) -> ParserResult<ast::Node> {
     let span_start = self.index;
-    let unique_id = self.cache.create_unique_id();
     let mut token_buffer = self.force_get();
     let precedence = get_token_precedence(&token_buffer);
     let mut buffer = left;
@@ -1104,8 +1102,8 @@ impl<'a> Parser<'a> {
       while Parser::is_binary_operator(&token_buffer)
         && get_token_precedence(&token_buffer) > precedence
       {
-        // TODO: Are we adding the correct amount of precedence here? Shouldn't there be a higher difference in precedence?
-        // TODO: This isn't tail-recursive?
+        // REVIEW: Are we adding the correct amount of precedence here? Shouldn't there be a higher difference in precedence?
+        // REVIEW: This isn't tail-recursive?
         right = self.parse_binary_expr_or_default(right, precedence + 1)?;
         token_buffer = self.force_get();
       }
@@ -1153,19 +1151,19 @@ impl<'a> Parser<'a> {
     })
   }
 
-  // TODO: Better naming and/or positioning for logic.
+  // REVISE: Better naming and/or positioning for logic.
   fn parse_expr(&mut self) -> ParserResult<ast::Node> {
     // TODO: Add support for unary expressions (such as `!`, '-', etc.).
 
     let starting_expr = self.parse_primary_expr()?;
 
-    // TODO: Should the precedence be zero here?
+    // REVIEW: Should the precedence be zero here?
     Ok(self.parse_binary_expr_or_default(starting_expr, 0)?)
   }
 
   /// %expr '(' (%expr (,))* ')'
   fn parse_call_expr(&mut self, callee_expr: ast::Node) -> ParserResult<ast::CallExpr> {
-    // FIXME: On the expressions being parsed, the pattern may not be parsed as a pattern linking to a function or extern. Ensure this is actually the case.
+    // REVIEW: On the expressions being parsed, the pattern may not be parsed as a pattern linking to a function or extern. Ensure this is actually the case.
     // let callee_pattern = self.parse_pattern(name_resolution::SymbolKind::FunctionOrExtern)?;
 
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
@@ -1175,7 +1173,7 @@ impl<'a> Parser<'a> {
     while self.until(&lexer::TokenKind::ParenthesesR)? {
       arguments.push(self.parse_expr()?);
 
-      // TODO: What if the comma is omitted?
+      // REVIEW: What if the comma is omitted?
       if self.is(&lexer::TokenKind::Comma) {
         self.try_skip();
       }
@@ -1205,7 +1203,7 @@ impl<'a> Parser<'a> {
     while self.until(&lexer::TokenKind::ParenthesesR)? {
       arguments.push(self.parse_expr()?);
 
-      // TODO: What if the comma is omitted?
+      // REVIEW: What if the comma is omitted?
       if self.is(&lexer::TokenKind::Comma) {
         self.try_skip();
       }
@@ -1220,7 +1218,7 @@ impl<'a> Parser<'a> {
   fn parse_reference(&mut self) -> ParserResult<ast::Reference> {
     let pattern = self.parse_pattern(name_resolution::SymbolKind::Definition)?;
 
-    Ok(ast::Reference(pattern))
+    Ok(ast::Reference { pattern, ty: None })
   }
 
   /// %expr '=' %expr
@@ -1254,7 +1252,7 @@ impl<'a> Parser<'a> {
       }
     }
 
-    // TODO: What if we reach `EOF` before closing brace?
+    // REVIEW: What if we reach `EOF` before closing brace?
 
     // Skip the closing brace symbol.
     self.try_skip();
@@ -1301,7 +1299,7 @@ impl<'a> Parser<'a> {
   fn parse_struct_value(&mut self) -> ParserResult<ast::StructValue> {
     self.skip_past(&lexer::TokenKind::New)?;
 
-    // TODO: Shouldn't it be `ScopeQualifier`?
+    // REVIEW: Shouldn't it be `ScopeQualifier`?
     let struct_name = self.parse_name()?;
 
     self.skip_past(&lexer::TokenKind::BraceL)?;

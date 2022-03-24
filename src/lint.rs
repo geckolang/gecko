@@ -3,7 +3,6 @@ use crate::{ast, cache, diagnostic};
 pub struct LintContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   block_depth: usize,
-  function_references: std::collections::HashMap<cache::UniqueId, bool>,
   variable_references: std::collections::HashMap<cache::UniqueId, bool>,
 }
 
@@ -12,7 +11,6 @@ impl LintContext {
     Self {
       diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
       block_depth: 0,
-      function_references: std::collections::HashMap::new(),
       variable_references: std::collections::HashMap::new(),
     }
   }
@@ -52,7 +50,8 @@ pub trait Lint {
 
 impl Lint for ast::Node {
   fn lint(&self, cache: &cache::Cache, lint_context: &mut LintContext) {
-    // TODO: Here we have access to the node's metadata. Consider using some system to provide it to whatever needs it.
+    // TODO: Here we have access to the node's metadata.
+    // ... Consider using some system to provide it to whatever needs it.
     crate::dispatch!(&self.kind, Lint::lint, cache, lint_context);
   }
 }
@@ -105,7 +104,7 @@ impl Lint for ast::StructType {
   fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
     context.lint_name_casing("struct", &self.name, convert_case::Case::Pascal);
 
-    // TODO: Any more linting?
+    // TODO: Any more linting needed?
   }
 }
 
@@ -313,7 +312,7 @@ impl Lint for ast::Reference {
   fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
     context
       .variable_references
-      .insert(self.0.target_id.unwrap(), true);
+      .insert(self.pattern.target_id.unwrap(), true);
   }
 }
 

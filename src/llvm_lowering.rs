@@ -68,10 +68,9 @@ impl Lower for ast::MemberAccess {
       .unwrap()
       .into_pointer_value();
 
-    // TODO: Should we reposition this to the name resolution step (post-resolve), and include a `Option<u32>` index field in `MemberAccess`?
     let struct_type = match SemanticCheckContext::infer_and_resolve_type(&self.base_expr, cache) {
       ast::Type::Struct(struct_type) => struct_type,
-      // FIXME: What about `This` type? Parameter `this` is of `This` type.
+      // REVIEW: What about `This` type? Parameter `this` is of `This` type.
       _ => unreachable!(),
     };
 
@@ -92,7 +91,8 @@ impl Lower for ast::MemberAccess {
 
     // Otherwise, it must be a method.
     let impl_method_info = cache
-      .get_struct_impls(&struct_type.unique_id)
+      .struct_impls
+      .get(&struct_type.unique_id)
       .unwrap()
       .iter()
       .find(|x| x.1 == self.member_name)
@@ -108,7 +108,8 @@ impl Lower for ast::Closure {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // REVIEW: Closures don't have a unique id. Don't we need to set the buffer unique id for closures as well?
+    // REVIEW: Closures don't have a unique id.
+    // ... Don't we need to set the buffer unique id for closures as well?
 
     let buffers = generator.copy_buffers();
     // let mut modified_prototype = self.prototype.clone();
@@ -118,7 +119,7 @@ impl Lower for ast::Closure {
       // let capture_node_type = (&*capture_node).infer_type(cache);
       // let computed_parameter_index = self.prototype.parameters.len() as usize + index;
 
-      // TODO: Is the parameter position correct?
+      // REVIEW: Is the parameter position correct?
       // TODO: Re-implement, after parameters were made definitions.
       // modified_prototype.parameters.push((
       //   format!("capture.{}", capture.0),
@@ -127,7 +128,7 @@ impl Lower for ast::Closure {
       // ))
     }
 
-    // FIXME: Use modified prototype.
+    // FIXME: Use the modified prototype.
     let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
     let llvm_function_name = generator.mangle_name(&String::from("closure"));
 
@@ -199,7 +200,7 @@ impl Lower for ast::IntrinsicCall {
           .lower(generator, cache)
           .unwrap();
 
-        // TODO: How about we merge this into a `panic` function?
+        // REVIEW: How about we merge this into a `panic` function?
         let print_function = generator.get_or_insert_print_function();
 
         generator
@@ -238,7 +239,7 @@ impl Lower for ast::StructValue {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // TODO: If possible and practical, find a way to remove reliance on the generator's state.
+    // REVISE: If possible and practical, find a way to remove reliance on the generator's state.
     let llvm_struct_type = generator.memoize_or_retrieve_type(self.target_id.unwrap(), cache);
 
     let llvm_struct_alloca = generator.llvm_builder.build_alloca(
@@ -254,8 +255,8 @@ impl Lower for ast::StructValue {
       let struct_access = generator.access(llvm_struct_alloca).into_pointer_value();
       let struct_field_gep = generator
         .llvm_builder
-        // TODO: Is this conversion safe?
-        // TODO: Better name.
+        // REVIEW: Is this conversion safe?
+        // REVISE: Better name.
         .build_struct_gep(struct_access, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
@@ -371,7 +372,7 @@ impl Lower for ast::ArrayIndexing {
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
     unsafe {
-      // TODO: Figure out why there's a zero index (may want to look on `https://www.llvm.org/docs/GetElementPtr.html#why-is-the-extra-0-index-required`).
+      // REVIEW: Figure out why there's a zero index (may want to look on `https://www.llvm.org/docs/GetElementPtr.html#why-is-the-extra-0-index-required`).
       let first_index = generator.llvm_context.i32_type().const_int(0, false);
 
       let llvm_gep_ptr = generator.llvm_builder.build_in_bounds_gep(
@@ -384,14 +385,14 @@ impl Lower for ast::ArrayIndexing {
         inkwell::IntPredicate::ULT,
         (
           llvm_index,
-          // FIXME: Is this the correct way to get the size of the array? Probably not.
+          // REVIEW: Is this the correct way to get the size of the array? Probably not.
           generator.llvm_context.i32_type().const_int(3, false),
         ),
-        // TODO: Temporary, the `panic` prefix should be added automatically.
+        // REVISE: Temporary, the `panic` prefix should be added automatically.
         "panic: array index out of bounds".to_string(),
       );
 
-      // TODO: Should we actually be de-referencing the pointer here?
+      // REVIEW: Should we actually be de-referencing the pointer here?
       Some(generator.access(llvm_gep_ptr))
     }
   }
@@ -423,11 +424,11 @@ impl Lower for ast::ArrayValue {
       .llvm_builder
       .build_alloca(llvm_array_type, "array.value");
 
-    // TODO: Two loops in a single function is redundant (adds complexity). With a single one should be fine. Re-implement.
+    // REVISE: Two loops in a single function is redundant (adds complexity). With a single one should be fine. Re-implement.
     for (index, llvm_value) in llvm_values.iter().enumerate() {
       let first_index = generator.llvm_context.i32_type().const_int(0, false);
 
-      // TODO: Is this conversion safe?
+      // REVIEW: Is this conversion safe?
       let llvm_index = generator
         .llvm_context
         .i32_type()
@@ -447,7 +448,7 @@ impl Lower for ast::ArrayValue {
       }
     }
 
-    // TODO: Might not need to load the array in order to initialize it, but to return it?
+    // REVIEW: Might not need to load the array in order to initialize it, but to return it?
     let llvm_array_value = generator
       .access(llvm_array_ptr)
       .into_array_value()
@@ -457,7 +458,10 @@ impl Lower for ast::ArrayValue {
   }
 }
 
-// BUG: Parameters with the same name on other functions are being resolved elsewhere. This is likely because of the current design of relative scopes. Fix this issue. (May be related to when memoizing or retrieving other functions, then not virtualizing their environment).
+// BUG: Parameters with the same name on other functions are being resolved elsewhere.
+// ... This is likely because of the current design of relative scopes. Fix this issue.
+// ... (May be related to when memoizing or retrieving other functions, then not
+// ... virtualizing their environment).
 impl Lower for ast::Parameter {
   fn lower<'a, 'ctx>(
     &self,
@@ -718,16 +722,13 @@ impl Lower for ast::Reference {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // TODO: Here we opted not to forward buffers. Ensure this is correct.
-    // FIXME: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
+    // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
+    // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
 
     // REVIEW: What about if there's a nested reference? Will it be intercepted by the flag? Perhaps we can capture the flag here immediately? But wouldn't this affect the order of which reference is actually not lowered, ex. first one in `foo.bar`, which is incorrect?
     let llvm_target = generator
-      .memoize_or_retrieve_value(self.0.target_id.unwrap(), cache, false)
+      .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false)
       .unwrap();
-
-    // REVIEW: Usage of a flag may cause trouble if the buffer is modified several times.
-    // Perhaps since the llvm target's buffers aren't saved, it's fine?
 
     Some(llvm_target)
   }
@@ -942,14 +943,12 @@ impl Lower for ast::Literal {
       ast::Literal::Char(value) => generator
         .llvm_context
         .i8_type()
-        // TODO: Is this cloning?
-        .const_int(*value as u64, false)
+        .const_int(value.clone() as u64, false)
         .as_basic_value_enum(),
       ast::Literal::Bool(value) => generator
         .llvm_context
         .bool_type()
-        // TODO: Is this cloning?
-        .const_int(*value as u64, false)
+        .const_int(value.clone() as u64, false)
         .as_basic_value_enum(),
       ast::Literal::String(value) => generator
         .llvm_builder
@@ -1015,9 +1014,8 @@ impl Lower for ast::Function {
 
     assert_eq!(llvm_function.count_params(), expected_param_count);
 
-    // REVISE: The parameter counts aren't always guaranteed
-    // to be the same, given if the prototype accepts an instance. This zip
-    // might cause unexpected problems.
+    // REVISE: The parameter counts aren't always guaranteed to be the same, given
+    // ... if the prototype accepts an instance. This zip might cause unexpected problems.
     llvm_function
       .get_param_iter()
       .zip(self.prototype.parameters.iter())
@@ -1094,7 +1092,7 @@ impl Lower for ast::ReturnStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // TODO: Simplify.
+    // REVISE: Simplify.
     let llvm_return_value = if let Some(return_value) = &self.value {
       Some(
         generator
@@ -1153,6 +1151,7 @@ impl Lower for ast::UnaryExpr {
         // TODO: For the time being, this isn't being returned. This should be the return value.
         self.expr.lower(generator, cache).unwrap();
 
+        // TODO: Continue implementation.
         todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
@@ -1189,13 +1188,12 @@ impl Lower for ast::LetStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // TODO: Do we need to resolve here?
     // Special cases. The allocation is done elsewhere.
     if matches!(
       SemanticCheckContext::flatten_type(&self.ty, cache),
       ast::Type::Function(_) | ast::Type::Struct(_)
     ) {
-      // TODO: Here create a definition for the closure, with the let statement as the name?
+      // REVIEW: Here create a definition for the closure, with the let statement as the name?
 
       return self.value.lower(generator, cache);
     }
@@ -1245,7 +1243,7 @@ impl Lower for ast::CallExpr {
     }
 
     // FIXME: It seems that this is causing stack-overflow because results aren't cached? What's going on? Or maybe it's the parser?
-    // TODO: Here we opted not to forward buffers. Ensure this is correct.
+    // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_callable = self
       .callee_expr
       .lower(generator, cache)
@@ -1274,7 +1272,6 @@ impl Lower for ast::BreakStmt {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // TODO: What happens if there are nested loops? Will the buffer be overwritten?
     // NOTE: By this point, we assume that whether we're actually in a loop was handled by the type-checker.
     generator
       .llvm_builder
@@ -1347,7 +1344,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let llvm_value_result = node.lower(self, cache);
     let node_type = SemanticCheckContext::flatten_type(&node.infer_type(cache), cache);
 
-    // TODO: Is there a need to resolve the type?
+    // REVIEW: Is there a need to resolve the type?
     // BUG: This won't work for nested string values. Cannot compare node kind.
     // Special case for string literals. They shouldn't be
     // lowered, since they're natural pointers. And for structs,
@@ -1390,7 +1387,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   /// Mangle a name with an unique counter to avoid name collisions.
   fn mangle_name(&mut self, name: &String) -> String {
-    // TODO: Consider using the `unique_id` instead?
     // NOTE: The current module name isn't used because it's not guaranteed to be the
     // active module when the definition is memoized (for example, inter-module function
     // calls).
@@ -1406,7 +1402,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       return cached_panic_function;
     }
 
-    // TODO: What if the `abort` function was already defined by the user?
+    // REVIEW: What if the `abort` function was already defined by the user?
     let libc_abort_function = self.llvm_module.add_function(
       "abort",
       self.llvm_context.void_type().fn_type(&[], false),
@@ -1520,7 +1516,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     &mut self,
     llvm_value: inkwell::values::PointerValue<'ctx>,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // TODO: Do we need an assertion here that the `llvm_value` is an LLVM pointer value? Or does it always throw when its not?
+    // REVIEW: Do we need an assertion here that the `llvm_value` is an LLVM pointer value? Or does it always throw when its not?
 
     self
       .llvm_builder
@@ -1580,7 +1576,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .lower_type(&pointee_type, cache)
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
-      // FIXME: Is this redundant (because of `UserDefined`)?
+      // REVIEW: Is this redundant (because of `StubType`)?
       ast::Type::Struct(struct_type) => {
         let llvm_field_types = struct_type
           .fields
@@ -1588,7 +1584,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .map(|field| self.lower_type(&field.1, cache))
           .collect::<Vec<_>>();
 
-        // TODO: Consider caching the struct type here?
+        // REVIEW: Consider caching the struct type here?
 
         let name = self.mangle_name(&format!("struct.{}", struct_type.name));
         let llvm_struct_type = self.llvm_context.opaque_struct_type(name.as_str());
@@ -1600,7 +1596,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum()
       }
-      // FIXME: Why not resolve the type if it is a stub type, then proceed to lower it?
+      // REVIEW: Why not resolve the type if it is a stub type, then proceed to lower it?
       ast::Type::Stub(stub_type) => {
         self.memoize_or_retrieve_type(stub_type.target_id.unwrap(), cache)
       }
@@ -1610,12 +1606,12 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .as_basic_type_enum(),
       // TODO: Implement.
       ast::Type::Reference(_reference_type) => todo!(),
-      // FIXME: Implement.
+      // TODO: Implement.
       ast::Type::This(this_type) => {
         self.memoize_or_retrieve_type(this_type.target_id.unwrap(), cache)
       }
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
-      // TODO: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
+      // REVIEW: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
       // NOTE: These types are never lowered.
       ast::Type::Unit | ast::Type::Error => unreachable!(),
     }
@@ -1661,11 +1657,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       );
     }
 
-    // TODO: Simplify code (find common ground between `void` and `basic` types).
+    // REVISE: Simplify code (find common ground between `void` and `basic` types).
     if !prototype.return_type.is_unit() {
       self
         .lower_type(&prototype.return_type, cache)
-        // TODO: Is `is_variadic` being copied?
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)
         .into()
@@ -1673,7 +1668,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       self
         .llvm_context
         .void_type()
-        // TODO: Is `is_variadic` being copied?
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum()
@@ -1692,14 +1686,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       return existing_definition.clone();
     }
 
-    // TODO: Consider making a separate map for types in the cache.
+    // REVIEW: Consider making a separate map for types in the cache.
 
     let node = cache.unsafe_get(&unique_id);
 
     let ty = match &node {
       ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
       ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
-      // TODO: Any more?
+      // REVIEW: Any more?
       _ => unreachable!(),
     };
 
@@ -1715,7 +1709,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   }
 
   fn attempt_build_return(&mut self, return_value: Option<inkwell::values::BasicValueEnum<'ctx>>) {
-    // TODO: Consider mixing this with the function's terminator check, for void functions?
+    // REVIEW: Consider mixing this with the function's terminator check, for void functions?
     // Only build a single return instruction per block.
     if self.get_current_block().get_terminator().is_some() {
       return;
@@ -1726,8 +1720,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
-  // TODO: Shouldn't this be used for any and all lowering? Possible problems with closures and/or structs if not?
-  // TODO: Accept reference for key?
+  // REVIEW: Shouldn't this be used for any and all lowering? Possible problems with closures and/or structs if not?
+  // REVIEW: Accept reference for key?
   /// Attempt to retrieve an existing definition, otherwise proceed to
   /// lowering it and memoizing it under the current module.
   ///

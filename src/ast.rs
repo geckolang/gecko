@@ -77,11 +77,10 @@ pub enum Type {
   Array(Box<Type>, u32),
   Basic(BasicType),
   Pointer(Box<Type>),
-  // TODO: Consider merging with `Pointer` type, since they have common functionality. Ensure all cases conform if so.
   Reference(Box<Type>),
-  // TODO: Isn't this incompatible with `UserDefined`?
+  // TODO: Isn't this incompatible with `StubType`?
   Struct(StructType),
-  /// A type that may need to be resolved.
+  /// A type that needs to be resolved.
   Stub(StubType),
   Function(FunctionType),
   This(ThisType),
@@ -232,7 +231,10 @@ pub struct ArrayValue {
 pub struct UnsafeBlockStmt(pub BlockExpr);
 
 #[derive(Debug, Clone)]
-pub struct Reference(pub Pattern);
+pub struct Reference {
+  pub pattern: Pattern,
+  pub ty: Option<Box<Type>>,
+}
 
 #[derive(Debug, Clone)]
 pub struct AssignStmt {
@@ -307,7 +309,6 @@ pub struct ReturnStmt {
 #[derive(Debug, Clone)]
 pub struct LetStmt {
   pub name: String,
-  // TODO: Since there's no use for explicit type, simply assume its always inferred. Same for prototype return types.
   pub ty: Type,
   pub value: Box<Node>,
   pub is_mutable: bool,

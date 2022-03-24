@@ -28,8 +28,8 @@ mod tests {
   fn lex(source_code: &str) -> Vec<gecko::lexer::Token> {
     let tokens = gecko::lexer::Lexer::from_str(source_code).lex_all();
 
-    // FIXME: What about illegal tokens?
-    // TODO: This might be inefficient for larger programs, so consider passing an option to the lexer.
+    // REVIEW: What about illegal tokens?
+    // REVISE: This might be inefficient for larger programs, so consider passing an option to the lexer.
     // Filter tokens to only include those that are relevant (ignore whitespace, comments, etc.).
     tokens
       .unwrap()
@@ -43,10 +43,10 @@ mod tests {
       .collect()
   }
 
-  // FIXME: Test isn't working for some reason.
+  // REVISE: Test isn't working for some reason.
   #[test]
   fn test_sources() {
-    // FIXME: Complete implementation.
+    // TODO: Complete implementation.
 
     let source_files = vec!["recursion", "shorthands"];
     let mut sources = Vec::new();
@@ -80,7 +80,7 @@ mod tests {
         }
       };
 
-      // TODO: File names need to conform to identifier rules.
+      // REVISE: File names need to conform to identifier rules.
       let source_file_name = source_files[index].to_string();
 
       name_resolver.create_module(source_file_name.clone());
@@ -104,7 +104,10 @@ mod tests {
     diagnostics.extend(name_resolver.diagnostic_builder.diagnostics.clone());
 
     // Cannot continue to other phases if name resolution failed.
-    if diagnostics.iter().any(|x| x.is_error_like()) {
+    if diagnostics
+      .iter()
+      .any(|diagnostic| diagnostic.severity == gecko::diagnostic::Severity::Error)
+    {
       assert_eq!(false, true);
       todo!();
     }
@@ -114,14 +117,17 @@ mod tests {
       for top_level_node in inner_ast {
         top_level_node.check(&mut type_context, &mut cache);
 
-        // TODO: Can we mix linting with type-checking without any problems?
+        // REVIEW: Can we mix linting with type-checking without any problems?
         top_level_node.lint(&mut cache, &mut lint_context);
       }
     }
 
-    // TODO: Any way for better efficiency (less loops)?
+    // REVISE: Any way for better efficiency (less loops)?
     // Lowering cannot proceed if there was an error.
-    if diagnostics.iter().any(|x| x.is_error_like()) {
+    if diagnostics
+      .iter()
+      .any(|diagnostic| diagnostic.severity == gecko::diagnostic::Severity::Error)
+    {
       assert_eq!(false, true);
 
       return;

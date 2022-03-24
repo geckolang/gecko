@@ -35,8 +35,9 @@ impl Resolve for ast::Type {
   }
 }
 
+// TODO: Get rid-of. `NodeKind` is preferred. This is redundant.
 impl Resolve for ast::Node {
-  // TODO: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
+  // REVIEW: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     crate::dispatch!(&self.kind, Resolve::declare, resolver, cache);
@@ -47,11 +48,25 @@ impl Resolve for ast::Node {
   }
 }
 
+impl Resolve for ast::NodeKind {
+  // REVIEW: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
+
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    crate::dispatch!(self, Resolve::declare, resolver, cache);
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver) {
+    crate::dispatch!(self, Resolve::resolve, resolver);
+  }
+}
+
 impl Resolve for ast::Trait {
   fn declare(&self, _resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache.bind(self.unique_id, ast::NodeKind::Trait(self.clone()));
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::Trait(self.clone()));
 
-    // TODO: Is there a need to declare symbol here?
+    // REVIEW: Is there a need to declare symbol here?
     // resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 }
@@ -70,7 +85,7 @@ impl Resolve for ast::ThisType {
 
 impl Resolve for ast::StructImpl {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // TODO: Is there a need to bind this on the cache?
+    // REVIEW: Is there a need to bind this on the cache?
 
     resolver.push_scope();
 
@@ -88,9 +103,9 @@ impl Resolve for ast::StructImpl {
       trait_pattern.resolve(resolver);
     }
 
-    // REVIEW: We can't unwrap here because the lookup
-    // might have failed. Is this done in other parts? Certain resolve methods
-    // depend on other things being resolved already, this could be dangerous.
+    // REVIEW: We can't unwrap here because the lookup might have failed.
+    // ... Is this done in other parts? Certain resolve methods depend on
+    // ... other things being resolved already, this could be dangerous.
     let struct_type_id_result = self.target_struct_pattern.target_id;
 
     if let Some(struct_type_id) = struct_type_id_result {
@@ -135,14 +150,14 @@ impl Resolve for ast::Closure {
     // environment within the resolver, then restore the cached scopes
     // after the body has been resolved. This is done to encapsulate the
     // closure's environment.
-    let relative_scopes_cache = resolver.relative_scopes.clone();
+    let relative_scopes_buffer = resolver.relative_scopes.clone();
 
     resolver.relative_scopes.clear();
     self.body.resolve(resolver);
 
     // REVIEW: Should this closing of relative scopes occur
-    // before or after the return type is possibly inferred?
-    resolver.relative_scopes = relative_scopes_cache;
+    // ... before or after the return type is possibly inferred?
+    resolver.relative_scopes = relative_scopes_buffer;
 
     self.prototype.resolve(resolver);
   }
@@ -150,7 +165,9 @@ impl Resolve for ast::Closure {
 
 impl Resolve for ast::TypeAlias {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache.bind(self.unique_id, ast::NodeKind::TypeAlias(self.clone()));
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::TypeAlias(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 
@@ -159,10 +176,10 @@ impl Resolve for ast::TypeAlias {
   }
 }
 
-// TODO: This might be getting too complicated. Maybe we should keep it simple in this case?
+// REVIEW: This might be getting too complicated. Maybe we should keep it simple in this case?
 impl Resolve for ast::Pattern {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    // TODO: Consider extending this as a function of `Pattern` (via `impl`).
+    // REVIEW: Consider extending this as a function of `Pattern` (via `impl`).
     let symbol = (self.base_name.clone(), self.symbol_kind.clone());
     let lookup_result = resolver.lookup(&symbol);
 
@@ -180,7 +197,9 @@ impl Resolve for ast::IntrinsicCall {
 
 impl Resolve for ast::ExternStatic {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache.bind(self.unique_id, ast::NodeKind::ExternStatic(self.clone()));
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::ExternStatic(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
   }
 
@@ -191,14 +210,14 @@ impl Resolve for ast::ExternStatic {
 
 impl Resolve for ast::StubType {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_id = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
 impl Resolve for ast::StructValue {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    // TODO: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_id = resolver.lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
 
     for field in &mut self.fields {
@@ -209,7 +228,6 @@ impl Resolve for ast::StructValue {
 
 impl Resolve for ast::Prototype {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    // BUG: Cloning the parameter before it has been resolved.
     if self.accepts_instance {
       let _this_parameter = self.this_parameter.as_ref().unwrap();
 
@@ -229,7 +247,6 @@ impl Resolve for ast::Prototype {
       // .declare(resolver, cache);
     }
 
-    // REVIEW: This might be causing the unwrap problem, probably because of the cloning?
     for parameter in &self.parameters {
       parameter.declare(resolver, cache);
     }
@@ -250,7 +267,9 @@ impl Resolve for ast::Prototype {
 
 impl Resolve for ast::StructType {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache.bind(self.unique_id, ast::NodeKind::StructType(self.clone()));
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::StructType(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 
@@ -269,7 +288,9 @@ impl Resolve for ast::UnaryExpr {
 
 impl Resolve for ast::Enum {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache.bind(self.unique_id, ast::NodeKind::Enum(self.clone()));
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::Enum(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 }
@@ -318,7 +339,9 @@ impl Resolve for ast::UnsafeBlockStmt {
 
 impl Resolve for ast::Parameter {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache.bind(self.unique_id, ast::NodeKind::Parameter(self.clone()));
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::Parameter(self.clone()));
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
   }
 
@@ -329,7 +352,7 @@ impl Resolve for ast::Parameter {
 
 impl Resolve for ast::Reference {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    self.0.resolve(resolver);
+    self.pattern.resolve(resolver);
   }
 }
 
@@ -377,7 +400,10 @@ impl Resolve for ast::IfExpr {
 
 impl Resolve for ast::LetStmt {
   fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache.bind(self.unique_id, ast::NodeKind::LetStmt(self.clone()));
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::LetStmt(self.clone()));
+
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
     self.value.declare(resolver, cache);
   }
@@ -438,19 +464,17 @@ impl Resolve for ast::Function {
     // prototype's scope tree, instead they will be merged, as expected.
     // resolver.close_scope_tree(self.value.unique_id);
 
-    cache.bind(self.unique_id, ast::NodeKind::Function(self.clone()));
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::Function(self.clone()));
     self.prototype.declare(resolver, cache);
     self.body_value.declare(resolver, cache);
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
   }
 
-  // FIXME: This resolve step may need to be repeated for closure.
+  // REVIEW: This resolve step may need to be repeated for closure.
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    // REVIEW: Do we need to resolve the prototype first?
-    // If so, doesn't the prototype's inferred type depend on the body being
-    // resolved first?
-
-    // TODO: Do we need scope management here, for the prototype's parameters?
+    // REVIEW: Do we need scope management here, for the prototype's parameters?
     self.prototype.resolve(resolver);
 
     // Finally, after both the prototype and its return type have been resolved,
@@ -541,7 +565,7 @@ impl NameResolver {
 
   /// Set per-file. A new global scope is created per-module.
   pub fn create_module(&mut self, name: String) {
-    // TODO: Can the module name possibly collide with an existing one?
+    // REVIEW: Can the module name possibly collide with an existing one?
 
     self.current_module_name = Some(name.clone());
 
@@ -554,14 +578,14 @@ impl NameResolver {
 
   pub fn set_active_module(&mut self, name: String) -> bool {
     // TODO: Implement checks (that module exists, etc.).
-    // TODO: Shouldn't we reset buffers here? This might prevent the re-definition bug.
+    // REVIEW: Shouldn't we reset buffers here? This might prevent the re-definition bug.
     self.current_module_name = Some(name.clone());
 
     true
   }
 
   // FIXME: What about registering on the cache? If this is implemented, there is no longer a need to register
-  // the root nodes on the cache.
+  // ... the root nodes on the cache.
   fn declare_symbol(&mut self, symbol: Symbol, unique_id: cache::UniqueId) {
     // Check for existing definitions.
     if self.contains_current_scope(&symbol) {
@@ -569,7 +593,7 @@ impl NameResolver {
         .diagnostic_builder
         .error(format!("re-definition of `{}`", symbol.0));
 
-      // TODO: What about calling the child's declare function?
+      // REVIEW: What about calling the child's declare function?
       return;
     }
 
@@ -590,7 +614,7 @@ impl NameResolver {
     }
   }
 
-  // TODO: Consider returning the pushed scope? Unless it's not actually used.
+  // REVIEW: Consider returning the pushed scope? Unless it's not actually used.
   fn push_scope(&mut self) {
     self.relative_scopes.push(std::collections::HashMap::new());
   }
