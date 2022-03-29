@@ -1218,7 +1218,7 @@ impl<'a> Parser<'a> {
   fn parse_reference(&mut self) -> ParserResult<ast::Reference> {
     let pattern = self.parse_pattern(name_resolution::SymbolKind::Definition)?;
 
-    Ok(ast::Reference { pattern, ty: None })
+    Ok(ast::Reference { pattern })
   }
 
   /// %expr '=' %expr

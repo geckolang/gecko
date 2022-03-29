@@ -233,7 +233,11 @@ pub struct UnsafeBlockStmt(pub BlockExpr);
 #[derive(Debug, Clone)]
 pub struct Reference {
   pub pattern: Pattern,
-  pub ty: Option<Box<Type>>,
+  // TODO: Why not have the reference have a `Rc<>` to the target? This would remove dependence
+  // ... on the cache, and would be filled during name resolution. We should note that the cache
+  // ... isn't available during the `resolve()` name resolution step (that's not a such a big problem,
+  // ... however). The question is, where would these `Rc<>`s be sourced from? (they must consume `T`).
+  // TODO: What about having an auxiliary mapping from `UniqueId` to `Type`?
 }
 
 #[derive(Debug, Clone)]

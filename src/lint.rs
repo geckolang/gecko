@@ -245,7 +245,7 @@ impl Lint for ast::Function {
 
 impl Lint for ast::CallExpr {
   fn lint(&self, _cache: &cache::Cache, _context: &mut LintContext) {
-    // FIXME:
+    // TODO:
     // context
     //   .function_references
     //   .insert(self.callee_expr.target_key.unwrap(), true);

@@ -13,6 +13,7 @@ pub struct Diagnostic {
   pub span: Option<Span>,
 }
 
+#[derive(Clone)]
 pub struct DiagnosticBuilder {
   pub diagnostics: Vec<Diagnostic>,
 }

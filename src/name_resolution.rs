@@ -168,6 +168,7 @@ impl Resolve for ast::TypeAlias {
     cache
       .symbols
       .insert(self.unique_id, ast::NodeKind::TypeAlias(self.clone()));
+
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 
@@ -179,15 +180,8 @@ impl Resolve for ast::TypeAlias {
 // REVIEW: This might be getting too complicated. Maybe we should keep it simple in this case?
 impl Resolve for ast::Pattern {
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    // REVIEW: Consider extending this as a function of `Pattern` (via `impl`).
-    let symbol = (self.base_name.clone(), self.symbol_kind.clone());
-    let lookup_result = resolver.lookup(&symbol);
-
-    if lookup_result.is_none() {
-      return resolver.produce_lookup_error(&symbol.0);
-    }
-
-    self.target_id = Some(lookup_result.unwrap().clone());
+    // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.target_id = resolver.lookup_or_error(&(self.base_name.clone(), self.symbol_kind.clone()));
   }
 }
 
@@ -200,6 +194,7 @@ impl Resolve for ast::ExternStatic {
     cache
       .symbols
       .insert(self.unique_id, ast::NodeKind::ExternStatic(self.clone()));
+
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
   }
 
@@ -342,6 +337,7 @@ impl Resolve for ast::Parameter {
     cache
       .symbols
       .insert(self.unique_id, ast::NodeKind::Parameter(self.clone()));
+
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
   }
 
@@ -409,6 +405,9 @@ impl Resolve for ast::LetStmt {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
+    // BUG: The problem seems to be occurring only when using let-statements. Investigate.
+    // ... On the second iteration of the resolve step only! During cached nodes resolution.
+
     self.value.resolve(resolver);
     self.ty.resolve(resolver);
   }
@@ -467,6 +466,7 @@ impl Resolve for ast::Function {
     cache
       .symbols
       .insert(self.unique_id, ast::NodeKind::Function(self.clone()));
+
     self.prototype.declare(resolver, cache);
     self.body_value.declare(resolver, cache);
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
@@ -484,7 +484,11 @@ impl Resolve for ast::Function {
 }
 
 impl Resolve for ast::ExternFunction {
-  fn declare(&self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    cache
+      .symbols
+      .insert(self.unique_id, ast::NodeKind::ExternFunction(self.clone()));
+
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
   }
 
@@ -506,6 +510,7 @@ impl Resolve for ast::CallExpr {
     self.callee_expr.resolve(resolver);
 
     for argument in &mut self.arguments {
+      println!("resolve ... {:?}\n\n\n", argument);
       argument.resolve(resolver);
     }
   }
@@ -533,15 +538,16 @@ impl Resolve for ast::BinaryExpr {
   }
 }
 
+#[derive(Clone)]
 pub struct NameResolver {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   current_module_name: Option<String>,
   /// Contains the modules with their respective top-level definitions.
-  global_scopes: std::collections::HashMap<String, Scope>,
+  pub global_scopes: std::collections::HashMap<String, Scope>,
   /// Contains volatile, relative scopes. Only used during the declare step.
   /// This is reset when the module changes, although by that time, all the
   /// relative scopes should have been popped automatically.
-  relative_scopes: Vec<Scope>,
+  pub relative_scopes: Vec<Scope>,
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
   scope_map: std::collections::HashMap<cache::UniqueId, Vec<Scope>>,
@@ -605,13 +611,13 @@ impl NameResolver {
   /// the global scope of the current module.
   fn get_current_scope(&mut self) -> &mut Scope {
     if self.relative_scopes.is_empty() {
-      self
+      return self
         .global_scopes
         .get_mut(self.current_module_name.as_ref().unwrap())
-        .unwrap()
-    } else {
-      self.relative_scopes.last_mut().unwrap()
+        .unwrap();
     }
+
+    self.relative_scopes.last_mut().unwrap()
   }
 
   // REVIEW: Consider returning the pushed scope? Unless it's not actually used.
@@ -654,12 +660,6 @@ impl NameResolver {
     self.get_current_scope().insert(symbol, unique_id);
   }
 
-  fn produce_lookup_error(&mut self, name: &str) {
-    self
-      .diagnostic_builder
-      .error(format!("undefined reference to `{}`", name));
-  }
-
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope
   /// of the current module.
   fn lookup(&mut self, symbol: &Symbol) -> Option<&cache::UniqueId> {
@@ -697,7 +697,9 @@ impl NameResolver {
       return Some(unique_id.clone());
     }
 
-    self.produce_lookup_error(&symbol.0);
+    self
+      .diagnostic_builder
+      .error(format!("undefined reference to `{}`", symbol.0));
 
     None
   }

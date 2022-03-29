@@ -74,12 +74,16 @@ impl Lower for ast::MemberAccess {
       _ => unreachable!(),
     };
 
+    // TODO: Must disallow fields and methods with the same name on semantic check phase.
     // First, check if its a field.
     if let Some(field_index) = struct_type
       .fields
       .iter()
-      .position(|x| x.0 == self.member_name)
+      .position(|field| field.0 == self.member_name)
     {
+      // BUG: Struct values aren't being lowered here either, something's off (Struct** vs Struct*).
+      // let s = generator.access(llvm_struct);
+
       return Some(
         generator
           .llvm_builder
@@ -251,13 +255,13 @@ impl Lower for ast::StructValue {
     for (index, field) in self.fields.iter().enumerate() {
       // BUG: Struct isn't being accessed, or rather it is a pointer to a struct. (Struct**).
       // ... Perhaps this applies to only some cases?
+      // let struct_access = generator.access(llvm_struct_alloca).into_pointer_value();
 
-      let struct_access = generator.access(llvm_struct_alloca).into_pointer_value();
       let struct_field_gep = generator
         .llvm_builder
         // REVIEW: Is this conversion safe?
         // REVISE: Better name.
-        .build_struct_gep(struct_access, index as u32, "struct.alloca.field.gep")
+        .build_struct_gep(llvm_struct_alloca, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
       let llvm_field_value = generator.lower_with_access_rules(field, cache).unwrap();
@@ -722,10 +726,13 @@ impl Lower for ast::Reference {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    println!(
+      "pattern id is: {:?} for {}",
+      self.pattern.target_id, self.pattern.base_name
+    );
+
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
-
-    // REVIEW: What about if there's a nested reference? Will it be intercepted by the flag? Perhaps we can capture the flag here immediately? But wouldn't this affect the order of which reference is actually not lowered, ex. first one in `foo.bar`, which is incorrect?
     let llvm_target = generator
       .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false)
       .unwrap();
@@ -1242,7 +1249,7 @@ impl Lower for ast::CallExpr {
       );
     }
 
-    // FIXME: It seems that this is causing stack-overflow because results aren't cached? What's going on? Or maybe it's the parser?
+    // BUG: It seems that this is causing stack-overflow because results aren't cached? What's going on? Or maybe it's the parser?
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_callable = self
       .callee_expr
@@ -1593,7 +1600,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
         // All struct types should be pointer types.
         llvm_struct_type
-          .ptr_type(inkwell::AddressSpace::Generic)
+          // FIXME: [!!!] Commented out.
+          // .ptr_type(inkwell::AddressSpace::Generic)
           .as_basic_type_enum()
       }
       // REVIEW: Why not resolve the type if it is a stub type, then proceed to lower it?
@@ -1610,10 +1618,15 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::This(this_type) => {
         self.memoize_or_retrieve_type(this_type.target_id.unwrap(), cache)
       }
+      // FIXME: Should be lowering to the void type instead.
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
       // REVIEW: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
-      // NOTE: These types are never lowered.
-      ast::Type::Unit | ast::Type::Error => unreachable!(),
+      ast::Type::Unit => self
+        .llvm_context
+        .i8_type()
+        .ptr_type(inkwell::AddressSpace::Generic)
+        .as_basic_type_enum(),
+      ast::Type::Error => unreachable!(),
     }
   }
 
@@ -1721,7 +1734,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   }
 
   // REVIEW: Shouldn't this be used for any and all lowering? Possible problems with closures and/or structs if not?
-  // REVIEW: Accept reference for key?
   /// Attempt to retrieve an existing definition, otherwise proceed to
   /// lowering it and memoizing it under the current module.
   ///

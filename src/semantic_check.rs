@@ -696,6 +696,8 @@ impl SemanticCheck for ast::BlockExpr {
 
 impl SemanticCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    // TODO: Should not be inferring types of nodes pulled from the cache. This will
+    // ... likely lead to design problems.
     cache
       .unsafe_get(&self.pattern.target_id.unwrap())
       .infer_type(cache)
