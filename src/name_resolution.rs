@@ -215,6 +215,27 @@ impl Resolve for ast::StructValue {
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_id = resolver.lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
 
+    if let Some(target_id) = self.target_id {
+      // So, the new system will look like this:
+      //  - The type is attached to the node that needs it.
+      //  - We still have the cache, but only to lookup & lower nodes.
+      //    - [?] When lowering nodes, we won't have any problems with cached nodes? Those nodes
+      //      ... are unresolved, so they might not lower!
+      //  - The cache will not be used for anything else.
+      //  - Special cases such as StructValue's needing of StructType's fields will be solved,
+      //  - ... because its attached type already contains such information.
+      //  - There will no longer be a need for another cloned AST, nor the double visitation, instead
+      //  - ... what will be cloned is certain Types, to be stored as filler for certain nodes.
+      //  - The infer type's repetitive nature will be addressed. No need for a specialized container
+      //  - ... to hold cached types, that only adds complexity (and unsafe retrieval). Instead, just
+      //  - ... directly attach the Types to their respective nodes.
+      //  - This system implies that the type-inference and determination will be done here, during the
+      //  - ... resolve step.
+      // TODO: Create a struct type based off the target Struct node.
+      self.ty = cache::get_node(target_id);
+      ///////////////////////////////////////////////////////////////
+    }
+
     for field in &mut self.fields {
       field.resolve(resolver);
     }
@@ -265,6 +286,7 @@ impl Resolve for ast::StructType {
     cache
       .symbols
       .insert(self.unique_id, ast::NodeKind::StructType(self.clone()));
+
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
   }
 

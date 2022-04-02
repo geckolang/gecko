@@ -186,6 +186,7 @@ pub struct StructValue {
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
   pub target_id: Option<cache::UniqueId>,
+  pub ty: Option<Type>,
 }
 
 #[derive(Debug, Clone)]

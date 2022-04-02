@@ -1324,6 +1324,7 @@ impl<'a> Parser<'a> {
       struct_name,
       fields,
       target_id: None,
+      ty: None,
     })
   }
 
