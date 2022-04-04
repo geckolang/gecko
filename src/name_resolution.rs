@@ -10,10 +10,10 @@ pub enum SymbolKind {
 
 pub type Symbol = (String, SymbolKind);
 
-type Scope = std::collections::HashMap<Symbol, cache::UniqueId>;
+type Scope = std::collections::HashMap<Symbol, cache::BindingId>;
 
 pub trait Resolve {
-  fn declare(&self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+  fn declare(&self, _resolver: &mut NameResolver) {
     //
   }
 
@@ -39,8 +39,8 @@ impl Resolve for ast::Type {
 impl Resolve for ast::Node {
   // REVIEW: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    crate::dispatch!(&self.kind, Resolve::declare, resolver, cache);
+  fn declare(&self, resolver: &mut NameResolver) {
+    crate::dispatch!(&self.kind, Resolve::declare, resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -51,8 +51,8 @@ impl Resolve for ast::Node {
 impl Resolve for ast::NodeKind {
   // REVIEW: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    crate::dispatch!(self, Resolve::declare, resolver, cache);
+  fn declare(&self, resolver: &mut NameResolver) {
+    crate::dispatch!(self, Resolve::declare, resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -61,13 +61,9 @@ impl Resolve for ast::NodeKind {
 }
 
 impl Resolve for ast::Trait {
-  fn declare(&self, _resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::Trait(self.clone()));
-
+  fn declare(&self, _resolver: &mut NameResolver) {
     // REVIEW: Is there a need to declare symbol here?
-    // resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
+    // resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.binding_id);
   }
 }
 
@@ -84,13 +80,13 @@ impl Resolve for ast::ThisType {
 }
 
 impl Resolve for ast::StructImpl {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver) {
     // REVIEW: Is there a need to bind this on the cache?
 
     resolver.push_scope();
 
     for method in &self.methods {
-      method.declare(resolver, cache);
+      method.declare(resolver);
     }
 
     resolver.force_pop_scope();
@@ -127,12 +123,12 @@ impl Resolve for ast::MemberAccess {
 }
 
 impl Resolve for ast::Closure {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver) {
     // TODO: Here, captures should be force-declared.
     // FIXME: The body is resolved within a virtual environment. This means that declarations from here may not be accessible. To solve this, perhaps we may virtualize all but the last scope (this declaration's body's scope).
 
-    self.prototype.declare(resolver, cache);
-    self.body.declare(resolver, cache);
+    self.prototype.declare(resolver);
+    self.body.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -164,12 +160,8 @@ impl Resolve for ast::Closure {
 }
 
 impl Resolve for ast::TypeAlias {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::TypeAlias(self.clone()));
-
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
+  fn declare(&self, resolver: &mut NameResolver) {
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.binding_id);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -190,12 +182,8 @@ impl Resolve for ast::IntrinsicCall {
 }
 
 impl Resolve for ast::ExternStatic {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::ExternStatic(self.clone()));
-
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
+  fn declare(&self, resolver: &mut NameResolver) {
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -232,7 +220,7 @@ impl Resolve for ast::StructValue {
       //  - This system implies that the type-inference and determination will be done here, during the
       //  - ... resolve step.
       // TODO: Create a struct type based off the target Struct node.
-      self.ty = cache::get_node(target_id);
+      // self.ty = cache::get_node(target_id);
       ///////////////////////////////////////////////////////////////
     }
 
@@ -243,7 +231,7 @@ impl Resolve for ast::StructValue {
 }
 
 impl Resolve for ast::Prototype {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver) {
     if self.accepts_instance {
       let _this_parameter = self.this_parameter.as_ref().unwrap();
 
@@ -255,16 +243,16 @@ impl Resolve for ast::Prototype {
       //     kind: ast::NodeKind::Parameter(this_parameter.clone()),
       //     // TODO: Span.
       //     span: 0..0,
-      //     unique_id: cache.create_unique_id(),
+      //     binding_id: cache.create_binding_id(),
       //   }),
       //   // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
-      //   unique_id: cache.create_unique_id(),
+      //   binding_id: cache.create_binding_id(),
       // }
-      // .declare(resolver, cache);
+      // .declare(resolver);
     }
 
     for parameter in &self.parameters {
-      parameter.declare(resolver, cache);
+      parameter.declare(resolver);
     }
   }
 
@@ -282,12 +270,8 @@ impl Resolve for ast::Prototype {
 }
 
 impl Resolve for ast::StructType {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::StructType(self.clone()));
-
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
+  fn declare(&self, resolver: &mut NameResolver) {
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.binding_id);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -304,11 +288,8 @@ impl Resolve for ast::UnaryExpr {
 }
 
 impl Resolve for ast::Enum {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::Enum(self.clone()));
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.unique_id);
+  fn declare(&self, resolver: &mut NameResolver) {
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.binding_id);
   }
 }
 
@@ -324,8 +305,8 @@ impl Resolve for ast::ContinueStmt {
 }
 
 impl Resolve for ast::ArrayIndexing {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.index_expr.declare(resolver, cache);
+  fn declare(&self, resolver: &mut NameResolver) {
+    self.index_expr.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -345,8 +326,8 @@ impl Resolve for ast::ArrayValue {
 }
 
 impl Resolve for ast::UnsafeBlockStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.0.declare(resolver, cache);
+  fn declare(&self, resolver: &mut NameResolver) {
+    self.0.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -355,12 +336,8 @@ impl Resolve for ast::UnsafeBlockStmt {
 }
 
 impl Resolve for ast::Parameter {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::Parameter(self.clone()));
-
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
+  fn declare(&self, resolver: &mut NameResolver) {
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -379,12 +356,12 @@ impl Resolve for ast::BreakStmt {
 }
 
 impl Resolve for ast::LoopStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver) {
     if let Some(condition) = &self.condition {
-      condition.declare(resolver, cache);
+      condition.declare(resolver);
     }
 
-    self.body.declare(resolver, cache);
+    self.body.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -397,12 +374,12 @@ impl Resolve for ast::LoopStmt {
 }
 
 impl Resolve for ast::IfExpr {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.condition.declare(resolver, cache);
-    self.then_value.declare(resolver, cache);
+  fn declare(&self, resolver: &mut NameResolver) {
+    self.condition.declare(resolver);
+    self.then_value.declare(resolver);
 
     if let Some(else_block) = &self.else_value {
-      else_block.declare(resolver, cache);
+      else_block.declare(resolver);
     }
   }
 
@@ -417,13 +394,9 @@ impl Resolve for ast::IfExpr {
 }
 
 impl Resolve for ast::LetStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::LetStmt(self.clone()));
-
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
-    self.value.declare(resolver, cache);
+  fn declare(&self, resolver: &mut NameResolver) {
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
+    self.value.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -436,9 +409,9 @@ impl Resolve for ast::LetStmt {
 }
 
 impl Resolve for ast::ReturnStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver) {
     if let Some(value) = &self.value {
-      value.declare(resolver, cache);
+      value.declare(resolver);
     }
   }
 
@@ -450,24 +423,24 @@ impl Resolve for ast::ReturnStmt {
 }
 
 impl Resolve for ast::BlockExpr {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver) {
     resolver.push_scope();
 
     for statement in &self.statements {
-      statement.declare(resolver, cache);
+      statement.declare(resolver);
     }
 
-    resolver.close_scope_tree(self.unique_id);
+    resolver.close_scope_tree(self.binding_id);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
-    resolver.current_block_unique_id = Some(self.unique_id);
+    resolver.current_block_binding_id = Some(self.binding_id);
 
     for statement in &mut self.statements {
       statement.resolve(resolver);
     }
 
-    resolver.current_block_unique_id = None;
+    resolver.current_block_binding_id = None;
   }
 }
 
@@ -476,22 +449,18 @@ impl Resolve for ast::Literal {
 }
 
 impl Resolve for ast::Function {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver) {
     // Parameter scope.
     // resolver.push_scope();
 
     // FIXME: Commented out temporarily. Is it needed?
     // NOTE: The scope tree won't be overwritten by the block's, nor the
     // prototype's scope tree, instead they will be merged, as expected.
-    // resolver.close_scope_tree(self.value.unique_id);
+    // resolver.close_scope_tree(self.value.binding_id);
 
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::Function(self.clone()));
-
-    self.prototype.declare(resolver, cache);
-    self.body_value.declare(resolver, cache);
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
+    self.prototype.declare(resolver);
+    self.body_value.declare(resolver);
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }
 
   // REVIEW: This resolve step may need to be repeated for closure.
@@ -506,12 +475,8 @@ impl Resolve for ast::Function {
 }
 
 impl Resolve for ast::ExternFunction {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    cache
-      .symbols
-      .insert(self.unique_id, ast::NodeKind::ExternFunction(self.clone()));
-
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.unique_id);
+  fn declare(&self, resolver: &mut NameResolver) {
+    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -520,11 +485,11 @@ impl Resolve for ast::ExternFunction {
 }
 
 impl Resolve for ast::CallExpr {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn declare(&self, resolver: &mut NameResolver) {
     // Declare any possible `Definition` nodes in the arguments
     // (such as inline closures, etc.).
     for argument in &self.arguments {
-      argument.declare(resolver, cache);
+      argument.declare(resolver);
     }
   }
 
@@ -539,8 +504,8 @@ impl Resolve for ast::CallExpr {
 }
 
 impl Resolve for ast::InlineExprStmt {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.expr.declare(resolver, cache);
+  fn declare(&self, resolver: &mut NameResolver) {
+    self.expr.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -549,9 +514,9 @@ impl Resolve for ast::InlineExprStmt {
 }
 
 impl Resolve for ast::BinaryExpr {
-  fn declare(&self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.left.declare(resolver, cache);
-    self.right.declare(resolver, cache);
+  fn declare(&self, resolver: &mut NameResolver) {
+    self.left.declare(resolver);
+    self.right.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver) {
@@ -572,10 +537,10 @@ pub struct NameResolver {
   pub relative_scopes: Vec<Scope>,
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
-  scope_map: std::collections::HashMap<cache::UniqueId, Vec<Scope>>,
+  scope_map: std::collections::HashMap<cache::BindingId, Vec<Scope>>,
   /// The unique id of the current block's scope. Used in the resolve step.
-  current_block_unique_id: Option<cache::UniqueId>,
-  current_struct_type_id: Option<cache::UniqueId>,
+  current_block_binding_id: Option<cache::BindingId>,
+  current_struct_type_id: Option<cache::BindingId>,
 }
 
 impl NameResolver {
@@ -586,7 +551,7 @@ impl NameResolver {
       global_scopes: std::collections::HashMap::new(),
       relative_scopes: Vec::new(),
       scope_map: std::collections::HashMap::new(),
-      current_block_unique_id: None,
+      current_block_binding_id: None,
       current_struct_type_id: None,
     }
   }
@@ -614,7 +579,7 @@ impl NameResolver {
 
   // FIXME: What about registering on the cache? If this is implemented, there is no longer a need to register
   // ... the root nodes on the cache.
-  fn declare_symbol(&mut self, symbol: Symbol, unique_id: cache::UniqueId) {
+  fn declare_symbol(&mut self, symbol: Symbol, binding_id: cache::BindingId) {
     // Check for existing definitions.
     if self.contains_current_scope(&symbol) {
       self
@@ -626,7 +591,7 @@ impl NameResolver {
     }
 
     // Bind the symbol to the current scope for name resolution lookup.
-    self.bind(symbol.clone(), unique_id);
+    self.bind(symbol.clone(), binding_id);
   }
 
   /// Retrieve the last pushed relative scope, or if there are none,
@@ -659,7 +624,7 @@ impl NameResolver {
   ///
   /// If an entry with the same unique id already exists, the scope tree will
   /// be appended onto the existing definition.
-  fn close_scope_tree(&mut self, unique_id: cache::UniqueId) {
+  fn close_scope_tree(&mut self, binding_id: cache::BindingId) {
     let mut scope_tree = vec![self.force_pop_scope()];
 
     // Clone the relative scope tree.
@@ -668,35 +633,35 @@ impl NameResolver {
     let mut final_value_buffer = scope_tree;
 
     // Append to the existing definition, if applicable.
-    if self.scope_map.contains_key(&unique_id) {
-      final_value_buffer.extend(self.scope_map.remove(&unique_id).unwrap());
+    if self.scope_map.contains_key(&binding_id) {
+      final_value_buffer.extend(self.scope_map.remove(&binding_id).unwrap());
     }
 
-    self.scope_map.insert(unique_id, final_value_buffer);
+    self.scope_map.insert(binding_id, final_value_buffer);
   }
 
   /// Register a name on the last scope for name resolution lookups.
   ///
   /// If there are no relative scopes, the symbol is registered in the global scope.
-  fn bind(&mut self, symbol: Symbol, unique_id: cache::UniqueId) {
-    self.get_current_scope().insert(symbol, unique_id);
+  fn bind(&mut self, symbol: Symbol, binding_id: cache::BindingId) {
+    self.get_current_scope().insert(symbol, binding_id);
   }
 
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope
   /// of the current module.
-  fn lookup(&mut self, symbol: &Symbol) -> Option<&cache::UniqueId> {
+  fn lookup(&mut self, symbol: &Symbol) -> Option<&cache::BindingId> {
     // If applicable, lookup on the relative scopes. This may not
     // be the case for when resolving global entities such as struct
     // types that reference other structs in their fields (in such case,
-    // the relative scopes will be empty and the `current_block_unique_id`
+    // the relative scopes will be empty and the `current_block_binding_id`
     // buffer would be `None`).
-    if let Some(current_block_unique_id) = self.current_block_unique_id {
-      let scope_tree = self.scope_map.get(&current_block_unique_id).unwrap();
+    if let Some(current_block_binding_id) = self.current_block_binding_id {
+      let scope_tree = self.scope_map.get(&current_block_binding_id).unwrap();
 
       // First, attempt to find the symbol in the relative scopes.
       for scope in scope_tree {
-        if let Some(unique_id) = scope.get(&symbol) {
-          return Some(unique_id);
+        if let Some(binding_id) = scope.get(&symbol) {
+          return Some(binding_id);
         }
       }
     }
@@ -707,16 +672,16 @@ impl NameResolver {
       .get(self.current_module_name.as_ref().unwrap())
       .unwrap();
 
-    if let Some(unique_id) = global_scope.get(&symbol) {
-      return Some(unique_id);
+    if let Some(binding_id) = global_scope.get(&symbol) {
+      return Some(binding_id);
     }
 
     None
   }
 
-  fn lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::UniqueId> {
-    if let Some(unique_id) = self.lookup(symbol) {
-      return Some(unique_id.clone());
+  fn lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::BindingId> {
+    if let Some(binding_id) = self.lookup(symbol) {
+      return Some(binding_id.clone());
     }
 
     self

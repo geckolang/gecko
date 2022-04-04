@@ -46,7 +46,7 @@ pub struct Parameter {
   pub name: String,
   pub ty: Type,
   pub position: u32,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(PartialEq, PartialOrd, Clone, Debug)]
@@ -145,7 +145,7 @@ pub struct Node {
 
 #[derive(Debug, Clone)]
 pub struct Closure {
-  pub captures: Vec<(String, Option<cache::UniqueId>)>,
+  pub captures: Vec<(String, Option<cache::BindingId>)>,
   pub prototype: Prototype,
   pub body: BlockExpr,
 }
@@ -159,7 +159,7 @@ pub struct FunctionType {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct ThisType {
-  pub target_id: Option<cache::UniqueId>,
+  pub target_id: Option<cache::BindingId>,
   pub ty: Option<Box<Type>>,
 }
 
@@ -170,13 +170,13 @@ pub struct Pattern {
   pub module_name: Option<String>,
   pub base_name: String,
   pub symbol_kind: name_resolution::SymbolKind,
-  pub target_id: Option<cache::UniqueId>,
+  pub target_id: Option<cache::BindingId>,
 }
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StubType {
   pub name: String,
-  pub target_id: Option<cache::UniqueId>,
+  pub target_id: Option<cache::BindingId>,
 }
 
 #[derive(Debug, Clone)]
@@ -185,7 +185,7 @@ pub struct StructValue {
   pub fields: Vec<Node>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
-  pub target_id: Option<cache::UniqueId>,
+  pub target_id: Option<cache::BindingId>,
   pub ty: Option<Type>,
 }
 
@@ -201,14 +201,14 @@ pub struct StructImpl {
 pub struct Trait {
   pub name: String,
   pub methods: Vec<(String, Prototype)>,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(Debug, Clone)]
 pub struct Enum {
   pub name: String,
   pub variants: Vec<String>,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(Debug, Clone)]
@@ -218,7 +218,7 @@ pub struct ContinueStmt;
 pub struct ArrayIndexing {
   pub name: String,
   pub index_expr: Box<Node>,
-  pub target_id: Option<cache::UniqueId>,
+  pub target_id: Option<cache::BindingId>,
 }
 
 #[derive(Debug, Clone)]
@@ -262,7 +262,7 @@ pub struct Prototype {
   pub return_type: Type,
   pub is_variadic: bool,
   pub accepts_instance: bool,
-  pub instance_type_id: Option<cache::UniqueId>,
+  pub instance_type_id: Option<cache::BindingId>,
   pub this_parameter: Option<Parameter>,
 }
 
@@ -271,14 +271,14 @@ pub struct ExternFunction {
   pub name: String,
   pub prototype: Prototype,
   pub attributes: Vec<Attribute>,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExternStatic {
   pub name: String,
   pub ty: Type,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(Debug, Clone)]
@@ -293,14 +293,14 @@ pub struct Function {
   pub prototype: Prototype,
   pub body_value: Box<Node>,
   pub attributes: Vec<Attribute>,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(Debug, Clone)]
 pub struct BlockExpr {
   pub statements: Vec<Node>,
   pub yields_last_expr: bool,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(Debug, Clone)]
@@ -317,7 +317,7 @@ pub struct LetStmt {
   pub ty: Type,
   pub value: Box<Node>,
   pub is_mutable: bool,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(Debug, Clone)]
@@ -357,7 +357,7 @@ pub struct IntrinsicCall {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructType {
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
   pub name: String,
   pub fields: Vec<(String, Type)>,
 }
@@ -366,7 +366,7 @@ pub struct StructType {
 pub struct TypeAlias {
   pub name: String,
   pub ty: Type,
-  pub unique_id: cache::UniqueId,
+  pub binding_id: cache::BindingId,
 }
 
 #[derive(PartialEq, Debug, Clone)]

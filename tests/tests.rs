@@ -86,7 +86,7 @@ mod tests {
       name_resolver.create_module(source_file_name.clone());
 
       for top_level_node in &mut top_level_nodes {
-        top_level_node.declare(&mut name_resolver, &mut cache);
+        top_level_node.declare(&mut name_resolver);
       }
 
       ast.insert(source_file_name, top_level_nodes);

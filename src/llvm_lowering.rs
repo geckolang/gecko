@@ -96,7 +96,7 @@ impl Lower for ast::MemberAccess {
     // Otherwise, it must be a method.
     let impl_method_info = cache
       .struct_impls
-      .get(&struct_type.unique_id)
+      .get(&struct_type.binding_id)
       .unwrap()
       .iter()
       .find(|x| x.1 == self.member_name)
@@ -1009,7 +1009,7 @@ impl Lower for ast::Function {
     // FIXME: Still getting stack-overflow errors when using recursive functions (specially multiple of them at the same time). Investigate whether that's caused here or elsewhere.
     // Manually cache the function now to allow for recursive function calls.
     generator.llvm_cached_values.insert(
-      self.unique_id,
+      self.binding_id,
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
@@ -1312,9 +1312,9 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Shouldn't this be a vector instead?
   llvm_cached_values:
-    std::collections::HashMap<cache::UniqueId, inkwell::values::BasicValueEnum<'ctx>>,
+    std::collections::HashMap<cache::BindingId, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_cached_types:
-    std::collections::HashMap<cache::UniqueId, inkwell::types::BasicTypeEnum<'ctx>>,
+    std::collections::HashMap<cache::BindingId, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
   current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
@@ -1692,16 +1692,16 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   fn memoize_or_retrieve_type(
     &mut self,
-    unique_id: cache::UniqueId,
+    binding_id: cache::BindingId,
     cache: &cache::Cache,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
-    if let Some(existing_definition) = self.llvm_cached_types.get(&unique_id) {
+    if let Some(existing_definition) = self.llvm_cached_types.get(&binding_id) {
       return existing_definition.clone();
     }
 
     // REVIEW: Consider making a separate map for types in the cache.
 
-    let node = cache.unsafe_get(&unique_id);
+    let node = cache.unsafe_get(&binding_id);
 
     let ty = match &node {
       ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
@@ -1712,7 +1712,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     let llvm_type = self.lower_type(&ty, cache);
 
-    self.llvm_cached_types.insert(unique_id, llvm_type);
+    self.llvm_cached_types.insert(binding_id, llvm_type);
 
     llvm_type
   }
@@ -1741,21 +1741,21 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   /// otherwise they will all be restored.
   fn memoize_or_retrieve_value(
     &mut self,
-    unique_id: cache::UniqueId,
+    binding_id: cache::BindingId,
     cache: &cache::Cache,
     forward_buffers: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // If the definition has been cached previously, simply retrieve it.
-    if let Some(existing_definition) = self.llvm_cached_values.get(&unique_id) {
+    if let Some(existing_definition) = self.llvm_cached_values.get(&binding_id) {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
       return Some(existing_definition.clone());
     }
 
     let buffers = self.copy_buffers();
-    let llvm_value = cache.unsafe_get(&unique_id).lower(self, cache);
+    let llvm_value = cache.unsafe_get(&binding_id).lower(self, cache);
 
     if let Some(llvm_value) = llvm_value {
-      self.llvm_cached_values.insert(unique_id, llvm_value);
+      self.llvm_cached_values.insert(binding_id, llvm_value);
     }
 
     // Restore buffers after processing, if requested.

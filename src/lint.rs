@@ -3,7 +3,7 @@ use crate::{ast, cache, diagnostic};
 pub struct LintContext {
   pub diagnostic_builder: diagnostic::DiagnosticBuilder,
   block_depth: usize,
-  variable_references: std::collections::HashMap<cache::UniqueId, bool>,
+  variable_references: std::collections::HashMap<cache::BindingId, bool>,
 }
 
 impl LintContext {
@@ -185,13 +185,13 @@ impl Lint for ast::ContinueStmt {
 //     // TODO: Simplify. Abstract the map, then process.
 //     match self.node.kind {
 //       ast::NodeKind::Function(_) => {
-//         if !context.function_references.contains_key(&self.unique_id) {
-//           context.function_references.insert(self.unique_id, false);
+//         if !context.function_references.contains_key(&self.binding_id) {
+//           context.function_references.insert(self.binding_id, false);
 //         }
 //       }
 //       ast::NodeKind::LetStmt(_) => {
 //         // NOTE: Variable declarations always occur before their usage.
-//         context.variable_references.insert(self.unique_id, false);
+//         context.variable_references.insert(self.binding_id, false);
 //       }
 //       // TODO: Lint other definitions.
 //       _ => {}

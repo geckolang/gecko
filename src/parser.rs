@@ -303,7 +303,7 @@ impl<'a> Parser<'a> {
       return Ok(ast::BlockExpr {
         statements: vec![statement],
         yields_last_expr: yield_last_expr,
-        unique_id: self.cache.create_unique_id(),
+        binding_id: self.cache.create_binding_id(),
       });
     }
 
@@ -330,7 +330,7 @@ impl<'a> Parser<'a> {
     Ok(ast::BlockExpr {
       statements,
       yields_last_expr: yield_last_expr,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -489,7 +489,7 @@ impl<'a> Parser<'a> {
       name,
       ty,
       position,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -515,7 +515,7 @@ impl<'a> Parser<'a> {
           ty: None,
         }),
         position: 0,
-        unique_id: self.cache.create_unique_id(),
+        binding_id: self.cache.create_binding_id(),
       });
 
       if !self.is(&lexer::TokenKind::ParenthesesR) {
@@ -574,7 +574,7 @@ impl<'a> Parser<'a> {
       prototype,
       body_value: Box::new(value),
       attributes,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -595,7 +595,7 @@ impl<'a> Parser<'a> {
       name,
       prototype,
       attributes,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -613,7 +613,7 @@ impl<'a> Parser<'a> {
     Ok(ast::ExternStatic {
       name,
       ty,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -728,7 +728,7 @@ impl<'a> Parser<'a> {
     Ok(ast::TypeAlias {
       name,
       ty,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -776,7 +776,7 @@ impl<'a> Parser<'a> {
       ty,
       value: Box::new(value),
       is_mutable,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -1260,7 +1260,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Enum {
       name,
       variants,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -1291,7 +1291,7 @@ impl<'a> Parser<'a> {
     Ok(ast::StructType {
       name,
       fields,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 
@@ -1413,7 +1413,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Trait {
       name,
       methods,
-      unique_id: self.cache.create_unique_id(),
+      binding_id: self.cache.create_binding_id(),
     })
   }
 }

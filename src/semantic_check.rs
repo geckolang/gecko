@@ -5,8 +5,8 @@ pub struct SemanticCheckContext {
   in_loop: bool,
   in_unsafe_block: bool,
   in_impl: bool,
-  current_function_key: Option<cache::UniqueId>,
-  types_cache: std::collections::HashMap<cache::UniqueId, ast::Type>,
+  current_function_key: Option<cache::BindingId>,
+  types_cache: std::collections::HashMap<cache::BindingId, ast::Type>,
 }
 
 impl SemanticCheckContext {
@@ -25,7 +25,7 @@ impl SemanticCheckContext {
   fn fetch_type(
     &mut self,
     node_kind: &ast::NodeKind,
-    unique_key: &cache::UniqueId,
+    unique_key: &cache::BindingId,
     cache: &cache::Cache,
   ) -> ast::Type {
     if let Some(cached_type) = self.types_cache.get(unique_key) {
@@ -256,10 +256,10 @@ impl SemanticCheck for ast::MemberAccess {
 
     // REVIEW: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
     // TODO: Lookup implementation, and attempt to match a method.
-    if let Some(struct_impls) = cache.struct_impls.get(&struct_type.unique_id) {
-      for (method_unique_id, method_name) in struct_impls {
+    if let Some(struct_impls) = cache.struct_impls.get(&struct_type.binding_id) {
+      for (method_binding_id, method_name) in struct_impls {
         if method_name == &self.member_name {
-          return cache.unsafe_get(&method_unique_id).infer_type(cache);
+          return cache.unsafe_get(&method_binding_id).infer_type(cache);
         }
       }
     }
@@ -910,7 +910,7 @@ impl SemanticCheck for ast::Function {
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    context.current_function_key = Some(self.unique_id);
+    context.current_function_key = Some(self.binding_id);
 
     if self.prototype.accepts_instance && !context.in_impl {
       context
