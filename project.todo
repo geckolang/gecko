@@ -1,19 +1,24 @@
 This file contains an overview of the design, and critical tasks of the entire project.
 
+Consideration:
+  <empty>
+
 Tasks:
 	✔ Instead of storing references, store (specific) keys. Retrieve using these keys. @done
 	☐ Begin laying out foundations to allow for concurrency during processing phases such as semantic checking, code generation, and others.
 	☐ Setup environment for integration testing.
+  ☐ Merge the driver project into this project. They should be placed in individual crates.
 
 Revisions:
 	☐ Use the `code_span` crate instead of `DiagnosticBuilder`. This will also remove the need for the `diagnostic.rs` module.
 
 Design:
-	☐ Should lazy-evaluation design be kept, or changed to eager-evaluation? Eager evaluation removes the need for node retrieval from the cache. However, this would require more analysis before lowering.
-	☐ Is there a way to have lazy-evaluation without needing the cache?
+	✘ Should lazy-evaluation design be changed to eager-evaluation? Eager evaluation removes the need for node retrieval from the cache. However, this would require more analysis before lowering. @cancelled
+	✘ Is there a way to have lazy-evaluation without needing the cache? @cancelled
 	✘ Should the cache be a singleton? This would remove the need for the cache to be passed around. @cancelled
 	☐ Should the cache contain unresolved node copies, or must they be resolved?
 	☐ Revise current design flaws. These might include, for example, the unsafe retrieval from the cache, among others.
 	☐ Consider deferring responsability of functions that assume, and use unsafe retrieval, and instead abstracting it to their consumers (separation of concerns). The tradeoff of more boilerplate might apply.
-	☐ Create a flowchart of the ideal system's process and design.
-	☐ Should a typed-AST be implemented and used?
+	✔ Create a flowchart of the ideal system's process and design. @done
+	✘ Should a typed-AST be implemented and used? @cancelled
+  ☐ Consider having a workspace-concious design. This would simplify processing by the multiple phases.

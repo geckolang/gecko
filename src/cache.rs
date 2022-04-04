@@ -6,8 +6,9 @@ pub struct Cache {
   pub struct_impls: std::collections::HashMap<UniqueId, Vec<(UniqueId, String)>>,
   /// A map of unique ids to their corresponding `NodeKind` construct.
   ///
-  /// This serves as a snapshot of the AST, created during the `declare` name
-  /// resolution step, which has also been resolved.
+  /// This map contains only nodes that may be referenced at some point (such as functions,
+  /// variables, and other bindings). This serves as a snapshot of the AST, created during
+  /// the `declare` name resolution step, which has also been resolved.
   pub symbols: std::collections::HashMap<UniqueId, ast::NodeKind>,
   // REVIEW: Currently, a type-cache is favored under the semantic check context.
   // ... This is because it's currently only used there. But in the future, for other
