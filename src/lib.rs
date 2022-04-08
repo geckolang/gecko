@@ -10,3 +10,4 @@ pub mod llvm_lowering;
 pub mod name_resolution;
 pub mod parser;
 pub mod semantic_check;
+pub mod visitor;

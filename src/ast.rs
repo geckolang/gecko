@@ -1,4 +1,4 @@
-use crate::{cache, diagnostic, name_resolution};
+use crate::{cache, diagnostic, name_resolution, visitor};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -266,6 +266,12 @@ pub struct Prototype {
   pub this_parameter: Option<Parameter>,
 }
 
+impl visitor::Visitable for Prototype {
+  fn accept<T>(&mut self, visitor: &mut impl visitor::Visitor<T>) -> T {
+    visitor.visit_prototype(self)
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExternFunction {
   pub name: String,
@@ -274,11 +280,23 @@ pub struct ExternFunction {
   pub binding_id: cache::BindingId,
 }
 
+impl visitor::Visitable for ExternFunction {
+  fn accept<T>(&mut self, visitor: &mut impl visitor::Visitor<T>) -> T {
+    visitor.visit_extern_function(self)
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExternStatic {
   pub name: String,
   pub ty: Type,
   pub binding_id: cache::BindingId,
+}
+
+impl visitor::Visitable for ExternStatic {
+  fn accept<T>(&mut self, visitor: &mut impl visitor::Visitor<T>) -> T {
+    visitor.visit_extern_static(self)
+  }
 }
 
 #[derive(Debug, Clone)]
