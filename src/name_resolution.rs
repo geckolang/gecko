@@ -17,7 +17,8 @@ pub trait Resolve {
     //
   }
 
-  fn resolve(&mut self, _resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  // REVIEW: Should this function should return a `Result<()>` in case that the resolution fails?
+  fn resolve(&mut self, _resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     //
   }
 }
@@ -282,6 +283,10 @@ impl Resolve for ast::StructType {
     for field in &mut self.fields {
       field.1.resolve(resolver, cache);
     }
+
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::StructType(self.clone()));
   }
 }
 
@@ -294,6 +299,12 @@ impl Resolve for ast::UnaryExpr {
 impl Resolve for ast::Enum {
   fn declare(&self, resolver: &mut NameResolver) {
     resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.binding_id);
+  }
+
+  fn resolve(&mut self, _resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::Enum(self.clone()));
   }
 }
 
@@ -409,6 +420,10 @@ impl Resolve for ast::LetStmt {
 
     self.value.resolve(resolver, cache);
     self.ty.resolve(resolver, cache);
+
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::LetStmt(self.clone()));
   }
 }
 
@@ -475,6 +490,10 @@ impl Resolve for ast::Function {
     // Finally, after both the prototype and its return type have been resolved,
     // proceed to resolve the body.
     self.body_value.resolve(resolver, cache);
+
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::Function(self.clone()));
   }
 }
 
@@ -485,6 +504,10 @@ impl Resolve for ast::ExternFunction {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.prototype.resolve(resolver, cache);
+
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::ExternFunction(self.clone()));
   }
 }
 
@@ -501,7 +524,6 @@ impl Resolve for ast::CallExpr {
     self.callee_expr.resolve(resolver, cache);
 
     for argument in &mut self.arguments {
-      println!("resolve ... {:?}\n\n\n", argument);
       argument.resolve(resolver, cache);
     }
   }

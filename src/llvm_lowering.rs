@@ -726,11 +726,6 @@ impl Lower for ast::Reference {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    println!(
-      "pattern id is: {:?} for {}",
-      self.pattern.target_id, self.pattern.base_name
-    );
-
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let llvm_target = generator
