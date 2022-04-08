@@ -97,7 +97,7 @@ mod tests {
       name_resolver.set_active_module(module_name.clone());
 
       for top_level_node in inner_ast {
-        top_level_node.resolve(&mut name_resolver);
+        top_level_node.resolve(&mut name_resolver, &mut cache);
       }
     }
 
