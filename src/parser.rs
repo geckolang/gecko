@@ -84,7 +84,7 @@ impl<'a> Parser<'a> {
         | lexer::TokenKind::Nand
         | lexer::TokenKind::Nor
         | lexer::TokenKind::Xor
-        | lexer::TokenKind::Equal
+        | lexer::TokenKind::Equality
     )
   }
 
@@ -164,21 +164,25 @@ impl<'a> Parser<'a> {
     self.force_get() == token
   }
 
-  // REVIEW: Consider returning a `ParserResult<bool>` instead.
   // TODO: Need testing for this function.
   /// Attempt to reposition the index to the next token (if any).
   ///
   /// Returns whether the index was repositioned. If false, it indicates
   /// that the end of file was reached (`EOF`), and the current character
   /// cannot be skipped-over.
-  fn try_skip(&mut self) -> bool {
+  fn try_skip(&mut self) -> ParserResult<()> {
+    // BUG: Possibly triggering on the last token (giving a false-positive).
     if self.is_eof() {
-      return false;
+      return Err(diagnostic::Diagnostic {
+        message: "reached end of file".to_string(),
+        severity: diagnostic::Severity::Error,
+        span: self.get_span(),
+      });
     }
 
     self.index += 1;
 
-    true
+    Ok(())
   }
 
   /// Retrieve the upcoming token (if any).
@@ -260,7 +264,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Loop => ast::NodeKind::LoopStmt(self.parse_loop_stmt()?),
       lexer::TokenKind::Break => ast::NodeKind::BreakStmt(self.parse_break_stmt()?),
       lexer::TokenKind::Continue => ast::NodeKind::ContinueStmt(self.parse_continue_stmt()?),
-      lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeBlock(self.parse_unsafe_block_stmt()?),
+      lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
       _ => {
         let expr = self.parse_expr()?;
 
@@ -283,30 +287,6 @@ impl<'a> Parser<'a> {
 
   /// {'{' (%statement+) '}' | '=' {%statement | %expr}}
   fn parse_block_expr(&mut self) -> ParserResult<ast::BlockExpr> {
-    // TODO: Simplify.
-    // Support for short syntax.
-    if self.is(&lexer::TokenKind::Equal) {
-      self.try_skip();
-
-      let statement = self.parse_statement()?;
-
-      // REVIEW: Is this correct for all cases?
-      let yield_last_expr = if self.is(&lexer::TokenKind::SemiColon) {
-        self.try_skip();
-
-        false
-      } else {
-        true
-      };
-
-      // TODO: Must ensure a semi-colon always follows (for if statements, loops, etc.)?
-      return Ok(ast::BlockExpr {
-        statements: vec![statement],
-        yields_last_expr: yield_last_expr,
-        binding_id: self.cache.create_binding_id(),
-      });
-    }
-
     self.skip_past(&lexer::TokenKind::BraceL)?;
 
     let mut statements = Vec::new();
@@ -464,6 +444,8 @@ impl<'a> Parser<'a> {
       return_type: Box::new(return_type),
       // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
       is_variadic: false,
+      // REVISE: Support for extern functions? This might create logic bugs.
+      is_extern: false,
     }))
   }
 
@@ -494,7 +476,7 @@ impl<'a> Parser<'a> {
   }
 
   /// '(' {%parameter* (,)} (+) ')' ':' %type
-  fn parse_prototype(&mut self) -> ParserResult<ast::Prototype> {
+  fn parse_prototype(&mut self, is_extern: bool) -> ParserResult<ast::Prototype> {
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
     let mut parameters = vec![];
@@ -525,7 +507,7 @@ impl<'a> Parser<'a> {
 
     // REVISE: Analyze, and remove possibility of lonely comma.
     while self.until(&lexer::TokenKind::ParenthesesR)? {
-      if self.is(&lexer::TokenKind::Plus) {
+      if self.is(&lexer::TokenKind::Ellipsis) {
         is_variadic = true;
         self.try_skip();
 
@@ -554,6 +536,7 @@ impl<'a> Parser<'a> {
       accepts_instance,
       instance_type_id: None,
       this_parameter,
+      is_extern,
     })
   }
 
@@ -563,7 +546,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Fn)?;
 
     let name = self.parse_name()?;
-    let prototype = self.parse_prototype()?;
+    let prototype = self.parse_prototype(false)?;
 
     self.skip_past(&lexer::TokenKind::Equal)?;
 
@@ -589,7 +572,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Fn)?;
 
     let name = self.parse_name()?;
-    let prototype = self.parse_prototype()?;
+    let prototype = self.parse_prototype(true)?;
 
     Ok(ast::ExternFunction {
       name,
@@ -834,13 +817,14 @@ impl<'a> Parser<'a> {
     Ok(ast::ContinueStmt)
   }
 
-  // unsafe %block
-  fn parse_unsafe_block_stmt(&mut self) -> ParserResult<ast::UnsafeBlockStmt> {
+  // unsafe %expr
+  fn parse_unsafe_expr(&mut self) -> ParserResult<ast::UnsafeExpr> {
     // REVIEW: Why not merge this with the normal block, and just have a flag?
 
     self.skip_past(&lexer::TokenKind::Unsafe)?;
+    self.skip_past(&lexer::TokenKind::Arrow)?;
 
-    Ok(ast::UnsafeBlockStmt(self.parse_block_expr()?))
+    Ok(ast::UnsafeExpr(Box::new(self.parse_expr()?)))
   }
 
   /// {true | false}
@@ -1013,6 +997,10 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::BracketL => ast::NodeKind::ArrayValue(self.parse_array_value()?),
       lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
       lexer::TokenKind::BraceL => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
+      lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
+      lexer::TokenKind::ParenthesesL => {
+        ast::NodeKind::ParenthesesExpr(self.parse_parentheses_expr()?)
+      }
       _ if self.is_unary_operator() => ast::NodeKind::UnaryExpr(self.parse_unary_expr()?),
       // Default to a literal if nothing else matched.
       _ => ast::NodeKind::Literal(self.parse_literal()?),
@@ -1071,7 +1059,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::GreaterThan => ast::OperatorKind::GreaterThan,
       lexer::TokenKind::Ampersand => ast::OperatorKind::AddressOf,
       lexer::TokenKind::Backtick => ast::OperatorKind::Cast,
-      lexer::TokenKind::Equal => ast::OperatorKind::Equality,
+      lexer::TokenKind::Equality => ast::OperatorKind::Equality,
       // TODO: Implement logic for GTE & LTE.
       _ => return Err(self.expected("operator")),
     };
@@ -1344,7 +1332,7 @@ impl<'a> Parser<'a> {
       self.try_skip();
     }
 
-    let prototype = self.parse_prototype()?;
+    let prototype = self.parse_prototype(false)?;
     let body = self.parse_block_expr()?;
 
     Ok(ast::Closure {
@@ -1403,7 +1391,7 @@ impl<'a> Parser<'a> {
       self.skip_past(&lexer::TokenKind::Fn)?;
 
       let method_name = self.parse_name()?;
-      let prototype = self.parse_prototype()?;
+      let prototype = self.parse_prototype(false)?;
 
       methods.push((method_name, prototype));
     }
@@ -1414,6 +1402,18 @@ impl<'a> Parser<'a> {
       name,
       methods,
       binding_id: self.cache.create_binding_id(),
+    })
+  }
+
+  fn parse_parentheses_expr(&mut self) -> ParserResult<ast::ParenthesesExpr> {
+    self.skip_past(&lexer::TokenKind::ParenthesesL)?;
+
+    let expr = self.parse_expr()?;
+
+    self.skip_past(&lexer::TokenKind::ParenthesesR)?;
+
+    Ok(ast::ParenthesesExpr {
+      expr: Box::new(expr),
     })
   }
 }

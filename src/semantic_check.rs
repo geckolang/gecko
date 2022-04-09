@@ -174,6 +174,16 @@ impl SemanticCheck for ast::NodeKind {
   }
 }
 
+impl SemanticCheck for ast::ParenthesesExpr {
+  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    self.expr.infer_type(cache)
+  }
+
+  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+    self.expr.check(context, cache);
+  }
+}
+
 impl SemanticCheck for ast::Trait {
   //
 }
@@ -385,6 +395,7 @@ impl SemanticCheck for ast::Prototype {
         .map(|parameter| parameter.ty.clone())
         .collect(),
       is_variadic: self.is_variadic,
+      is_extern: self.is_extern,
     })
   }
 
@@ -631,7 +642,7 @@ impl SemanticCheck for ast::ArrayValue {
   }
 }
 
-impl SemanticCheck for ast::UnsafeBlockStmt {
+impl SemanticCheck for ast::UnsafeExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.0.infer_type(cache)
   }
@@ -947,6 +958,7 @@ impl SemanticCheck for ast::Function {
         accepts_instance: false,
         instance_type_id: None,
         this_parameter: None,
+        is_extern: false,
       };
 
       // REVISE: Simplify.
@@ -998,27 +1010,13 @@ impl SemanticCheck for ast::CallExpr {
     // REVISE: Better, simpler way of doing this?
     // let attributes;
 
-    // TODO: Need names.
-    // match callee_type {
-    //   ast::NodeKind::ExternFunction(extern_) => {
-    //     if !context.in_unsafe_block {
-    //       context.diagnostic_builder.error(format!(
-    //         "extern function call to `{}` may only occur inside an unsafe block",
-    //         extern_.name
-    //       ));
-    //     }
-
-    //     name = &extern_.name;
-    //     prototype = &extern_.prototype;
-    //     attributes = &extern_.attributes;
-    //   }
-    //   ast::NodeKind::Function(function) => {
-    //     name = &function.name;
-    //     prototype = &function.prototype;
-    //     attributes = &function.attributes;
-    //   }
-    //   _ => unreachable!(),
-    // };
+    if callee_type.is_extern && !context.in_unsafe_block {
+      context.diagnostic_builder.error(format!(
+        "extern function call to `{}` may only occur inside an unsafe block",
+        // TODO: Need name.
+        "<pending>"
+      ));
+    }
 
     // for attribute in attributes {
     //   // TODO: Keep it simple for now, but later, we can improve the attribute system.

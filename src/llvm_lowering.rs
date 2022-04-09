@@ -38,6 +38,16 @@ impl Lower for ast::NodeKind {
   }
 }
 
+impl Lower for ast::ParenthesesExpr {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    cache: &cache::Cache,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    self.expr.lower(generator, cache)
+  }
+}
+
 impl Lower for ast::Trait {
   //
 }
@@ -484,7 +494,7 @@ impl Lower for ast::Parameter {
   }
 }
 
-impl Lower for ast::UnsafeBlockStmt {
+impl Lower for ast::UnsafeExpr {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -1356,9 +1366,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       || matches!(node_type, ast::Type::Struct(_))
     {
       return llvm_value_result;
-    }
-
-    if let Some(llvm_value) = llvm_value_result {
+    } else if let Some(llvm_value) = llvm_value_result {
       // FIXME: Strings shouldn't be accessed (exception).
       Some(self.attempt_access(llvm_value))
     } else {

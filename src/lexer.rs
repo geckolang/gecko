@@ -77,6 +77,9 @@ pub enum TokenKind {
   Arrow,
   LessThanEqualTo,
   GreaterThanEqualTo,
+  Equality,
+  FatArrow,
+  Ellipsis,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -325,6 +328,16 @@ impl Lexer {
         '*' => TokenKind::Asterisk,
         '/' => TokenKind::Slash,
         '!' => TokenKind::Bang,
+        '=' if self.peek_char() == Some('=') => {
+          self.read_char();
+
+          TokenKind::Equality
+        }
+        '=' if self.peek_char() == Some('>') => {
+          self.read_char();
+
+          TokenKind::FatArrow
+        }
         '=' => TokenKind::Equal,
         ';' => TokenKind::SemiColon,
         '<' if self.peek_char() == Some('=') => {
@@ -341,6 +354,12 @@ impl Lexer {
         '>' => TokenKind::GreaterThan,
         '[' => TokenKind::BracketL,
         ']' => TokenKind::BracketR,
+        '.' if self.peek_char() == Some('.') && self.peek_char() == Some('.') => {
+          self.read_char();
+          self.read_char();
+
+          TokenKind::Ellipsis
+        }
         '.' => TokenKind::Dot,
         '@' => TokenKind::At,
         '`' => TokenKind::Backtick,

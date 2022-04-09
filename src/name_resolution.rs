@@ -61,6 +61,16 @@ impl Resolve for ast::NodeKind {
   }
 }
 
+impl Resolve for ast::ParenthesesExpr {
+  fn declare(&self, resolver: &mut NameResolver) {
+    self.expr.declare(resolver);
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.expr.resolve(resolver, cache);
+  }
+}
+
 impl Resolve for ast::Trait {
   fn declare(&self, _resolver: &mut NameResolver) {
     // REVIEW: Is there a need to declare symbol here?
@@ -167,6 +177,10 @@ impl Resolve for ast::TypeAlias {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.ty.resolve(resolver, cache);
+
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::TypeAlias(self.clone()));
   }
 }
 
@@ -340,7 +354,7 @@ impl Resolve for ast::ArrayValue {
   }
 }
 
-impl Resolve for ast::UnsafeBlockStmt {
+impl Resolve for ast::UnsafeExpr {
   fn declare(&self, resolver: &mut NameResolver) {
     self.0.declare(resolver);
   }
@@ -357,6 +371,10 @@ impl Resolve for ast::Parameter {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.ty.resolve(resolver, cache);
+
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::Parameter(self.clone()));
   }
 }
 

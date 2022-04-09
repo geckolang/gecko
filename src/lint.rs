@@ -56,6 +56,12 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::ParenthesesExpr {
+  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
+    self.expr.lint(cache, context);
+  }
+}
+
 impl Lint for ast::Trait {
   //
 }
@@ -296,7 +302,7 @@ impl Lint for ast::ReturnStmt {
   }
 }
 
-impl Lint for ast::UnsafeBlockStmt {
+impl Lint for ast::UnsafeExpr {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     self.0.lint(cache, context);
   }

@@ -23,7 +23,7 @@ macro_rules! dispatch {
       ast::NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::UnsafeBlock(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::UnsafeExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Enum(inner) => $target_fn(inner $(, $($args),* )?),
@@ -36,11 +36,16 @@ macro_rules! dispatch {
       ast::NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
 
-/// A parameter containing its name, type, and index position.
+#[derive(Debug, Clone)]
+pub struct ParenthesesExpr {
+  pub expr: Box<Node>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
   pub name: String,
@@ -121,7 +126,7 @@ pub enum NodeKind {
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
   Parameter(Parameter),
-  UnsafeBlock(UnsafeBlockStmt),
+  UnsafeExpr(UnsafeExpr),
   ArrayValue(ArrayValue),
   ArrayIndexing(ArrayIndexing),
   Enum(Enum),
@@ -134,6 +139,7 @@ pub enum NodeKind {
   MemberAccess(MemberAccess),
   StructImpl(StructImpl),
   Trait(Trait),
+  ParenthesesExpr(ParenthesesExpr),
 }
 
 #[derive(Debug, Clone)]
@@ -155,6 +161,7 @@ pub struct FunctionType {
   pub return_type: Box<Type>,
   pub parameter_types: Vec<Type>,
   pub is_variadic: bool,
+  pub is_extern: bool,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -229,7 +236,7 @@ pub struct ArrayValue {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnsafeBlockStmt(pub BlockExpr);
+pub struct UnsafeExpr(pub Box<Node>);
 
 #[derive(Debug, Clone)]
 pub struct Reference {
@@ -261,6 +268,7 @@ pub struct Prototype {
   pub parameters: Vec<Parameter>,
   pub return_type: Type,
   pub is_variadic: bool,
+  pub is_extern: bool,
   pub accepts_instance: bool,
   pub instance_type_id: Option<cache::BindingId>,
   pub this_parameter: Option<Parameter>,
