@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic};
+use crate::{ast, cache, diagnostic, llvm_lowering};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
@@ -59,6 +59,10 @@ impl Resolve for ast::NodeKind {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     crate::dispatch!(self, Resolve::resolve, resolver, cache);
   }
+}
+
+impl Resolve for ast::Import {
+  //
 }
 
 impl Resolve for ast::ParenthesesExpr {
@@ -512,6 +516,20 @@ impl Resolve for ast::Function {
     cache
       .symbols
       .insert(self.binding_id, ast::NodeKind::Function(self.clone()));
+
+    // BUG: This must be checked only within the initial package. Currently, the main function
+    // ... can be defined elsewhere on its dependencies (even if they're libraries).
+    // REVIEW: Should we have this check positioned here? Or should it be placed elsewhere?
+    // ... Also, should the main function binding id be located under the cache?
+    if self.name == llvm_lowering::MAIN_FUNCTION_NAME {
+      if cache.main_function_id.is_some() {
+        resolver
+          .diagnostic_builder
+          .error("multiple main functions defined".to_string());
+      } else {
+        cache.main_function_id = Some(self.binding_id);
+      }
+    }
   }
 }
 
@@ -571,14 +589,14 @@ impl Resolve for ast::BinaryExpr {
 
 #[derive(Clone)]
 pub struct NameResolver {
-  pub diagnostic_builder: diagnostic::DiagnosticBuilder,
+  diagnostic_builder: diagnostic::DiagnosticBuilder,
   current_module_name: Option<String>,
   /// Contains the modules with their respective top-level definitions.
-  pub global_scopes: std::collections::HashMap<String, Scope>,
+  global_scopes: std::collections::HashMap<String, Scope>,
   /// Contains volatile, relative scopes. Only used during the declare step.
   /// This is reset when the module changes, although by that time, all the
   /// relative scopes should have been popped automatically.
-  pub relative_scopes: Vec<Scope>,
+  relative_scopes: Vec<Scope>,
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
   scope_map: std::collections::HashMap<cache::BindingId, Vec<Scope>>,
@@ -598,6 +616,26 @@ impl NameResolver {
       current_block_binding_id: None,
       current_struct_type_id: None,
     }
+  }
+
+  pub fn run(
+    &mut self,
+    ast: &mut Vec<ast::Node>,
+    cache: &mut cache::Cache,
+  ) -> Vec<diagnostic::Diagnostic> {
+    let mut name_resolver = NameResolver::new();
+
+    for node in ast.iter() {
+      node.declare(&mut name_resolver);
+    }
+
+    for node in ast {
+      // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
+      // ... an auxiliary map must be accepted in the parameters.
+      node.resolve(&mut name_resolver, cache);
+    }
+
+    name_resolver.diagnostic_builder.diagnostics
   }
 
   /// Set per-file. A new global scope is created per-module.

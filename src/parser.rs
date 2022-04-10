@@ -1416,6 +1416,21 @@ impl<'a> Parser<'a> {
       expr: Box::new(expr),
     })
   }
+
+  fn parse_import(&mut self) -> ParserResult<ast::Import> {
+    self.skip_past(&lexer::TokenKind::Import)?;
+
+    let package_name = self.parse_name()?;
+
+    self.skip_past(&lexer::TokenKind::Scope)?;
+
+    let module_name = self.parse_name()?;
+
+    Ok(ast::Import {
+      package_name,
+      module_name,
+    })
+  }
 }
 
 #[cfg(test)]
@@ -1513,7 +1528,7 @@ mod tests {
   fn is_binary_operator() {
     assert!(!Parser::is_binary_operator(&lexer::TokenKind::BraceL));
     assert!(Parser::is_binary_operator(&lexer::TokenKind::Plus));
-    assert!(Parser::is_binary_operator(&lexer::TokenKind::Equal));
+    assert!(Parser::is_binary_operator(&lexer::TokenKind::Equality));
     assert!(Parser::is_binary_operator(&lexer::TokenKind::And));
     assert!(!Parser::is_binary_operator(&lexer::TokenKind::EOF));
 

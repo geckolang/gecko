@@ -38,6 +38,10 @@ impl Lower for ast::NodeKind {
   }
 }
 
+impl Lower for ast::Import {
+  //
+}
+
 impl Lower for ast::ParenthesesExpr {
   fn lower<'a, 'ctx>(
     &self,

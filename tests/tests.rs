@@ -46,7 +46,7 @@ mod tests {
   // REVISE: Test isn't working for some reason.
   #[test]
   fn test_sources() {
-    // TODO: Complete implementation.
+    // TODO: Continue implementation.
 
     let source_files = vec!["recursion", "shorthands"];
     let mut sources = Vec::new();
@@ -71,46 +71,24 @@ mod tests {
       let tokens = lex(source_code);
       let mut parser = gecko::parser::Parser::new(tokens, &mut cache);
 
-      let mut top_level_nodes = match parser.parse_all() {
-        Ok(nodes) => nodes,
-        Err(_diagnostic) => {
-          assert_eq!(false, true);
-
-          return;
-        }
-      };
+      // TODO: Unsafe unwrap.
+      let top_level_nodes = parser.parse_all().unwrap();
 
       // REVISE: File names need to conform to identifier rules.
       let source_file_name = source_files[index].to_string();
 
       name_resolver.create_module(source_file_name.clone());
-
-      for top_level_node in &mut top_level_nodes {
-        top_level_node.declare(&mut name_resolver);
-      }
-
       ast.insert(source_file_name, top_level_nodes);
     }
 
-    // After all the ASTs have been collected, perform actual name resolution.
+    // After all the ASTs have been collected, perform name resolution step.
     for (module_name, inner_ast) in &mut ast {
       name_resolver.set_active_module(module_name.clone());
-
-      for top_level_node in inner_ast {
-        top_level_node.resolve(&mut name_resolver, &mut cache);
-      }
+      diagnostics.extend(name_resolver.run(inner_ast, &mut cache));
     }
-
-    diagnostics.extend(name_resolver.diagnostic_builder.diagnostics.clone());
 
     // Cannot continue to other phases if name resolution failed.
-    if diagnostics
-      .iter()
-      .any(|diagnostic| diagnostic.severity == gecko::diagnostic::Severity::Error)
-    {
-      assert_eq!(false, true);
-      todo!();
-    }
+    assert!(diagnostics.is_empty());
 
     // Once symbols are resolved, we can proceed to the other phases.
     for inner_ast in ast.values_mut() {
@@ -122,17 +100,10 @@ mod tests {
       }
     }
 
-    // REVISE: Any way for better efficiency (less loops)?
     // Lowering cannot proceed if there was an error.
-    if diagnostics
-      .iter()
-      .any(|diagnostic| diagnostic.severity == gecko::diagnostic::Severity::Error)
-    {
-      assert_eq!(false, true);
+    assert!(diagnostics.is_empty());
 
-      return;
-    }
-
+    // REVISE: Any way for better efficiency (less loops)?
     // Once symbols are resolved, we can proceed to the other phases.
     for (module_name, inner_ast) in &mut ast {
       llvm_generator.module_name = module_name.clone();
@@ -142,7 +113,6 @@ mod tests {
       }
     }
 
-    // assert_eq!(true, false);
     assert!(llvm_module.verify().is_ok());
     assert!(diagnostics.is_empty());
   }

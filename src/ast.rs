@@ -37,6 +37,7 @@ macro_rules! dispatch {
       ast::NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::Import(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -140,6 +141,7 @@ pub enum NodeKind {
   StructImpl(StructImpl),
   Trait(Trait),
   ParenthesesExpr(ParenthesesExpr),
+  Import(Import),
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +149,12 @@ pub struct Node {
   pub kind: NodeKind,
   // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
   pub span: diagnostic::Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Import {
+  pub package_name: String,
+  pub module_name: String,
 }
 
 #[derive(Debug, Clone)]

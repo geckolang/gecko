@@ -80,6 +80,8 @@ pub enum TokenKind {
   Equality,
   FatArrow,
   Ellipsis,
+  Import,
+  Scope,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -315,6 +317,11 @@ impl Lexer {
         '(' => TokenKind::ParenthesesL,
         ')' => TokenKind::ParenthesesR,
         '~' => TokenKind::Tilde,
+        ':' if self.peek_char() == Some(':') => {
+          self.read_char();
+
+          TokenKind::Scope
+        }
         ':' => TokenKind::Colon,
         '&' => TokenKind::Ampersand,
         ',' => TokenKind::Comma,
@@ -454,6 +461,7 @@ fn match_token(identifier: &str) -> Option<TokenKind> {
     "Unit" => TokenKind::TypeUnit,
     "true" => TokenKind::Bool(true),
     "false" => TokenKind::Bool(false),
+    "import" => TokenKind::Import,
     _ => return None,
   })
 }

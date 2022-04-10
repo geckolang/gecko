@@ -56,6 +56,10 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::Import {
+  //
+}
+
 impl Lint for ast::ParenthesesExpr {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     self.expr.lint(cache, context);

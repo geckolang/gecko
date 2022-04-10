@@ -1,15 +1,32 @@
 use crate::{ast, cache, diagnostic, dispatch, llvm_lowering};
 
 pub struct SemanticCheckContext {
-  pub diagnostic_builder: diagnostic::DiagnosticBuilder,
+  diagnostic_builder: diagnostic::DiagnosticBuilder,
   in_loop: bool,
   in_unsafe_block: bool,
   in_impl: bool,
   current_function_key: Option<cache::BindingId>,
   types_cache: std::collections::HashMap<cache::BindingId, ast::Type>,
+  imports: Vec<ast::Import>,
 }
 
 impl SemanticCheckContext {
+  pub fn run(
+    ast: &Vec<std::rc::Rc<ast::Node>>,
+    cache: &cache::Cache,
+  ) -> (Vec<diagnostic::Diagnostic>, Vec<ast::Import>) {
+    let mut semantic_check_context = SemanticCheckContext::new();
+
+    for node in ast {
+      node.check(&mut semantic_check_context, cache)
+    }
+
+    (
+      semantic_check_context.diagnostic_builder.diagnostics,
+      semantic_check_context.imports,
+    )
+  }
+
   pub fn new() -> Self {
     Self {
       diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
@@ -18,6 +35,7 @@ impl SemanticCheckContext {
       in_impl: false,
       current_function_key: None,
       types_cache: std::collections::HashMap::new(),
+      imports: Vec::new(),
     }
   }
 
@@ -171,6 +189,13 @@ impl SemanticCheck for ast::NodeKind {
 
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     dispatch!(&self, SemanticCheck::infer_type, cache)
+  }
+}
+
+impl SemanticCheck for ast::Import {
+  fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+    // FIXME: Can't just push the import once encountered; only when it's actually used.
+    context.imports.push(self.clone());
   }
 }
 

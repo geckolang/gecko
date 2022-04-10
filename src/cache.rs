@@ -10,6 +10,7 @@ pub struct Cache {
   /// variables, and other bindings). This serves as a snapshot of the AST, created during
   /// the `declare` name resolution step, which has also been resolved.
   pub symbols: std::collections::HashMap<BindingId, ast::NodeKind>,
+  pub main_function_id: Option<BindingId>,
   binding_id_counter: usize,
 }
 
@@ -18,6 +19,7 @@ impl Cache {
     Self {
       struct_impls: std::collections::HashMap::new(),
       symbols: std::collections::HashMap::new(),
+      main_function_id: None,
       binding_id_counter: 0,
     }
   }
