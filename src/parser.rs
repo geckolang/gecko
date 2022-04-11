@@ -233,6 +233,8 @@ impl<'a> Parser<'a> {
     let base_name = if global_qualifier.is_none() {
       starting_name
     } else {
+      self.skip_past(&lexer::TokenKind::DoubleColon)?;
+
       self.parse_name()?
     };
 
@@ -689,6 +691,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Type => ast::NodeKind::TypeAlias(self.parse_type_alias()?),
       lexer::TokenKind::Impl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
       lexer::TokenKind::Trait => ast::NodeKind::Trait(self.parse_trait()?),
+      lexer::TokenKind::Import => ast::NodeKind::Import(self.parse_import()?),
       _ => return Err(self.expected("top-level construct")),
     };
 

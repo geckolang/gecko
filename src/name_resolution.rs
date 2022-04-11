@@ -197,6 +197,14 @@ impl Resolve for ast::Pattern {
       // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
       self.target_id = resolver.lookup(global_qualifier.clone(), &symbol);
 
+      // TODO: Abstract and reuse error handling.
+      if self.target_id.is_none() {
+        resolver.diagnostic_builder.error(format!(
+          "could not retrieve global symbol: {}::{}::{}",
+          global_qualifier.0, global_qualifier.1, self.base_name
+        ));
+      }
+
       return;
     }
 
@@ -631,12 +639,15 @@ impl NameResolver {
 
   pub fn run(
     &mut self,
-    modules_asts: &mut std::collections::HashMap<GlobalQualifier, Vec<ast::Node>>,
+    asts: &mut std::collections::HashMap<GlobalQualifier, Vec<ast::Node>>,
     cache: &mut cache::Cache,
   ) -> Vec<diagnostic::Diagnostic> {
     let mut name_resolver = NameResolver::new();
 
-    for (global_qualifier, ast) in modules_asts {
+    // BUG: Cannot be processed linearly. Once an import is used, the whole corresponding
+    // ... module must be recursively processed first!
+
+    for (global_qualifier, ast) in asts.iter() {
       // REVIEW: Shouldn't the module be created before, on the Driver?
       name_resolver.create_module(global_qualifier.clone());
       name_resolver.set_module(global_qualifier.clone());
@@ -644,6 +655,10 @@ impl NameResolver {
       for node in ast.iter() {
         node.declare(&mut name_resolver);
       }
+    }
+
+    for (global_qualifier, ast) in asts {
+      name_resolver.set_module(global_qualifier.clone());
 
       for node in ast {
         // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
