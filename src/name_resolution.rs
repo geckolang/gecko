@@ -224,11 +224,15 @@ impl Resolve for ast::ExternStatic {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.ty.resolve(resolver, cache);
+
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::ExternStatic(self.clone()));
   }
 }
 
 impl Resolve for ast::StubType {
-  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_id = resolver.local_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }

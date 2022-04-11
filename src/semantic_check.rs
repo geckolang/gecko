@@ -358,7 +358,9 @@ impl SemanticCheck for ast::IntrinsicCall {
 }
 
 impl SemanticCheck for ast::ExternStatic {
-  //
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    self.ty.clone()
+  }
 }
 
 impl SemanticCheck for ast::StructValue {
@@ -447,6 +449,8 @@ impl SemanticCheck for ast::UnaryExpr {
       ast::OperatorKind::Cast => self.cast_type.as_ref().unwrap().clone(),
       ast::OperatorKind::Not => ast::Type::Basic(ast::BasicType::Bool),
       ast::OperatorKind::SubtractOrNegate => expr_type,
+      // BUG: The type must be whatever was inside the pointer; otherwise assume type error.
+      ast::OperatorKind::MultiplyOrDereference => expr_type,
       _ => unreachable!(),
     };
   }

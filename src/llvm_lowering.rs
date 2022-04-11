@@ -1036,7 +1036,6 @@ impl Lower for ast::Function {
       .get_param_iter()
       .zip(self.prototype.parameters.iter())
       .for_each(|params| {
-        params.1.lower(generator, cache);
         params
           .0
           .set_name(format!("param.{}", params.1.name).as_str());
@@ -1090,6 +1089,9 @@ impl Lower for ast::BlockExpr {
         return generator.lower_with_access_rules(statement, cache);
       }
 
+      // FIXME: Some binding statements (such as let-statement) need to be manually
+      // ... cached in the generator, this is because not all calls to lower it are made
+      // ... using the `memoize_or_retrieve_value` helper function (such as this one!).
       statement.lower(generator, cache);
 
       // Do not continue lowering statements if the current block was terminated.
@@ -1165,10 +1167,10 @@ impl Lower for ast::UnaryExpr {
         // FIXME: The expression shouldn't be accessed in this case. Find out how to accomplish this.
 
         // TODO: For the time being, this isn't being returned. This should be the return value.
-        self.expr.lower(generator, cache).unwrap();
+        self.expr.lower(generator, cache).unwrap()
 
         // TODO: Continue implementation.
-        todo!()
+        // todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
         let llvm_value = self.expr.lower(generator, cache).unwrap();
@@ -1227,9 +1229,13 @@ impl Lower for ast::LetStmt {
 
     generator.llvm_builder.build_store(llvm_alloca, llvm_value);
 
+    let result = llvm_alloca.as_basic_value_enum();
+
+    generator.llvm_cached_values.insert(self.binding_id, result);
+
     // BUG: This needs to return `Some` for the value of the let-statement to be memoized.
     // ... However, this also implies that the let-statement itself yields a value!
-    Some(llvm_alloca.as_basic_value_enum())
+    Some(result)
   }
 }
 
@@ -1358,19 +1364,36 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value_result = node.lower(self, cache);
-    let node_type = SemanticCheckContext::flatten_type(&node.infer_type(cache), cache);
+    let ty = SemanticCheckContext::flatten_type(&node.infer_type(cache), cache);
+
+    // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
 
     // REVIEW: Is there a need to resolve the type?
     // BUG: This won't work for nested string values. Cannot compare node kind.
     // Special case for string literals. They shouldn't be
     // lowered, since they're natural pointers. And for structs,
     // they must be passed as pointer values.
-    if (matches!(node_type, ast::Type::Basic(ast::BasicType::String))
+    if (matches!(ty, ast::Type::Basic(ast::BasicType::String))
       && !matches!(node.kind, ast::NodeKind::Reference(_)))
-      || matches!(node_type, ast::Type::Struct(_))
+      || matches!(ty, ast::Type::Struct(_))
+      || matches!(ty, ast::Type::Reference(_))
+      || matches!(ty, ast::Type::Pointer(_))
     {
       return llvm_value_result;
-    } else if let Some(llvm_value) = llvm_value_result {
+    }
+    // BUG: Temporary. Will not work for nested values.
+    else if let ast::NodeKind::Reference(reference) = &node.kind {
+      let target = cache
+        .symbols
+        .get(&reference.pattern.target_id.unwrap())
+        .unwrap();
+
+      if matches!(target, ast::NodeKind::Parameter(_)) {
+        return llvm_value_result;
+      }
+    } // else if let Some(llvm_value) = llvm_value_result ...
+
+    if let Some(llvm_value) = llvm_value_result {
       // FIXME: Strings shouldn't be accessed (exception).
       Some(self.attempt_access(llvm_value))
     } else {
