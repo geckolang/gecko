@@ -83,7 +83,7 @@ impl Resolve for ast::Trait {
 }
 
 impl Resolve for ast::ThisType {
-  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
     if let Some(this_type_id) = resolver.current_struct_type_id {
       self.target_id = Some(this_type_id);
     } else {
@@ -152,7 +152,7 @@ impl Resolve for ast::Closure {
     for (_index, capture) in self.captures.iter_mut().enumerate() {
       let symbol = (capture.0.clone(), SymbolKind::Definition);
 
-      capture.1 = resolver.lookup_or_error(&symbol);
+      capture.1 = resolver.local_lookup_or_error(&symbol);
 
       // FIXME: Anything else needs to be done here?
     }
@@ -190,9 +190,18 @@ impl Resolve for ast::TypeAlias {
 
 // REVIEW: This might be getting too complicated. Maybe we should keep it simple in this case?
 impl Resolve for ast::Pattern {
-  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
+    let symbol = (self.base_name.clone(), self.symbol_kind.clone());
+
+    if let Some(global_qualifier) = &self.global_qualifier {
+      // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
+      self.target_id = resolver.lookup(global_qualifier.clone(), &symbol);
+
+      return;
+    }
+
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_id = resolver.lookup_or_error(&(self.base_name.clone(), self.symbol_kind.clone()));
+    self.target_id = resolver.local_lookup_or_error(&symbol);
   }
 }
 
@@ -213,14 +222,14 @@ impl Resolve for ast::ExternStatic {
 impl Resolve for ast::StubType {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_id = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+    self.target_id = resolver.local_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
   }
 }
 
 impl Resolve for ast::StructValue {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_id = resolver.lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
+    self.target_id = resolver.local_lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
 
     if let Some(target_id) = self.target_id {
       // So, the new system will look like this:
@@ -344,7 +353,7 @@ impl Resolve for ast::ArrayIndexing {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.index_expr.resolve(resolver, cache);
-    self.target_id = resolver.lookup_or_error(&(self.name.clone(), SymbolKind::Definition));
+    self.target_id = resolver.local_lookup_or_error(&(self.name.clone(), SymbolKind::Definition));
   }
 }
 
@@ -587,12 +596,14 @@ impl Resolve for ast::BinaryExpr {
   }
 }
 
+pub type GlobalQualifier = (String, String);
+
 #[derive(Clone)]
 pub struct NameResolver {
   diagnostic_builder: diagnostic::DiagnosticBuilder,
-  current_module_name: Option<String>,
+  current_scope_qualifier: Option<GlobalQualifier>,
   /// Contains the modules with their respective top-level definitions.
-  global_scopes: std::collections::HashMap<String, Scope>,
+  global_scopes: std::collections::HashMap<GlobalQualifier, Scope>,
   /// Contains volatile, relative scopes. Only used during the declare step.
   /// This is reset when the module changes, although by that time, all the
   /// relative scopes should have been popped automatically.
@@ -609,7 +620,7 @@ impl NameResolver {
   pub fn new() -> Self {
     Self {
       diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
-      current_module_name: None,
+      current_scope_qualifier: None,
       global_scopes: std::collections::HashMap::new(),
       relative_scopes: Vec::new(),
       scope_map: std::collections::HashMap::new(),
@@ -620,41 +631,47 @@ impl NameResolver {
 
   pub fn run(
     &mut self,
-    ast: &mut Vec<ast::Node>,
+    modules_asts: &mut std::collections::HashMap<GlobalQualifier, Vec<ast::Node>>,
     cache: &mut cache::Cache,
   ) -> Vec<diagnostic::Diagnostic> {
     let mut name_resolver = NameResolver::new();
 
-    for node in ast.iter() {
-      node.declare(&mut name_resolver);
-    }
+    for (global_qualifier, ast) in modules_asts {
+      // REVIEW: Shouldn't the module be created before, on the Driver?
+      name_resolver.create_module(global_qualifier.clone());
+      name_resolver.set_module(global_qualifier.clone());
 
-    for node in ast {
-      // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
-      // ... an auxiliary map must be accepted in the parameters.
-      node.resolve(&mut name_resolver, cache);
+      for node in ast.iter() {
+        node.declare(&mut name_resolver);
+      }
+
+      for node in ast {
+        // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
+        // ... an auxiliary map must be accepted in the parameters.
+        node.resolve(&mut name_resolver, cache);
+      }
     }
 
     name_resolver.diagnostic_builder.diagnostics
   }
 
   /// Set per-file. A new global scope is created per-module.
-  pub fn create_module(&mut self, name: String) {
+  pub fn create_module(&mut self, global_qualifier: GlobalQualifier) {
     // REVIEW: Can the module name possibly collide with an existing one?
 
-    self.current_module_name = Some(name.clone());
+    self.current_scope_qualifier = Some(global_qualifier.clone());
 
     self
       .global_scopes
-      .insert(name, std::collections::HashMap::new());
+      .insert(global_qualifier, std::collections::HashMap::new());
 
     self.relative_scopes.clear();
   }
 
-  pub fn set_active_module(&mut self, name: String) -> bool {
+  pub fn set_module(&mut self, global_qualifier: GlobalQualifier) -> bool {
     // TODO: Implement checks (that module exists, etc.).
     // REVIEW: Shouldn't we reset buffers here? This might prevent the re-definition bug.
-    self.current_module_name = Some(name.clone());
+    self.current_scope_qualifier = Some(global_qualifier);
 
     true
   }
@@ -663,7 +680,7 @@ impl NameResolver {
   // ... the root nodes on the cache.
   fn declare_symbol(&mut self, symbol: Symbol, binding_id: cache::BindingId) {
     // Check for existing definitions.
-    if self.contains_current_scope(&symbol) {
+    if self.current_scope_contains(&symbol) {
       self
         .diagnostic_builder
         .error(format!("re-definition of `{}`", symbol.0));
@@ -682,7 +699,7 @@ impl NameResolver {
     if self.relative_scopes.is_empty() {
       return self
         .global_scopes
-        .get_mut(self.current_module_name.as_ref().unwrap())
+        .get_mut(self.current_scope_qualifier.as_ref().unwrap())
         .unwrap();
     }
 
@@ -729,9 +746,25 @@ impl NameResolver {
     self.get_current_scope().insert(symbol, binding_id);
   }
 
+  /// Lookup a symbol in the global scope of a specific package and module.
+  fn lookup(
+    &mut self,
+    global_qualifier: GlobalQualifier,
+    symbol: &Symbol,
+  ) -> Option<cache::BindingId> {
+    // TODO: Unsafe unwrap. We assume the global scope exists for the given parameters.
+    let global_scope = self.global_scopes.get(&global_qualifier).unwrap();
+
+    if let Some(binding_id) = global_scope.get(&symbol) {
+      return Some(binding_id.clone());
+    }
+
+    None
+  }
+
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope
   /// of the current module.
-  fn lookup(&mut self, symbol: &Symbol) -> Option<&cache::BindingId> {
+  fn local_lookup(&mut self, symbol: &Symbol) -> Option<cache::BindingId> {
     // If applicable, lookup on the relative scopes. This may not
     // be the case for when resolving global entities such as struct
     // types that reference other structs in their fields (in such case,
@@ -743,26 +776,18 @@ impl NameResolver {
       // First, attempt to find the symbol in the relative scopes.
       for scope in scope_tree {
         if let Some(binding_id) = scope.get(&symbol) {
-          return Some(binding_id);
+          return Some(binding_id.clone());
         }
       }
     }
 
+    // REVISE: Unsafe unwrap.
     // Otherwise, attempt to find the symbol in the current module's global scope.
-    let global_scope = self
-      .global_scopes
-      .get(self.current_module_name.as_ref().unwrap())
-      .unwrap();
-
-    if let Some(binding_id) = global_scope.get(&symbol) {
-      return Some(binding_id);
-    }
-
-    None
+    self.lookup(self.current_scope_qualifier.clone().unwrap(), symbol)
   }
 
-  fn lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::BindingId> {
-    if let Some(binding_id) = self.lookup(symbol) {
+  fn local_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::BindingId> {
+    if let Some(binding_id) = self.local_lookup(symbol) {
       return Some(binding_id.clone());
     }
 
@@ -773,7 +798,7 @@ impl NameResolver {
     None
   }
 
-  fn contains_current_scope(&mut self, key: &Symbol) -> bool {
+  fn current_scope_contains(&mut self, key: &Symbol) -> bool {
     self.get_current_scope().contains_key(key)
   }
 }
@@ -787,7 +812,7 @@ mod tests {
   fn proper_initial_values() {
     let name_resolver = NameResolver::new();
 
-    assert!(name_resolver.current_module_name.is_none());
+    assert!(name_resolver.current_scope_qualifier.is_none());
     assert!(name_resolver.relative_scopes.is_empty());
     assert!(name_resolver.global_scopes.is_empty());
   }

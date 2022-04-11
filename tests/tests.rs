@@ -64,6 +64,7 @@ mod tests {
     let mut type_context = gecko::semantic_check::SemanticCheckContext::new();
     let mut ast = std::collections::HashMap::new();
     let mut diagnostics = Vec::new();
+    let mock_package_name = "test".to_string();
 
     // Read, lex, parse, perform name resolution (declarations)
     // and collect the AST (top-level nodes) from each source file.
@@ -77,15 +78,14 @@ mod tests {
       // REVISE: File names need to conform to identifier rules.
       let source_file_name = source_files[index].to_string();
 
-      name_resolver.create_module(source_file_name.clone());
-      ast.insert(source_file_name, top_level_nodes);
+      let global_qualifier = (mock_package_name.clone(), source_file_name.clone());
+
+      name_resolver.create_module(global_qualifier.clone());
+      ast.insert(global_qualifier, top_level_nodes);
     }
 
     // After all the ASTs have been collected, perform name resolution step.
-    for (module_name, inner_ast) in &mut ast {
-      name_resolver.set_active_module(module_name.clone());
-      diagnostics.extend(name_resolver.run(inner_ast, &mut cache));
-    }
+    diagnostics.extend(name_resolver.run(&mut ast, &mut cache));
 
     // Cannot continue to other phases if name resolution failed.
     assert!(diagnostics.is_empty());
@@ -105,8 +105,9 @@ mod tests {
 
     // REVISE: Any way for better efficiency (less loops)?
     // Once symbols are resolved, we can proceed to the other phases.
-    for (module_name, inner_ast) in &mut ast {
-      llvm_generator.module_name = module_name.clone();
+    for (global_qualifier, inner_ast) in &mut ast {
+      // TODO: Must join package and module name for uniqueness.
+      llvm_generator.module_name = global_qualifier.1.clone();
 
       for top_level_node in inner_ast {
         top_level_node.lower(&mut llvm_generator, &mut cache);

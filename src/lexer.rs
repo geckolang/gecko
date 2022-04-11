@@ -81,7 +81,7 @@ pub enum TokenKind {
   FatArrow,
   Ellipsis,
   Import,
-  Scope,
+  DoubleColon,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -320,7 +320,7 @@ impl Lexer {
         ':' if self.peek_char() == Some(':') => {
           self.read_char();
 
-          TokenKind::Scope
+          TokenKind::DoubleColon
         }
         ':' => TokenKind::Colon,
         '&' => TokenKind::Ampersand,

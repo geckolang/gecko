@@ -182,7 +182,7 @@ pub struct ThisType {
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
 #[derive(Debug, Clone)]
 pub struct Pattern {
-  pub module_name: Option<String>,
+  pub global_qualifier: Option<name_resolution::GlobalQualifier>,
   pub base_name: String,
   pub symbol_kind: name_resolution::SymbolKind,
   pub target_id: Option<cache::BindingId>,

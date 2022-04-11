@@ -220,22 +220,24 @@ impl<'a> Parser<'a> {
   ) -> ParserResult<ast::Pattern> {
     let starting_name = self.parse_name()?;
 
-    let module_name = if self.is(&lexer::TokenKind::Colon) {
+    let global_qualifier = if self.is(&lexer::TokenKind::DoubleColon) {
       self.try_skip();
 
-      Some(starting_name.clone())
+      let module_name = self.parse_name()?;
+
+      Some((starting_name.clone(), module_name))
     } else {
       None
     };
 
-    let base_name = if module_name.is_none() {
+    let base_name = if global_qualifier.is_none() {
       starting_name
     } else {
       self.parse_name()?
     };
 
     Ok(ast::Pattern {
-      module_name,
+      global_qualifier,
       base_name,
       symbol_kind,
       target_id: None,
@@ -1422,7 +1424,7 @@ impl<'a> Parser<'a> {
 
     let package_name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::Scope)?;
+    self.skip_past(&lexer::TokenKind::DoubleColon)?;
 
     let module_name = self.parse_name()?;
 
