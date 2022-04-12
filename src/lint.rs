@@ -56,6 +56,10 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::SizeofIntrinsic {
+  //
+}
+
 impl Lint for ast::Import {
   //
 }

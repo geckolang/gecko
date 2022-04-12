@@ -61,6 +61,12 @@ impl Resolve for ast::NodeKind {
   }
 }
 
+impl Resolve for ast::SizeofIntrinsic {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.ty.resolve(resolver, cache);
+  }
+}
+
 impl Resolve for ast::Import {
   //
 }
@@ -232,9 +238,8 @@ impl Resolve for ast::ExternStatic {
 }
 
 impl Resolve for ast::StubType {
-  fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
-    // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_id = resolver.local_lookup_or_error(&(self.name.clone(), SymbolKind::Type));
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.pattern.resolve(resolver, cache);
   }
 }
 

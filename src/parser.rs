@@ -276,9 +276,17 @@ impl<'a> Parser<'a> {
         if self.is(&lexer::TokenKind::Equal) {
           ast::NodeKind::AssignStmt(self.parse_assign_stmt(expr)?)
         } else {
-          ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
+          let inline_expr_stmt = ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
             expr: Box::new(expr),
-          })
+          });
+
+          // FIXME: Temporary workaround for yield expressions.
+          if self.is(&lexer::TokenKind::SemiColon) {
+            self.try_skip();
+          }
+          // self.skip_past(&lexer::TokenKind::SemiColon)?;
+
+          inline_expr_stmt
         }
       }
     };
@@ -406,6 +414,7 @@ impl<'a> Parser<'a> {
 
         Ok(ast::Type::Basic(ast::BasicType::String))
       }
+      lexer::TokenKind::TypeThis => self.parse_this_type(),
       _ => return Err(self.expected("type")),
     }?;
 
@@ -455,12 +464,9 @@ impl<'a> Parser<'a> {
 
   /// %name
   fn parse_stub_type(&mut self) -> ParserResult<ast::Type> {
-    let name = self.parse_name()?;
+    let pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
 
-    Ok(ast::Type::Stub(ast::StubType {
-      name,
-      target_id: None,
-    }))
+    Ok(ast::Type::Stub(ast::StubType { pattern }))
   }
 
   /// %name ':' %type
@@ -732,6 +738,8 @@ impl<'a> Parser<'a> {
       None
     };
 
+    self.skip_past(&lexer::TokenKind::SemiColon)?;
+
     Ok(ast::ReturnStmt { value })
   }
 
@@ -756,6 +764,8 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Equal)?;
 
     let value = self.parse_expr()?;
+
+    self.skip_past(&lexer::TokenKind::SemiColon)?;
 
     // TODO: Value should be treated as rvalue, unless its using an address-of operator. Find out how to translate this to logic.
 
@@ -811,6 +821,7 @@ impl<'a> Parser<'a> {
   /// break
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
     self.skip_past(&lexer::TokenKind::Break)?;
+    self.skip_past(&lexer::TokenKind::SemiColon)?;
 
     Ok(ast::BreakStmt {})
   }
@@ -818,6 +829,7 @@ impl<'a> Parser<'a> {
   /// continue
   fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
     self.skip_past(&lexer::TokenKind::Continue)?;
+    self.skip_past(&lexer::TokenKind::SemiColon)?;
 
     Ok(ast::ContinueStmt)
   }
@@ -828,6 +840,11 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::Unsafe)?;
     self.skip_past(&lexer::TokenKind::Arrow)?;
+
+    // BUG: Is there a need for a semi-colon here? I think there is, since the unsafe
+    // ... block contains an expression as its last syntax element. Perhaps all those that
+    // ... include an expression as their last syntax element require a semi-colon (to avoid
+    // ... ambiguity with the binary operation parsing).
 
     Ok(ast::UnsafeExpr(Box::new(self.parse_expr()?)))
   }
@@ -927,6 +944,29 @@ impl<'a> Parser<'a> {
     })
   }
 
+  fn parse_nullptr_literal(&mut self) -> ParserResult<ast::Literal> {
+    self.skip_past(&lexer::TokenKind::Nullptr)?;
+    self.skip_past(&lexer::TokenKind::BracketL)?;
+
+    let ty = self.parse_type()?;
+
+    self.skip_past(&lexer::TokenKind::BracketR)?;
+
+    Ok(ast::Literal::Nullptr(ty))
+  }
+
+  fn parse_sizeof_intrinsic(&mut self) -> ParserResult<ast::SizeofIntrinsic> {
+    self.skip_past(&lexer::TokenKind::QuestionMark)?;
+    self.skip_past(&lexer::TokenKind::Sizeof)?;
+    self.skip_past(&lexer::TokenKind::BracketL)?;
+
+    let ty = self.parse_type()?;
+
+    self.skip_past(&lexer::TokenKind::BracketR)?;
+
+    Ok(ast::SizeofIntrinsic { ty })
+  }
+
   fn parse_literal(&mut self) -> ParserResult<ast::Literal> {
     let current_token = self.force_get();
 
@@ -934,11 +974,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Bool(_) => self.parse_bool_literal()?,
       lexer::TokenKind::Int(_) => self.parse_int_literal()?,
       lexer::TokenKind::String(_) => self.parse_string_literal()?,
-      lexer::TokenKind::Nullptr => {
-        self.try_skip();
-
-        ast::Literal::Nullptr
-      }
+      lexer::TokenKind::Nullptr => self.parse_nullptr_literal()?,
       _ => return Err(self.expected("literal")),
     })
   }
@@ -1003,6 +1039,9 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
       lexer::TokenKind::BraceL => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
+      lexer::TokenKind::QuestionMark => {
+        ast::NodeKind::SizeofIntrinsic(self.parse_sizeof_intrinsic()?)
+      }
       lexer::TokenKind::ParenthesesL => {
         ast::NodeKind::ParenthesesExpr(self.parse_parentheses_expr()?)
       }
@@ -1219,6 +1258,8 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Equal)?;
 
     let value = Box::new(self.parse_expr()?);
+
+    self.skip_past(&lexer::TokenKind::SemiColon)?;
 
     Ok(ast::AssignStmt {
       assignee_expr: Box::new(assignee_expr),

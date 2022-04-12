@@ -38,6 +38,7 @@ macro_rules! dispatch {
       ast::NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Import(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -142,6 +143,7 @@ pub enum NodeKind {
   Trait(Trait),
   ParenthesesExpr(ParenthesesExpr),
   Import(Import),
+  SizeofIntrinsic(SizeofIntrinsic),
 }
 
 #[derive(Debug, Clone)]
@@ -180,7 +182,7 @@ pub struct ThisType {
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
   pub global_qualifier: Option<name_resolution::GlobalQualifier>,
   pub base_name: String,
@@ -190,8 +192,7 @@ pub struct Pattern {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StubType {
-  pub name: String,
-  pub target_id: Option<cache::BindingId>,
+  pub pattern: Pattern,
 }
 
 #[derive(Debug, Clone)]
@@ -263,12 +264,17 @@ pub struct AssignStmt {
 }
 
 #[derive(Debug, Clone)]
+pub struct SizeofIntrinsic {
+  pub ty: Type,
+}
+
+#[derive(Debug, Clone)]
 pub enum Literal {
   Bool(bool),
   Int(u64, IntSize),
   Char(char),
   String(String),
-  Nullptr,
+  Nullptr(Type),
 }
 
 #[derive(Debug, Clone)]

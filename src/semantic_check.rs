@@ -106,7 +106,7 @@ impl SemanticCheckContext {
 
     // REVIEW: What if it's a pointer to a user-defined type?
     if let ast::Type::Stub(stub_type) = ty {
-      let target_node = cache.unsafe_get(&stub_type.target_id.unwrap());
+      let target_node = cache.unsafe_get(&stub_type.pattern.target_id.unwrap());
 
       // REVIEW: What about type aliases, and other types that might be encountered in the future?
 
@@ -189,6 +189,22 @@ impl SemanticCheck for ast::NodeKind {
 
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     dispatch!(&self, SemanticCheck::infer_type, cache)
+  }
+}
+
+impl SemanticCheck for ast::SizeofIntrinsic {
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I64))
+  }
+
+  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+    let flattened_type = SemanticCheckContext::flatten_type(&self.ty, cache);
+
+    if matches!(flattened_type, ast::Type::Unit) {
+      context
+        .diagnostic_builder
+        .error("cannot determine size of unit type".to_string());
+    }
   }
 }
 
@@ -275,7 +291,10 @@ impl SemanticCheck for ast::StructImpl {
 
 impl SemanticCheck for ast::MemberAccess {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type = match self.base_expr.infer_type(cache) {
+    let resolved_base_expr_type =
+      SemanticCheckContext::flatten_type(&self.base_expr.infer_type(cache), cache);
+
+    let struct_type = match resolved_base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
       // REVIEW: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
       _ => return ast::Type::Error,
@@ -303,7 +322,10 @@ impl SemanticCheck for ast::MemberAccess {
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let struct_type = match self.base_expr.infer_type(cache) {
+    let resolved_base_expr_type =
+      SemanticCheckContext::flatten_type(&self.base_expr.infer_type(cache), cache);
+
+    let struct_type = match resolved_base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
       // TODO: Implement.
       ast::Type::This(_) => return,
@@ -456,7 +478,7 @@ impl SemanticCheck for ast::UnaryExpr {
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let expr_type = self.expr.infer_type(cache);
+    let expr_type = SemanticCheckContext::infer_and_resolve_type(&self.expr, cache);
 
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
@@ -495,10 +517,10 @@ impl SemanticCheck for ast::UnaryExpr {
       }
       ast::OperatorKind::AddressOf => {
         // TODO: Implement.
-        todo!();
+        return;
       }
       ast::OperatorKind::Cast => {
-        // REVIEW: What if it's an alias?
+        // REVIEW: What if it's an alias? This could be solved by flattening above.
         if !matches!(expr_type, ast::Type::Basic(_))
           || !matches!(self.cast_type.as_ref().unwrap(), ast::Type::Basic(_))
         {
@@ -706,6 +728,8 @@ impl SemanticCheck for ast::Parameter {
 
 impl SemanticCheck for ast::BlockExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    // BUG: Missing logic for the `return` statement. What about its type? It should
+    // ... be inferred too, no?
     // If the last expression isn't yielded, then the block's type
     // defaults to unit. If there's no statements on the block, the
     // type of the block will logically be unit. Finally, if there is
@@ -751,7 +775,7 @@ impl SemanticCheck for ast::Literal {
       ast::Literal::Char(_) => ast::BasicType::Char,
       ast::Literal::Int(_, size) => ast::BasicType::Int(size.clone()),
       ast::Literal::String(_) => ast::BasicType::String,
-      ast::Literal::Nullptr => {
+      ast::Literal::Nullptr(_) => {
         return ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::Null)))
       }
     })
@@ -1087,6 +1111,10 @@ impl SemanticCheck for ast::CallExpr {
     //     ));
     //   }
     // }
+
+    for argument in &self.arguments {
+      argument.check(context, cache);
+    }
   }
 }
 

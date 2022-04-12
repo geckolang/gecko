@@ -82,6 +82,9 @@ pub enum TokenKind {
   Ellipsis,
   Import,
   DoubleColon,
+  QuestionMark,
+  Sizeof,
+  Pipe,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -317,6 +320,11 @@ impl Lexer {
         '(' => TokenKind::ParenthesesL,
         ')' => TokenKind::ParenthesesR,
         '~' => TokenKind::Tilde,
+        '|' if self.peek_char() == Some('>') => {
+          self.read_char();
+
+          TokenKind::Pipe
+        }
         ':' if self.peek_char() == Some(':') => {
           self.read_char();
 
@@ -370,6 +378,7 @@ impl Lexer {
         '.' => TokenKind::Dot,
         '@' => TokenKind::At,
         '`' => TokenKind::Backtick,
+        '?' => TokenKind::QuestionMark,
         _ => {
           // NOTE: Identifiers will never start with a digit.
           return if current_char == '_' || is_letter(current_char) {
@@ -462,6 +471,7 @@ fn match_token(identifier: &str) -> Option<TokenKind> {
     "true" => TokenKind::Bool(true),
     "false" => TokenKind::Bool(false),
     "import" => TokenKind::Import,
+    "sizeof" => TokenKind::Sizeof,
     _ => return None,
   })
 }
