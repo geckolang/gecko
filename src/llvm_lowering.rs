@@ -274,6 +274,8 @@ impl Lower for ast::StructValue {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct_type = generator.memoize_or_retrieve_type(self.target_id.unwrap(), cache);
 
+    // llvm_struct_type.into_struct_type().const_named_struct(values)
+
     let llvm_struct_alloca = generator.llvm_builder.build_alloca(
       llvm_struct_type,
       format!("struct.{}.alloca", self.struct_name).as_str(),
@@ -1236,7 +1238,7 @@ impl Lower for ast::LetStmt {
     // Special cases. The allocation is done elsewhere.
     if matches!(
       SemanticCheckContext::flatten_type(&self.ty, cache),
-      ast::Type::Function(_) | ast::Type::Struct(_)
+      ast::Type::Function(_)
     ) {
       // REVISE: Cleanup the caching code.
       // REVIEW: Here create a definition for the closure, with the let statement as the name?

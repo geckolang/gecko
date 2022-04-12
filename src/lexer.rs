@@ -582,9 +582,9 @@ mod tests {
 
   #[test]
   fn lex_illegal() {
-    let mut lexer = Lexer::new(vec!['?']);
+    let mut lexer = Lexer::new(vec!['|']);
 
-    assert_eq!(Ok(TokenKind::Illegal('?')), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Illegal('|')), lexer.lex_token());
   }
 
   #[test]
