@@ -1369,7 +1369,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   pub module_name: String,
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
-  llvm_builder: inkwell::builder::Builder<'ctx>,
+  pub(super) llvm_builder: inkwell::builder::Builder<'ctx>,
   llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Shouldn't this be a vector instead?
   llvm_cached_values:
@@ -1377,7 +1377,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_cached_types:
     std::collections::HashMap<cache::BindingId, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
-  current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
+  pub(super) current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   print_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   mangle_counter: usize,
@@ -1843,115 +1843,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
 #[cfg(test)]
 mod tests {
-  use crate::diagnostic;
-
   use super::*;
+  use crate::mock::{self, ComparableMock};
 
-  struct MockFunctionBuilder<'a, 'ctx> {
-    builder: &'a mut MockBuilder<'a, 'ctx>,
-    function: inkwell::values::FunctionValue<'ctx>,
-  }
-
-  impl<'a, 'ctx> MockFunctionBuilder<'a, 'ctx> {
-    pub fn new(
-      builder: &'a mut MockBuilder<'a, 'ctx>,
-      function: inkwell::values::FunctionValue<'ctx>,
-    ) -> Self {
-      Self { builder, function }
-    }
-
-    pub fn with_loop(&mut self) -> &mut Self {
-      self.builder.generator.current_loop_block = Some(
-        self
-          .builder
-          .generator
-          .llvm_builder
-          .get_insert_block()
-          .unwrap(),
-      );
-
-      self
-    }
-
-    // TODO: This should return something comparable.
-    pub fn lower(&mut self, node: ast::NodeKind) -> &mut Self {
-      node.lower(&mut self.builder.generator, &self.builder.cache);
-
-      self
-    }
-
-    pub fn verify(&mut self) -> &mut Self {
-      assert!(self.builder.llvm_module.verify().is_ok());
-
-      self
-    }
-
-    pub fn compare_with(&self, expected: &str) {
-      let normalize_regex = regex::Regex::new(r"[\s]+").unwrap();
-      let actual = self.get();
-      let actual_fixed = normalize_regex.replace_all(actual.as_str(), " ");
-      let expected_fixed = normalize_regex.replace_all(expected, " ");
-
-      assert_eq!(actual_fixed.trim(), expected_fixed.trim());
-    }
-
-    pub fn get(&self) -> String {
-      self
-        .function
-        .as_global_value()
-        .print_to_string()
-        .to_string()
-    }
-  }
-
-  struct MockBuilder<'a, 'ctx> {
-    llvm_context: &'ctx inkwell::context::Context,
-    llvm_module: &'a inkwell::module::Module<'ctx>,
-    generator: LlvmGenerator<'a, 'ctx>,
-    cache: cache::Cache,
-  }
-
-  impl<'a, 'ctx> MockBuilder<'a, 'ctx> {
-    pub fn new(
-      llvm_context: &'ctx inkwell::context::Context,
-      llvm_module: &'a inkwell::module::Module<'ctx>,
-    ) -> Self {
-      Self {
-        llvm_context,
-        llvm_module,
-        generator: LlvmGenerator::new(llvm_context, llvm_module),
-        cache: cache::Cache::new(),
-      }
-    }
-
-    pub fn test_fn(&'a mut self) -> MockFunctionBuilder<'a, 'ctx> {
-      let main_fn = self.llvm_module.add_function(
-        "test",
-        self.llvm_context.void_type().fn_type(&[], false),
-        None,
-      );
-
-      let entry_block = self.llvm_context.append_basic_block(main_fn, "entry");
-
-      self.generator.llvm_builder.position_at_end(entry_block);
-
-      MockFunctionBuilder::new(self, main_fn)
-    }
-  }
-
-  fn mock_node(kind: ast::NodeKind) -> ast::Node {
-    ast::Node { kind, span: 0..0 }
-  }
+  // TODO: Test mocking helpers themselves (in their own file).
 
   #[test]
   fn proper_initial_values() {
     // TODO:
-    let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
-
-    let mut builder = MockBuilder::new(&llvm_context, &llvm_module);
-
-    builder.test_fn();
   }
 
   #[test]
@@ -1960,11 +1859,11 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let node = ast::NodeKind::BreakStmt(ast::BreakStmt {});
 
-    MockBuilder::new(&llvm_context, &llvm_module)
-      .test_fn()
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .function()
       .with_loop()
-      .lower(node)
-      .compare_with("define void @test() { entry: br label %entry }");
+      .lower(&node)
+      .compare_with_file("break_stmt");
   }
 
   #[test]
@@ -1973,11 +1872,10 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let node = ast::NodeKind::ContinueStmt(ast::ContinueStmt {});
 
-    MockBuilder::new(&llvm_context, &llvm_module)
-      .test_fn()
-      .with_loop()
-      .lower(node)
-      .compare_with("define void @test() { entry: br label %entry }");
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .function()
+      .lower(&node)
+      .compare_with_file("continue_stmt");
   }
 
   #[test]
@@ -1989,15 +1887,31 @@ mod tests {
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
-      value: Box::new(mock_node(value)),
+      value: Box::new(mock::Mock::node(value)),
       is_mutable: false,
       binding_id: 0,
     });
 
-    MockBuilder::new(&llvm_context, &llvm_module)
-      .test_fn()
-      .with_loop()
-      .lower(let_stmt)
-      .compare_with("define void @test() { entry: %var.a = alloca i32, align 4 store i32 1, i32* %var.a, align 4 }");
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .function()
+      .lower(&let_stmt)
+      .compare_with_file("let_stmt");
+  }
+
+  #[test]
+  fn lower_enum() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+
+    let enum_ = ast::NodeKind::Enum(ast::Enum {
+      name: "a".to_string(),
+      variants: vec!["b".to_string(), "c".to_string()],
+      binding_id: 0,
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .module()
+      .lower(&enum_)
+      .compare_with_file("enum");
   }
 }
