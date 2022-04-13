@@ -272,16 +272,11 @@ impl Lower for ast::StructValue {
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_struct_type = generator.memoize_or_retrieve_type(self.target_id.unwrap(), cache);
+    let llvm_struct_type = generator
+      .memoize_or_retrieve_type(self.target_id.unwrap(), cache)
+      .into_struct_type();
 
-    // llvm_struct_type.into_struct_type().const_named_struct(values)
-
-    let llvm_struct_alloca = generator.llvm_builder.build_alloca(
-      llvm_struct_type,
-      format!("struct.{}.alloca", self.struct_name).as_str(),
-    );
-
-    let llvm_struct_value = generator.access(llvm_struct_alloca).into_struct_value();
+    let mut llvm_fields = Vec::new();
 
     // Populate struct fields.
     for (index, field) in self.fields.iter().enumerate() {
@@ -300,18 +295,22 @@ impl Lower for ast::StructValue {
         .lower_with_access_rules(&field.kind, cache)
         .unwrap();
 
-      generator.llvm_builder.build_insert_value(
-        llvm_struct_value,
-        llvm_field_value,
-        index as u32,
-        "struct.insert.value",
-      );
+      llvm_fields.push(llvm_field_value);
+
+      // generator.llvm_builder.build_insert_value(
+      //   llvm_struct_value,
+      //   llvm_field_value,
+      //   index as u32,
+      //   "struct.insert.value",
+      // );
 
       // generator
       //   .llvm_builder
       //   // FIXME: For nested structs, they will return `None`.
       //   .build_store(struct_field_gep, llvm_field_value);
     }
+
+    let llvm_struct_value = llvm_struct_type.const_named_struct(llvm_fields.as_slice());
 
     // REVISE: Inconsistent. Deals with flag, also what about on the case of an assignment?
     // If the array value is being directly assigned to a variable,
@@ -322,7 +321,7 @@ impl Lower for ast::StructValue {
     //   generator.access(llvm_struct_alloca)
     // })
 
-    Some(llvm_struct_alloca.as_basic_value_enum())
+    Some(llvm_struct_value.as_basic_value_enum())
   }
 }
 
@@ -373,7 +372,7 @@ impl Lower for ast::AssignStmt {
 
     // NOTE: In the case that our target is a let-statement (through
     // a reference), memoization or retrieval will occur on the lowering
-    // step of the reference.
+    // step of the reference. The assignee should also not be accessed.
     let llvm_assignee = self.assignee_expr.lower(generator, cache).unwrap();
 
     generator
@@ -1202,6 +1201,9 @@ impl Lower for ast::UnaryExpr {
       ast::OperatorKind::MultiplyOrDereference => {
         let llvm_value = self.expr.lower(generator, cache).unwrap();
 
+        // BUG: If the value is a reference to a let-statement, the pointer of
+        // ... the let-statement will be removed, but the actual pointer value will
+        // ... not be accessed. Perhaps will need to remove special treatment of let-statements.
         generator.access(llvm_value.into_pointer_value())
       }
       ast::OperatorKind::Cast => {
@@ -1836,5 +1838,166 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
 
     return llvm_value;
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use crate::diagnostic;
+
+  use super::*;
+
+  struct MockFunctionBuilder<'a, 'ctx> {
+    builder: &'a mut MockBuilder<'a, 'ctx>,
+    function: inkwell::values::FunctionValue<'ctx>,
+  }
+
+  impl<'a, 'ctx> MockFunctionBuilder<'a, 'ctx> {
+    pub fn new(
+      builder: &'a mut MockBuilder<'a, 'ctx>,
+      function: inkwell::values::FunctionValue<'ctx>,
+    ) -> Self {
+      Self { builder, function }
+    }
+
+    pub fn with_loop(&mut self) -> &mut Self {
+      self.builder.generator.current_loop_block = Some(
+        self
+          .builder
+          .generator
+          .llvm_builder
+          .get_insert_block()
+          .unwrap(),
+      );
+
+      self
+    }
+
+    // TODO: This should return something comparable.
+    pub fn lower(&mut self, node: ast::NodeKind) -> &mut Self {
+      node.lower(&mut self.builder.generator, &self.builder.cache);
+
+      self
+    }
+
+    pub fn verify(&mut self) -> &mut Self {
+      assert!(self.builder.llvm_module.verify().is_ok());
+
+      self
+    }
+
+    pub fn compare_with(&self, expected: &str) {
+      let normalize_regex = regex::Regex::new(r"[\s]+").unwrap();
+      let actual = self.get();
+      let actual_fixed = normalize_regex.replace_all(actual.as_str(), " ");
+      let expected_fixed = normalize_regex.replace_all(expected, " ");
+
+      assert_eq!(actual_fixed.trim(), expected_fixed.trim());
+    }
+
+    pub fn get(&self) -> String {
+      self
+        .function
+        .as_global_value()
+        .print_to_string()
+        .to_string()
+    }
+  }
+
+  struct MockBuilder<'a, 'ctx> {
+    llvm_context: &'ctx inkwell::context::Context,
+    llvm_module: &'a inkwell::module::Module<'ctx>,
+    generator: LlvmGenerator<'a, 'ctx>,
+    cache: cache::Cache,
+  }
+
+  impl<'a, 'ctx> MockBuilder<'a, 'ctx> {
+    pub fn new(
+      llvm_context: &'ctx inkwell::context::Context,
+      llvm_module: &'a inkwell::module::Module<'ctx>,
+    ) -> Self {
+      Self {
+        llvm_context,
+        llvm_module,
+        generator: LlvmGenerator::new(llvm_context, llvm_module),
+        cache: cache::Cache::new(),
+      }
+    }
+
+    pub fn test_fn(&'a mut self) -> MockFunctionBuilder<'a, 'ctx> {
+      let main_fn = self.llvm_module.add_function(
+        "test",
+        self.llvm_context.void_type().fn_type(&[], false),
+        None,
+      );
+
+      let entry_block = self.llvm_context.append_basic_block(main_fn, "entry");
+
+      self.generator.llvm_builder.position_at_end(entry_block);
+
+      MockFunctionBuilder::new(self, main_fn)
+    }
+  }
+
+  fn mock_node(kind: ast::NodeKind) -> ast::Node {
+    ast::Node { kind, span: 0..0 }
+  }
+
+  #[test]
+  fn proper_initial_values() {
+    // TODO:
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+
+    let mut builder = MockBuilder::new(&llvm_context, &llvm_module);
+
+    builder.test_fn();
+  }
+
+  #[test]
+  fn lower_break_stmt() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let node = ast::NodeKind::BreakStmt(ast::BreakStmt {});
+
+    MockBuilder::new(&llvm_context, &llvm_module)
+      .test_fn()
+      .with_loop()
+      .lower(node)
+      .compare_with("define void @test() { entry: br label %entry }");
+  }
+
+  #[test]
+  fn lower_continue_stmt() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let node = ast::NodeKind::ContinueStmt(ast::ContinueStmt {});
+
+    MockBuilder::new(&llvm_context, &llvm_module)
+      .test_fn()
+      .with_loop()
+      .lower(node)
+      .compare_with("define void @test() { entry: br label %entry }");
+  }
+
+  #[test]
+  fn lower_let_stmt() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let value = ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32));
+
+    let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "a".to_string(),
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      value: Box::new(mock_node(value)),
+      is_mutable: false,
+      binding_id: 0,
+    });
+
+    MockBuilder::new(&llvm_context, &llvm_module)
+      .test_fn()
+      .with_loop()
+      .lower(let_stmt)
+      .compare_with("define void @test() { entry: %var.a = alloca i32, align 4 store i32 1, i32* %var.a, align 4 }");
   }
 }

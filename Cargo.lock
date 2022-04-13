@@ -70,6 +70,7 @@ dependencies = [
  "colored",
  "convert_case",
  "inkwell",
+ "regex",
 ]
 
 [[package]]

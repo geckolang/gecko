@@ -546,6 +546,7 @@ impl SemanticCheck for ast::AssignStmt {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     // TODO: Need to unify the value and the target's type.
 
+    // REVIEW: No need to flatten the type?
     let assignee_type = self.assignee_expr.infer_type(cache);
 
     if matches!(
