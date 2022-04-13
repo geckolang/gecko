@@ -1028,7 +1028,7 @@ impl<'a> Parser<'a> {
       {
         ast::NodeKind::Closure(self.parse_closure()?)
       }
-      lexer::TokenKind::If => ast::NodeKind::IfStmt(self.parse_if_expr()?),
+      lexer::TokenKind::If => ast::NodeKind::IfExpr(self.parse_if_expr()?),
       lexer::TokenKind::Tilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       // REVISE: Change this syntax to the same treatment as call expressions (check afterwards).
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::BracketL) => {

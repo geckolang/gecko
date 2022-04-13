@@ -1370,7 +1370,7 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
   pub(super) llvm_builder: inkwell::builder::Builder<'ctx>,
-  llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
+  pub(super) llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Shouldn't this be a vector instead?
   llvm_cached_values:
     std::collections::HashMap<cache::BindingId, inkwell::values::BasicValueEnum<'ctx>>,
@@ -1882,12 +1882,11 @@ mod tests {
   fn lower_let_stmt() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let value = ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32));
 
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
-      value: Box::new(mock::Mock::node(value)),
+      value: Box::new(mock::Mock::node(mock::Mock::literal_int())),
       is_mutable: false,
       binding_id: 0,
     });
@@ -1913,5 +1912,86 @@ mod tests {
       .module()
       .lower(&enum_)
       .compare_with_file("enum");
+  }
+
+  #[test]
+  fn lower_return_stmt_unit() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt { value: None });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .function()
+      .lower(&return_stmt)
+      .compare_with_file("return_stmt_unit");
+  }
+
+  #[test]
+  fn lower_return_stmt() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+
+    let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
+      value: Some(Box::new(mock::Mock::node(mock::Mock::literal_int()))),
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .function()
+      .lower(&return_stmt)
+      .compare_with_file("return_stmt");
+  }
+
+  #[test]
+  fn lower_extern_fn() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+
+    let extern_fn = ast::NodeKind::ExternFunction(ast::ExternFunction {
+      name: "a".to_string(),
+      prototype: mock::Mock::prototype_simple(true),
+      attributes: Vec::new(),
+      binding_id: 0,
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .module()
+      .lower(&extern_fn)
+      .compare_with_file("extern_fn");
+  }
+
+  #[test]
+  fn lower_extern_static() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+
+    let extern_static = ast::NodeKind::ExternStatic(ast::ExternStatic {
+      name: "a".to_string(),
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      binding_id: 0,
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .module()
+      .lower(&extern_static)
+      .compare_with_file("extern_static");
+  }
+
+  #[test]
+  fn lower_if_expr_simple() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+
+    let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
+      condition: Box::new(mock::Mock::node(ast::NodeKind::Literal(
+        ast::Literal::Bool(true),
+      ))),
+      then_value: Box::new(mock::Mock::node(mock::Mock::literal_int())),
+      else_value: None,
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .function()
+      .lower(&if_expr)
+      .compare_with_file("if_expr_simple");
   }
 }

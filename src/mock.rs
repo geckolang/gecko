@@ -95,6 +95,22 @@ pub struct Mock<'a, 'ctx> {
 }
 
 impl<'a, 'ctx> Mock<'a, 'ctx> {
+  pub fn literal_int() -> ast::NodeKind {
+    ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
+  }
+
+  pub fn prototype_simple(is_extern: bool) -> ast::Prototype {
+    ast::Prototype {
+      parameters: Vec::new(),
+      return_type: ast::Type::Unit,
+      is_variadic: false,
+      is_extern,
+      accepts_instance: false,
+      instance_type_id: None,
+      this_parameter: None,
+    }
+  }
+
   pub fn compare(actual: &str, expected: &str) {
     let normalize_regex = regex::Regex::new(r"[\s]+").unwrap();
     let actual_fixed = normalize_regex.replace_all(actual, " ");
@@ -137,6 +153,7 @@ impl<'a, 'ctx> Mock<'a, 'ctx> {
     let entry_block = self.context.append_basic_block(function, "entry");
 
     self.generator.llvm_builder.position_at_end(entry_block);
+    self.generator.llvm_function_buffer = Some(function);
 
     FunctionMock::new(self, function)
   }
