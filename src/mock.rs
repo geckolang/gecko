@@ -1,5 +1,5 @@
-use crate::llvm_lowering::Lower;
 use crate::{ast, cache, llvm_lowering::LlvmGenerator};
+use crate::{llvm_lowering::Lower, name_resolution};
 
 pub trait ComparableMock: ToString {
   fn compare_with(&self, expected: &str) {
@@ -99,6 +99,17 @@ impl<'a, 'ctx> Mock<'a, 'ctx> {
     ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
   }
 
+  pub fn reference(binding_id: cache::BindingId) -> ast::NodeKind {
+    ast::NodeKind::Reference(ast::Reference {
+      pattern: ast::Pattern {
+        global_qualifier: None,
+        base_name: "test".to_string(),
+        symbol_kind: name_resolution::SymbolKind::Definition,
+        target_id: Some(binding_id),
+      },
+    })
+  }
+
   pub fn prototype_simple(is_extern: bool) -> ast::Prototype {
     ast::Prototype {
       parameters: Vec::new(),
@@ -112,11 +123,19 @@ impl<'a, 'ctx> Mock<'a, 'ctx> {
   }
 
   pub fn compare(actual: &str, expected: &str) {
-    let normalize_regex = regex::Regex::new(r"[\s]+").unwrap();
-    let actual_fixed = normalize_regex.replace_all(actual, " ");
-    let expected_fixed = normalize_regex.replace_all(expected, " ");
+    // REVIEW: Perhaps this can be improved (in terms of efficiency).
 
-    assert_eq!(actual_fixed.trim(), expected_fixed.trim());
+    let comments_regex = regex::Regex::new(r";[^\n]*").unwrap();
+    let whitespace_regex = regex::Regex::new(r"[\s]+").unwrap();
+    let actual_no_comments = comments_regex.replace_all(actual, "");
+    let expected_no_comments = comments_regex.replace_all(expected, "");
+    let actual_normalized_whitespace = whitespace_regex.replace_all(&actual_no_comments, " ");
+    let expected_normalized_whitespace = whitespace_regex.replace_all(&expected_no_comments, " ");
+
+    assert_eq!(
+      actual_normalized_whitespace.trim(),
+      expected_normalized_whitespace.trim()
+    );
   }
 
   pub fn compare_with_file(actual: &str, file_name: &str) {
@@ -170,6 +189,12 @@ impl<'a, 'ctx> Mock<'a, 'ctx> {
 
   pub fn lower_without_context(&mut self, node: &ast::NodeKind) -> &mut Self {
     node.lower(&mut self.generator, &self.cache);
+
+    self
+  }
+
+  pub fn cache(&mut self, node: ast::NodeKind, binding_id: usize) -> &mut Self {
+    self.cache.symbols.insert(binding_id, node);
 
     self
   }

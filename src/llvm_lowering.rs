@@ -1898,6 +1898,89 @@ mod tests {
   }
 
   #[test]
+  fn lower_let_stmt_ref_val() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let a_binding_id: cache::BindingId = 0;
+
+    let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "a".to_string(),
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      value: Box::new(mock::Mock::node(mock::Mock::literal_int())),
+      is_mutable: false,
+      binding_id: a_binding_id,
+    });
+
+    let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "b".to_string(),
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      value: Box::new(mock::Mock::node(mock::Mock::reference(a_binding_id))),
+      is_mutable: false,
+      binding_id: 1,
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .cache(let_stmt_a, a_binding_id)
+      .function()
+      .lower(&let_stmt_b)
+      .compare_with_file("let_stmt_ref_val");
+  }
+
+  #[test]
+  fn lower_let_stmt_nullptr_val() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
+
+    let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "a".to_string(),
+      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      value: Box::new(mock::Mock::node(ast::NodeKind::Literal(
+        ast::Literal::Nullptr(ty),
+      ))),
+      is_mutable: false,
+      binding_id: 0,
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .function()
+      .lower(&let_stmt)
+      .compare_with_file("let_stmt_nullptr_val");
+  }
+
+  #[test]
+  fn lower_let_stmt_ptr_ref_val() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
+    let a_binding_id: cache::BindingId = 0;
+
+    let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "a".to_string(),
+      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      value: Box::new(mock::Mock::node(ast::NodeKind::Literal(
+        ast::Literal::Nullptr(ty.clone()),
+      ))),
+      is_mutable: false,
+      binding_id: a_binding_id,
+    });
+
+    let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "b".to_string(),
+      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      value: Box::new(mock::Mock::node(mock::Mock::reference(a_binding_id))),
+      is_mutable: false,
+      binding_id: 1,
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .cache(let_stmt_a, a_binding_id)
+      .function()
+      .lower(&let_stmt_b)
+      .compare_with_file("let_stmt_ptr_ref_val");
+  }
+
+  #[test]
   fn lower_enum() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
