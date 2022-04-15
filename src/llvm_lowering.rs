@@ -1264,9 +1264,10 @@ impl Lower for ast::LetStmt {
       .llvm_builder
       .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
 
-    let llvm_value = generator
-      .lower_with_access_rules(&self.value.as_ref().kind, cache)
-      .unwrap();
+    let llvm_value =
+      // generator.lower_with_access_rules(&self.value.as_ref().kind, cache)
+      // .unwrap();
+    self.value.as_ref().lower(generator, cache).unwrap();
 
     generator.llvm_builder.build_store(llvm_alloca, llvm_value);
 
@@ -1421,8 +1422,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // they must be passed as pointer values.
     if (matches!(ty, ast::Type::Basic(ast::BasicType::String))
       && !matches!(node, ast::NodeKind::Reference(_)))
-      || matches!(ty, ast::Type::Reference(_))
-      || matches!(ty, ast::Type::Pointer(_))
+    // || matches!(ty, ast::Type::Reference(_))
+    // || matches!(ty, ast::Type::Pointer(_))
     {
       return llvm_value_result;
     }
@@ -1816,6 +1817,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     cache: &cache::Cache,
     forward_buffers: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // BUG: If a definition is lowered elsewhere without the use of this function,
+    // ... there will not be any call to `lower_with_access_rules` for it. This means
+    // ... that those definitions will be cached as `PointerValue`s instead of possibly
+    // ... needing to be lowered.
     // If the definition has been cached previously, simply retrieve it.
     if let Some(existing_definition) = self.llvm_cached_values.get(&binding_id) {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
@@ -1825,8 +1830,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let buffers = self.copy_buffers();
 
     // FIXME: Testing.
-    let llvm_value = cache.unsafe_get(&binding_id).lower(self, cache);
-    // let llvm_value = self.lower_with_access_rules(cache.unsafe_get(&binding_id), cache);
+    // let llvm_value = cache.unsafe_get(&binding_id).lower(self, cache);
+    let llvm_value = self.lower_with_access_rules(cache.unsafe_get(&binding_id), cache);
 
     if let Some(llvm_value) = llvm_value {
       self.llvm_cached_values.insert(binding_id, llvm_value);
@@ -1837,7 +1842,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       self.restore_buffers(buffers);
     }
 
-    return llvm_value;
+    llvm_value
   }
 }
 
@@ -1916,12 +1921,13 @@ mod tests {
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
       value: Box::new(mock::Mock::node(mock::Mock::reference(a_binding_id))),
       is_mutable: false,
-      binding_id: 1,
+      binding_id: a_binding_id + 1,
     });
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .function()
+      .lower_cache(a_binding_id)
       .lower(&let_stmt_b)
       .compare_with_file("let_stmt_ref_val");
   }
@@ -1970,12 +1976,13 @@ mod tests {
       ty: ast::Type::Pointer(Box::new(ty.clone())),
       value: Box::new(mock::Mock::node(mock::Mock::reference(a_binding_id))),
       is_mutable: false,
-      binding_id: 1,
+      binding_id: a_binding_id + 1,
     });
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .function()
+      .lower_cache(a_binding_id)
       .lower(&let_stmt_b)
       .compare_with_file("let_stmt_ptr_ref_val");
   }

@@ -11,7 +11,7 @@ pub trait ComparableMock: ToString {
   }
 }
 
-pub trait BackMock<'a, 'ctx> {
+pub trait ThenMock<'a, 'ctx> {
   fn then(&mut self) -> &mut Mock<'a, 'ctx>;
 }
 
@@ -21,10 +21,7 @@ pub struct FunctionMock<'a, 'ctx> {
 }
 
 impl<'a, 'ctx> FunctionMock<'a, 'ctx> {
-  pub fn new(
-    builder: &'a mut Mock<'a, 'ctx>,
-    function: inkwell::values::FunctionValue<'ctx>,
-  ) -> Self {
+  fn new(builder: &'a mut Mock<'a, 'ctx>, function: inkwell::values::FunctionValue<'ctx>) -> Self {
     Self {
       mock: builder,
       function,
@@ -43,9 +40,19 @@ impl<'a, 'ctx> FunctionMock<'a, 'ctx> {
 
     self
   }
+
+  pub fn lower_cache(&mut self, binding_id: cache::BindingId) -> &mut Self {
+    self
+      .mock
+      .cache
+      .unsafe_get(&binding_id)
+      .lower(&mut self.mock.generator, &self.mock.cache);
+
+    self
+  }
 }
 
-impl<'a, 'ctx> BackMock<'a, 'ctx> for FunctionMock<'a, 'ctx> {
+impl<'a, 'ctx> ThenMock<'a, 'ctx> for FunctionMock<'a, 'ctx> {
   fn then(&mut self) -> &mut Mock<'a, 'ctx> {
     &mut self.mock
   }
@@ -72,6 +79,16 @@ pub struct ModuleMock<'a, 'ctx> {
 impl ModuleMock<'_, '_> {
   pub fn lower(&mut self, node: &ast::NodeKind) -> &mut Self {
     node.lower(&mut self.mock.generator, &self.mock.cache);
+
+    self
+  }
+
+  pub fn lower_cache(&mut self, binding_id: cache::BindingId) -> &mut Self {
+    self
+      .mock
+      .cache
+      .unsafe_get(&binding_id)
+      .lower(&mut self.mock.generator, &self.mock.cache);
 
     self
   }
