@@ -1265,7 +1265,8 @@ impl Lower for ast::LetStmt {
       .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
 
     let llvm_value =
-      // generator.lower_with_access_rules(&self.value.as_ref().kind, cache)
+      // generator
+      // .lower_with_access_rules(&self.value.as_ref().kind, cache)
       // .unwrap();
     self.value.as_ref().lower(generator, cache).unwrap();
 
@@ -1884,7 +1885,7 @@ mod tests {
   }
 
   #[test]
-  fn lower_let_stmt() {
+  fn lower_let_stmt_const_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1899,7 +1900,7 @@ mod tests {
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
       .lower(&let_stmt)
-      .compare_with_file("let_stmt");
+      .compare_with_file("let_stmt_const_val");
   }
 
   #[test]
@@ -1985,6 +1986,57 @@ mod tests {
       .lower_cache(a_binding_id)
       .lower(&let_stmt_b)
       .compare_with_file("let_stmt_ptr_ref_val");
+  }
+
+  #[test]
+  fn lower_let_stmt_string_val() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+
+    let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "a".to_string(),
+      ty: ast::Type::Basic(ast::BasicType::String),
+      value: Box::new(mock::Mock::node(ast::NodeKind::Literal(
+        ast::Literal::String("hello".to_string()),
+      ))),
+      is_mutable: false,
+      binding_id: 0,
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .function()
+      .lower(&let_stmt)
+      .compare_with_file("let_stmt_string_val");
+  }
+
+  #[test]
+  fn lower_assign_const_val() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let a_binding_id: cache::BindingId = 0;
+
+    let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "a".to_string(),
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      value: Box::new(mock::Mock::node(mock::Mock::literal_int())),
+      is_mutable: true,
+      binding_id: a_binding_id,
+    });
+
+    let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
+      assignee_expr: Box::new(mock::Mock::node(mock::Mock::reference(a_binding_id))),
+      value: Box::new(mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Int(
+        2,
+        ast::IntSize::I32,
+      )))),
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .cache(let_stmt_a, a_binding_id)
+      .function()
+      .lower_cache(a_binding_id)
+      .lower(&assign_stmt)
+      .compare_with_file("assign_stmt_const_val");
   }
 
   #[test]
