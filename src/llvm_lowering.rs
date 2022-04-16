@@ -131,7 +131,8 @@ impl Lower for ast::MemberAccess {
       .find(|x| x.1 == self.member_name)
       .unwrap();
 
-    generator.memoize_or_retrieve_value(impl_method_info.0, cache, false)
+    // REVIEW: Opted to not use access rules. Ensure this is correct.
+    generator.memoize_or_retrieve_value(impl_method_info.0, cache, false, false)
   }
 }
 
@@ -409,9 +410,10 @@ impl Lower for ast::ArrayIndexing {
       .unwrap()
       .into_int_value();
 
-    // TODO: Here we opted not to forward buffers. Ensure this is correct.
+    // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
+    // REVIEW: Opted not to use access rules. Ensure this is correct.
     let llvm_target_array = generator
-      .memoize_or_retrieve_value(self.target_id.unwrap(), cache, false)
+      .memoize_or_retrieve_value(self.target_id.unwrap(), cache, false, false)
       .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
@@ -769,7 +771,7 @@ impl Lower for ast::Reference {
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let llvm_target = generator
-      .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false)
+      .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false, true)
       .unwrap();
 
     Some(llvm_target)
@@ -1412,6 +1414,20 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value_result = node.lower(self, cache);
+
+    if let Some(llvm_value) = llvm_value_result {
+      Some(self.apply_access_rules(node, llvm_value, cache))
+    } else {
+      None
+    }
+  }
+
+  fn apply_access_rules(
+    &mut self,
+    node: &ast::NodeKind,
+    llvm_value: inkwell::values::BasicValueEnum<'ctx>,
+    cache: &cache::Cache,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
     let ty = SemanticCheckContext::flatten_type(&node.infer_type(cache), cache);
 
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
@@ -1426,7 +1442,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // || matches!(ty, ast::Type::Reference(_))
     // || matches!(ty, ast::Type::Pointer(_))
     {
-      return llvm_value_result;
+      return llvm_value;
     }
     // BUG: Temporary. Will not work for nested values.
     else if let ast::NodeKind::Reference(reference) = &node {
@@ -1436,16 +1452,11 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .unwrap();
 
       if matches!(target, ast::NodeKind::Parameter(_)) {
-        return llvm_value_result;
+        return llvm_value;
       }
     } // else if let Some(llvm_value) = llvm_value_result ...
 
-    if let Some(llvm_value) = llvm_value_result {
-      // FIXME: Strings shouldn't be accessed (exception).
-      Some(self.attempt_access(llvm_value))
-    } else {
-      None
-    }
+    self.attempt_access(llvm_value)
   }
 
   fn is_callable(llvm_value: inkwell::values::BasicValueEnum<'ctx>) -> bool {
@@ -1817,7 +1828,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     binding_id: cache::BindingId,
     cache: &cache::Cache,
     forward_buffers: bool,
+    use_access_rules: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let node = cache.unsafe_get(&binding_id);
+
     // BUG: If a definition is lowered elsewhere without the use of this function,
     // ... there will not be any call to `lower_with_access_rules` for it. This means
     // ... that those definitions will be cached as `PointerValue`s instead of possibly
@@ -1825,25 +1839,41 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // If the definition has been cached previously, simply retrieve it.
     if let Some(existing_definition) = self.llvm_cached_values.get(&binding_id) {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
-      return Some(existing_definition.clone());
+      let existing_value_cloned = existing_definition.clone();
+
+      return Some(if use_access_rules {
+        self.apply_access_rules(node, existing_value_cloned, cache)
+      } else {
+        existing_value_cloned
+      });
     }
 
     let buffers = self.copy_buffers();
 
     // FIXME: Testing.
     // let llvm_value = cache.unsafe_get(&binding_id).lower(self, cache);
-    let llvm_value = self.lower_with_access_rules(cache.unsafe_get(&binding_id), cache);
+    let llvm_value_result = node.lower(self, cache);
 
-    if let Some(llvm_value) = llvm_value {
+    let result = if let Some(llvm_value) = llvm_value_result {
+      // Cache the value without applying access rules.
+      // This way, access rules may be chosen to be applied upon cache retrieval.
       self.llvm_cached_values.insert(binding_id, llvm_value);
-    }
+
+      Some(if use_access_rules {
+        self.apply_access_rules(node, llvm_value, cache)
+      } else {
+        llvm_value
+      })
+    } else {
+      None
+    };
 
     // Restore buffers after processing, if requested.
     if !forward_buffers {
       self.restore_buffers(buffers);
     }
 
-    llvm_value
+    result
   }
 }
 
