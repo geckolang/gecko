@@ -110,7 +110,7 @@ mod tests {
       llvm_generator.module_name = global_qualifier.1.clone();
 
       for top_level_node in inner_ast {
-        top_level_node.lower(&mut llvm_generator, &mut cache);
+        top_level_node.lower(&mut llvm_generator, &mut cache, false);
       }
     }
 

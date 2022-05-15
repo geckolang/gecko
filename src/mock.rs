@@ -35,18 +35,18 @@ impl<'a, 'ctx> FunctionMock<'a, 'ctx> {
     self
   }
 
-  pub fn lower(&mut self, node: &ast::NodeKind) -> &mut Self {
-    node.lower(&mut self.mock.generator, &self.mock.cache);
+  pub fn lower(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
+    node.lower(&mut self.mock.generator, &self.mock.cache, access);
 
     self
   }
 
-  pub fn lower_cache(&mut self, binding_id: cache::BindingId) -> &mut Self {
-    self
-      .mock
-      .cache
-      .unsafe_get(&binding_id)
-      .lower(&mut self.mock.generator, &self.mock.cache);
+  pub fn lower_cache(&mut self, binding_id: cache::BindingId, access: bool) -> &mut Self {
+    self.mock.cache.unsafe_get(&binding_id).lower(
+      &mut self.mock.generator,
+      &self.mock.cache,
+      access,
+    );
 
     self
   }
@@ -77,18 +77,18 @@ pub struct ModuleMock<'a, 'ctx> {
 }
 
 impl ModuleMock<'_, '_> {
-  pub fn lower(&mut self, node: &ast::NodeKind) -> &mut Self {
-    node.lower(&mut self.mock.generator, &self.mock.cache);
+  pub fn lower(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
+    node.lower(&mut self.mock.generator, &self.mock.cache, access);
 
     self
   }
 
-  pub fn lower_cache(&mut self, binding_id: cache::BindingId) -> &mut Self {
+  pub fn lower_cache(&mut self, binding_id: cache::BindingId, access: bool) -> &mut Self {
     self
       .mock
       .cache
       .unsafe_get(&binding_id)
-      .lower(&mut self.mock.generator, &self.mock.cache);
+      .lower(&mut self.mock.generator, &self.mock.cache, access);
 
     self
   }
@@ -204,8 +204,8 @@ impl<'a, 'ctx> Mock<'a, 'ctx> {
     self
   }
 
-  pub fn lower_without_context(&mut self, node: &ast::NodeKind) -> &mut Self {
-    node.lower(&mut self.generator, &self.cache);
+  pub fn lower_without_context(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
+    node.lower(&mut self.generator, &self.cache, access);
 
     self
   }

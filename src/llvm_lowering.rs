@@ -13,6 +13,7 @@ pub trait Lower {
     &self,
     _generator: &mut LlvmGenerator<'a, 'ctx>,
     _cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     None
   }
@@ -23,8 +24,9 @@ impl Lower for ast::Node {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    dispatch!(&self.kind, Lower::lower, generator, cache)
+    dispatch!(&self.kind, Lower::lower, generator, cache, _access)
   }
 }
 
@@ -33,8 +35,9 @@ impl Lower for ast::NodeKind {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    dispatch!(&self, Lower::lower, generator, cache)
+    dispatch!(&self, Lower::lower, generator, cache, _access)
   }
 }
 
@@ -43,6 +46,7 @@ impl Lower for ast::SizeofIntrinsic {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let ty = generator.lower_type(&self.ty, cache);
 
@@ -59,8 +63,9 @@ impl Lower for ast::ParenthesesExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.expr.lower(generator, cache)
+    self.expr.lower(generator, cache, _access)
   }
 }
 
@@ -73,9 +78,10 @@ impl Lower for ast::StructImpl {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for method in &self.methods {
-      method.lower(generator, cache).unwrap();
+      method.lower(generator, cache, _access).unwrap();
     }
 
     None
@@ -87,10 +93,11 @@ impl Lower for ast::MemberAccess {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct = self
       .base_expr
-      .lower(generator, cache)
+      .lower(generator, cache, _access)
       .unwrap()
       .into_pointer_value();
 
@@ -132,7 +139,7 @@ impl Lower for ast::MemberAccess {
       .unwrap();
 
     // REVIEW: Opted to not use access rules. Ensure this is correct.
-    generator.memoize_or_retrieve_value(impl_method_info.0, cache, false, false)
+    generator.memoize_or_retrieve_value(impl_method_info.0, cache, _access, false)
   }
 }
 
@@ -141,6 +148,7 @@ impl Lower for ast::Closure {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Closures don't have a unique id.
     // ... Don't we need to set the buffer unique id for closures as well?
@@ -195,7 +203,7 @@ impl Lower for ast::Closure {
 
     generator.llvm_builder.position_at_end(llvm_entry_block);
 
-    let yielded_result = self.body.lower(generator, cache);
+    let yielded_result = self.body.lower(generator, cache, _access);
 
     generator.attempt_build_return(yielded_result);
 
@@ -220,6 +228,7 @@ impl Lower for ast::IntrinsicCall {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     match self.kind {
       ast::IntrinsicKind::Panic => {
@@ -231,7 +240,7 @@ impl Lower for ast::IntrinsicCall {
           .arguments
           .first()
           .unwrap()
-          .lower(generator, cache)
+          .lower(generator, cache, _access)
           .unwrap();
 
         // REVIEW: How about we merge this into a `panic` function?
@@ -256,6 +265,7 @@ impl Lower for ast::ExternStatic {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_global_value = generator.llvm_module.add_global(
       generator.lower_type(&self.ty, cache),
@@ -272,6 +282,7 @@ impl Lower for ast::StructValue {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct_type = generator
       .memoize_or_retrieve_type(self.target_id.unwrap(), cache)
@@ -339,6 +350,7 @@ impl Lower for ast::Enum {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for (index, name) in self.variants.iter().enumerate() {
       let llvm_name = generator.mangle_name(&format!("enum.{}.{}", self.name, name));
@@ -366,6 +378,7 @@ impl Lower for ast::AssignStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value = generator
       .lower_with_access_rules(&self.value.as_ref().kind, cache)
@@ -374,7 +387,7 @@ impl Lower for ast::AssignStmt {
     // NOTE: In the case that our target is a let-statement (through
     // a reference), memoization or retrieval will occur on the lowering
     // step of the reference. The assignee should also not be accessed.
-    let llvm_assignee = self.assignee_expr.lower(generator, cache).unwrap();
+    let llvm_assignee = self.assignee_expr.lower(generator, cache, false).unwrap();
 
     generator
       .llvm_builder
@@ -389,6 +402,7 @@ impl Lower for ast::ContinueStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     generator
       .llvm_builder
@@ -403,10 +417,11 @@ impl Lower for ast::ArrayIndexing {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_index = self
       .index_expr
-      .lower(generator, cache)
+      .lower(generator, cache, _access)
       .unwrap()
       .into_int_value();
 
@@ -449,13 +464,14 @@ impl Lower for ast::ArrayValue {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let mut llvm_values = Vec::new();
 
     llvm_values.reserve(self.elements.len());
 
     for element in &self.elements {
-      llvm_values.push(element.lower(generator, cache).unwrap());
+      llvm_values.push(element.lower(generator, cache, _access).unwrap());
     }
 
     // TODO: Is this cast (usize -> u32) safe?
@@ -513,6 +529,7 @@ impl Lower for ast::Parameter {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: In the future, consider having an `alloca` per parameter, for simpler tracking of them?
 
@@ -531,8 +548,9 @@ impl Lower for ast::UnsafeExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.0.lower(generator, cache)
+    self.0.lower(generator, cache, _access)
   }
 }
 
@@ -541,9 +559,10 @@ impl Lower for ast::BinaryExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let mut llvm_left_value = self.left.lower(generator, cache).unwrap();
-    let mut llvm_right_value = self.right.lower(generator, cache).unwrap();
+    let mut llvm_left_value = self.left.lower(generator, cache, _access).unwrap();
+    let mut llvm_right_value = self.right.lower(generator, cache, _access).unwrap();
 
     llvm_left_value = generator.attempt_access(llvm_left_value);
     llvm_right_value = generator.attempt_access(llvm_right_value);
@@ -767,11 +786,12 @@ impl Lower for ast::Reference {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let llvm_target = generator
-      .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false, true)
+      .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false, access)
       .unwrap();
 
     Some(llvm_target)
@@ -783,11 +803,15 @@ impl Lower for ast::LoopStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // FIXME: The condition needs to be re-lowered per iteration.
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
     let llvm_condition = if let Some(condition) = &self.condition {
-      condition.lower(generator, cache).unwrap().into_int_value()
+      condition
+        .lower(generator, cache, _access)
+        .unwrap()
+        .into_int_value()
     } else {
       generator.llvm_context.bool_type().const_int(1, false)
     };
@@ -811,12 +835,15 @@ impl Lower for ast::LoopStmt {
 
     generator.llvm_builder.position_at_end(llvm_then_block);
     generator.current_loop_block = Some(llvm_after_block);
-    self.body.lower(generator, cache);
+    self.body.lower(generator, cache, _access);
 
     // Fallthrough or loop if applicable.
     if generator.get_current_block().get_terminator().is_none() {
       let llvm_condition_iter = if let Some(condition) = &self.condition {
-        condition.lower(generator, cache).unwrap().into_int_value()
+        condition
+          .lower(generator, cache, _access)
+          .unwrap()
+          .into_int_value()
       } else {
         generator.llvm_context.bool_type().const_int(1, false)
       };
@@ -841,8 +868,9 @@ impl Lower for ast::IfExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_condition = self.condition.lower(generator, cache).unwrap();
+    let llvm_condition = self.condition.lower(generator, cache, _access).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
     let ty = self.infer_type(cache);
     let yields_expression = !ty.is_unit();
@@ -885,7 +913,7 @@ impl Lower for ast::IfExpr {
       );
 
       generator.llvm_builder.position_at_end(llvm_else_block);
-      llvm_else_block_value = else_block.lower(generator, cache);
+      llvm_else_block_value = else_block.lower(generator, cache, _access);
 
       // FIXME: Is this correct? Or should we be using the `else_block` directly here?
       // Fallthrough if applicable.
@@ -905,7 +933,7 @@ impl Lower for ast::IfExpr {
 
     generator.llvm_builder.position_at_end(llvm_then_block);
 
-    let llvm_then_block_value = self.then_value.lower(generator, cache);
+    let llvm_then_block_value = self.then_value.lower(generator, cache, _access);
 
     // FIXME: Is this correct? Or should we be using `get_current_block()` here? Or maybe this is just a special case to not leave the `then` block without a terminator? Investigate.
     // Fallthrough if applicable.
@@ -957,6 +985,7 @@ impl Lower for ast::Literal {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match self {
       ast::Literal::Int(value, integer_kind) => {
@@ -1012,6 +1041,7 @@ impl Lower for ast::Function {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
     let is_main = self.name == MAIN_FUNCTION_NAME;
@@ -1089,6 +1119,7 @@ impl Lower for ast::ExternFunction {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
 
@@ -1111,6 +1142,7 @@ impl Lower for ast::BlockExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for (index, statement) in self.statements.iter().enumerate() {
       if index == self.statements.len() - 1 && self.yields_last_expr {
@@ -1120,7 +1152,7 @@ impl Lower for ast::BlockExpr {
       // FIXME: Some binding statements (such as let-statement) need to be manually
       // ... cached in the generator, this is because not all calls to lower it are made
       // ... using the `memoize_or_retrieve_value` helper function (such as this one!).
-      statement.lower(generator, cache);
+      statement.lower(generator, cache, _access);
 
       // Do not continue lowering statements if the current block was terminated.
       if generator.get_current_block().get_terminator().is_some() {
@@ -1137,6 +1169,7 @@ impl Lower for ast::ReturnStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVISE: Simplify.
     let llvm_return_value = if let Some(return_value) = &self.value {
@@ -1160,10 +1193,11 @@ impl Lower for ast::UnaryExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match self.operator {
       ast::OperatorKind::Not => {
-        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.lower(generator, cache, _access).unwrap();
         let llvm_final_value = generator.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
@@ -1173,7 +1207,7 @@ impl Lower for ast::UnaryExpr {
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
-        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.lower(generator, cache, _access).unwrap();
         let llvm_final_value = generator.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be an integer or float. This should be enforced during type-checking.
@@ -1195,13 +1229,13 @@ impl Lower for ast::UnaryExpr {
         // FIXME: The expression shouldn't be accessed in this case. Find out how to accomplish this.
 
         // TODO: For the time being, this isn't being returned. This should be the return value.
-        self.expr.lower(generator, cache).unwrap()
+        self.expr.lower(generator, cache, _access).unwrap()
 
         // TODO: Continue implementation.
         // todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
-        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.lower(generator, cache, _access).unwrap();
 
         // BUG: If the value is a reference to a let-statement, the pointer of
         // ... the let-statement will be removed, but the actual pointer value will
@@ -1209,7 +1243,7 @@ impl Lower for ast::UnaryExpr {
         generator.access(llvm_value.into_pointer_value())
       }
       ast::OperatorKind::Cast => {
-        let llvm_value = self.expr.lower(generator, cache).unwrap();
+        let llvm_value = self.expr.lower(generator, cache, _access).unwrap();
         let llvm_final_value = generator.attempt_access(llvm_value);
         let llvm_to_type = generator.lower_type(self.cast_type.as_ref().unwrap(), cache);
 
@@ -1238,6 +1272,7 @@ impl Lower for ast::LetStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // Special cases. The allocation is done elsewhere.
     if matches!(
@@ -1247,7 +1282,7 @@ impl Lower for ast::LetStmt {
       // REVISE: Cleanup the caching code.
       // REVIEW: Here create a definition for the closure, with the let statement as the name?
 
-      let result = self.value.lower(generator, cache);
+      let result = self.value.lower(generator, cache, _access);
 
       // REVIEW: Won't let-statements always have a value?
       if let Some(llvm_value) = result {
@@ -1270,7 +1305,7 @@ impl Lower for ast::LetStmt {
       // generator
       // .lower_with_access_rules(&self.value.as_ref().kind, cache)
       // .unwrap();
-      self.value.as_ref().lower(generator, cache).unwrap();
+      self.value.as_ref().lower(generator, cache, _access).unwrap();
 
     generator.llvm_builder.build_store(llvm_alloca, llvm_value);
 
@@ -1289,6 +1324,7 @@ impl Lower for ast::CallExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let mut llvm_arguments = self
       .arguments
@@ -1308,7 +1344,7 @@ impl Lower for ast::CallExpr {
         0,
         member_access
           .base_expr
-          .lower(generator, cache)
+          .lower(generator, cache, _access)
           .unwrap()
           .into(),
       );
@@ -1318,7 +1354,7 @@ impl Lower for ast::CallExpr {
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_callable = self
       .callee_expr
-      .lower(generator, cache)
+      .lower(generator, cache, _access)
       .unwrap()
       .into_pointer_value();
 
@@ -1343,6 +1379,7 @@ impl Lower for ast::BreakStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     _cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // NOTE: By this point, we assume that whether we're actually in a loop was handled by the type-checker.
     generator
@@ -1358,8 +1395,9 @@ impl Lower for ast::InlineExprStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
+    _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.expr.lower(generator, cache)
+    self.expr.lower(generator, cache, _access)
   }
 }
 
@@ -1413,7 +1451,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     node: &ast::NodeKind,
     cache: &cache::Cache,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_value_result = node.lower(self, cache);
+    let llvm_value_result = node.lower(self, cache, true);
 
     if let Some(llvm_value) = llvm_value_result {
       Some(self.apply_access_rules(node, llvm_value, cache))
@@ -1852,7 +1890,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     // FIXME: Testing.
     // let llvm_value = cache.unsafe_get(&binding_id).lower(self, cache);
-    let llvm_value_result = node.lower(self, cache);
+    let llvm_value_result = node.lower(self, cache, false);
 
     let result = if let Some(llvm_value) = llvm_value_result {
       // Cache the value without applying access rules.
@@ -1898,7 +1936,7 @@ mod tests {
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
       .with_loop()
-      .lower(&node)
+      .lower(&node, false)
       .compare_with_file("break_stmt");
   }
 
@@ -1910,7 +1948,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&node)
+      .lower(&node, false)
       .compare_with_file("continue_stmt");
   }
 
@@ -1929,7 +1967,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&let_stmt)
+      .lower(&let_stmt, false)
       .compare_with_file("let_stmt_const_val");
   }
 
@@ -1958,8 +1996,8 @@ mod tests {
     mock::Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .function()
-      .lower_cache(a_binding_id)
-      .lower(&let_stmt_b)
+      .lower_cache(a_binding_id, false)
+      .lower(&let_stmt_b, true)
       .compare_with_file("let_stmt_ref_val");
   }
 
@@ -1981,7 +2019,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&let_stmt)
+      .lower(&let_stmt, false)
       .compare_with_file("let_stmt_nullptr_val");
   }
 
@@ -2013,8 +2051,8 @@ mod tests {
     mock::Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .function()
-      .lower_cache(a_binding_id)
-      .lower(&let_stmt_b)
+      .lower_cache(a_binding_id, false)
+      .lower(&let_stmt_b, true)
       .compare_with_file("let_stmt_ptr_ref_val");
   }
 
@@ -2035,7 +2073,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&let_stmt)
+      .lower(&let_stmt, false)
       .compare_with_file("let_stmt_string_val");
   }
 
@@ -2064,8 +2102,8 @@ mod tests {
     mock::Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .function()
-      .lower_cache(a_binding_id)
-      .lower(&assign_stmt)
+      .lower_cache(a_binding_id, false)
+      .lower(&assign_stmt, false)
       .compare_with_file("assign_stmt_const_val");
   }
 
@@ -2082,7 +2120,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .module()
-      .lower(&enum_)
+      .lower(&enum_, false)
       .compare_with_file("enum");
   }
 
@@ -2094,7 +2132,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&return_stmt)
+      .lower(&return_stmt, false)
       .compare_with_file("return_stmt_unit");
   }
 
@@ -2109,7 +2147,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&return_stmt)
+      .lower(&return_stmt, false)
       .compare_with_file("return_stmt");
   }
 
@@ -2127,7 +2165,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .module()
-      .lower(&extern_fn)
+      .lower(&extern_fn, false)
       .compare_with_file("extern_fn");
   }
 
@@ -2144,7 +2182,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .module()
-      .lower(&extern_static)
+      .lower(&extern_static, false)
       .compare_with_file("extern_static");
   }
 
@@ -2163,7 +2201,7 @@ mod tests {
 
     mock::Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&if_expr)
+      .lower(&if_expr, false)
       .compare_with_file("if_expr_simple");
   }
 }
