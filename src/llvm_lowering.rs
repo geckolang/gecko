@@ -1270,7 +1270,7 @@ impl Lower for ast::LetStmt {
       // generator
       // .lower_with_access_rules(&self.value.as_ref().kind, cache)
       // .unwrap();
-    self.value.as_ref().lower(generator, cache).unwrap();
+      self.value.as_ref().lower(generator, cache).unwrap();
 
     generator.llvm_builder.build_store(llvm_alloca, llvm_value);
 

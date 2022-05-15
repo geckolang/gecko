@@ -24,3 +24,4 @@ Design:
 	✔ Create a flowchart of the ideal system's process and design. @done
 	✘ Should a typed-AST be implemented and used? @cancelled
 	☐ Find a better alternative to having to resort to clone nodes to populate the cache. Consider making every node field an `Rc<>`.
+	☐ Come up with a better design/approach for intrinsic functions. Use objective analysis and consideration.

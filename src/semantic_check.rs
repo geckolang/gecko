@@ -2,6 +2,8 @@ use crate::{ast, cache, diagnostic, dispatch, llvm_lowering};
 
 pub struct SemanticCheckContext {
   diagnostic_builder: diagnostic::DiagnosticBuilder,
+  new_diagnostic: Vec<diagnostic::NewDiagnostic>,
+  new_diagnostic_builder: diagnostic::NewDiagnosticBuilder,
   in_loop: bool,
   in_unsafe_block: bool,
   in_impl: bool,
@@ -30,6 +32,8 @@ impl SemanticCheckContext {
   pub fn new() -> Self {
     Self {
       diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
+      new_diagnostic: Vec::new(),
+      new_diagnostic_builder: diagnostic::NewDiagnosticBuilder::new(),
       in_loop: false,
       in_unsafe_block: false,
       in_impl: false,
@@ -204,6 +208,13 @@ impl SemanticCheck for ast::SizeofIntrinsic {
       context
         .diagnostic_builder
         .error("cannot determine size of unit type".to_string());
+
+      context.new_diagnostic.push(
+        codespan_reporting::diagnostic::Diagnostic::new(
+          codespan_reporting::diagnostic::Severity::Error,
+        )
+        .with_message("cannot determine size of unit type"),
+      );
     }
   }
 }
@@ -263,12 +274,32 @@ impl SemanticCheck for ast::StructImpl {
                   "prototype of implementation method `{}` for trait `{}` mismatch in {}",
                   "pending impl method name", trait_type.name, error
                 ));
+
+                context.new_diagnostic.push(
+                  codespan_reporting::diagnostic::Diagnostic::new(
+                    codespan_reporting::diagnostic::Severity::Error,
+                  )
+                  .with_message(format!(
+                    "prototype of implementation method `{}` for trait `{}` mismatch in {}",
+                    "pending impl method name", trait_type.name, error
+                  )),
+                );
               }
             } else {
               context.diagnostic_builder.error(format!(
                 "required method `{}` not implemented",
                 trait_method.0
               ));
+
+              context.new_diagnostic.push(
+                codespan_reporting::diagnostic::Diagnostic::new(
+                  codespan_reporting::diagnostic::Severity::Error,
+                )
+                .with_message(format!(
+                  "required method `{}` not implemented",
+                  trait_method.0
+                )),
+              );
             }
           }
         } else {
@@ -276,6 +307,16 @@ impl SemanticCheck for ast::StructImpl {
             "cannot implement non-trait `{}`",
             &trait_pattern.base_name
           ));
+
+          context.new_diagnostic.push(
+            codespan_reporting::diagnostic::Diagnostic::new(
+              codespan_reporting::diagnostic::Severity::Error,
+            )
+            .with_message(format!(
+              "cannot implement non-trait `{}`",
+              &trait_pattern.base_name
+            )),
+          );
         }
       }
     } else {
@@ -283,6 +324,16 @@ impl SemanticCheck for ast::StructImpl {
         "cannot implement for a non-struct type `{}`",
         self.target_struct_pattern.base_name
       ));
+
+      context.new_diagnostic.push(
+        codespan_reporting::diagnostic::Diagnostic::new(
+          codespan_reporting::diagnostic::Severity::Error,
+        )
+        .with_message(format!(
+          "cannot implement for a non-struct type `{}`",
+          self.target_struct_pattern.base_name
+        )),
+      );
     }
 
     context.in_impl = false;
@@ -335,6 +386,13 @@ impl SemanticCheck for ast::MemberAccess {
           .diagnostic_builder
           .error("expression is not a struct".to_string());
 
+        context.new_diagnostic.push(
+          codespan_reporting::diagnostic::Diagnostic::new(
+            codespan_reporting::diagnostic::Severity::Error,
+          )
+          .with_message("expression is not a struct"),
+        );
+
         return;
       }
     };
@@ -360,6 +418,13 @@ impl SemanticCheck for ast::Closure {
       context
         .diagnostic_builder
         .error("closures cannot accept instances".to_string());
+
+      context.new_diagnostic.push(
+        codespan_reporting::diagnostic::Diagnostic::new(
+          codespan_reporting::diagnostic::Severity::Error,
+        )
+        .with_message("closures cannot accept instances"),
+      );
     }
 
     self.prototype.check(context, cache);
@@ -408,6 +473,13 @@ impl SemanticCheck for ast::StructValue {
       context
         .diagnostic_builder
         .error("invalid amount of fields in struct value".to_string());
+
+      context.new_diagnostic.push(
+        codespan_reporting::diagnostic::Diagnostic::new(
+          codespan_reporting::diagnostic::Severity::Error,
+        )
+        .with_message("invalid amount of fields in struct value"),
+      );
 
       return;
     }
@@ -486,12 +558,26 @@ impl SemanticCheck for ast::UnaryExpr {
           context
             .diagnostic_builder
             .error("can only dereference inside an unsafe block".to_string());
+
+          context.new_diagnostic.push(
+            codespan_reporting::diagnostic::Diagnostic::new(
+              codespan_reporting::diagnostic::Severity::Error,
+            )
+            .with_message("can only dereference inside an unsafe block"),
+          );
         }
 
         if !matches!(expr_type, ast::Type::Pointer(_)) {
           context
             .diagnostic_builder
             .error("can only dereference pointers".to_string());
+
+          context.new_diagnostic.push(
+            codespan_reporting::diagnostic::Diagnostic::new(
+              codespan_reporting::diagnostic::Severity::Error,
+            )
+            .with_message("can only dereference pointers"),
+          );
         }
       }
       ast::OperatorKind::Not => {
@@ -500,6 +586,13 @@ impl SemanticCheck for ast::UnaryExpr {
           context
             .diagnostic_builder
             .error("can only negate boolean expressions".to_string());
+
+          context.new_diagnostic.push(
+            codespan_reporting::diagnostic::Diagnostic::new(
+              codespan_reporting::diagnostic::Severity::Error,
+            )
+            .with_message("can only negate boolean expressions"),
+          );
         }
       }
       ast::OperatorKind::SubtractOrNegate => {
@@ -513,6 +606,13 @@ impl SemanticCheck for ast::UnaryExpr {
           context
             .diagnostic_builder
             .error("can only negate integer or float expressions".to_string());
+
+          context.new_diagnostic.push(
+            codespan_reporting::diagnostic::Diagnostic::new(
+              codespan_reporting::diagnostic::Severity::Error,
+            )
+            .with_message("can only negate integer or float expressions"),
+          );
         }
       }
       ast::OperatorKind::AddressOf => {
@@ -527,10 +627,24 @@ impl SemanticCheck for ast::UnaryExpr {
           context
             .diagnostic_builder
             .error("can only cast between primitive types".to_string());
+
+          context.new_diagnostic.push(
+            codespan_reporting::diagnostic::Diagnostic::new(
+              codespan_reporting::diagnostic::Severity::Error,
+            )
+            .with_message("can only cast between primitive types"),
+          );
         } else if SemanticCheckContext::unify(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
           context
             .diagnostic_builder
             .warning("redundant cast to the same type".to_string());
+
+          context.new_diagnostic.push(
+            codespan_reporting::diagnostic::Diagnostic::new(
+              codespan_reporting::diagnostic::Severity::Warning,
+            )
+            .with_message("redundant cast to the same type"),
+          );
         }
       }
       _ => unreachable!(),
@@ -556,6 +670,10 @@ impl SemanticCheck for ast::AssignStmt {
       context
         .diagnostic_builder
         .error("can't assign to a reference; references cannot be reseated".to_string());
+
+      context
+        .new_diagnostic_builder
+        .error("can't assign to a reference; references cannot be reseated");
 
       // REVIEW: We should continue gathering other diagnostics (ex. immutable)?
       return;
@@ -587,6 +705,10 @@ impl SemanticCheck for ast::AssignStmt {
               context
                 .diagnostic_builder
                 .error("assignee is immutable".to_string());
+
+              context
+                .new_diagnostic_builder
+                .error("assignee is immutable");
             }
             // TODO: Parameters should be immutable by default.
             _ => {}
@@ -606,6 +728,10 @@ impl SemanticCheck for ast::ContinueStmt {
       context
         .diagnostic_builder
         .error("continue statement may only occur inside loops".to_string());
+
+      context
+        .new_diagnostic_builder
+        .error("continue statement may only occur inside loops");
     }
   }
 }
@@ -646,6 +772,10 @@ impl SemanticCheck for ast::ArrayIndexing {
       context
         .diagnostic_builder
         .error("array index expression must evaluate to an unsigned integer".to_string());
+
+      context
+        .new_diagnostic_builder
+        .error("array index expression must evaluate to an unsigned integer");
     }
 
     self.index_expr.check(context, cache);
@@ -686,6 +816,10 @@ impl SemanticCheck for ast::ArrayValue {
           .diagnostic_builder
           .error("array elements must all be of the same type".to_string());
 
+        context
+          .new_diagnostic_builder
+          .error("array elements must all be of the same type");
+
         mixed_elements_flag = true;
       }
 
@@ -717,6 +851,10 @@ impl SemanticCheck for ast::ExternFunction {
       context
         .diagnostic_builder
         .error("extern functions cannot accept instances".to_string());
+
+      context
+        .new_diagnostic_builder
+        .error("extern functions cannot accept instances");
     }
   }
 }

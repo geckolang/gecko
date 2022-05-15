@@ -1,3 +1,31 @@
+pub type NewDiagnostic = codespan_reporting::diagnostic::Diagnostic<String>;
+
+pub struct NewDiagnosticBuilder {
+  diagnostics: Vec<NewDiagnostic>,
+}
+
+impl NewDiagnosticBuilder {
+  pub fn new() -> Self {
+    Self {
+      diagnostics: Vec::new(),
+    }
+  }
+
+  pub fn error(&mut self, message: &str) -> &mut NewDiagnostic {
+    let diagnostic = codespan_reporting::diagnostic::Diagnostic::error().with_message(message);
+    self.diagnostics.push(diagnostic);
+
+    self.diagnostics.last_mut().unwrap()
+  }
+
+  pub fn warning(&mut self, message: &str) -> &mut NewDiagnostic {
+    let diagnostic = codespan_reporting::diagnostic::Diagnostic::warning().with_message(message);
+    self.diagnostics.push(diagnostic);
+
+    self.diagnostics.last_mut().unwrap()
+  }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Severity {
   Warning,
