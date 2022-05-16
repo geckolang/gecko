@@ -84,11 +84,11 @@ impl ModuleMock<'_, '_> {
   }
 
   pub fn lower_cache(&mut self, binding_id: cache::BindingId, access: bool) -> &mut Self {
-    self
-      .mock
-      .cache
-      .unsafe_get(&binding_id)
-      .lower(&mut self.mock.generator, &self.mock.cache, access);
+    self.mock.cache.unsafe_get(&binding_id).lower(
+      &mut self.mock.generator,
+      &self.mock.cache,
+      access,
+    );
 
     self
   }
@@ -116,15 +116,15 @@ impl<'a, 'ctx> Mock<'a, 'ctx> {
     ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
   }
 
-  pub fn reference(binding_id: cache::BindingId) -> ast::NodeKind {
-    ast::NodeKind::Reference(ast::Reference {
+  pub fn reference(binding_id: cache::BindingId) -> Box<ast::Node> {
+    Mock::node(ast::NodeKind::Reference(ast::Reference {
       pattern: ast::Pattern {
         global_qualifier: None,
         base_name: "test".to_string(),
         symbol_kind: name_resolution::SymbolKind::Definition,
         target_id: Some(binding_id),
       },
-    })
+    }))
   }
 
   pub fn prototype_simple(is_extern: bool) -> ast::Prototype {
@@ -164,8 +164,8 @@ impl<'a, 'ctx> Mock<'a, 'ctx> {
     Mock::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
   }
 
-  pub fn node(kind: ast::NodeKind) -> ast::Node {
-    ast::Node { kind, span: 0..0 }
+  pub fn node(kind: ast::NodeKind) -> Box<ast::Node> {
+    Box::new(ast::Node { kind, span: 0..0 })
   }
 
   pub fn new(

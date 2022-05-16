@@ -24,9 +24,9 @@ impl Lower for ast::Node {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
-    _access: bool,
+    access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    dispatch!(&self.kind, Lower::lower, generator, cache, _access)
+    dispatch!(&self.kind, Lower::lower, generator, cache, access)
   }
 }
 
@@ -35,9 +35,9 @@ impl Lower for ast::NodeKind {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
-    _access: bool,
+    access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    dispatch!(&self, Lower::lower, generator, cache, _access)
+    dispatch!(&self, Lower::lower, generator, cache, access)
   }
 }
 
@@ -63,9 +63,10 @@ impl Lower for ast::ParenthesesExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
-    _access: bool,
+    access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.expr.lower(generator, cache, _access)
+    // REVIEW: Is it correct to pass the `access` parameter here?
+    self.expr.lower(generator, cache, access)
   }
 }
 
@@ -81,7 +82,7 @@ impl Lower for ast::StructImpl {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for method in &self.methods {
-      method.lower(generator, cache, _access).unwrap();
+      method.lower(generator, cache, false).unwrap();
     }
 
     None
@@ -97,7 +98,7 @@ impl Lower for ast::MemberAccess {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct = self
       .base_expr
-      .lower(generator, cache, _access)
+      .lower(generator, cache, false)
       .unwrap()
       .into_pointer_value();
 
@@ -139,7 +140,7 @@ impl Lower for ast::MemberAccess {
       .unwrap();
 
     // REVIEW: Opted to not use access rules. Ensure this is correct.
-    generator.memoize_or_retrieve_value(impl_method_info.0, cache, _access, false)
+    generator.memoize_or_retrieve_value(impl_method_info.0, cache, false, false)
   }
 }
 
@@ -203,7 +204,7 @@ impl Lower for ast::Closure {
 
     generator.llvm_builder.position_at_end(llvm_entry_block);
 
-    let yielded_result = self.body.lower(generator, cache, _access);
+    let yielded_result = self.body.lower(generator, cache, false);
 
     generator.attempt_build_return(yielded_result);
 
@@ -240,7 +241,7 @@ impl Lower for ast::IntrinsicCall {
           .arguments
           .first()
           .unwrap()
-          .lower(generator, cache, _access)
+          .lower(generator, cache, false)
           .unwrap();
 
         // REVIEW: How about we merge this into a `panic` function?
@@ -380,13 +381,12 @@ impl Lower for ast::AssignStmt {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_value = generator
-      .lower_with_access_rules(&self.value.as_ref().kind, cache)
-      .unwrap();
+    // REVIEW: Is the `access` parameter necessary here? Or default to `false` instead?
+    let llvm_value = self.value.lower(generator, cache, true).unwrap();
 
     // NOTE: In the case that our target is a let-statement (through
     // a reference), memoization or retrieval will occur on the lowering
-    // step of the reference. The assignee should also not be accessed.
+    // step of the reference. The assignee should also not be accessed here.
     let llvm_assignee = self.assignee_expr.lower(generator, cache, false).unwrap();
 
     generator
@@ -421,7 +421,7 @@ impl Lower for ast::ArrayIndexing {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_index = self
       .index_expr
-      .lower(generator, cache, _access)
+      .lower(generator, cache, false)
       .unwrap()
       .into_int_value();
 
@@ -471,7 +471,7 @@ impl Lower for ast::ArrayValue {
     llvm_values.reserve(self.elements.len());
 
     for element in &self.elements {
-      llvm_values.push(element.lower(generator, cache, _access).unwrap());
+      llvm_values.push(element.lower(generator, cache, false).unwrap());
     }
 
     // TODO: Is this cast (usize -> u32) safe?
@@ -548,9 +548,10 @@ impl Lower for ast::UnsafeExpr {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
-    _access: bool,
+    access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.0.lower(generator, cache, _access)
+    // REVIEW: Is it correct to pass the `access` parameter along?
+    self.0.lower(generator, cache, access)
   }
 }
 
@@ -561,9 +562,10 @@ impl Lower for ast::BinaryExpr {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let mut llvm_left_value = self.left.lower(generator, cache, _access).unwrap();
-    let mut llvm_right_value = self.right.lower(generator, cache, _access).unwrap();
+    let mut llvm_left_value = self.left.lower(generator, cache, false).unwrap();
+    let mut llvm_right_value = self.right.lower(generator, cache, false).unwrap();
 
+    // REVIEW: Is it okay to semi-force an access here? Why not instead make use of the `access` parameter?
     llvm_left_value = generator.attempt_access(llvm_left_value);
     llvm_right_value = generator.attempt_access(llvm_right_value);
 
@@ -809,7 +811,7 @@ impl Lower for ast::LoopStmt {
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
     let llvm_condition = if let Some(condition) = &self.condition {
       condition
-        .lower(generator, cache, _access)
+        .lower(generator, cache, false)
         .unwrap()
         .into_int_value()
     } else {
@@ -835,13 +837,13 @@ impl Lower for ast::LoopStmt {
 
     generator.llvm_builder.position_at_end(llvm_then_block);
     generator.current_loop_block = Some(llvm_after_block);
-    self.body.lower(generator, cache, _access);
+    self.body.lower(generator, cache, false);
 
     // Fallthrough or loop if applicable.
     if generator.get_current_block().get_terminator().is_none() {
       let llvm_condition_iter = if let Some(condition) = &self.condition {
         condition
-          .lower(generator, cache, _access)
+          .lower(generator, cache, false)
           .unwrap()
           .into_int_value()
       } else {
@@ -870,7 +872,7 @@ impl Lower for ast::IfExpr {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_condition = self.condition.lower(generator, cache, _access).unwrap();
+    let llvm_condition = self.condition.lower(generator, cache, false).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
     let ty = self.infer_type(cache);
     let yields_expression = !ty.is_unit();
@@ -913,7 +915,7 @@ impl Lower for ast::IfExpr {
       );
 
       generator.llvm_builder.position_at_end(llvm_else_block);
-      llvm_else_block_value = else_block.lower(generator, cache, _access);
+      llvm_else_block_value = else_block.lower(generator, cache, false);
 
       // FIXME: Is this correct? Or should we be using the `else_block` directly here?
       // Fallthrough if applicable.
@@ -933,7 +935,7 @@ impl Lower for ast::IfExpr {
 
     generator.llvm_builder.position_at_end(llvm_then_block);
 
-    let llvm_then_block_value = self.then_value.lower(generator, cache, _access);
+    let llvm_then_block_value = self.then_value.lower(generator, cache, false);
 
     // FIXME: Is this correct? Or should we be using `get_current_block()` here? Or maybe this is just a special case to not leave the `then` block without a terminator? Investigate.
     // Fallthrough if applicable.
@@ -1152,7 +1154,7 @@ impl Lower for ast::BlockExpr {
       // FIXME: Some binding statements (such as let-statement) need to be manually
       // ... cached in the generator, this is because not all calls to lower it are made
       // ... using the `memoize_or_retrieve_value` helper function (such as this one!).
-      statement.lower(generator, cache, _access);
+      statement.lower(generator, cache, false);
 
       // Do not continue lowering statements if the current block was terminated.
       if generator.get_current_block().get_terminator().is_some() {
@@ -1197,7 +1199,7 @@ impl Lower for ast::UnaryExpr {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match self.operator {
       ast::OperatorKind::Not => {
-        let llvm_value = self.expr.lower(generator, cache, _access).unwrap();
+        let llvm_value = self.expr.lower(generator, cache, false).unwrap();
         let llvm_final_value = generator.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
@@ -1207,7 +1209,7 @@ impl Lower for ast::UnaryExpr {
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
-        let llvm_value = self.expr.lower(generator, cache, _access).unwrap();
+        let llvm_value = self.expr.lower(generator, cache, false).unwrap();
         let llvm_final_value = generator.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be an integer or float. This should be enforced during type-checking.
@@ -1229,13 +1231,13 @@ impl Lower for ast::UnaryExpr {
         // FIXME: The expression shouldn't be accessed in this case. Find out how to accomplish this.
 
         // TODO: For the time being, this isn't being returned. This should be the return value.
-        self.expr.lower(generator, cache, _access).unwrap()
+        self.expr.lower(generator, cache, false).unwrap()
 
-        // TODO: Continue implementation.
+        // TODO: Continue implementation (if necessary).
         // todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
-        let llvm_value = self.expr.lower(generator, cache, _access).unwrap();
+        let llvm_value = self.expr.lower(generator, cache, false).unwrap();
 
         // BUG: If the value is a reference to a let-statement, the pointer of
         // ... the let-statement will be removed, but the actual pointer value will
@@ -1243,7 +1245,7 @@ impl Lower for ast::UnaryExpr {
         generator.access(llvm_value.into_pointer_value())
       }
       ast::OperatorKind::Cast => {
-        let llvm_value = self.expr.lower(generator, cache, _access).unwrap();
+        let llvm_value = self.expr.lower(generator, cache, false).unwrap();
         let llvm_final_value = generator.attempt_access(llvm_value);
         let llvm_to_type = generator.lower_type(self.cast_type.as_ref().unwrap(), cache);
 
@@ -1282,7 +1284,7 @@ impl Lower for ast::LetStmt {
       // REVISE: Cleanup the caching code.
       // REVIEW: Here create a definition for the closure, with the let statement as the name?
 
-      let result = self.value.lower(generator, cache, _access);
+      let result = self.value.lower(generator, cache, false);
 
       // REVIEW: Won't let-statements always have a value?
       if let Some(llvm_value) = result {
@@ -1301,11 +1303,7 @@ impl Lower for ast::LetStmt {
       .llvm_builder
       .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
 
-    let llvm_value =
-      // generator
-      // .lower_with_access_rules(&self.value.as_ref().kind, cache)
-      // .unwrap();
-      self.value.as_ref().lower(generator, cache, _access).unwrap();
+    let llvm_value = self.value.lower(generator, cache, true).unwrap();
 
     generator.llvm_builder.build_store(llvm_alloca, llvm_value);
 
@@ -1344,7 +1342,7 @@ impl Lower for ast::CallExpr {
         0,
         member_access
           .base_expr
-          .lower(generator, cache, _access)
+          .lower(generator, cache, false)
           .unwrap()
           .into(),
       );
@@ -1354,7 +1352,7 @@ impl Lower for ast::CallExpr {
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     let llvm_target_callable = self
       .callee_expr
-      .lower(generator, cache, _access)
+      .lower(generator, cache, false)
       .unwrap()
       .into_pointer_value();
 
@@ -1395,9 +1393,10 @@ impl Lower for ast::InlineExprStmt {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
-    _access: bool,
+    access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.expr.lower(generator, cache, _access)
+    // REVIEW: Is it correct to pass the `access` parameter here?
+    self.expr.lower(generator, cache, access)
   }
 }
 
@@ -1866,7 +1865,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     binding_id: cache::BindingId,
     cache: &cache::Cache,
     forward_buffers: bool,
-    use_access_rules: bool,
+    apply_access_rules: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let node = cache.unsafe_get(&binding_id);
 
@@ -1879,7 +1878,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
       let existing_value_cloned = existing_definition.clone();
 
-      return Some(if use_access_rules {
+      return Some(if apply_access_rules {
         self.apply_access_rules(node, existing_value_cloned, cache)
       } else {
         existing_value_cloned
@@ -1897,7 +1896,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       // This way, access rules may be chosen to be applied upon cache retrieval.
       self.llvm_cached_values.insert(binding_id, llvm_value);
 
-      Some(if use_access_rules {
+      Some(if apply_access_rules {
         self.apply_access_rules(node, llvm_value, cache)
       } else {
         llvm_value
@@ -1960,7 +1959,7 @@ mod tests {
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
-      value: Box::new(mock::Mock::node(mock::Mock::literal_int())),
+      value: mock::Mock::node(mock::Mock::literal_int()),
       is_mutable: false,
       binding_id: 0,
     });
@@ -1980,7 +1979,7 @@ mod tests {
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
-      value: Box::new(mock::Mock::node(mock::Mock::literal_int())),
+      value: mock::Mock::node(mock::Mock::literal_int()),
       is_mutable: false,
       binding_id: a_binding_id,
     });
@@ -1988,7 +1987,7 @@ mod tests {
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
-      value: Box::new(mock::Mock::node(mock::Mock::reference(a_binding_id))),
+      value: mock::Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
     });
@@ -1997,7 +1996,7 @@ mod tests {
       .cache(let_stmt_a, a_binding_id)
       .function()
       .lower_cache(a_binding_id, false)
-      .lower(&let_stmt_b, true)
+      .lower(&let_stmt_b, false)
       .compare_with_file("let_stmt_ref_val");
   }
 
@@ -2010,9 +2009,7 @@ mod tests {
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: ast::Type::Pointer(Box::new(ty.clone())),
-      value: Box::new(mock::Mock::node(ast::NodeKind::Literal(
-        ast::Literal::Nullptr(ty),
-      ))),
+      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_mutable: false,
       binding_id: 0,
     });
@@ -2033,9 +2030,7 @@ mod tests {
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: ast::Type::Pointer(Box::new(ty.clone())),
-      value: Box::new(mock::Mock::node(ast::NodeKind::Literal(
-        ast::Literal::Nullptr(ty.clone()),
-      ))),
+      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
     });
@@ -2043,7 +2038,7 @@ mod tests {
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
       ty: ast::Type::Pointer(Box::new(ty.clone())),
-      value: Box::new(mock::Mock::node(mock::Mock::reference(a_binding_id))),
+      value: mock::Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
     });
@@ -2052,7 +2047,7 @@ mod tests {
       .cache(let_stmt_a, a_binding_id)
       .function()
       .lower_cache(a_binding_id, false)
-      .lower(&let_stmt_b, true)
+      .lower(&let_stmt_b, false)
       .compare_with_file("let_stmt_ptr_ref_val");
   }
 
@@ -2064,8 +2059,8 @@ mod tests {
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: ast::Type::Basic(ast::BasicType::String),
-      value: Box::new(mock::Mock::node(ast::NodeKind::Literal(
-        ast::Literal::String("hello".to_string()),
+      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::String(
+        "hello".to_string(),
       ))),
       is_mutable: false,
       binding_id: 0,
@@ -2086,17 +2081,17 @@ mod tests {
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
-      value: Box::new(mock::Mock::node(mock::Mock::literal_int())),
+      value: mock::Mock::node(mock::Mock::literal_int()),
       is_mutable: true,
       binding_id: a_binding_id,
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
-      assignee_expr: Box::new(mock::Mock::node(mock::Mock::reference(a_binding_id))),
-      value: Box::new(mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Int(
+      assignee_expr: mock::Mock::reference(a_binding_id),
+      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Int(
         2,
         ast::IntSize::I32,
-      )))),
+      ))),
     });
 
     mock::Mock::new(&llvm_context, &llvm_module)
@@ -2105,6 +2100,44 @@ mod tests {
       .lower_cache(a_binding_id, false)
       .lower(&assign_stmt, false)
       .compare_with_file("assign_stmt_const_val");
+  }
+
+  #[test]
+  fn lower_assign_ptr_to_ptr() {
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
+    let a_binding_id: cache::BindingId = 0;
+    let b_binding_id: cache::BindingId = a_binding_id + 1;
+
+    let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "a".to_string(),
+      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      is_mutable: false,
+      binding_id: a_binding_id,
+    });
+
+    let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
+      name: "b".to_string(),
+      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      is_mutable: false,
+      binding_id: b_binding_id,
+    });
+
+    let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
+      assignee_expr: mock::Mock::reference(b_binding_id),
+      value: mock::Mock::reference(a_binding_id),
+    });
+
+    mock::Mock::new(&llvm_context, &llvm_module)
+      .cache(let_stmt_a, a_binding_id)
+      .cache(let_stmt_b, b_binding_id)
+      .function()
+      .lower_cache(a_binding_id, false)
+      .lower(&assign_stmt, false)
+      .compare_with_file("assign_stmt_ptr_to_ptr");
   }
 
   #[test]
@@ -2142,7 +2175,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
-      value: Some(Box::new(mock::Mock::node(mock::Mock::literal_int()))),
+      value: Some(mock::Mock::node(mock::Mock::literal_int())),
     });
 
     mock::Mock::new(&llvm_context, &llvm_module)
@@ -2192,10 +2225,8 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
-      condition: Box::new(mock::Mock::node(ast::NodeKind::Literal(
-        ast::Literal::Bool(true),
-      ))),
-      then_value: Box::new(mock::Mock::node(mock::Mock::literal_int())),
+      condition: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
+      then_value: mock::Mock::node(mock::Mock::literal_int()),
       else_value: None,
     });
 
