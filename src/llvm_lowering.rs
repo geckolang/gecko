@@ -65,7 +65,7 @@ impl Lower for ast::ParenthesesExpr {
     cache: &cache::Cache,
     access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // REVIEW: Is it correct to pass the `access` parameter here?
+    // NOTE: The `access` flag is passed down, since this is a transient construct.
     self.expr.lower(generator, cache, access)
   }
 }
