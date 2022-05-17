@@ -248,7 +248,7 @@ impl Resolve for ast::StructValue {
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.target_id = resolver.local_lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
 
-    if let Some(target_id) = self.target_id {
+    if let Some(_target_id) = self.target_id {
       // So, the new system will look like this:
       //  - The type is attached to the node that needs it.
       //  - We still have the cache, but only to lookup & lower nodes.

@@ -8,7 +8,8 @@ pub struct SemanticCheckContext {
   in_unsafe_block: bool,
   in_impl: bool,
   current_function_key: Option<cache::BindingId>,
-  types_cache: std::collections::HashMap<cache::BindingId, ast::Type>,
+  // REVISE: Make use-of or discard.
+  _types_cache: std::collections::HashMap<cache::BindingId, ast::Type>,
   imports: Vec<ast::Import>,
 }
 
@@ -38,19 +39,19 @@ impl SemanticCheckContext {
       in_unsafe_block: false,
       in_impl: false,
       current_function_key: None,
-      types_cache: std::collections::HashMap::new(),
+      _types_cache: std::collections::HashMap::new(),
       imports: Vec::new(),
     }
   }
 
   // TODO: Make use-of, or get rid-of.
-  fn fetch_type(
+  fn _fetch_type(
     &mut self,
     node_kind: &ast::NodeKind,
     unique_key: &cache::BindingId,
     cache: &cache::Cache,
   ) -> ast::Type {
-    if let Some(cached_type) = self.types_cache.get(unique_key) {
+    if let Some(cached_type) = self._types_cache.get(unique_key) {
       // REVISE: Cloning type.
       return cached_type.clone();
     }
@@ -58,7 +59,7 @@ impl SemanticCheckContext {
     let inferred_type = node_kind.infer_type(cache);
 
     self
-      .types_cache
+      ._types_cache
       // TODO: Cloning type.
       .insert(unique_key.clone(), inferred_type.clone());
 
