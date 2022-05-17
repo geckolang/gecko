@@ -289,37 +289,16 @@ impl Lower for ast::StructValue {
       .memoize_or_retrieve_type(self.target_id.unwrap(), cache)
       .into_struct_type();
 
-    // let llvm_struct_alloca = generator.llvm_alloca_buffer.unwrap();
-
     let llvm_struct_alloca = generator.llvm_builder.build_alloca(
       llvm_struct_type,
       format!("struct.{}.alloca", self.struct_name).as_str(),
     );
 
-    // let llvm_fields = self
-    //   .fields
-    //   .iter()
-    //   .map(|field| {
-    //     // generator
-    //     //   .lower_with_access_rules(&field.kind, cache)
-    //     //   .unwrap()
-    //     // REVIEW: Opted to not use access rule here. Verify this is correct.
-    //     field.kind.lower(generator, cache, false).unwrap()
-
-    //     // generator.llvm_builder.build_insert_value(
-    //     //   llvm_struct_value,
-    //     //   llvm_field_value,
-    //     //   index as u32,
-    //     //   "struct.insert.value",
-    //     // );
-    //   })
-    //   .collect::<Vec<_>>();
-
     for (index, field) in self.fields.iter().enumerate() {
       let struct_field_gep = generator
         .llvm_builder
-        // TODO: Is this conversion safe?
-        // TODO: Better name.
+        // REVIEW: Is this conversion safe?
+        // REVISE: Better name.
         .build_struct_gep(llvm_struct_alloca, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
@@ -330,8 +309,6 @@ impl Lower for ast::StructValue {
         // FIXME: For nested structs, they will return `None`.
         .build_store(struct_field_gep, llvm_field_value);
     }
-
-    // let llvm_struct_value = llvm_struct_type.const_named_struct(llvm_fields.as_slice());
 
     Some(if access {
       generator.access(llvm_struct_alloca)

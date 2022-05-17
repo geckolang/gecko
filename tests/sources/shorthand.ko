@@ -1,0 +1,7 @@
+fn single_statement(): Int = 1
+
+fn block_yield(): Int = {
+  1
+}
+
+fn unsafe_block(): Int = unsafe -> 1

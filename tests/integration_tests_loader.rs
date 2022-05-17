@@ -5,7 +5,6 @@ extern crate inkwell;
 mod tests {
   use gecko::lint::Lint;
   use gecko::llvm_lowering::Lower;
-  use gecko::name_resolution::Resolve;
   use gecko::semantic_check::SemanticCheck;
   use std::io::Read;
 
@@ -43,12 +42,9 @@ mod tests {
       .collect()
   }
 
-  // REVISE: Test isn't working for some reason.
   #[test]
-  fn test_sources() {
-    // TODO: Continue implementation.
-
-    let source_files = vec!["recursion", "shorthands"];
+  fn integration_tests() {
+    let source_files = vec!["recursion", "shorthand", "simplest_program", "struct"];
     let mut sources = Vec::new();
 
     for source_file in &source_files {
@@ -61,39 +57,33 @@ mod tests {
     let mut name_resolver = gecko::name_resolution::NameResolver::new();
     let mut lint_context = gecko::lint::LintContext::new();
     let mut llvm_generator = gecko::llvm_lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
-    let mut type_context = gecko::semantic_check::SemanticCheckContext::new();
+    let mut semantic_check_context = gecko::semantic_check::SemanticCheckContext::new();
     let mut ast = std::collections::HashMap::new();
-    let mut diagnostics = Vec::new();
-    let mock_package_name = "test".to_string();
 
+    // TODO: Ensure both vectors are of same length, and zip iterators.
     // Read, lex, parse, perform name resolution (declarations)
     // and collect the AST (top-level nodes) from each source file.
-    for (index, source_code) in source_files.iter().enumerate() {
-      let tokens = lex(source_code);
+    for (index, source_file) in source_files.iter().enumerate() {
+      let tokens = lex(&sources[index]);
       let mut parser = gecko::parser::Parser::new(tokens, &mut cache);
+      let top_level_nodes = parser.parse_all();
 
-      // TODO: Unsafe unwrap.
-      let top_level_nodes = parser.parse_all().unwrap();
+      assert!(top_level_nodes.is_ok());
 
       // REVISE: File names need to conform to identifier rules.
-      let source_file_name = source_files[index].to_string();
-
-      let global_qualifier = (mock_package_name.clone(), source_file_name.clone());
+      let global_qualifier = (String::from("string"), source_file.to_string());
 
       name_resolver.create_module(global_qualifier.clone());
-      ast.insert(global_qualifier, top_level_nodes);
+      ast.insert(global_qualifier, top_level_nodes.unwrap());
     }
 
     // After all the ASTs have been collected, perform name resolution step.
-    diagnostics.extend(name_resolver.run(&mut ast, &mut cache));
-
-    // Cannot continue to other phases if name resolution failed.
-    assert!(diagnostics.is_empty());
+    assert!(name_resolver.run(&mut ast, &mut cache).is_empty());
 
     // Once symbols are resolved, we can proceed to the other phases.
     for inner_ast in ast.values_mut() {
       for top_level_node in inner_ast {
-        top_level_node.check(&mut type_context, &mut cache);
+        top_level_node.check(&mut semantic_check_context, &mut cache);
 
         // REVIEW: Can we mix linting with type-checking without any problems?
         top_level_node.lint(&mut cache, &mut lint_context);
@@ -101,12 +91,13 @@ mod tests {
     }
 
     // Lowering cannot proceed if there was an error.
-    assert!(diagnostics.is_empty());
+    // TODO: Missing semantic check context's diagnostics.
+    assert!(lint_context.diagnostic_builder.diagnostics.is_empty());
 
     // REVISE: Any way for better efficiency (less loops)?
     // Once symbols are resolved, we can proceed to the other phases.
     for (global_qualifier, inner_ast) in &mut ast {
-      // TODO: Must join package and module name for uniqueness.
+      // REVIEW: Must join package and module name for uniqueness?
       llvm_generator.module_name = global_qualifier.1.clone();
 
       for top_level_node in inner_ast {
@@ -115,8 +106,5 @@ mod tests {
     }
 
     assert!(llvm_module.verify().is_ok());
-    assert!(diagnostics.is_empty());
   }
-
-  // TODO: Write more integration tests, and ensure they're picked up when running 'cargo test'.
 }

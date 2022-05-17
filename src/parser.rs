@@ -27,7 +27,7 @@ fn get_token_precedence(token: &lexer::TokenKind) -> usize {
   match token {
     lexer::TokenKind::Plus
     | lexer::TokenKind::Minus
-    | lexer::TokenKind::Equal
+    | lexer::TokenKind::Equality
     | lexer::TokenKind::LessThan
     | lexer::TokenKind::GreaterThan
     | lexer::TokenKind::And
@@ -1135,15 +1135,15 @@ impl<'a> Parser<'a> {
         && get_token_precedence(&token_buffer) > precedence
       {
         // REVIEW: Are we adding the correct amount of precedence here? Shouldn't there be a higher difference in precedence?
-        // REVIEW: This isn't tail-recursive?
+        // REVISE: This isn't tail-recursive.
         right = self.parse_binary_expr_or_default(right, precedence + 1)?;
         token_buffer = self.force_get();
       }
 
       let kind = ast::NodeKind::BinaryExpr(ast::BinaryExpr {
         left: Box::new(buffer),
-        operator,
         right: Box::new(right),
+        operator,
       });
 
       buffer = ast::Node {

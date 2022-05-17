@@ -1,19 +1,19 @@
-fn recursive_infinite() {
-  recursive_infinite()
+fn recursive_infinite(): Unit = {
+  #recursive_infinite();
 }
 
-fn factorial(n: i32): i32 {
-  if n == 0 {
-    return 1
+fn factorial(n: Int): Int = {
+  if n == 0 then {
+    return 1;
   }
 
-  return n * factorial(n - 1)
+  return n * factorial(n - 1);
 }
 
-fn factorial_tail_recursive(n: i32, acc: i32): i32 {
-  if n == 0 {
-    return acc
+fn factorial_tail_recursive(n2: Int, acc: Int): Int = {
+  if n2 == 0 then {
+    return acc;
   }
 
-  return factorial_tail_recursive(n - 1, n * acc)
+  return factorial_tail_recursive(n2 - 1, n2 * acc);
 }
