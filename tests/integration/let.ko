@@ -1,0 +1,18 @@
+fn main(): Int = {
+  # Literal value & explicit type.
+  let a: Int = 1;
+
+  # Binary-expression as value.
+  let b: Int = 1+1;
+
+  # Binary-expression using references as value.
+  let c: Int = a+b;
+
+  # Literal value, inferred type.
+  let d = 1;
+
+  # Binary-expression value, inferred type.
+  let e = c+d;
+
+  0
+}

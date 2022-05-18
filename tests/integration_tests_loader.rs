@@ -12,7 +12,7 @@ mod tests {
     let mut path_buffer = std::env::current_dir().unwrap();
 
     path_buffer.push("tests");
-    path_buffer.push("sources");
+    path_buffer.push("integration");
     path_buffer.push(name);
     path_buffer.set_extension("ko");
 
@@ -44,7 +44,15 @@ mod tests {
 
   #[test]
   fn integration_tests() {
-    let source_files = vec!["recursion", "shorthand", "simplest_program", "struct"];
+    // TODO: Instead of having the file names hard-coded, simply load all the matching files in the directory.
+    let source_files = vec![
+      "recursion",
+      "shorthand",
+      "simplest_program",
+      "struct",
+      "let",
+    ];
+
     let mut sources = Vec::new();
 
     for source_file in &source_files {

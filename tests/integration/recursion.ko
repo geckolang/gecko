@@ -1,13 +1,11 @@
-fn recursive_infinite(): Unit = {
-  #recursive_infinite();
-}
+fn recursive_infinite(): Unit = recursive_infinite()
 
 fn factorial(n: Int): Int = {
   if n == 0 then {
     return 1;
   }
 
-  return n * factorial(n - 1);
+  n * factorial(n - 1)
 }
 
 fn factorial_tail_recursive(n2: Int, acc: Int): Int = {
@@ -15,5 +13,5 @@ fn factorial_tail_recursive(n2: Int, acc: Int): Int = {
     return acc;
   }
 
-  return factorial_tail_recursive(n2 - 1, n2 * acc);
+  factorial_tail_recursive(n2 - 1, n2 * acc)
 }
