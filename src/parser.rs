@@ -757,9 +757,13 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::Colon)?;
+    let ty = if self.is(&lexer::TokenKind::Colon) {
+      self.skip_past(&lexer::TokenKind::Colon)?;
 
-    let ty = self.parse_type()?;
+      Some(self.parse_type()?)
+    } else {
+      None
+    };
 
     self.skip_past(&lexer::TokenKind::Equal)?;
 
@@ -800,6 +804,7 @@ impl<'a> Parser<'a> {
       condition: Box::new(condition),
       then_value: Box::new(then_value),
       else_value,
+      ty: None,
     })
   }
 
@@ -1080,6 +1085,7 @@ impl<'a> Parser<'a> {
     Ok(ast::MemberAccess {
       base_expr: Box::new(base_expr),
       member_name: self.parse_name()?,
+      ty: None,
     })
   }
 

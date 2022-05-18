@@ -354,7 +354,7 @@ pub struct ReturnStmt {
 #[derive(Debug, Clone)]
 pub struct LetStmt {
   pub name: String,
-  pub ty: Type,
+  pub ty: Option<Type>,
   pub value: Box<Node>,
   pub is_mutable: bool,
   pub binding_id: cache::BindingId,
@@ -365,6 +365,7 @@ pub struct IfExpr {
   pub condition: Box<Node>,
   pub then_value: Box<Node>,
   pub else_value: Option<Box<Node>>,
+  pub ty: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -451,4 +452,5 @@ pub struct UnaryExpr {
 pub struct MemberAccess {
   pub base_expr: Box<Node>,
   pub member_name: String,
+  pub ty: Option<StructType>,
 }

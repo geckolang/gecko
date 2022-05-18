@@ -102,15 +102,11 @@ impl Lower for ast::MemberAccess {
       .unwrap()
       .into_pointer_value();
 
-    let struct_type = match SemanticCheckContext::infer_and_resolve_type(&self.base_expr, cache) {
-      ast::Type::Struct(struct_type) => struct_type,
-      // REVIEW: What about `This` type? Parameter `this` is of `This` type.
-      _ => unreachable!(),
-    };
+    let llvm_struct_type = self.ty.as_ref().unwrap();
 
     // TODO: Must disallow fields and methods with the same name on semantic check phase.
     // First, check if its a field.
-    if let Some(field_index) = struct_type
+    if let Some(field_index) = llvm_struct_type
       .fields
       .iter()
       .position(|field| field.0 == self.member_name)
@@ -133,7 +129,7 @@ impl Lower for ast::MemberAccess {
     // Otherwise, it must be a method.
     let impl_method_info = cache
       .struct_impls
-      .get(&struct_type.binding_id)
+      .get(&llvm_struct_type.binding_id)
       .unwrap()
       .iter()
       .find(|x| x.1 == self.member_name)
@@ -854,7 +850,7 @@ impl Lower for ast::IfExpr {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_condition = self.condition.lower(generator, cache, false).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
-    let ty = self.infer_type(cache);
+    let ty = self.ty.as_ref().unwrap();
     let yields_expression = !ty.is_unit();
     let mut llvm_if_value = None;
 
@@ -1256,9 +1252,11 @@ impl Lower for ast::LetStmt {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let ty = self.ty.as_ref().unwrap();
+
     // Special cases. The allocation is done elsewhere.
     if matches!(
-      SemanticCheckContext::flatten_type(&self.ty, cache),
+      SemanticCheckContext::flatten_type(&ty, cache),
       ast::Type::Function(_)
     ) {
       // REVISE: Cleanup the caching code.
@@ -1277,7 +1275,7 @@ impl Lower for ast::LetStmt {
     }
 
     // BUG: Use type-caching. Declaring multiple variables with the same struct type will cause repeated type definitions.
-    let llvm_type = generator.lower_type(&self.ty, cache);
+    let llvm_type = generator.lower_type(&ty, cache);
 
     let llvm_alloca = generator
       .llvm_builder
@@ -1440,24 +1438,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     llvm_value: inkwell::values::BasicValueEnum<'ctx>,
     cache: &cache::Cache,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    let ty = SemanticCheckContext::flatten_type(&node.infer_type(cache), cache);
-
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
-
     // REVIEW: Is there a need to resolve the type?
-    // BUG: This won't work for nested string values. Cannot compare node kind.
-    // Special case for string literals. They shouldn't be
-    // lowered, since they're natural pointers. And for structs,
-    // they must be passed as pointer values.
-    if (matches!(ty, ast::Type::Basic(ast::BasicType::String))
-      && !matches!(node, ast::NodeKind::Reference(_)))
-    // || matches!(ty, ast::Type::Reference(_))
-    // || matches!(ty, ast::Type::Pointer(_))
-    {
-      return llvm_value;
-    }
-    // BUG: Temporary. Will not work for nested values.
-    else if let ast::NodeKind::Reference(reference) = &node {
+
+    if let ast::NodeKind::Reference(reference) = &node {
       let target = cache
         .symbols
         .get(&reference.pattern.target_id.unwrap())
@@ -1750,7 +1734,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let mut llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|x| self.lower_type(&x.infer_type(cache), cache).into())
+      .map(|parameter| self.lower_type(&parameter.ty, cache).into())
       .collect::<Vec<_>>();
 
     if prototype.accepts_instance {
@@ -1933,7 +1917,7 @@ mod tests {
 
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
       value: mock::Mock::node(mock::Mock::literal_int()),
       is_mutable: false,
       binding_id: 0,
@@ -1953,7 +1937,7 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
       value: mock::Mock::node(mock::Mock::literal_int()),
       is_mutable: false,
       binding_id: a_binding_id,
@@ -1961,7 +1945,7 @@ mod tests {
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
       value: mock::Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
@@ -1983,7 +1967,7 @@ mod tests {
 
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_mutable: false,
       binding_id: 0,
@@ -2004,7 +1988,7 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
@@ -2012,7 +1996,7 @@ mod tests {
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
-      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: mock::Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
@@ -2033,7 +2017,7 @@ mod tests {
 
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: ast::Type::Basic(ast::BasicType::String),
+      ty: Some(ast::Type::Basic(ast::BasicType::String)),
       value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
       ))),
@@ -2055,7 +2039,7 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
       value: mock::Mock::node(mock::Mock::literal_int()),
       is_mutable: true,
       binding_id: a_binding_id,
@@ -2087,7 +2071,7 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
@@ -2095,7 +2079,7 @@ mod tests {
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
-      ty: ast::Type::Pointer(Box::new(ty.clone())),
+      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: b_binding_id,
@@ -2203,6 +2187,7 @@ mod tests {
       condition: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
       then_value: mock::Mock::node(mock::Mock::literal_int()),
       else_value: None,
+      ty: Some(ast::Type::Unit),
     });
 
     mock::Mock::new(&llvm_context, &llvm_module)

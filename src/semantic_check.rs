@@ -16,7 +16,7 @@ pub struct SemanticCheckContext {
 impl SemanticCheckContext {
   pub fn run(
     ast: &Vec<std::rc::Rc<ast::Node>>,
-    cache: &cache::Cache,
+    cache: &mut cache::Cache,
   ) -> (Vec<diagnostic::Diagnostic>, Vec<ast::Import>) {
     let mut semantic_check_context = SemanticCheckContext::new();
 
@@ -188,12 +188,12 @@ impl SemanticCheck for ast::Node {
 }
 
 impl SemanticCheck for ast::NodeKind {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    dispatch!(&self, SemanticCheck::check, context, cache);
-  }
-
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     dispatch!(&self, SemanticCheck::infer_type, cache)
+  }
+
+  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+    dispatch!(&self, SemanticCheck::check, context, cache);
   }
 }
 
@@ -365,7 +365,9 @@ impl SemanticCheck for ast::MemberAccess {
     if let Some(struct_impls) = cache.struct_impls.get(&struct_type.binding_id) {
       for (method_binding_id, method_name) in struct_impls {
         if method_name == &self.member_name {
-          return cache.unsafe_get(&method_binding_id).infer_type(cache);
+          // TODO: Fix implementation.
+          todo!();
+          // return cache.unsafe_get(&method_binding_id).infer_type(cache);
         }
       }
     }
@@ -741,9 +743,16 @@ impl SemanticCheck for ast::ArrayIndexing {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let target_array_variable = cache.unsafe_get(&self.target_id.unwrap());
 
+    // REVISE: Unnecessary cloning.
     let array_type = match target_array_variable {
-      ast::NodeKind::LetStmt(let_stmt) => &let_stmt.ty,
-      ast::NodeKind::Parameter(parameter) => &parameter.ty,
+      ast::NodeKind::LetStmt(let_stmt) => {
+        if let Some(ty) = &let_stmt.ty {
+          ty.clone()
+        } else {
+          let_stmt.infer_type(cache)
+        }
+      }
+      ast::NodeKind::Parameter(parameter) => parameter.ty.clone(),
       _ => unreachable!(),
     };
 
@@ -900,8 +909,6 @@ impl SemanticCheck for ast::BlockExpr {
 
 impl SemanticCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // TODO: Should not be inferring types of nodes pulled from the cache. This will
-    // ... likely lead to design problems.
     cache
       .unsafe_get(&self.pattern.target_id.unwrap())
       .infer_type(cache)
@@ -1041,13 +1048,20 @@ impl SemanticCheck for ast::InlineExprStmt {
 impl SemanticCheck for ast::LetStmt {
   // BUG: This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.value.infer_type(&cache)
+    self.value.infer_type(cache)
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     let value_type = self.value.infer_type(cache);
 
-    if !SemanticCheckContext::unify(&self.ty, &value_type, cache) {
+    let ty = if let Some(ty) = &self.ty {
+      // REVISE: Unnecessary cloning.
+      ty.clone()
+    } else {
+      self.infer_type(cache)
+    };
+
+    if !SemanticCheckContext::unify(&ty, &value_type, cache) {
       context.diagnostic_builder.error(format!(
         "variable declaration of `{}` value and type mismatch",
         self.name

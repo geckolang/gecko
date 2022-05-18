@@ -12,6 +12,7 @@ pub struct Cache {
   pub symbols: std::collections::HashMap<BindingId, ast::NodeKind>,
   pub main_function_id: Option<BindingId>,
   binding_id_counter: usize,
+  types: std::collections::HashMap<BindingId, ast::Type>,
 }
 
 impl Cache {
@@ -21,6 +22,7 @@ impl Cache {
       symbols: std::collections::HashMap::new(),
       main_function_id: None,
       binding_id_counter: 0,
+      types: std::collections::HashMap::new(),
     }
   }
 

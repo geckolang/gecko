@@ -1,9 +1,9 @@
-use crate::{ast, cache, diagnostic, llvm_lowering};
+use crate::{ast, cache, diagnostic, llvm_lowering, semantic_check::SemanticCheck};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
   Definition,
-  // TODO: Can be more than that. Do not lie.
+  // REVISE: Can be more than that. Do not lie.
   /// A global type. Can be a struct, or enum.
   Type,
 }
@@ -27,16 +27,14 @@ impl Resolve for ast::Type {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     match self {
       ast::Type::Stub(stub_type) => stub_type.resolve(resolver, cache),
-      ast::Type::Pointer(pointee_type) => pointee_type.resolve(resolver, cache),
-      ast::Type::Array(element_type, _) => element_type.resolve(resolver, cache),
       ast::Type::This(this_type) => this_type.resolve(resolver, cache),
-      // TODO: Are there any other types that may need to be resolved?
+      // REVIEW: Are there any other types that may need to be resolved?
       _ => {}
     };
   }
 }
 
-// TODO: Get rid-of. `NodeKind` is preferred. This is redundant.
+// REVISE: Get rid-of. `NodeKind` is preferred. This is redundant.
 impl Resolve for ast::Node {
   // REVIEW: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
@@ -453,6 +451,9 @@ impl Resolve for ast::IfExpr {
     if let Some(else_block) = &mut self.else_value {
       else_block.resolve(resolver, cache);
     }
+
+    // REVIEW: Ensure this works as expected, and that there aren't any data races.
+    self.ty = Some(self.then_value.infer_type(cache));
   }
 }
 
@@ -467,7 +468,13 @@ impl Resolve for ast::LetStmt {
     // ... On the second iteration of the resolve step only! During cached nodes resolution.
 
     self.value.resolve(resolver, cache);
-    self.ty.resolve(resolver, cache);
+
+    // REVISE: Ensure this works as expected. Ensure that there aren't any data races.
+    if self.ty.is_none() {
+      self.ty = Some(self.infer_type(cache));
+    }
+
+    self.ty.as_mut().unwrap().resolve(resolver, cache);
 
     cache
       .symbols
