@@ -16,7 +16,7 @@ pub struct SemanticCheckContext {
 impl SemanticCheckContext {
   pub fn run(
     ast: &Vec<std::rc::Rc<ast::Node>>,
-    cache: &mut cache::Cache,
+    cache: &cache::Cache,
   ) -> (Vec<diagnostic::Diagnostic>, Vec<ast::Import>) {
     let mut semantic_check_context = SemanticCheckContext::new();
 

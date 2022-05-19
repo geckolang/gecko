@@ -402,7 +402,6 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_type(&mut self) -> ParserResult<ast::Type> {
-    // REVISE: Unsafe access.
     // TODO: Support for more types.
     let mut ty = match self.get_token()? {
       // TODO: Other types as well.
