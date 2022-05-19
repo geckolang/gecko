@@ -6,17 +6,10 @@ mod tests {
   use gecko::lint::Lint;
   use gecko::llvm_lowering::Lower;
   use gecko::semantic_check::SemanticCheck;
-  use std::io::Read;
+  use std::{fs, io::Read};
 
-  fn load_test_file(name: &str) -> String {
-    let mut path_buffer = std::env::current_dir().unwrap();
-
-    path_buffer.push("tests");
-    path_buffer.push("integration");
-    path_buffer.push(name);
-    path_buffer.set_extension("ko");
-
-    let mut file = std::fs::File::open(path_buffer).unwrap();
+  fn load_test_file(path: &std::path::PathBuf) -> String {
+    let mut file = std::fs::File::open(path).unwrap();
     let mut contents = String::new();
 
     file.read_to_string(&mut contents).unwrap();
@@ -44,19 +37,22 @@ mod tests {
 
   #[test]
   fn integration_tests() {
-    // TODO: Instead of having the file names hard-coded, simply load all the matching files in the directory.
-    let source_files = vec![
-      "recursion",
-      "shorthand",
-      "simplest_program",
-      "struct",
-      "let",
-    ];
+    let mut tests_path = std::env::current_dir().unwrap();
+
+    tests_path.push("tests");
+    tests_path.push("integration");
+
+    // REVISE: Unsafe unwrap.
+    let source_files = fs::read_dir(tests_path)
+      .unwrap()
+      .map(|path| path.unwrap().path())
+      .filter(|path| path.is_file() && path.extension().unwrap() == "ko")
+      .collect::<Vec<_>>();
 
     let mut sources = Vec::new();
 
     for source_file in &source_files {
-      sources.push(load_test_file(&source_file));
+      sources.push(load_test_file(source_file));
     }
 
     let llvm_context = inkwell::context::Context::create();
@@ -79,7 +75,16 @@ mod tests {
       assert!(top_level_nodes.is_ok());
 
       // REVISE: File names need to conform to identifier rules.
-      let global_qualifier = (String::from("string"), source_file.to_string());
+      let global_qualifier = (
+        String::from("string"),
+        // REVISE: Long conversion. Any way to simplify?
+        source_file
+          .file_name()
+          .unwrap()
+          .to_str()
+          .unwrap()
+          .to_string(),
+      );
 
       name_resolver.create_module(global_qualifier.clone());
       ast.insert(global_qualifier, top_level_nodes.unwrap());

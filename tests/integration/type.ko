@@ -1,0 +1,6 @@
+type A = Int
+
+type B = A
+
+# FIXME: This compiles but it should be detected as recursive.
+type C = C

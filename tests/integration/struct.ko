@@ -1,0 +1,20 @@
+struct A {
+  value: Int,
+}
+
+fn struct_test(): Int = {
+  # Declaration.
+  let a: A = new A{1};
+
+  # Field access.
+  # FIXME: Failing test.
+  #let b: Int = a.value;
+
+  # Assignment.
+  #a = new C{2};
+
+  # Field assignment.
+  # TODO: Aren't structs immutable?
+
+  0
+}
