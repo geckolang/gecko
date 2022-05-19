@@ -44,6 +44,23 @@ macro_rules! dispatch {
 }
 
 #[derive(Debug, Clone)]
+pub enum GenericConstraintKind {
+  Implements,
+  Is,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericConstraint {
+  pub kind: GenericConstraintKind,
+}
+
+#[derive(Debug, Clone)]
+pub struct Generics {
+  pub parameters: Vec<String>,
+  pub constraints: Option<Vec<GenericConstraint>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ParenthesesExpr {
   pub expr: Box<Node>,
 }
@@ -279,7 +296,9 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
-  pub return_type: Type,
+  /// An optional, explicitly-given return type to serve for metadata or
+  /// disambiguation only (except in the case of an extern function).
+  pub return_type_annotation: Option<Type>,
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
@@ -333,6 +352,7 @@ pub struct Function {
   pub body_value: Box<Node>,
   pub attributes: Vec<Attribute>,
   pub binding_id: cache::BindingId,
+  pub generics: Option<Generics>,
 }
 
 #[derive(Debug, Clone)]
@@ -353,7 +373,6 @@ pub struct ReturnStmt {
 #[derive(Debug, Clone)]
 pub struct LetStmt {
   pub name: String,
-  pub ty: Option<Type>,
   pub value: Box<Node>,
   pub is_mutable: bool,
   pub binding_id: cache::BindingId,
@@ -364,7 +383,6 @@ pub struct IfExpr {
   pub condition: Box<Node>,
   pub then_value: Box<Node>,
   pub else_value: Option<Box<Node>>,
-  pub ty: Option<Type>,
 }
 
 #[derive(Debug, Clone)]

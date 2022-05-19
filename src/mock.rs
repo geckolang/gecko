@@ -90,7 +90,7 @@ pub mod tests {
       self
     }
 
-    pub fn lower_cache(&mut self, binding_id: cache::BindingId, access: bool) -> &mut Self {
+    pub fn _lower_cache(&mut self, binding_id: cache::BindingId, access: bool) -> &mut Self {
       self.mock.cache.force_get(&binding_id).lower(
         &mut self.mock.generator,
         &self.mock.cache,
@@ -137,7 +137,7 @@ pub mod tests {
     pub fn prototype_simple(is_extern: bool) -> ast::Prototype {
       ast::Prototype {
         parameters: Vec::new(),
-        return_type: ast::Type::Unit,
+        return_type_annotation: Some(ast::Type::Unit),
         is_variadic: false,
         is_extern,
         accepts_instance: false,
@@ -205,13 +205,13 @@ pub mod tests {
       ModuleMock { mock: self }
     }
 
-    pub fn verify(&mut self) -> &mut Self {
+    pub fn _verify(&mut self) -> &mut Self {
       assert!(self.module.verify().is_ok());
 
       self
     }
 
-    pub fn lower_without_context(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
+    pub fn _lower_without_context(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
       node.lower(&mut self.generator, &self.cache, access);
 
       self

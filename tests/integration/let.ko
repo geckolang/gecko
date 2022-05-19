@@ -2,31 +2,22 @@ struct A {
   value: Int,
 }
 
-fn main(): Int = {
-  # Literal value & explicit type.
-  let a: Int = 1;
+fn main() = {
+  # Literal value.
+  let a = 1;
 
-  # Binary-expression as value.
-  let b: Int = 1+1;
+  # Binary-expression value.
+  let b = 1+1;
 
-  # Binary-expression using references as value.
-  let c: Int = a+b;
+  # Binary-expression using references value.
+  let c = a+b;
 
-  # Literal value, inferred type.
-  let d = 1;
+  # Struct value.
+  let d = new A{1};
 
-  # Binary-expression value, inferred type.
-  let e = c+d;
-
-  # Struct value, explicit type.
-  let f: A = new A{1};
-
-  # Struct value, inferred type.
-  #let g = new A{1};
-
-  # Struct value, stub inferred type.
+  # Struct value, stub type.
   # FIXME: Failing test.
-  #let h = new B{1};
+  #let e = new B{1};
 
   0
 }

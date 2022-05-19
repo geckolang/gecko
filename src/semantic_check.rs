@@ -44,6 +44,19 @@ impl SemanticCheckContext {
     }
   }
 
+  pub fn infer_prototype_type(prototype: &ast::Prototype, return_type: ast::Type) -> ast::Type {
+    ast::Type::Function(ast::FunctionType {
+      return_type: Box::new(return_type),
+      parameter_types: prototype
+        .parameters
+        .iter()
+        .map(|parameter| parameter.ty.clone())
+        .collect(),
+      is_variadic: prototype.is_variadic,
+      is_extern: prototype.is_extern,
+    })
+  }
+
   // TODO: Make use-of, or get rid-of.
   fn _fetch_type(
     &mut self,
@@ -94,7 +107,11 @@ impl SemanticCheckContext {
       }
     }
 
-    if !Self::unify(&prototype_a.return_type, &prototype_b.return_type, cache) {
+    if !Self::unify(
+      prototype_a.return_type_annotation.as_ref().unwrap(),
+      prototype_b.return_type_annotation.as_ref().unwrap(),
+      cache,
+    ) {
       return Some("return type".to_string());
     }
 
@@ -363,11 +380,9 @@ impl SemanticCheck for ast::MemberAccess {
     // REVIEW: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
     // TODO: Lookup implementation, and attempt to match a method.
     if let Some(struct_impls) = cache.struct_impls.get(&struct_type.binding_id) {
-      for (_method_binding_id, method_name) in struct_impls {
+      for (method_binding_id, method_name) in struct_impls {
         if method_name == &self.member_name {
-          // FIXME: Fix implementation.
-          todo!();
-          // return cache.unsafe_get(&method_binding_id).infer_type(cache);
+          return cache.force_get(&method_binding_id).infer_type(cache);
         }
       }
     }
@@ -411,7 +426,7 @@ impl SemanticCheck for ast::MemberAccess {
 
 impl SemanticCheck for ast::Closure {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.prototype.infer_type(cache)
+    SemanticCheckContext::infer_prototype_type(&self.prototype, self.body.infer_type(cache))
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
@@ -509,20 +524,6 @@ impl SemanticCheck for ast::StructValue {
 }
 
 impl SemanticCheck for ast::Prototype {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    // REVISE: Simplify.
-    ast::Type::Function(ast::FunctionType {
-      return_type: Box::new(self.return_type.clone()),
-      parameter_types: self
-        .parameters
-        .iter()
-        .map(|parameter| parameter.ty.clone())
-        .collect(),
-      is_variadic: self.is_variadic,
-      is_extern: self.is_extern,
-    })
-  }
-
   fn check(&self, _context: &mut SemanticCheckContext, _cache: &cache::Cache) {
     // TODO: Implement?
   }
@@ -745,13 +746,7 @@ impl SemanticCheck for ast::ArrayIndexing {
 
     // REVISE: Unnecessary cloning.
     let array_type = match target_array_variable {
-      ast::NodeKind::LetStmt(let_stmt) => {
-        if let Some(ty) = &let_stmt.ty {
-          ty.clone()
-        } else {
-          let_stmt.infer_type(cache)
-        }
-      }
+      ast::NodeKind::LetStmt(let_stmt) => let_stmt.infer_type(cache),
       ast::NodeKind::Parameter(parameter) => parameter.ty.clone(),
       _ => unreachable!(),
     };
@@ -857,6 +852,16 @@ impl SemanticCheck for ast::ExternFunction {
   }
 
   fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+    if self.prototype.return_type_annotation.is_none() {
+      context
+        .diagnostic_builder
+        .error("extern function must have a return type".to_string());
+
+      context
+        .new_diagnostic_builder
+        .error("extern function must have a return type");
+    }
+
     if self.prototype.accepts_instance {
       context
         .diagnostic_builder
@@ -877,27 +882,20 @@ impl SemanticCheck for ast::Parameter {
 
 impl SemanticCheck for ast::BlockExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // BUG: Missing logic for the `return` statement. What about its type? It should
-    // ... be inferred too, no?
-    // If the last expression isn't yielded, then the block's type
-    // defaults to unit. If there's no statements on the block, the
-    // type of the block will logically be unit. Finally, if there is
-    // at least a single return statement in the block, the block's type
-    // will also be unit. Note that a return statement does not affect
-    // the block's type, because the function is terminated, and not the
-    // individual block. In other words, the block type is only determined
-    // when an expression is yielded.
-    if !self.yields_last_expr
-      || self.statements.is_empty()
-      || self
-        .statements
-        .iter()
-        .any(|x| matches!(x.kind, ast::NodeKind::ReturnStmt(_)))
+    if let Some(return_stmt) = self
+      .statements
+      .iter()
+      .find(|statement| matches!(statement.kind, ast::NodeKind::ReturnStmt(_)))
     {
-      return ast::Type::Unit;
+      return match &return_stmt.kind {
+        ast::NodeKind::ReturnStmt(return_stmt) => return_stmt.infer_type(cache),
+        _ => unreachable!(),
+      };
+    } else if !self.statements.is_empty() && self.yields_last_expr {
+      return self.statements.last().unwrap().infer_type(cache);
     }
 
-    self.statements.last().unwrap().infer_type(cache)
+    ast::Type::Unit
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
@@ -909,6 +907,7 @@ impl SemanticCheck for ast::BlockExpr {
 
 impl SemanticCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    // REVIEW: We should have some sort of caching specifically applied to this construct.
     cache
       .force_get(&self.pattern.target_id.unwrap())
       .infer_type(cache)
@@ -922,9 +921,7 @@ impl SemanticCheck for ast::Literal {
       ast::Literal::Char(_) => ast::BasicType::Char,
       ast::Literal::Int(_, size) => ast::BasicType::Int(size.clone()),
       ast::Literal::String(_) => ast::BasicType::String,
-      ast::Literal::Nullptr(_) => {
-        return ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::Null)))
-      }
+      ast::Literal::Nullptr(ty) => return ast::Type::Pointer(Box::new(ty.clone())),
     })
   }
 }
@@ -1053,13 +1050,7 @@ impl SemanticCheck for ast::LetStmt {
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     let value_type = self.value.infer_type(cache);
-
-    let ty = if let Some(ty) = &self.ty {
-      // REVISE: Unnecessary cloning.
-      ty.clone()
-    } else {
-      self.infer_type(cache)
-    };
+    let ty = &self.infer_type(cache);
 
     if !SemanticCheckContext::unify(&ty, &value_type, cache) {
       context.diagnostic_builder.error(format!(
@@ -1076,25 +1067,25 @@ impl SemanticCheck for ast::ReturnStmt {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     let current_function_node = cache.force_get(&context.current_function_key.unwrap());
     let mut name = None;
-    let prototype;
+    let return_type;
 
     match &current_function_node {
       ast::NodeKind::Function(function) => {
         name = Some(function.name.clone());
-        prototype = &function.prototype;
+        return_type = function.body_value.infer_type(cache);
       }
       ast::NodeKind::Closure(closure) => {
-        prototype = &closure.prototype;
+        return_type = closure.body.infer_type(cache);
       }
       _ => unreachable!(),
     };
 
     // REVISE: Whether a function returns is already checked. Limit this to unifying the types only.
-    if !prototype.return_type.is_unit() && self.value.is_none() {
+    if !return_type.is_unit() && self.value.is_none() {
       context
         .diagnostic_builder
         .error("return statement must return a value".to_string());
-    } else if prototype.return_type.is_unit() && self.value.is_some() {
+    } else if return_type.is_unit() && self.value.is_some() {
       context
         .diagnostic_builder
         .error("return statement must not return a value".to_string());
@@ -1106,7 +1097,7 @@ impl SemanticCheck for ast::ReturnStmt {
     if let Some(value) = &self.value {
       let value_type = value.infer_type(cache);
 
-      if !SemanticCheckContext::unify(&prototype.return_type, &value_type, cache) {
+      if !SemanticCheckContext::unify(&return_type, &value_type, cache) {
         context.diagnostic_builder.error(format!(
           "return statement value and prototype return type mismatch for {}",
           if let Some(name) = name {
@@ -1124,7 +1115,7 @@ impl SemanticCheck for ast::ReturnStmt {
 
 impl SemanticCheck for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.prototype.infer_type(cache)
+    SemanticCheckContext::infer_prototype_type(&self.prototype, self.body_value.infer_type(cache))
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
@@ -1138,11 +1129,9 @@ impl SemanticCheck for ast::Function {
 
     // TODO: Special case for the `main` function. Unify expected signature?
 
-    if !SemanticCheckContext::unify(
-      &self.prototype.return_type,
-      &self.body_value.infer_type(cache),
-      cache,
-    ) {
+    let return_type = self.body_value.infer_type(cache);
+
+    if !SemanticCheckContext::unify(&return_type, &self.body_value.infer_type(cache), cache) {
       context.diagnostic_builder.error(format!(
         "function body and prototype return type mismatch for function `{}`",
         self.name
@@ -1160,7 +1149,7 @@ impl SemanticCheck for ast::Function {
       let main_prototype = ast::Prototype {
         // TODO: Parameters. Also, the comparison should ignore parameter names.
         parameters: vec![],
-        return_type: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+        return_type_annotation: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
         is_variadic: false,
         accepts_instance: false,
         instance_type_id: None,

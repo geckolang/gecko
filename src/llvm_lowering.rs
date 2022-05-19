@@ -1,4 +1,7 @@
-use crate::{ast, cache, dispatch, semantic_check::SemanticCheckContext};
+use crate::{
+  ast, cache, dispatch,
+  semantic_check::{SemanticCheck, SemanticCheckContext},
+};
 
 use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
@@ -165,7 +168,9 @@ impl Lower for ast::Closure {
     }
 
     // FIXME: Use the modified prototype.
-    let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
+    let llvm_function_type =
+      generator.lower_prototype(&self.prototype, &self.body.infer_type(cache), cache);
+
     let llvm_function_name = generator.mangle_name(&String::from("closure"));
 
     assert!(generator
@@ -777,6 +782,7 @@ impl Lower for ast::LoopStmt {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // FIXME: The condition needs to be re-lowered per iteration.
+    // ... It seems to be lowered per-iteration. Confirm this with unit tests.
     // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
     let llvm_condition = if let Some(condition) = &self.condition {
       condition
@@ -843,7 +849,7 @@ impl Lower for ast::IfExpr {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_condition = self.condition.lower(generator, cache, false).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
-    let ty = self.ty.as_ref().unwrap();
+    let ty = self.infer_type(cache);
     let yields_expression = !ty.is_unit();
     let mut llvm_if_value = None;
 
@@ -1014,7 +1020,9 @@ impl Lower for ast::Function {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
+    let llvm_function_type =
+      generator.lower_prototype(&self.prototype, &self.body_value.infer_type(cache), cache);
+
     let is_main = self.name == MAIN_FUNCTION_NAME;
 
     // TODO: Prepend `fn` to the name.
@@ -1049,13 +1057,17 @@ impl Lower for ast::Function {
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
-    let mut expected_param_count = self.prototype.parameters.len() as u32;
+    // REVIEW: Is this conversion safe?
+    let expected_param_count = self.prototype.parameters.len() as u32;
 
-    if self.prototype.accepts_instance {
-      expected_param_count += 1;
-    }
-
-    assert_eq!(llvm_function.count_params(), expected_param_count);
+    assert_eq!(
+      llvm_function.count_params(),
+      if self.prototype.accepts_instance {
+        expected_param_count + 1
+      } else {
+        expected_param_count
+      }
+    );
 
     // REVISE: The parameter counts aren't always guaranteed to be the same, given
     // ... if the prototype accepts an instance. This zip might cause unexpected problems.
@@ -1092,7 +1104,12 @@ impl Lower for ast::ExternFunction {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_function_type = generator.lower_prototype(&self.prototype, cache);
+    // NOTE: The return type is always explicitly-given for extern functions.
+    let llvm_function_type = generator.lower_prototype(
+      &self.prototype,
+      self.prototype.return_type_annotation.as_ref().unwrap(),
+      cache,
+    );
 
     let llvm_external_function = generator.llvm_module.add_function(
       self.name.as_str(),
@@ -1245,7 +1262,8 @@ impl Lower for ast::LetStmt {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let ty = self.ty.as_ref().unwrap();
+    // REVISE: Optimize. The type for this construct may be cached.
+    let ty = self.infer_type(cache);
 
     // Special cases. The allocation is done elsewhere.
     if matches!(
@@ -1719,9 +1737,14 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     llvm_return_type.fn_type(llvm_parameter_types.as_slice(), function_type.is_variadic)
   }
 
+  /// Returns a new LLVM function type based on the given prototype.
+  ///
+  /// The return value is required because the prototype's return type is
+  /// merely an annotation, and is unreliable.
   fn lower_prototype(
     &mut self,
     prototype: &ast::Prototype,
+    return_type: &ast::Type,
     cache: &cache::Cache,
   ) -> inkwell::types::FunctionType<'ctx> {
     let mut llvm_parameter_types = prototype
@@ -1744,9 +1767,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
 
     // REVISE: Simplify code (find common ground between `void` and `basic` types).
-    if !prototype.return_type.is_unit() {
+    if !return_type.is_unit() {
       self
-        .lower_type(&prototype.return_type, cache)
+        .lower_type(&return_type, cache)
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)
         .into()
@@ -1910,7 +1933,6 @@ mod tests {
 
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
       value: Mock::node(Mock::literal_int()),
       is_mutable: false,
       binding_id: 0,
@@ -1930,7 +1952,6 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
       value: Mock::node(Mock::literal_int()),
       is_mutable: false,
       binding_id: a_binding_id,
@@ -1938,7 +1959,6 @@ mod tests {
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
       value: Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
@@ -1960,7 +1980,6 @@ mod tests {
 
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_mutable: false,
       binding_id: 0,
@@ -1981,7 +2000,6 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
@@ -1989,7 +2007,6 @@ mod tests {
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
-      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
@@ -2010,7 +2027,6 @@ mod tests {
 
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: Some(ast::Type::Basic(ast::BasicType::String)),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
       ))),
@@ -2032,7 +2048,6 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
       value: Mock::node(Mock::literal_int()),
       is_mutable: true,
       binding_id: a_binding_id,
@@ -2064,7 +2079,6 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
-      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
@@ -2072,7 +2086,6 @@ mod tests {
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
-      ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: b_binding_id,
@@ -2180,7 +2193,6 @@ mod tests {
       condition: Mock::node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
       then_value: Mock::node(Mock::literal_int()),
       else_value: None,
-      ty: Some(ast::Type::Unit),
     });
 
     Mock::new(&llvm_context, &llvm_module)

@@ -124,7 +124,7 @@ impl<'a> Parser<'a> {
         self.get_token().unwrap_or(&lexer::TokenKind::EOF)
       ),
       severity: diagnostic::Severity::Error,
-      span: self.get_token_span(),
+      span: Some(self.get_token_span()),
     }
   }
 
@@ -145,19 +145,31 @@ impl<'a> Parser<'a> {
   }
 
   fn get_token(&self) -> ParserResult<&lexer::TokenKind> {
-    if self.index < self.tokens.len() {
-      Ok(&self.tokens[self.index].0)
+    let token = self.tokens.get(self.index);
+
+    if let Some(token) = token {
+      Ok(&token.0)
     } else {
-      Err(self.expected("token"))
+      Err(diagnostic::Diagnostic {
+        message: "unexpectedly reached end of file".to_owned(),
+        severity: diagnostic::Severity::Error,
+        span: Some(self.get_token_span()),
+      })
     }
   }
 
   /// Retrieve the span of the current token.
-  fn get_token_span(&self) -> Option<diagnostic::Span> {
-    // REVISE: Add safety check, or default to the last position.
-    let position = self.tokens[self.index].1;
+  fn get_token_span(&self) -> diagnostic::Span {
+    // REVIEW: Ensure check is correct.
+    let position = if self.tokens.is_empty() {
+      0
+    } else if self.is_eof() {
+      self.tokens.last().unwrap().1
+    } else {
+      self.tokens[self.index].1
+    };
 
-    Some(position..position)
+    position..position
   }
 
   /// Compare the current token to the given token.
@@ -182,7 +194,7 @@ impl<'a> Parser<'a> {
       return Err(diagnostic::Diagnostic {
         message: "unexpectedly reached end of file".to_string(),
         severity: diagnostic::Severity::Error,
-        span: self.get_token_span(),
+        span: Some(self.get_token_span()),
       });
     }
 
@@ -539,13 +551,18 @@ impl<'a> Parser<'a> {
     }
 
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
-    self.skip_past(&lexer::TokenKind::Colon)?;
 
-    let return_type = self.parse_type()?;
+    let return_type_annotation = if self.is(&lexer::TokenKind::Colon) {
+      self.skip()?;
+
+      Some(self.parse_type()?)
+    } else {
+      None
+    };
 
     Ok(ast::Prototype {
       parameters,
-      return_type,
+      return_type_annotation,
       is_variadic,
       accepts_instance,
       instance_type_id: None,
@@ -560,6 +577,13 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Fn)?;
 
     let name = self.parse_name()?;
+
+    let generics = if self.is(&lexer::TokenKind::LessThan) {
+      Some(self.parse_generics()?)
+    } else {
+      None
+    };
+
     let prototype = self.parse_prototype(false)?;
 
     self.skip_past(&lexer::TokenKind::Equal)?;
@@ -572,6 +596,7 @@ impl<'a> Parser<'a> {
       body_value: Box::new(value),
       attributes,
       binding_id: self.cache.create_binding_id(),
+      generics,
     })
   }
 
@@ -648,7 +673,7 @@ impl<'a> Parser<'a> {
       return Err(diagnostic::Diagnostic {
         message: "expected top-level construct but got end of file".to_string(),
         severity: diagnostic::Severity::Error,
-        span: self.get_token_span(),
+        span: Some(self.get_token_span()),
       });
     }
 
@@ -682,7 +707,7 @@ impl<'a> Parser<'a> {
       return Err(diagnostic::Diagnostic {
         message: "attributes may only be attached to functions or externs".to_string(),
         severity: diagnostic::Severity::Error,
-        span: self.get_token_span(),
+        span: Some(self.get_token_span()),
       });
     }
 
@@ -761,14 +786,6 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
 
-    let ty = if self.is(&lexer::TokenKind::Colon) {
-      self.skip_past(&lexer::TokenKind::Colon)?;
-
-      Some(self.parse_type()?)
-    } else {
-      None
-    };
-
     self.skip_past(&lexer::TokenKind::Equal)?;
 
     let value = self.parse_expr()?;
@@ -779,7 +796,6 @@ impl<'a> Parser<'a> {
 
     Ok(ast::LetStmt {
       name,
-      ty,
       value: Box::new(value),
       is_mutable,
       binding_id: self.cache.create_binding_id(),
@@ -808,7 +824,6 @@ impl<'a> Parser<'a> {
       condition: Box::new(condition),
       then_value: Box::new(then_value),
       else_value,
-      ty: None,
     })
   }
 
@@ -1482,6 +1497,29 @@ impl<'a> Parser<'a> {
     Ok(ast::Import {
       package_name,
       module_name,
+    })
+  }
+
+  fn parse_generics(&mut self) -> ParserResult<ast::Generics> {
+    self.skip_past(&lexer::TokenKind::LessThan)?;
+
+    let mut parameters = Vec::new();
+
+    while self.until(&lexer::TokenKind::GreaterThan)? {
+      parameters.push(self.parse_name()?);
+
+      // REVIEW: Ensure comma syntax is valid.
+      if self.is(&lexer::TokenKind::Comma) {
+        self.skip()?;
+      }
+    }
+
+    self.skip_past(&lexer::TokenKind::GreaterThan)?;
+
+    Ok(ast::Generics {
+      parameters,
+      // TODO: Missing parsing of constrains.
+      constraints: None,
     })
   }
 }

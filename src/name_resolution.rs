@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, llvm_lowering, semantic_check::SemanticCheck};
+use crate::{ast, cache, diagnostic, llvm_lowering};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
@@ -312,7 +312,10 @@ impl Resolve for ast::Prototype {
         .resolve(resolver, cache);
     }
 
-    self.return_type.resolve(resolver, cache);
+    // Resolve return type regardless, in case of an extern.
+    if let Some(return_type) = &mut self.return_type_annotation {
+      return_type.resolve(resolver, cache);
+    }
   }
 }
 
@@ -398,8 +401,6 @@ impl Resolve for ast::UnsafeExpr {
 // ... virtualizing their environment).
 impl Resolve for ast::Parameter {
   fn declare(&self, resolver: &mut NameResolver) {
-    println!("... -> Declaring parameter: {}", self.name);
-
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }
 
@@ -457,9 +458,6 @@ impl Resolve for ast::IfExpr {
     if let Some(else_block) = &mut self.else_value {
       else_block.resolve(resolver, cache);
     }
-
-    // REVIEW: Ensure this works as expected, and that there aren't any data races.
-    self.ty = Some(self.then_value.infer_type(cache));
   }
 }
 
@@ -475,12 +473,7 @@ impl Resolve for ast::LetStmt {
 
     self.value.resolve(resolver, cache);
 
-    // REVISE: Ensure this works as expected. Ensure that there aren't any data races.
-    if self.ty.is_none() {
-      self.ty = Some(self.infer_type(cache));
-    }
-
-    self.ty.as_mut().unwrap().resolve(resolver, cache);
+    // REVIEW: Annotated type is not being resolved.
 
     cache
       .symbols

@@ -2,13 +2,13 @@ struct A {
   value: Int,
 }
 
-fn struct_test(): Int = {
+fn struct_test() = {
   # Declaration.
-  let a: A = new A{1};
+  #let a = new A{1};
 
   # Field access.
   # FIXME: Failing test.
-  #let b: Int = a.value;
+  #let b = a.value;
 
   # Assignment.
   #a = new C{2};
