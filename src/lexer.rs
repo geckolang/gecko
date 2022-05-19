@@ -244,7 +244,7 @@ impl Lexer {
         Some('t') => "\t",
         Some('r') => "\r",
         Some('\\') => "\\",
-        // TODO: Are we missing any other important escape sequence codes?
+        // REVIEW: Are we missing any other important escape sequence codes?
         Some(char) => {
           return Err(diagnostic::Diagnostic {
             message: format!("`{}` is not a valid string escape sequence", char),
@@ -265,7 +265,7 @@ impl Lexer {
       self.read_char();
     }
 
-    // TODO: We SHOULD be skipping the closing double-quote here (function independence).
+    // REVISE: We SHOULD be skipping the closing double-quote here (function independence).
     // No need to skip the closing double-quote.
 
     Ok(string)
@@ -307,7 +307,7 @@ impl Lexer {
 
     let current_char = self.current_char.unwrap();
 
-    // TODO: Simplify this chunk of code.
+    // REVISE: Simplify this chunk of code.
     let token = if is_whitespace(current_char) {
       TokenKind::Whitespace(self.read_whitespace())
     } else {
@@ -410,7 +410,7 @@ impl Lexer {
   }
 }
 
-// TODO: Is this implementation practical (even used)? If not, simply remove.
+// REVIEW: Is this implementation practical (even used)? If not, simply remove.
 impl Iterator for Lexer {
   type Item = Result<TokenKind, diagnostic::Diagnostic>;
 
@@ -425,7 +425,7 @@ impl Iterator for Lexer {
   }
 }
 
-// TODO: Should these functions be moved into the implementation of `Lexer`,
+// REVIEW: Should these functions be moved into the implementation of `Lexer`,
 // ... as associated functions?
 
 fn match_token(identifier: &str) -> Option<TokenKind> {

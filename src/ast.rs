@@ -85,7 +85,6 @@ pub enum Type {
   Basic(BasicType),
   Pointer(Box<Type>),
   Reference(Box<Type>),
-  // TODO: Isn't this incompatible with `StubType`?
   Struct(StructType),
   /// A type that needs to be resolved.
   Stub(StubType),
@@ -250,11 +249,11 @@ pub struct UnsafeExpr(pub Box<Node>);
 #[derive(Debug, Clone)]
 pub struct Reference {
   pub pattern: Pattern,
-  // TODO: Why not have the reference have a `Rc<>` to the target? This would remove dependence
+  // REVIEW: Why not have the reference have a `Rc<>` to the target? This would remove dependence
   // ... on the cache, and would be filled during name resolution. We should note that the cache
   // ... isn't available during the `resolve()` name resolution step (that's not a such a big problem,
   // ... however). The question is, where would these `Rc<>`s be sourced from? (they must consume `T`).
-  // TODO: What about having an auxiliary mapping from `UniqueId` to `Type`?
+  // REVIEW: What about having an auxiliary mapping from `UniqueId` to `Type`?
 }
 
 #[derive(Debug, Clone)]

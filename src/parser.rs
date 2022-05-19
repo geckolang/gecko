@@ -92,6 +92,7 @@ impl<'a> Parser<'a> {
   pub fn parse_all(&mut self) -> ParserResult<Vec<ast::Node>> {
     let mut result = Vec::new();
 
+    // REVIEW: There might be a bug here with the recent changes made.
     while !self.is_eof() {
       result.push(self.parse_root_node()?);
 
@@ -117,7 +118,6 @@ impl<'a> Parser<'a> {
 
   fn expected(&self, expected: &str) -> diagnostic::Diagnostic {
     diagnostic::Diagnostic {
-      // TODO: Unsafe access. Default to `EOF` if there isn't a current token.
       message: format!(
         "expected {}, but got `{}`",
         expected,
@@ -154,7 +154,7 @@ impl<'a> Parser<'a> {
 
   /// Retrieve the span of the current token.
   fn get_token_span(&self) -> Option<diagnostic::Span> {
-    // REVIEW: Safety check?
+    // REVISE: Add safety check, or default to the last position.
     let position = self.tokens[self.index].1;
 
     Some(position..position)

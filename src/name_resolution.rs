@@ -743,7 +743,6 @@ impl NameResolver {
     self.relative_scopes.last_mut().unwrap()
   }
 
-  // REVIEW: Consider returning the pushed scope? Unless it's not actually used.
   fn push_scope(&mut self) {
     self.relative_scopes.push(std::collections::HashMap::new());
   }

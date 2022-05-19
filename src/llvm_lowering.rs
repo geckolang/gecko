@@ -1619,7 +1619,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
-  // TODO: Ensure that this function is tail-recursive.
+  // REVIEW: Ensure that this function is tail-recursive.
   fn lower_type(
     &mut self,
     ty: &ast::Type,
@@ -1631,7 +1631,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::Basic(primitive_type) => match primitive_type {
         ast::BasicType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
         ast::BasicType::Int(size) => {
-          // TODO: Should we handle unsigned integers here?
+          // REVIEW: Should we handle unsigned integers here?
 
           let llvm_int_type = self.llvm_context.custom_width_int_type(match size {
             ast::IntSize::I8 | ast::IntSize::U8 => 8,

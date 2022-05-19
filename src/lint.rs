@@ -118,7 +118,7 @@ impl Lint for ast::StructType {
   fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
     context.lint_name_casing("struct", &self.name, convert_case::Case::Pascal);
 
-    // TODO: Any more linting needed?
+    // REVIEW: Any more linting needed?
   }
 }
 
@@ -157,7 +157,7 @@ impl Lint for ast::BlockExpr {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     let mut did_return = false;
 
-    // TODO: Might be repetitive for subsequent nested blocks.
+    // REVIEW: Might be repetitive for subsequent nested blocks.
     if context.block_depth > 4 {
       context
         .diagnostic_builder
@@ -172,7 +172,7 @@ impl Lint for ast::BlockExpr {
           .diagnostic_builder
           .warning("unreachable code after return statement".to_string());
 
-        // TODO: Consider whether we should stop linting the block at this point.
+        // REVIEW: Consider whether we should stop linting the block at this point.
       }
 
       if matches!(statement.kind, ast::NodeKind::ReturnStmt(_)) {
@@ -196,7 +196,7 @@ impl Lint for ast::ContinueStmt {
 
 // impl Lint for ast::Definition {
 //   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-//     // TODO: Simplify. Abstract the map, then process.
+//     // REVISE: Simplify. Abstract the map, then process.
 //     match self.node.kind {
 //       ast::NodeKind::Function(_) => {
 //         if !context.function_references.contains_key(&self.binding_id) {
