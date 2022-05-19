@@ -111,7 +111,7 @@ impl SemanticCheckContext {
 
     // REVIEW: What if it's a pointer to a user-defined type?
     if let ast::Type::Stub(stub_type) = ty {
-      let target_node = cache.unsafe_get(&stub_type.pattern.target_id.unwrap());
+      let target_node = cache.force_get(&stub_type.pattern.target_id.unwrap());
 
       // REVIEW: What about type aliases, and other types that might be encountered in the future?
 
@@ -249,12 +249,12 @@ impl SemanticCheck for ast::StructImpl {
       method.check(context, cache);
     }
 
-    let target_node = cache.unsafe_get(&self.target_struct_pattern.target_id.unwrap());
+    let target_node = cache.force_get(&self.target_struct_pattern.target_id.unwrap());
 
     // REVISE: Cleanup.
     if let ast::NodeKind::StructType(_target_struct_type) = &target_node {
       if let Some(trait_pattern) = &self.trait_pattern {
-        let trait_node = cache.unsafe_get(&trait_pattern.target_id.unwrap());
+        let trait_node = cache.force_get(&trait_pattern.target_id.unwrap());
 
         if let ast::NodeKind::Trait(trait_type) = &trait_node {
           for trait_method in &trait_type.methods {
@@ -363,9 +363,9 @@ impl SemanticCheck for ast::MemberAccess {
     // REVIEW: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
     // TODO: Lookup implementation, and attempt to match a method.
     if let Some(struct_impls) = cache.struct_impls.get(&struct_type.binding_id) {
-      for (method_binding_id, method_name) in struct_impls {
+      for (_method_binding_id, method_name) in struct_impls {
         if method_name == &self.member_name {
-          // TODO: Fix implementation.
+          // FIXME: Fix implementation.
           todo!();
           // return cache.unsafe_get(&method_binding_id).infer_type(cache);
         }
@@ -455,7 +455,7 @@ impl SemanticCheck for ast::ExternStatic {
 
 impl SemanticCheck for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type = match cache.unsafe_get(&self.target_id.unwrap()) {
+    let struct_type = match cache.force_get(&self.target_id.unwrap()) {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -465,7 +465,7 @@ impl SemanticCheck for ast::StructValue {
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let struct_type_node = cache.unsafe_get(&self.target_id.unwrap());
+    let struct_type_node = cache.force_get(&self.target_id.unwrap());
 
     let struct_type = match struct_type_node {
       ast::NodeKind::StructType(struct_type) => struct_type,
@@ -701,7 +701,7 @@ impl SemanticCheck for ast::AssignStmt {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match &self.assignee_expr.kind {
         ast::NodeKind::Reference(variable_ref) => {
-          let declaration = cache.unsafe_get(&variable_ref.pattern.target_id.unwrap());
+          let declaration = cache.force_get(&variable_ref.pattern.target_id.unwrap());
 
           match declaration {
             ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
@@ -741,7 +741,7 @@ impl SemanticCheck for ast::ContinueStmt {
 
 impl SemanticCheck for ast::ArrayIndexing {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_array_variable = cache.unsafe_get(&self.target_id.unwrap());
+    let target_array_variable = cache.force_get(&self.target_id.unwrap());
 
     // REVISE: Unnecessary cloning.
     let array_type = match target_array_variable {
@@ -910,7 +910,7 @@ impl SemanticCheck for ast::BlockExpr {
 impl SemanticCheck for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     cache
-      .unsafe_get(&self.pattern.target_id.unwrap())
+      .force_get(&self.pattern.target_id.unwrap())
       .infer_type(cache)
   }
 }
@@ -1074,7 +1074,7 @@ impl SemanticCheck for ast::LetStmt {
 
 impl SemanticCheck for ast::ReturnStmt {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let current_function_node = cache.unsafe_get(&context.current_function_key.unwrap());
+    let current_function_node = cache.force_get(&context.current_function_key.unwrap());
     let mut name = None;
     let prototype;
 

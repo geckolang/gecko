@@ -1,7 +1,4 @@
-use crate::{
-  ast, cache, dispatch,
-  semantic_check::{SemanticCheck, SemanticCheckContext},
-};
+use crate::{ast, cache, dispatch, semantic_check::SemanticCheckContext};
 
 use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
@@ -496,10 +493,6 @@ impl Lower for ast::ArrayValue {
   }
 }
 
-// BUG: Parameters with the same name on other functions are being resolved elsewhere.
-// ... This is likely because of the current design of relative scopes. Fix this issue.
-// ... (May be related to when memoizing or retrieving other functions, then not
-// ... virtualizing their environment).
 impl Lower for ast::Parameter {
   fn lower<'a, 'ctx>(
     &self,
@@ -1781,7 +1774,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     // REVIEW: Consider making a separate map for types in the cache.
 
-    let node = cache.unsafe_get(&binding_id);
+    let node = cache.force_get(&binding_id);
 
     let ty = match &node {
       ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
@@ -1826,7 +1819,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     forward_buffers: bool,
     apply_access_rules: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let node = cache.unsafe_get(&binding_id);
+    let node = cache.force_get(&binding_id);
 
     // BUG: If a definition is lowered elsewhere without the use of this function,
     // ... there will not be any call to `lower_with_access_rules` for it. This means
@@ -1876,7 +1869,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::mock::{self, ComparableMock};
+  use crate::mock::tests::{ComparableMock, Mock};
 
   // TODO: Test mocking helpers themselves (in their own file).
 
@@ -1891,7 +1884,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let node = ast::NodeKind::BreakStmt(ast::BreakStmt {});
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .function()
       .with_loop()
       .lower(&node, false)
@@ -1904,7 +1897,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let node = ast::NodeKind::ContinueStmt(ast::ContinueStmt {});
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .function()
       .lower(&node, false)
       .compare_with_file("continue_stmt");
@@ -1918,12 +1911,12 @@ mod tests {
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-      value: mock::Mock::node(mock::Mock::literal_int()),
+      value: Mock::node(Mock::literal_int()),
       is_mutable: false,
       binding_id: 0,
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .function()
       .lower(&let_stmt, false)
       .compare_with_file("let_stmt_const_val");
@@ -1938,7 +1931,7 @@ mod tests {
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-      value: mock::Mock::node(mock::Mock::literal_int()),
+      value: Mock::node(Mock::literal_int()),
       is_mutable: false,
       binding_id: a_binding_id,
     });
@@ -1946,12 +1939,12 @@ mod tests {
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-      value: mock::Mock::reference(a_binding_id),
+      value: Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .function()
       .lower_cache(a_binding_id, false)
@@ -1968,12 +1961,12 @@ mod tests {
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
-      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
+      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_mutable: false,
       binding_id: 0,
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .function()
       .lower(&let_stmt, false)
       .compare_with_file("let_stmt_nullptr_val");
@@ -1989,7 +1982,7 @@ mod tests {
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
-      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
     });
@@ -1997,12 +1990,12 @@ mod tests {
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
       ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
-      value: mock::Mock::reference(a_binding_id),
+      value: Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .function()
       .lower_cache(a_binding_id, false)
@@ -2018,14 +2011,14 @@ mod tests {
     let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: Some(ast::Type::Basic(ast::BasicType::String)),
-      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::String(
+      value: Mock::node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
       ))),
       is_mutable: false,
       binding_id: 0,
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .function()
       .lower(&let_stmt, false)
       .compare_with_file("let_stmt_string_val");
@@ -2040,20 +2033,20 @@ mod tests {
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-      value: mock::Mock::node(mock::Mock::literal_int()),
+      value: Mock::node(Mock::literal_int()),
       is_mutable: true,
       binding_id: a_binding_id,
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
-      assignee_expr: mock::Mock::reference(a_binding_id),
-      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Int(
+      assignee_expr: Mock::reference(a_binding_id),
+      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Int(
         2,
         ast::IntSize::I32,
       ))),
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .function()
       .lower_cache(a_binding_id, false)
@@ -2072,7 +2065,7 @@ mod tests {
     let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "a".to_string(),
       ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
-      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
     });
@@ -2080,17 +2073,17 @@ mod tests {
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
       name: "b".to_string(),
       ty: Some(ast::Type::Pointer(Box::new(ty.clone()))),
-      value: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: b_binding_id,
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
-      assignee_expr: mock::Mock::reference(b_binding_id),
-      value: mock::Mock::reference(a_binding_id),
+      assignee_expr: Mock::reference(b_binding_id),
+      value: Mock::reference(a_binding_id),
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .cache(let_stmt_a, a_binding_id)
       .cache(let_stmt_b, b_binding_id)
       .function()
@@ -2110,7 +2103,7 @@ mod tests {
       binding_id: 0,
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .module()
       .lower(&enum_, false)
       .compare_with_file("enum");
@@ -2122,7 +2115,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt { value: None });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .function()
       .lower(&return_stmt, false)
       .compare_with_file("return_stmt_unit");
@@ -2134,10 +2127,10 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
-      value: Some(mock::Mock::node(mock::Mock::literal_int())),
+      value: Some(Mock::node(Mock::literal_int())),
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .function()
       .lower(&return_stmt, false)
       .compare_with_file("return_stmt");
@@ -2150,12 +2143,12 @@ mod tests {
 
     let extern_fn = ast::NodeKind::ExternFunction(ast::ExternFunction {
       name: "a".to_string(),
-      prototype: mock::Mock::prototype_simple(true),
+      prototype: Mock::prototype_simple(true),
       attributes: Vec::new(),
       binding_id: 0,
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .module()
       .lower(&extern_fn, false)
       .compare_with_file("extern_fn");
@@ -2172,7 +2165,7 @@ mod tests {
       binding_id: 0,
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .module()
       .lower(&extern_static, false)
       .compare_with_file("extern_static");
@@ -2184,13 +2177,13 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
-      condition: mock::Mock::node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
-      then_value: mock::Mock::node(mock::Mock::literal_int()),
+      condition: Mock::node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
+      then_value: Mock::node(Mock::literal_int()),
       else_value: None,
       ty: Some(ast::Type::Unit),
     });
 
-    mock::Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&llvm_context, &llvm_module)
       .function()
       .lower(&if_expr, false)
       .compare_with_file("if_expr_simple");

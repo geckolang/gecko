@@ -392,8 +392,14 @@ impl Resolve for ast::UnsafeExpr {
   }
 }
 
+// BUG: Parameters with the same name on other functions are being resolved elsewhere.
+// ... This is likely because of the current design of relative scopes. Fix this issue.
+// ... (May be related to when memoizing or retrieving other functions, then not
+// ... virtualizing their environment).
 impl Resolve for ast::Parameter {
   fn declare(&self, resolver: &mut NameResolver) {
+    println!("... -> Declaring parameter: {}", self.name);
+
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }
 
@@ -525,15 +531,15 @@ impl Resolve for ast::Literal {
 impl Resolve for ast::Function {
   fn declare(&self, resolver: &mut NameResolver) {
     // Parameter scope.
-    // resolver.push_scope();
-
-    // FIXME: Commented out temporarily. Is it needed?
-    // NOTE: The scope tree won't be overwritten by the block's, nor the
-    // prototype's scope tree, instead they will be merged, as expected.
-    // resolver.close_scope_tree(self.value.binding_id);
+    resolver.push_scope();
 
     self.prototype.declare(resolver);
     self.body_value.declare(resolver);
+
+    // NOTE: The scope tree won't be overwritten by the block's, nor the
+    // prototype's scope tree, instead they will be merged, as expected.
+    resolver.close_scope_tree(self.binding_id);
+
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }
 
