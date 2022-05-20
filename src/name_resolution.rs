@@ -654,7 +654,7 @@ impl NameResolver {
 
   pub fn run(
     &mut self,
-    asts: &mut std::collections::HashMap<GlobalQualifier, Vec<ast::Node>>,
+    asts: &mut std::collections::BTreeMap<GlobalQualifier, Vec<ast::Node>>,
     cache: &mut cache::Cache,
   ) -> Vec<diagnostic::Diagnostic> {
     let mut name_resolver = NameResolver::new();

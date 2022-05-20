@@ -37,17 +37,19 @@ mod tests {
 
   #[test]
   fn integration_tests() {
-    let mut tests_path = std::env::current_dir().unwrap();
-
-    tests_path.push("tests");
-    tests_path.push("integration");
-
     // REVISE: Unsafe unwrap.
-    let source_files = fs::read_dir(tests_path)
+    let tests_path = std::env::current_dir().unwrap().join("tests");
+
+    // REVIEW: Consider sorting to avoid fragile module output comparison test.
+    // REVISE: Unsafe unwrap.
+    let mut source_files = fs::read_dir(&tests_path.join("integration"))
       .unwrap()
       .map(|path| path.unwrap().path())
       .filter(|path| path.is_file() && path.extension().unwrap() == "ko")
       .collect::<Vec<_>>();
+
+    // Sort files to ensure consistency, and avoid fragile module output comparison.
+    source_files.sort();
 
     let mut sources = Vec::new();
 
@@ -62,7 +64,7 @@ mod tests {
     let mut lint_context = gecko::lint::LintContext::new();
     let mut llvm_generator = gecko::llvm_lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
     let mut semantic_check_context = gecko::semantic_check::SemanticCheckContext::new();
-    let mut ast = std::collections::HashMap::new();
+    let mut ast_map = std::collections::BTreeMap::new();
 
     // TODO: Ensure both vectors are of same length, and zip iterators.
     // Read, lex, parse, perform name resolution (declarations)
@@ -87,14 +89,14 @@ mod tests {
       );
 
       name_resolver.create_module(global_qualifier.clone());
-      ast.insert(global_qualifier, top_level_nodes.unwrap());
+      ast_map.insert(global_qualifier, top_level_nodes.unwrap());
     }
 
     // After all the ASTs have been collected, perform name resolution step.
-    assert!(name_resolver.run(&mut ast, &mut cache).is_empty());
+    assert!(name_resolver.run(&mut ast_map, &mut cache).is_empty());
 
     // Once symbols are resolved, we can proceed to the other phases.
-    for inner_ast in ast.values_mut() {
+    for inner_ast in ast_map.values_mut() {
       for top_level_node in inner_ast {
         top_level_node.check(&mut semantic_check_context, &mut cache);
 
@@ -109,7 +111,7 @@ mod tests {
 
     // REVISE: Any way for better efficiency (less loops)?
     // Once symbols are resolved, we can proceed to the other phases.
-    for (global_qualifier, inner_ast) in &mut ast {
+    for (global_qualifier, inner_ast) in &mut ast_map {
       // REVIEW: Must join package and module name for uniqueness?
       llvm_generator.module_name = global_qualifier.1.clone();
 
@@ -119,5 +121,18 @@ mod tests {
     }
 
     assert!(llvm_module.verify().is_ok());
+
+    let output_file_path = tests_path
+      .join("integration_tests_output")
+      .with_extension("ll");
+
+    let output_file_contents = fs::read_to_string(output_file_path);
+
+    assert!(output_file_contents.is_ok());
+
+    assert_eq!(
+      llvm_module.print_to_string().to_string().trim(),
+      output_file_contents.unwrap().trim()
+    );
   }
 }

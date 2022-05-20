@@ -1141,8 +1141,14 @@ impl<'a> Parser<'a> {
     left: ast::Node,
     min_precedence: usize,
   ) -> ParserResult<ast::Node> {
+    // REVIEW: Is this logic correct?
+    let mut token_buffer = if let Ok(token) = self.get_token() {
+      token
+    } else {
+      return Ok(left);
+    };
+
     let span_start = self.index;
-    let mut token_buffer = self.get_token()?;
     let precedence = get_token_precedence(&token_buffer);
     let mut buffer = left;
 
