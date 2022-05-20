@@ -469,5 +469,4 @@ pub struct UnaryExpr {
 pub struct MemberAccess {
   pub base_expr: Box<Node>,
   pub member_name: String,
-  pub ty: Option<StructType>,
 }

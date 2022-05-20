@@ -1103,7 +1103,6 @@ impl<'a> Parser<'a> {
     Ok(ast::MemberAccess {
       base_expr: Box::new(base_expr),
       member_name: self.parse_name()?,
-      ty: None,
     })
   }
 

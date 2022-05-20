@@ -28,6 +28,10 @@ impl Resolve for ast::Type {
     match self {
       ast::Type::Stub(stub_type) => stub_type.resolve(resolver, cache),
       ast::Type::This(this_type) => this_type.resolve(resolver, cache),
+      ast::Type::Pointer(pointee_type) => pointee_type.resolve(resolver, cache),
+      ast::Type::Array(element_type, _) => element_type.resolve(resolver, cache),
+      ast::Type::Struct(struct_type) => struct_type.resolve(resolver, cache),
+      ast::Type::Function(function_type) => function_type.resolve(resolver, cache),
       // REVIEW: Are there any other types that may need to be resolved?
       _ => {}
     };
@@ -335,6 +339,16 @@ impl Resolve for ast::StructType {
   }
 }
 
+impl Resolve for ast::FunctionType {
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.return_type.resolve(resolver, cache);
+
+    for parameter_type in &mut self.parameter_types {
+      parameter_type.resolve(resolver, cache);
+    }
+  }
+}
+
 impl Resolve for ast::UnaryExpr {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.expr.resolve(resolver, cache);
@@ -523,15 +537,16 @@ impl Resolve for ast::Literal {
 
 impl Resolve for ast::Function {
   fn declare(&self, resolver: &mut NameResolver) {
+    // BUG: Something is wrong with this scope tree. Consider adding tests for this API.
     // Parameter scope.
-    resolver.push_scope();
+    // resolver.push_scope();
 
     self.prototype.declare(resolver);
     self.body_value.declare(resolver);
 
     // NOTE: The scope tree won't be overwritten by the block's, nor the
     // prototype's scope tree, instead they will be merged, as expected.
-    resolver.close_scope_tree(self.binding_id);
+    // resolver.close_scope_tree(self.binding_id);
 
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }
@@ -627,9 +642,10 @@ pub struct NameResolver {
   current_scope_qualifier: Option<GlobalQualifier>,
   /// Contains the modules with their respective top-level definitions.
   global_scopes: std::collections::HashMap<GlobalQualifier, Scope>,
-  /// Contains volatile, relative scopes. Only used during the declare step.
-  /// This is reset when the module changes, although by that time, all the
-  /// relative scopes should have been popped automatically.
+  /// Contains volatile, relative scopes.
+  ///
+  /// Only used during the declare step. This is reset when the module changes,
+  /// although by that time, all the relative scopes should have been popped automatically.
   relative_scopes: Vec<Scope>,
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
@@ -758,14 +774,12 @@ impl NameResolver {
     // Clone the relative scope tree.
     scope_tree.extend(self.relative_scopes.iter().rev().cloned());
 
-    let mut final_value_buffer = scope_tree;
-
     // Append to the existing definition, if applicable.
     if self.scope_map.contains_key(&binding_id) {
-      final_value_buffer.extend(self.scope_map.remove(&binding_id).unwrap());
+      scope_tree.extend(self.scope_map.remove(&binding_id).unwrap());
     }
 
-    self.scope_map.insert(binding_id, final_value_buffer);
+    self.scope_map.insert(binding_id, scope_tree);
   }
 
   /// Register a name on the last scope for name resolution lookups.
@@ -781,7 +795,7 @@ impl NameResolver {
     global_qualifier: GlobalQualifier,
     symbol: &Symbol,
   ) -> Option<cache::BindingId> {
-    // TODO: Unsafe unwrap. We assume the global scope exists for the given parameters.
+    // REVISE: Unsafe unwrap. We assume the global scope exists for the given parameters.
     let global_scope = self.global_scopes.get(&global_qualifier).unwrap();
 
     if let Some(binding_id) = global_scope.get(&symbol) {

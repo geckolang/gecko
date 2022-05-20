@@ -102,7 +102,10 @@ impl Lower for ast::MemberAccess {
       .unwrap()
       .into_pointer_value();
 
-    let llvm_struct_type = self.ty.as_ref().unwrap();
+    let llvm_struct_type = match self.base_expr.infer_type(cache) {
+      ast::Type::Struct(struct_type) => struct_type,
+      _ => unreachable!(),
+    };
 
     // TODO: Must disallow fields and methods with the same name on semantic check phase.
     // First, check if its a field.

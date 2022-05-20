@@ -847,8 +847,12 @@ impl SemanticCheck for ast::UnsafeExpr {
 }
 
 impl SemanticCheck for ast::ExternFunction {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.prototype.infer_type(cache)
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    SemanticCheckContext::infer_prototype_type(
+      &self.prototype,
+      // REVIEW: Cloning return type.
+      self.prototype.return_type_annotation.clone().unwrap(),
+    )
   }
 
   fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
