@@ -1,5 +1,3 @@
-use crate::diagnostic;
-
 pub type Token = (TokenKind, usize);
 
 #[derive(PartialEq, Debug, Clone)]
@@ -142,7 +140,9 @@ impl Lexer {
   }
 
   /// Attempt to lex all possible tokens until reaching `EOF`.
-  pub fn lex_all(&mut self) -> Result<Vec<Token>, diagnostic::Diagnostic> {
+  pub fn lex_all(
+    &mut self,
+  ) -> Result<Vec<Token>, codespan_reporting::diagnostic::Diagnostic<usize>> {
     let mut tokens = Vec::new();
 
     loop {
@@ -157,10 +157,6 @@ impl Lexer {
     }
 
     Ok(tokens)
-  }
-
-  fn get_span(&self) -> Option<diagnostic::Span> {
-    Some(self.index..self.index)
   }
 
   /// Determine if the current character is unset, and therefore
@@ -195,15 +191,14 @@ impl Lexer {
     })
   }
 
-  fn read_number(&mut self) -> Result<u64, diagnostic::Diagnostic> {
+  fn read_number(&mut self) -> Result<u64, codespan_reporting::diagnostic::Diagnostic<usize>> {
     let number_result = self.read_while(is_digit).parse::<u64>();
 
     if let Err(_) = number_result {
-      return Err(diagnostic::Diagnostic {
-        message: "number might be too large or invalid".to_string(),
-        severity: diagnostic::Severity::Error,
-        span: self.get_span(),
-      });
+      return Err(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("number might be too large or invalid"),
+      );
     }
 
     Ok(number_result.unwrap())
@@ -221,7 +216,7 @@ impl Lexer {
   }
 
   // TODO: Need tests implemented for this.
-  fn read_string(&mut self) -> Result<String, diagnostic::Diagnostic> {
+  fn read_string(&mut self) -> Result<String, codespan_reporting::diagnostic::Diagnostic<usize>> {
     // Skip the opening double-quote.
     self.read_char();
 
@@ -246,18 +241,16 @@ impl Lexer {
         Some('\\') => "\\",
         // REVIEW: Are we missing any other important escape sequence codes?
         Some(char) => {
-          return Err(diagnostic::Diagnostic {
-            message: format!("`{}` is not a valid string escape sequence", char),
-            severity: diagnostic::Severity::Error,
-            span: self.get_span(),
-          })
+          return Err(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message(format!("`{}` is not a valid string escape sequence", char)),
+          )
         }
         None => {
-          return Err(diagnostic::Diagnostic {
-            message: "unexpected end of input, expected character".to_string(),
-            severity: diagnostic::Severity::Error,
-            span: self.get_span(),
-          })
+          return Err(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message("unexpected end of input, expected character"),
+          );
         }
       };
 
@@ -271,16 +264,15 @@ impl Lexer {
     Ok(string)
   }
 
-  fn read_character(&mut self) -> Result<char, diagnostic::Diagnostic> {
+  fn read_character(&mut self) -> Result<char, codespan_reporting::diagnostic::Diagnostic<usize>> {
     // Skip the opening single-quote, and retrieve the character.
     let character = self.read_char();
 
     if character.is_none() {
-      return Err(diagnostic::Diagnostic {
-        message: "unexpected end of input, expected character".to_string(),
-        severity: diagnostic::Severity::Error,
-        span: self.get_span(),
-      });
+      return Err(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("unexpected end of input, expected character"),
+      );
     }
 
     Ok(character.unwrap())
@@ -300,7 +292,7 @@ impl Lexer {
   /// returned. If the current character is neither an identifier nor a
   /// digit, an [`Illegal`] token with the encountered character as its
   /// value will be returned.
-  fn lex_token(&mut self) -> Result<TokenKind, diagnostic::Diagnostic> {
+  fn lex_token(&mut self) -> Result<TokenKind, codespan_reporting::diagnostic::Diagnostic<usize>> {
     if self.is_eof() {
       return Ok(TokenKind::EOF);
     }
@@ -412,7 +404,7 @@ impl Lexer {
 
 // REVIEW: Is this implementation practical (even used)? If not, simply remove.
 impl Iterator for Lexer {
-  type Item = Result<TokenKind, diagnostic::Diagnostic>;
+  type Item = Result<TokenKind, codespan_reporting::diagnostic::Diagnostic<usize>>;
 
   fn next(&mut self) -> Option<Self::Item> {
     let token = self.lex_token();

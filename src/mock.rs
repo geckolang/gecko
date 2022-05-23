@@ -172,7 +172,7 @@ pub mod tests {
     }
 
     pub fn node(kind: ast::NodeKind) -> Box<ast::Node> {
-      Box::new(ast::Node { kind, span: 0..0 })
+      Box::new(ast::Node { kind })
     }
 
     pub fn new(

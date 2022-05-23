@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, llvm_lowering};
+use crate::{ast, cache, llvm_lowering};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
@@ -95,9 +95,10 @@ impl Resolve for ast::ThisType {
     if let Some(this_type_id) = resolver.current_struct_type_id {
       self.target_id = Some(this_type_id);
     } else {
-      resolver
-        .diagnostic_builder
-        .error("type `This` cannot be used outside of a struct implementation".to_string());
+      resolver.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("type `This` cannot be used outside of a struct implementation"),
+      );
     }
   }
 }
@@ -207,10 +208,12 @@ impl Resolve for ast::Pattern {
 
       // TODO: Abstract and reuse error handling.
       if self.target_id.is_none() {
-        resolver.diagnostic_builder.error(format!(
-          "could not retrieve global symbol: {}::{}::{}",
-          global_qualifier.0, global_qualifier.1, self.base_name
-        ));
+        resolver.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+            "could not retrieve global symbol: {}::{}::{}",
+            global_qualifier.0, global_qualifier.1, self.base_name
+          )),
+        );
       }
 
       return;
@@ -251,24 +254,8 @@ impl Resolve for ast::StructValue {
     self.target_id = resolver.local_lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
 
     if let Some(_target_id) = self.target_id {
-      // So, the new system will look like this:
-      //  - The type is attached to the node that needs it.
-      //  - We still have the cache, but only to lookup & lower nodes.
-      //    - [?] When lowering nodes, we won't have any problems with cached nodes? Those nodes
-      //      ... are unresolved, so they might not lower!
-      //  - The cache will not be used for anything else.
-      //  - Special cases such as StructValue's needing of StructType's fields will be solved,
-      //  - ... because its attached type already contains such information.
-      //  - There will no longer be a need for another cloned AST, nor the double visitation, instead
-      //  - ... what will be cloned is certain Types, to be stored as filler for certain nodes.
-      //  - The infer type's repetitive nature will be addressed. No need for a specialized container
-      //  - ... to hold cached types, that only adds complexity (and unsafe retrieval). Instead, just
-      //  - ... directly attach the Types to their respective nodes.
-      //  - This system implies that the type-inference and determination will be done here, during the
-      //  - ... resolve step.
       // TODO: Create a struct type based off the target Struct node.
       // self.ty = cache::get_node(target_id);
-      ///////////////////////////////////////////////////////////////
     }
 
     for field in &mut self.fields {
@@ -570,9 +557,10 @@ impl Resolve for ast::Function {
     // ... Also, should the main function binding id be located under the cache?
     if self.name == llvm_lowering::MAIN_FUNCTION_NAME {
       if cache.main_function_id.is_some() {
-        resolver
-          .diagnostic_builder
-          .error("multiple main functions defined".to_string());
+        resolver.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message("multiple main functions defined"),
+        );
       } else {
         cache.main_function_id = Some(self.binding_id);
       }
@@ -638,7 +626,7 @@ pub type GlobalQualifier = (String, String);
 
 #[derive(Clone)]
 pub struct NameResolver {
-  diagnostic_builder: diagnostic::DiagnosticBuilder,
+  diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   current_scope_qualifier: Option<GlobalQualifier>,
   /// Contains the modules with their respective top-level definitions.
   global_scopes: std::collections::HashMap<GlobalQualifier, Scope>,
@@ -656,40 +644,48 @@ pub struct NameResolver {
 }
 
 impl NameResolver {
-  pub fn new() -> Self {
-    Self {
-      diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
+  pub fn new(initial_module: GlobalQualifier) -> Self {
+    let mut result = Self {
+      diagnostics: Vec::new(),
       current_scope_qualifier: None,
       global_scopes: std::collections::HashMap::new(),
       relative_scopes: Vec::new(),
       scope_map: std::collections::HashMap::new(),
       current_block_binding_id: None,
       current_struct_type_id: None,
-    }
+    };
+
+    result.create_module(initial_module);
+
+    result
   }
 
   pub fn run(
     &mut self,
-    asts: &mut std::collections::BTreeMap<GlobalQualifier, Vec<ast::Node>>,
+    ast_map: &mut std::collections::BTreeMap<GlobalQualifier, Vec<ast::Node>>,
     cache: &mut cache::Cache,
-  ) -> Vec<diagnostic::Diagnostic> {
-    let mut name_resolver = NameResolver::new();
+  ) -> Vec<codespan_reporting::diagnostic::Diagnostic<usize>> {
+    if ast_map.is_empty() {
+      return Vec::new();
+    }
+
+    let mut name_resolver = NameResolver::new(ast_map.keys().next().unwrap().clone());
 
     // BUG: Cannot be processed linearly. Once an import is used, the whole corresponding
     // ... module must be recursively processed first!
 
-    for (global_qualifier, ast) in asts.iter() {
+    for (global_qualifier, ast) in ast_map.iter() {
       // REVIEW: Shouldn't the module be created before, on the Driver?
       name_resolver.create_module(global_qualifier.clone());
-      name_resolver.set_module(global_qualifier.clone());
+      name_resolver.current_scope_qualifier = Some(global_qualifier.clone());
 
       for node in ast.iter() {
         node.declare(&mut name_resolver);
       }
     }
 
-    for (global_qualifier, ast) in asts {
-      name_resolver.set_module(global_qualifier.clone());
+    for (global_qualifier, ast) in ast_map {
+      name_resolver.current_scope_qualifier = Some(global_qualifier.clone());
 
       for node in ast {
         // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
@@ -698,12 +694,17 @@ impl NameResolver {
       }
     }
 
-    name_resolver.diagnostic_builder.diagnostics
+    name_resolver.diagnostics
   }
 
   /// Set per-file. A new global scope is created per-module.
-  pub fn create_module(&mut self, global_qualifier: GlobalQualifier) {
-    // REVIEW: Can the module name possibly collide with an existing one?
+  ///
+  /// Return `false` if a module associated with the given global qualifier was
+  /// already previously defined, or `true` if it was created.
+  pub fn create_module(&mut self, global_qualifier: GlobalQualifier) -> bool {
+    if self.global_scopes.contains_key(&global_qualifier) {
+      return false;
+    }
 
     self.current_scope_qualifier = Some(global_qualifier.clone());
 
@@ -712,37 +713,43 @@ impl NameResolver {
       .insert(global_qualifier, std::collections::HashMap::new());
 
     self.relative_scopes.clear();
-  }
-
-  pub fn set_module(&mut self, global_qualifier: GlobalQualifier) -> bool {
-    // TODO: Implement checks (that module exists, etc.).
-    // REVIEW: Shouldn't we reset buffers here? This might prevent the re-definition bug.
-    self.current_scope_qualifier = Some(global_qualifier);
 
     true
   }
 
   // FIXME: What about registering on the cache? If this is implemented, there is no longer a need to register
   // ... the root nodes on the cache.
-  fn declare_symbol(&mut self, symbol: Symbol, binding_id: cache::BindingId) {
+  /// Register a local symbol to a binding id in the current scope.
+  ///
+  /// Returns `false`, and creates an error diagnostic in the local diagnostic builder, if
+  /// the symbol was already defined in the current scope, or `true` if it was successfully
+  /// registered.
+  fn declare_symbol(&mut self, symbol: Symbol, binding_id: cache::BindingId) -> bool {
     // Check for existing definitions.
     if self.current_scope_contains(&symbol) {
-      self
-        .diagnostic_builder
-        .error(format!("re-definition of `{}`", symbol.0));
+      self.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message(format!("re-definition of `{}`", symbol.0)),
+      );
 
       // REVIEW: What about calling the child's declare function?
-      return;
+      return false;
     }
 
     // Bind the symbol to the current scope for name resolution lookup.
     self.bind(symbol.clone(), binding_id);
+
+    true
   }
 
   /// Retrieve the last pushed relative scope, or if there are none,
   /// the global scope of the current module.
+  ///
+  /// This function assumes that the current scope qualifier has been set,
+  /// which occurs when a module is created.
   fn get_current_scope(&mut self) -> &mut Scope {
     if self.relative_scopes.is_empty() {
+      // REVISE: Relying on the assumption that at least a single module was created.
       return self
         .global_scopes
         .get_mut(self.current_scope_qualifier.as_ref().unwrap())
@@ -834,9 +841,10 @@ impl NameResolver {
       return Some(binding_id.clone());
     }
 
-    self
-      .diagnostic_builder
-      .error(format!("undefined reference to `{}`", symbol.0));
+    self.diagnostics.push(
+      codespan_reporting::diagnostic::Diagnostic::error()
+        .with_message(format!("undefined reference to `{}`", symbol.0)),
+    );
 
     None
   }
@@ -851,23 +859,120 @@ impl NameResolver {
 mod tests {
   use super::*;
 
+  fn mock_qualifier() -> GlobalQualifier {
+    (String::from("test"), String::from("test"))
+  }
+
+  fn mock_symbol() -> Symbol {
+    (String::from("test"), SymbolKind::Definition)
+  }
+
   #[test]
   fn proper_initial_values() {
-    let name_resolver = NameResolver::new();
+    let name_resolver = NameResolver::new(mock_qualifier());
 
-    assert!(name_resolver.current_scope_qualifier.is_none());
+    // TODO: Awaiting fix of module system.
+    // assert!(name_resolver.current_scope_qualifier.is_none());
     assert!(name_resolver.relative_scopes.is_empty());
-    assert!(name_resolver.global_scopes.is_empty());
+    assert!(name_resolver.scope_map.is_empty());
+    // assert!(name_resolver.global_scopes.is_empty());
   }
 
   #[test]
   fn push_pop_scope() {
-    let mut name_resolver = NameResolver::new();
+    let mut name_resolver = NameResolver::new(mock_qualifier());
 
     assert!(name_resolver.relative_scopes.is_empty());
     name_resolver.push_scope();
     assert_eq!(1, name_resolver.relative_scopes.len());
     name_resolver.force_pop_scope();
     assert!(name_resolver.relative_scopes.is_empty());
+  }
+
+  #[test]
+  fn get_current_scope() {
+    let mut name_resolver = NameResolver::new(mock_qualifier());
+
+    name_resolver.get_current_scope();
+  }
+
+  #[test]
+  fn current_scope_contains() {
+    let mut name_resolver = NameResolver::new(mock_qualifier());
+    let symbol = mock_symbol();
+
+    assert!(!name_resolver.current_scope_contains(&symbol));
+    name_resolver.bind(symbol.clone(), 0);
+    assert!(name_resolver.current_scope_contains(&symbol));
+  }
+
+  #[test]
+  fn declare_symbol() {
+    let binding_id: cache::BindingId = 0;
+    let symbol = mock_symbol();
+    let mut name_resolver = NameResolver::new(mock_qualifier());
+
+    assert!(name_resolver.declare_symbol(symbol.clone(), binding_id.clone()));
+    assert!(name_resolver.diagnostics.is_empty());
+    assert!(!name_resolver.declare_symbol(symbol.clone(), binding_id));
+    assert_eq!(1, name_resolver.diagnostics.len());
+    assert!(name_resolver.current_scope_contains(&symbol));
+  }
+
+  #[test]
+  fn create_module() {
+    let mut name_resolver = NameResolver::new(mock_qualifier());
+
+    assert!(!name_resolver.create_module(mock_qualifier()));
+    assert!(name_resolver.current_scope_qualifier.is_some());
+  }
+
+  #[test]
+  fn lookup() {
+    let mut name_resolver = NameResolver::new(mock_qualifier());
+    let symbol = mock_symbol();
+
+    assert!(name_resolver.lookup(mock_qualifier(), &symbol).is_none());
+    name_resolver.bind(symbol.clone(), 0);
+    assert!(name_resolver.lookup(mock_qualifier(), &symbol).is_some());
+  }
+
+  #[test]
+  fn local_lookup() {
+    let mut name_resolver = NameResolver::new(mock_qualifier());
+    let symbol = mock_symbol();
+    let binding_id: cache::BindingId = 0;
+
+    // REVIEW: Ensure this is test is well-formed.
+    assert!(name_resolver.local_lookup(&symbol).is_none());
+    name_resolver.push_scope();
+    name_resolver.bind(symbol.clone(), binding_id.clone());
+    name_resolver.close_scope_tree(binding_id);
+    name_resolver.current_block_binding_id = Some(binding_id);
+    assert!(name_resolver.local_lookup(&symbol).is_some());
+  }
+
+  #[test]
+  fn local_lookup_or_error() {
+    let mut name_resolver = NameResolver::new(mock_qualifier());
+
+    // REVIEW: Consider testing behavior of the function as well?
+    assert!(name_resolver.diagnostics.is_empty());
+
+    assert!(name_resolver
+      .local_lookup_or_error(&mock_symbol())
+      .is_none());
+
+    assert_eq!(1, name_resolver.diagnostics.len());
+  }
+
+  #[test]
+  fn close_scope_tree() {
+    let mut name_resolver = NameResolver::new(mock_qualifier());
+
+    name_resolver.push_scope();
+    name_resolver.close_scope_tree(0);
+    assert!(name_resolver.relative_scopes.is_empty());
+    assert_eq!(1, name_resolver.scope_map.len());
   }
 }

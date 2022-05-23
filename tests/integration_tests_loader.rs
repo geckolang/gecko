@@ -60,11 +60,14 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let mut cache = gecko::cache::Cache::new();
-    let mut name_resolver = gecko::name_resolution::NameResolver::new();
     let mut lint_context = gecko::lint::LintContext::new();
     let mut llvm_generator = gecko::llvm_lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
     let mut semantic_check_context = gecko::semantic_check::SemanticCheckContext::new();
     let mut ast_map = std::collections::BTreeMap::new();
+
+    // FIXME: Pass the first global qualifier, instead of this dummy value.
+    let mut name_resolver =
+      gecko::name_resolution::NameResolver::new((String::from("pending"), String::from("pending")));
 
     // TODO: Ensure both vectors are of same length, and zip iterators.
     // Read, lex, parse, perform name resolution (declarations)
@@ -107,7 +110,7 @@ mod tests {
 
     // Lowering cannot proceed if there was an error.
     // TODO: Missing semantic check context's diagnostics.
-    assert!(lint_context.diagnostic_builder.diagnostics.is_empty());
+    assert!(lint_context.diagnostics.diagnostics.is_empty());
 
     // REVISE: Any way for better efficiency (less loops)?
     // Once symbols are resolved, we can proceed to the other phases.

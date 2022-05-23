@@ -1,9 +1,13 @@
-use crate::{ast, cache, diagnostic, dispatch, llvm_lowering};
+use crate::{ast, cache, dispatch, llvm_lowering};
+
+enum TypeConstrainKind {
+  Equality,
+}
+
+type TypeConstraint = (ast::Type, ast::Type, TypeConstrainKind);
 
 pub struct SemanticCheckContext {
-  diagnostic_builder: diagnostic::DiagnosticBuilder,
-  new_diagnostic: Vec<diagnostic::NewDiagnostic>,
-  new_diagnostic_builder: diagnostic::NewDiagnosticBuilder,
+  diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   in_loop: bool,
   in_unsafe_block: bool,
   in_impl: bool,
@@ -11,13 +15,18 @@ pub struct SemanticCheckContext {
   // REVISE: Make use-of or discard.
   _types_cache: std::collections::HashMap<cache::BindingId, ast::Type>,
   imports: Vec<ast::Import>,
+  constraints: Vec<TypeConstraint>,
+  substitution: Vec<ast::Type>,
 }
 
 impl SemanticCheckContext {
   pub fn run(
     ast: &Vec<std::rc::Rc<ast::Node>>,
     cache: &cache::Cache,
-  ) -> (Vec<diagnostic::Diagnostic>, Vec<ast::Import>) {
+  ) -> (
+    Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+    Vec<ast::Import>,
+  ) {
     let mut semantic_check_context = SemanticCheckContext::new();
 
     for node in ast {
@@ -25,22 +34,22 @@ impl SemanticCheckContext {
     }
 
     (
-      semantic_check_context.diagnostic_builder.diagnostics,
+      semantic_check_context.diagnostics,
       semantic_check_context.imports,
     )
   }
 
   pub fn new() -> Self {
     Self {
-      diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
-      new_diagnostic: Vec::new(),
-      new_diagnostic_builder: diagnostic::NewDiagnosticBuilder::new(),
+      diagnostics: Vec::new(),
       in_loop: false,
       in_unsafe_block: false,
       in_impl: false,
       current_function_key: None,
       _types_cache: std::collections::HashMap::new(),
       imports: Vec::new(),
+      constraints: Vec::new(),
+      substitution: Vec::new(),
     }
   }
 
@@ -84,8 +93,9 @@ impl SemanticCheckContext {
     SemanticCheckContext::flatten_type(&node.infer_type(cache), cache)
   }
 
+  // TODO: Use an enum to specify error type instead of a string.
   // REVIEW: Consider using `Result` instead of `Option`.
-  pub fn unify_prototypes(
+  pub fn compare_prototypes(
     prototype_a: &ast::Prototype,
     prototype_b: &ast::Prototype,
     cache: &cache::Cache,
@@ -101,13 +111,13 @@ impl SemanticCheckContext {
       .map(|(param_def_a, param_def_b)| (param_def_a.ty.clone(), param_def_b.ty.clone()));
 
     for (param_type_a, param_type_b) in parameter_types {
-      if !Self::unify(&param_type_a, &param_type_b, cache) {
+      if !Self::compare(&param_type_a, &param_type_b, cache) {
         // TODO: Be more specific.
         return Some("parameter type".to_string());
       }
     }
 
-    if !Self::unify(
+    if !Self::compare(
       prototype_a.return_type_annotation.as_ref().unwrap(),
       prototype_b.return_type_annotation.as_ref().unwrap(),
       cache,
@@ -151,7 +161,7 @@ impl SemanticCheckContext {
   ///
   /// The types passed-in will be resolved if needed before
   /// the comparison takes place.
-  pub fn unify(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
+  pub fn compare(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
     let flat_type_a = Self::flatten_type(type_a, cache);
     let flat_type_b = Self::flatten_type(type_b, cache);
 
@@ -171,6 +181,45 @@ impl SemanticCheckContext {
     // BUG: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
     // NOTE: Stub types will also work, because their target ids will be compared.
     flat_type_a == flat_type_b
+  }
+
+  fn occurs_in(&self, index: usize, ty: &ast::Type) -> bool {
+    match ty {
+      ast::Type::Variable(id)
+        if self.substitution[id.to_owned()] != ast::Type::Variable(id.to_owned()) =>
+      {
+        self.occurs_in(index, &self.substitution[id.to_owned()])
+      }
+      // REVIEW: Will this compare the underlying values or the addresses?
+      ast::Type::Variable(id) => id == &index,
+      // TODO: Generics / type constructors.
+      _ => false,
+    }
+  }
+
+  fn unify(&self, type_a: &ast::Type, type_b: &ast::Type) {
+    match (type_a, type_b) {
+      (ast::Type::Variable(id_a), ast::Type::Variable(id_b)) if id_a == id_b => {}
+      (ast::Type::Variable(id_a), _)
+        if matches!(self.substitution[id_a.to_owned()], ast::Type::Variable(_)) =>
+      {
+        self.unify(&self.substitution[id_a.to_owned()], type_b)
+      }
+      (_, ast::Type::Variable(id_b))
+        if matches!(self.substitution[id_b.to_owned()], ast::Type::Variable(_)) =>
+      {
+        self.unify(type_a, &self.substitution[id_b.to_owned()])
+      }
+      _ => {}
+    }
+  }
+
+  fn solve_constraints(&mut self) {
+    for constrain in &self.constraints {
+      self.unify(&constrain.0, &constrain.1);
+    }
+
+    self.constraints.clear();
   }
 
   fn is_null_pointer_type(ty: &ast::Type) -> bool {
@@ -223,15 +272,9 @@ impl SemanticCheck for ast::SizeofIntrinsic {
     let flattened_type = SemanticCheckContext::flatten_type(&self.ty, cache);
 
     if matches!(flattened_type, ast::Type::Unit) {
-      context
-        .diagnostic_builder
-        .error("cannot determine size of unit type".to_string());
-
-      context.new_diagnostic.push(
-        codespan_reporting::diagnostic::Diagnostic::new(
-          codespan_reporting::diagnostic::Severity::Error,
-        )
-        .with_message("cannot determine size of unit type"),
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("cannot determine size of unit type"),
       );
     }
   }
@@ -288,32 +331,16 @@ impl SemanticCheck for ast::StructImpl {
 
               if let Some(error) = prototype_unification_result {
                 // REVISE: Use expected/got system.
-                context.diagnostic_builder.error(format!(
-                  "prototype of implementation method `{}` for trait `{}` mismatch in {}",
-                  "pending impl method name", trait_type.name, error
-                ));
-
-                context.new_diagnostic.push(
-                  codespan_reporting::diagnostic::Diagnostic::new(
-                    codespan_reporting::diagnostic::Severity::Error,
-                  )
-                  .with_message(format!(
+                context.diagnostics.push(
+                  codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
                     "prototype of implementation method `{}` for trait `{}` mismatch in {}",
                     "pending impl method name", trait_type.name, error
                   )),
-                );
+                )
               }
             } else {
-              context.diagnostic_builder.error(format!(
-                "required method `{}` not implemented",
-                trait_method.0
-              ));
-
-              context.new_diagnostic.push(
-                codespan_reporting::diagnostic::Diagnostic::new(
-                  codespan_reporting::diagnostic::Severity::Error,
-                )
-                .with_message(format!(
+              context.diagnostics.push(
+                codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
                   "required method `{}` not implemented",
                   trait_method.0
                 )),
@@ -321,16 +348,8 @@ impl SemanticCheck for ast::StructImpl {
             }
           }
         } else {
-          context.diagnostic_builder.error(format!(
-            "cannot implement non-trait `{}`",
-            &trait_pattern.base_name
-          ));
-
-          context.new_diagnostic.push(
-            codespan_reporting::diagnostic::Diagnostic::new(
-              codespan_reporting::diagnostic::Severity::Error,
-            )
-            .with_message(format!(
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
               "cannot implement non-trait `{}`",
               &trait_pattern.base_name
             )),
@@ -338,16 +357,8 @@ impl SemanticCheck for ast::StructImpl {
         }
       }
     } else {
-      context.diagnostic_builder.error(format!(
-        "cannot implement for a non-struct type `{}`",
-        self.target_struct_pattern.base_name
-      ));
-
-      context.new_diagnostic.push(
-        codespan_reporting::diagnostic::Diagnostic::new(
-          codespan_reporting::diagnostic::Severity::Error,
-        )
-        .with_message(format!(
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "cannot implement for a non-struct type `{}`",
           self.target_struct_pattern.base_name
         )),
@@ -400,15 +411,9 @@ impl SemanticCheck for ast::MemberAccess {
       ast::Type::This(_) => return,
       // REVIEW: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
       _ => {
-        context
-          .diagnostic_builder
-          .error("expression is not a struct".to_string());
-
-        context.new_diagnostic.push(
-          codespan_reporting::diagnostic::Diagnostic::new(
-            codespan_reporting::diagnostic::Severity::Error,
-          )
-          .with_message("expression is not a struct"),
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message("expression is not a struct"),
         );
 
         return;
@@ -433,15 +438,9 @@ impl SemanticCheck for ast::Closure {
     // REVIEW: Might need to mirror `Function`'s type check.
 
     if self.prototype.accepts_instance {
-      context
-        .diagnostic_builder
-        .error("closures cannot accept instances".to_string());
-
-      context.new_diagnostic.push(
-        codespan_reporting::diagnostic::Diagnostic::new(
-          codespan_reporting::diagnostic::Severity::Error,
-        )
-        .with_message("closures cannot accept instances"),
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("closures cannot accept instances"),
       );
     }
 
@@ -488,15 +487,9 @@ impl SemanticCheck for ast::StructValue {
     };
 
     if self.fields.len() != struct_type.fields.len() {
-      context
-        .diagnostic_builder
-        .error("invalid amount of fields in struct value".to_string());
-
-      context.new_diagnostic.push(
-        codespan_reporting::diagnostic::Diagnostic::new(
-          codespan_reporting::diagnostic::Severity::Error,
-        )
-        .with_message("invalid amount of fields in struct value"),
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("invalid amount of fields in struct value"),
       );
 
       return;
@@ -559,43 +552,28 @@ impl SemanticCheck for ast::UnaryExpr {
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
         if !context.in_unsafe_block {
-          context
-            .diagnostic_builder
-            .error("can only dereference inside an unsafe block".to_string());
-
-          context.new_diagnostic.push(
-            codespan_reporting::diagnostic::Diagnostic::new(
-              codespan_reporting::diagnostic::Severity::Error,
-            )
-            .with_message("can only dereference inside an unsafe block"),
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message("can only dereference inside an unsafe block"),
           );
         }
 
         if !matches!(expr_type, ast::Type::Pointer(_)) {
-          context
-            .diagnostic_builder
-            .error("can only dereference pointers".to_string());
-
-          context.new_diagnostic.push(
-            codespan_reporting::diagnostic::Diagnostic::new(
-              codespan_reporting::diagnostic::Severity::Error,
-            )
-            .with_message("can only dereference pointers"),
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message("can only dereference pointers"),
           );
         }
       }
       ast::OperatorKind::Not => {
-        if !SemanticCheckContext::unify(&expr_type, &ast::Type::Basic(ast::BasicType::Bool), cache)
-        {
-          context
-            .diagnostic_builder
-            .error("can only negate boolean expressions".to_string());
-
-          context.new_diagnostic.push(
-            codespan_reporting::diagnostic::Diagnostic::new(
-              codespan_reporting::diagnostic::Severity::Error,
-            )
-            .with_message("can only negate boolean expressions"),
+        if !SemanticCheckContext::compare(
+          &expr_type,
+          &ast::Type::Basic(ast::BasicType::Bool),
+          cache,
+        ) {
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message("can only negate boolean expressions"),
           );
         }
       }
@@ -607,15 +585,9 @@ impl SemanticCheck for ast::UnaryExpr {
         // ... the inferred type is already at its simplest form? Verify.
         if !matches!(expr_type, ast::Type::Basic(ast::BasicType::Int(_))) {
           // REVISE: Error message too similar to the boolean negation case.
-          context
-            .diagnostic_builder
-            .error("can only negate integer or float expressions".to_string());
-
-          context.new_diagnostic.push(
-            codespan_reporting::diagnostic::Diagnostic::new(
-              codespan_reporting::diagnostic::Severity::Error,
-            )
-            .with_message("can only negate integer or float expressions"),
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message("can only negate integer or float expressions"),
           );
         }
       }
@@ -628,26 +600,15 @@ impl SemanticCheck for ast::UnaryExpr {
         if !matches!(expr_type, ast::Type::Basic(_))
           || !matches!(self.cast_type.as_ref().unwrap(), ast::Type::Basic(_))
         {
-          context
-            .diagnostic_builder
-            .error("can only cast between primitive types".to_string());
-
-          context.new_diagnostic.push(
-            codespan_reporting::diagnostic::Diagnostic::new(
-              codespan_reporting::diagnostic::Severity::Error,
-            )
-            .with_message("can only cast between primitive types"),
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message("can only cast between primitive types"),
           );
-        } else if SemanticCheckContext::unify(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
-          context
-            .diagnostic_builder
-            .warning("redundant cast to the same type".to_string());
-
-          context.new_diagnostic.push(
-            codespan_reporting::diagnostic::Diagnostic::new(
-              codespan_reporting::diagnostic::Severity::Warning,
-            )
-            .with_message("redundant cast to the same type"),
+        } else if SemanticCheckContext::compare(&expr_type, self.cast_type.as_ref().unwrap(), cache)
+        {
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::warning()
+              .with_message("redundant cast to the same type"),
           );
         }
       }
@@ -671,13 +632,10 @@ impl SemanticCheck for ast::AssignStmt {
       SemanticCheckContext::flatten_type(&assignee_type, cache),
       ast::Type::Reference(_)
     ) {
-      context
-        .diagnostic_builder
-        .error("can't assign to a reference; references cannot be reseated".to_string());
-
-      context
-        .new_diagnostic_builder
-        .error("can't assign to a reference; references cannot be reseated");
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("can't assign to a reference; references cannot be reseated"),
+      );
 
       // REVIEW: We should continue gathering other diagnostics (ex. immutable)?
       return;
@@ -695,9 +653,10 @@ impl SemanticCheck for ast::AssignStmt {
     // NOTE: The assignee expression may only be an expression of type `Pointer`
     // or `Reference`, a variable reference, or an array indexing.
     if !is_pointer && !is_variable_ref && !is_array_indexing {
-      context
-        .diagnostic_builder
-        .error("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing expression".to_string());
+      context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing expression"),
+        );
     } else if is_variable_ref {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match &self.assignee_expr.kind {
@@ -706,13 +665,10 @@ impl SemanticCheck for ast::AssignStmt {
 
           match declaration {
             ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
-              context
-                .diagnostic_builder
-                .error("assignee is immutable".to_string());
-
-              context
-                .new_diagnostic_builder
-                .error("assignee is immutable");
+              context.diagnostics.push(
+                codespan_reporting::diagnostic::Diagnostic::error()
+                  .with_message("assignee is immutable"),
+              );
             }
             // TODO: Parameters should be immutable by default.
             _ => {}
@@ -729,13 +685,10 @@ impl SemanticCheck for ast::AssignStmt {
 impl SemanticCheck for ast::ContinueStmt {
   fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
     if !context.in_loop {
-      context
-        .diagnostic_builder
-        .error("continue statement may only occur inside loops".to_string());
-
-      context
-        .new_diagnostic_builder
-        .error("continue statement may only occur inside loops");
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("continue statement may only occur inside loops"),
+      );
     }
   }
 }
@@ -774,13 +727,10 @@ impl SemanticCheck for ast::ArrayIndexing {
       };
 
     if !is_unsigned_int_type {
-      context
-        .diagnostic_builder
-        .error("array index expression must evaluate to an unsigned integer".to_string());
-
-      context
-        .new_diagnostic_builder
-        .error("array index expression must evaluate to an unsigned integer");
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("array index expression must evaluate to an unsigned integer"),
+      );
     }
 
     self.index_expr.check(context, cache);
@@ -817,13 +767,10 @@ impl SemanticCheck for ast::ArrayValue {
     for element in &self.elements {
       // Report this error only once.
       if !mixed_elements_flag && element.infer_type(cache) != expected_element_type {
-        context
-          .diagnostic_builder
-          .error("array elements must all be of the same type".to_string());
-
-        context
-          .new_diagnostic_builder
-          .error("array elements must all be of the same type");
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message("array elements must all be of the same type"),
+        );
 
         mixed_elements_flag = true;
       }
@@ -857,23 +804,17 @@ impl SemanticCheck for ast::ExternFunction {
 
   fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
     if self.prototype.return_type_annotation.is_none() {
-      context
-        .diagnostic_builder
-        .error("extern function must have a return type".to_string());
-
-      context
-        .new_diagnostic_builder
-        .error("extern function must have a return type");
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("extern function must have a return type"),
+      );
     }
 
     if self.prototype.accepts_instance {
-      context
-        .diagnostic_builder
-        .error("extern functions cannot accept instances".to_string());
-
-      context
-        .new_diagnostic_builder
-        .error("extern functions cannot accept instances");
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("extern functions cannot accept instances"),
+      );
     }
   }
 }
@@ -943,7 +884,7 @@ impl SemanticCheck for ast::IfExpr {
 
     // FIXME: Perhaps make a special case for let-statement? Its type inference is used internally, but they should yield 'Unit' for the user.
     // In case of a type-mismatch between branches, simply return the unit type.
-    if !SemanticCheckContext::unify(&then_block_type, &else_block.infer_type(cache), cache) {
+    if !SemanticCheckContext::compare(&then_block_type, &else_block.infer_type(cache), cache) {
       return ast::Type::Unit;
     }
 
@@ -951,14 +892,15 @@ impl SemanticCheck for ast::IfExpr {
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    if !SemanticCheckContext::unify(
+    if !SemanticCheckContext::compare(
       &self.condition.infer_type(cache),
       &ast::Type::Basic(ast::BasicType::Bool),
       cache,
     ) {
-      context
-        .diagnostic_builder
-        .error("if statement condition must evaluate to a boolean".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("if statement condition must evaluate to a boolean"),
+      );
     }
 
     self.condition.check(context, cache);
@@ -992,10 +934,11 @@ impl SemanticCheck for ast::BinaryExpr {
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
     // REVISE: If we require both operands to  be of the same type, then operator overloading isn't possible with mixed operands as parameters.
-    if !SemanticCheckContext::unify(&left_type, &right_type, cache) {
-      context
-        .diagnostic_builder
-        .error("binary expression operands must be the same type".to_string());
+    if !SemanticCheckContext::compare(&left_type, &right_type, cache) {
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("binary expression operands must be the same type"),
+      );
 
       return;
     }
@@ -1012,9 +955,10 @@ impl SemanticCheck for ast::BinaryExpr {
       | ast::OperatorKind::GreaterThan => {
         // REVIEW: What about floats?
         if !matches!(left_type, ast::Type::Basic(ast::BasicType::Int(_))) {
-          context
-            .diagnostic_builder
-            .error("binary expression operands must be both integers".to_string());
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message("binary expression operands must be both integers"),
+          );
         }
       }
       // TODO: Equality operator, and others? Implement.
@@ -1029,9 +973,10 @@ impl SemanticCheck for ast::BinaryExpr {
 impl SemanticCheck for ast::BreakStmt {
   fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
     if !context.in_loop {
-      context
-        .diagnostic_builder
-        .error("break statement may only occur inside loops".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("break statement may only occur inside loops"),
+      );
     }
   }
 }
@@ -1056,11 +1001,13 @@ impl SemanticCheck for ast::LetStmt {
     let value_type = self.value.infer_type(cache);
     let ty = &self.infer_type(cache);
 
-    if !SemanticCheckContext::unify(&ty, &value_type, cache) {
-      context.diagnostic_builder.error(format!(
-        "variable declaration of `{}` value and type mismatch",
-        self.name
-      ));
+    if !SemanticCheckContext::compare(&ty, &value_type, cache) {
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+          "variable declaration of `{}` value and type mismatch",
+          self.name
+        )),
+      );
     }
 
     self.value.check(context, cache);
@@ -1086,13 +1033,15 @@ impl SemanticCheck for ast::ReturnStmt {
 
     // REVISE: Whether a function returns is already checked. Limit this to unifying the types only.
     if !return_type.is_unit() && self.value.is_none() {
-      context
-        .diagnostic_builder
-        .error("return statement must return a value".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("return statement must return a value"),
+      );
     } else if return_type.is_unit() && self.value.is_some() {
-      context
-        .diagnostic_builder
-        .error("return statement must not return a value".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("return statement must not return a value"),
+      );
 
       // REVIEW: Returning at this point. Is this okay?
       return;
@@ -1101,15 +1050,17 @@ impl SemanticCheck for ast::ReturnStmt {
     if let Some(value) = &self.value {
       let value_type = value.infer_type(cache);
 
-      if !SemanticCheckContext::unify(&return_type, &value_type, cache) {
-        context.diagnostic_builder.error(format!(
-          "return statement value and prototype return type mismatch for {}",
-          if let Some(name) = name {
-            format!("function `{}`", name)
-          } else {
-            "closure".to_string()
-          }
-        ));
+      if !SemanticCheckContext::compare(&return_type, &value_type, cache) {
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+            "return statement value and prototype return type mismatch for {}",
+            if let Some(name) = name {
+              format!("function `{}`", name)
+            } else {
+              "closure".to_string()
+            }
+          )),
+        );
       }
 
       value.check(context, cache);
@@ -1126,27 +1077,32 @@ impl SemanticCheck for ast::Function {
     context.current_function_key = Some(self.binding_id);
 
     if self.prototype.accepts_instance && !context.in_impl {
-      context
-        .diagnostic_builder
-        .error("cannot accept instance in a non-impl function".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("cannot accept instance in a non-impl function"),
+      );
     }
 
     // TODO: Special case for the `main` function. Unify expected signature?
 
     let return_type = self.body_value.infer_type(cache);
 
-    if !SemanticCheckContext::unify(&return_type, &self.body_value.infer_type(cache), cache) {
-      context.diagnostic_builder.error(format!(
-        "function body and prototype return type mismatch for function `{}`",
-        self.name
-      ));
+    if !SemanticCheckContext::compare(&return_type, &self.body_value.infer_type(cache), cache) {
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+          "function body and prototype return type mismatch for function `{}`",
+          self.name
+        )),
+      );
     }
 
     if self.prototype.is_variadic {
-      context.diagnostic_builder.error(format!(
-        "function `{}` cannot be variadic; only externs are allowed to be variadic",
-        self.name
-      ));
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+          "function `{}` cannot be variadic; only externs are allowed to be variadic",
+          self.name
+        )),
+      );
     }
 
     if self.name == llvm_lowering::MAIN_FUNCTION_NAME {
@@ -1163,9 +1119,10 @@ impl SemanticCheck for ast::Function {
 
       // REVISE: Simplify.
       if self.prototype.infer_type(cache) != main_prototype.infer_type(cache) {
-        context
-          .diagnostic_builder
-          .error(format!("the `main` function has an invalid signature"));
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message("the `main` function has an invalid signature"),
+        );
       }
     }
 
@@ -1194,9 +1151,10 @@ impl SemanticCheck for ast::CallExpr {
     let callee_expr_type = self.callee_expr.infer_type(cache);
 
     if !matches!(callee_expr_type, ast::Type::Function(_)) {
-      context
-        .diagnostic_builder
-        .error("call expression's callee is not actually callable".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("call expression's callee is not actually callable"),
+      );
 
       // Cannot continue.
       return;
@@ -1211,11 +1169,13 @@ impl SemanticCheck for ast::CallExpr {
     // let attributes;
 
     if callee_type.is_extern && !context.in_unsafe_block {
-      context.diagnostic_builder.error(format!(
-        "extern function call to `{}` may only occur inside an unsafe block",
-        // TODO: Need name.
-        "<pending>"
-      ));
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+          "extern function call to `{}` may only occur inside an unsafe block",
+          // TODO: Need name.
+          "<pending>"
+        )),
+      );
     }
 
     // for attribute in attributes {
@@ -1238,9 +1198,10 @@ impl SemanticCheck for ast::CallExpr {
     if (!callee_type.is_variadic && actual_arg_count != min_arg_count)
       || (callee_type.is_variadic && actual_arg_count < min_arg_count)
     {
-      context
-        .diagnostic_builder
-        .error("call expression has an invalid amount of arguments".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("call expression has an invalid amount of arguments"),
+      );
     }
 
     // FIXME: Straight up broken. Need to re-verify and fix.
@@ -1268,14 +1229,15 @@ impl SemanticCheck for ast::CallExpr {
 impl SemanticCheck for ast::LoopStmt {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
-      if !SemanticCheckContext::unify(
+      if !SemanticCheckContext::compare(
         &condition.infer_type(cache),
         &ast::Type::Basic(ast::BasicType::Bool),
         cache,
       ) {
-        context
-          .diagnostic_builder
-          .error("loop condition must evaluate to a boolean".to_string());
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message("loop condition must evaluate to a boolean"),
+        );
       }
 
       condition.check(context, cache);

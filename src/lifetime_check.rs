@@ -1,16 +1,10 @@
-use crate::diagnostic;
-
 struct _BorrowCheckContext {
-  diagnostic_builder: diagnostic::DiagnosticBuilder,
   depth: usize,
 }
 
 impl _BorrowCheckContext {
   fn _new() -> Self {
-    Self {
-      diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
-      depth: 0,
-    }
+    Self { depth: 0 }
   }
 
   // TODO: If we can't save a reference or some kind of identifier to a let-statement

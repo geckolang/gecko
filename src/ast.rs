@@ -1,4 +1,4 @@
-use crate::{cache, diagnostic, name_resolution, visitor};
+use crate::{cache, name_resolution, visitor};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -107,6 +107,8 @@ pub enum Type {
   Stub(StubType),
   Function(FunctionType),
   This(ThisType),
+  /// A type variable to be used during unification.
+  Variable(usize),
   Unit,
   // REVIEW: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
   Error,
@@ -165,8 +167,6 @@ pub enum NodeKind {
 #[derive(Debug, Clone)]
 pub struct Node {
   pub kind: NodeKind,
-  // FIXME: The visitation methods receive node kinds, but the spans are attached to the `Node` struct.
-  pub span: diagnostic::Span,
 }
 
 #[derive(Debug, Clone)]

@@ -1,7 +1,7 @@
-use crate::{ast, cache, diagnostic};
+use crate::{ast, cache};
 
 pub struct LintContext {
-  pub diagnostic_builder: diagnostic::DiagnosticBuilder,
+  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   block_depth: usize,
   variable_references: std::collections::HashMap<cache::BindingId, bool>,
 }
@@ -9,7 +9,7 @@ pub struct LintContext {
 impl LintContext {
   pub fn new() -> Self {
     Self {
-      diagnostic_builder: diagnostic::DiagnosticBuilder::new(),
+      diagnostics: Vec::new(),
       block_depth: 0,
       variable_references: std::collections::HashMap::new(),
     }
@@ -34,10 +34,12 @@ impl LintContext {
     };
 
     if !name.is_case(case) {
-      self.diagnostic_builder.warning(format!(
-        "{} name `{}` should be written in {} case",
-        subject, name, case_name
-      ));
+      self.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+          "{} name `{}` should be written in {} case",
+          subject, name, case_name
+        )),
+      )
     }
   }
 }
@@ -159,18 +161,20 @@ impl Lint for ast::BlockExpr {
 
     // REVIEW: Might be repetitive for subsequent nested blocks.
     if context.block_depth > 4 {
-      context
-        .diagnostic_builder
-        .warning("block depth is deeper than 4".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::warning()
+          .with_message("block depth is deeper than 4"),
+      );
     }
 
     context.block_depth += 1;
 
     for statement in &self.statements {
       if did_return {
-        context
-          .diagnostic_builder
-          .warning("unreachable code after return statement".to_string());
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::warning()
+            .with_message("unreachable code after return statement"),
+        );
 
         // REVIEW: Consider whether we should stop linting the block at this point.
       }
@@ -220,7 +224,9 @@ impl Lint for ast::Enum {
     context.lint_name_casing("enum", &self.name, convert_case::Case::Pascal);
 
     if self.variants.is_empty() {
-      context.diagnostic_builder.warning("empty enum".to_string());
+      context
+        .diagnostics
+        .push(codespan_reporting::diagnostic::Diagnostic::warning().with_message("empty enum"));
     }
 
     for variant in &self.variants {
@@ -248,9 +254,10 @@ impl Lint for ast::Function {
     context.lint_name_casing("function", &self.name, convert_case::Case::Snake);
 
     if self.prototype.parameters.len() > 4 {
-      context
-        .diagnostic_builder
-        .warning("function has more than 4 parameters".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::warning()
+          .with_message("function has more than 4 parameters"),
+      );
     }
 
     self.body_value.lint(cache, context);
@@ -271,9 +278,10 @@ impl Lint for ast::IfExpr {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     // TODO: Add a helper method to "unbox" expressions? (e.g. case for `(true)`).
     if matches!(self.condition.kind, ast::NodeKind::Literal(_)) {
-      context
-        .diagnostic_builder
-        .warning("if condition is a constant expression".to_string());
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::warning()
+          .with_message("if expression's condition is a constant expression"),
+      )
     }
 
     if let Some(else_block) = &self.else_value {

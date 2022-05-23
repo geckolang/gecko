@@ -1,4 +1,4 @@
-use crate::{ast, cache, diagnostic, lexer, name_resolution};
+use crate::{ast, cache, lexer, name_resolution};
 
 pub const THIS_IDENTIFIER: &str = "this";
 
@@ -40,7 +40,7 @@ fn get_token_precedence(token: &lexer::TokenKind) -> usize {
   }
 }
 
-type ParserResult<T> = Result<T, diagnostic::Diagnostic>;
+type ParserResult<T> = Result<T, codespan_reporting::diagnostic::Diagnostic<usize>>;
 
 pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
@@ -116,16 +116,12 @@ impl<'a> Parser<'a> {
     Ok(())
   }
 
-  fn expected(&self, expected: &str) -> diagnostic::Diagnostic {
-    diagnostic::Diagnostic {
-      message: format!(
-        "expected {}, but got `{}`",
-        expected,
-        self.get_token().unwrap_or(&lexer::TokenKind::EOF)
-      ),
-      severity: diagnostic::Severity::Error,
-      span: Some(self.get_token_span()),
-    }
+  fn expected(&self, expected: &str) -> codespan_reporting::diagnostic::Diagnostic<usize> {
+    codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+      "expected {}, but got `{}`",
+      expected,
+      self.get_token().unwrap_or(&lexer::TokenKind::EOF)
+    ))
   }
 
   fn is_unary_operator(&self) -> bool {
@@ -145,16 +141,13 @@ impl<'a> Parser<'a> {
   }
 
   fn get_token(&self) -> ParserResult<&lexer::TokenKind> {
-    let token = self.tokens.get(self.index);
-
-    if let Some(token) = token {
+    if let Some(token) = self.tokens.get(self.index) {
       Ok(&token.0)
     } else {
-      Err(diagnostic::Diagnostic {
-        message: "unexpectedly reached end of file".to_owned(),
-        severity: diagnostic::Severity::Error,
-        span: Some(self.get_token_span()),
-      })
+      Err(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("unexpectedly reached end of file"),
+      )
     }
   }
 
@@ -191,11 +184,10 @@ impl<'a> Parser<'a> {
   /// that the end-of-file has been reached.
   fn skip(&mut self) -> ParserResult<()> {
     if self.index >= self.tokens.len() {
-      return Err(diagnostic::Diagnostic {
-        message: "unexpectedly reached end of file".to_string(),
-        severity: diagnostic::Severity::Error,
-        span: Some(self.get_token_span()),
-      });
+      return Err(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("unexpectedly reached end of file"),
+      );
     }
 
     self.index += 1;
@@ -309,10 +301,7 @@ impl<'a> Parser<'a> {
       }
     };
 
-    Ok(ast::Node {
-      kind,
-      span: self.close_span(span_start),
-    })
+    Ok(ast::Node { kind })
   }
 
   /// {'{' (%statement+) '}' | '=' {%statement | %expr}}
@@ -669,11 +658,10 @@ impl<'a> Parser<'a> {
   fn parse_root_node(&mut self) -> ParserResult<ast::Node> {
     // REVIEW: Why not move this check into the `get()` method?
     if self.is_eof() {
-      return Err(diagnostic::Diagnostic {
-        message: "expected top-level construct but got end of file".to_string(),
-        severity: diagnostic::Severity::Error,
-        span: Some(self.get_token_span()),
-      });
+      return Err(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("expected top-level construct but got end of file"),
+      );
     }
 
     let node_span_start = self.index;
@@ -687,11 +675,10 @@ impl<'a> Parser<'a> {
         .iter()
         .any(|attribute| attribute.name == attribute.name)
       {
-        return Err(diagnostic::Diagnostic {
-          message: format!("duplicate attribute `{}`", attribute.name),
-          severity: diagnostic::Severity::Error,
-          span: Some(self.close_span(attribute_span_start)),
-        });
+        return Err(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message(format!("duplicate attribute `{}`", attribute.name)),
+        );
       }
 
       attributes.push(attribute);
@@ -703,11 +690,10 @@ impl<'a> Parser<'a> {
     );
 
     if !attributes.is_empty() && !is_attributable {
-      return Err(diagnostic::Diagnostic {
-        message: "attributes may only be attached to functions or externs".to_string(),
-        severity: diagnostic::Severity::Error,
-        span: Some(self.get_token_span()),
-      });
+      return Err(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("attributes may only be attached to functions or externs"),
+      );
     }
 
     let token = self.get_token();
@@ -729,10 +715,7 @@ impl<'a> Parser<'a> {
       _ => return Err(self.expected("top-level construct")),
     };
 
-    Ok(ast::Node {
-      kind,
-      span: self.close_span(node_span_start),
-    })
+    Ok(ast::Node { kind })
   }
 
   /// type %name = %type
@@ -1073,10 +1056,7 @@ impl<'a> Parser<'a> {
       _ => ast::NodeKind::Literal(self.parse_literal()?),
     };
 
-    let mut node = ast::Node {
-      kind,
-      span: self.close_span(span_start),
-    };
+    let mut node = ast::Node { kind };
 
     // Promote the node to a chain, if applicable.
     while self.is_chain() {
@@ -1087,10 +1067,7 @@ impl<'a> Parser<'a> {
       };
 
       // REVIEW: Simplify (DRY)?
-      node = ast::Node {
-        kind,
-        span: self.close_span(span_start),
-      };
+      node = ast::Node { kind };
     }
 
     Ok(node)
@@ -1151,7 +1128,7 @@ impl<'a> Parser<'a> {
     let precedence = get_token_precedence(&token_buffer);
     let mut buffer = left;
 
-    while Parser::is_binary_operator(token_buffer) && (precedence > min_precedence) {
+    while Parser::is_binary_operator(&token_buffer) && (precedence > min_precedence) {
       let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
 
@@ -1172,10 +1149,7 @@ impl<'a> Parser<'a> {
         operator,
       });
 
-      buffer = ast::Node {
-        kind,
-        span: self.close_span(span_start),
-      };
+      buffer = ast::Node { kind };
     }
 
     Ok(buffer)

@@ -1720,7 +1720,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .i8_type()
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
-      ast::Type::Error => unreachable!(),
+      ast::Type::Error | ast::Type::Variable(_) => unreachable!(),
     }
   }
 
