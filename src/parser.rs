@@ -47,6 +47,7 @@ pub struct Parser<'a> {
   index: usize,
   cache: &'a mut cache::Cache,
   substitution: &'a mut Vec<ast::Type>,
+  indentation_level: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -60,6 +61,7 @@ impl<'a> Parser<'a> {
       index: 0,
       cache,
       substitution,
+      indentation_level: 0,
     }
   }
 
@@ -290,31 +292,46 @@ impl<'a> Parser<'a> {
     Ok(ast::Node { kind })
   }
 
+  fn until_indentation_level_reset(&self, initial_indentation_level: usize) -> bool {
+    self.indentation_level >= initial_indentation_level
+  }
+
+  fn parse_indentation(&mut self) -> ParserResult<()> {
+    self.indentation_level = 0;
+
+    while self.is(&lexer::TokenKind::Indentation) {
+      self.skip()?;
+      self.indentation_level += 1;
+    }
+
+    Ok(())
+  }
+
   /// {'{' (%statement+) '}' | '=' {%statement | %expr}}
   fn parse_block_expr(&mut self) -> ParserResult<ast::BlockExpr> {
-    self.skip_past(&lexer::TokenKind::BraceL)?;
-
+    // let initial_indentation_level = self.indentation_level;
     let mut statements = Vec::new();
-    let mut yield_last_expr = true;
+    let mut yields_last_expr = true;
 
     // REVIEW: What if the last statement is a let-statement? Let-statements have inferrable types, used internally.
     // REVIEW: This may be the reason why let-statements shouldn't have inferrable types (only internally).
-    while self.until(&lexer::TokenKind::BraceR)? {
+    while self.until_indentation_level_reset(self.indentation_level + 1) {
+      self.parse_indentation()?;
+
       let statement = self.parse_statement()?;
 
+      // TODO: Change to indentation-style.
       if self.peek_is(&lexer::TokenKind::BraceR) && self.is(&lexer::TokenKind::SemiColon) {
         self.skip()?;
-        yield_last_expr = false;
+        yields_last_expr = false;
       }
 
       statements.push(statement);
     }
 
-    self.skip_past(&lexer::TokenKind::BraceR)?;
-
     Ok(ast::BlockExpr {
       statements,
-      yields_last_expr: yield_last_expr,
+      yields_last_expr,
       binding_id: self.cache.create_binding_id(),
     })
   }
@@ -548,7 +565,7 @@ impl<'a> Parser<'a> {
   /// fn %prototype %block
   fn parse_function(&mut self, attributes: Vec<ast::Attribute>) -> ParserResult<ast::Function> {
     // TODO: Support for visibility.
-    self.skip_past(&lexer::TokenKind::Fn)?;
+    self.skip_past(&lexer::TokenKind::Func)?;
 
     let name = self.parse_name()?;
 
@@ -560,7 +577,7 @@ impl<'a> Parser<'a> {
 
     let prototype = self.parse_prototype(false)?;
 
-    self.skip_past(&lexer::TokenKind::Equal)?;
+    self.skip_past(&lexer::TokenKind::Colon)?;
 
     let value = self.parse_expr()?;
 
@@ -582,7 +599,7 @@ impl<'a> Parser<'a> {
     // REVIEW: Support for visibility?
 
     self.skip_past(&lexer::TokenKind::Extern)?;
-    self.skip_past(&lexer::TokenKind::Fn)?;
+    self.skip_past(&lexer::TokenKind::Func)?;
 
     let name = self.parse_name()?;
     let prototype = self.parse_prototype(true)?;
@@ -670,7 +687,7 @@ impl<'a> Parser<'a> {
 
     let is_attributable = matches!(
       self.get_token()?,
-      lexer::TokenKind::Fn | lexer::TokenKind::Extern
+      lexer::TokenKind::Func | lexer::TokenKind::Extern
     );
 
     if !attributes.is_empty() && !is_attributable {
@@ -683,8 +700,8 @@ impl<'a> Parser<'a> {
     let token = self.get_token();
 
     let kind = match token? {
-      lexer::TokenKind::Fn => ast::NodeKind::Function(self.parse_function(attributes)?),
-      lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Fn) => {
+      lexer::TokenKind::Func => ast::NodeKind::Function(self.parse_function(attributes)?),
+      lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Func) => {
         ast::NodeKind::ExternFunction(self.parse_extern_function(attributes)?)
       }
       lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Static) => {
@@ -725,7 +742,8 @@ impl<'a> Parser<'a> {
   fn parse_return_stmt(&mut self) -> ParserResult<ast::ReturnStmt> {
     self.skip_past(&lexer::TokenKind::Return)?;
 
-    let value = if !self.is(&lexer::TokenKind::SemiColon) {
+    // TODO: New line or EOF.
+    let value = if !self.is(&lexer::TokenKind::Whitespace(String::from('\n'))) {
       Some(Box::new(self.parse_expr()?))
     } else {
       self.skip()?;
@@ -733,20 +751,18 @@ impl<'a> Parser<'a> {
       None
     };
 
-    self.skip_past(&lexer::TokenKind::SemiColon)?;
-
     Ok(ast::ReturnStmt { value })
   }
 
   /// let (mut) %name (':' %type) '=' %expr
   fn parse_let_stmt(&mut self) -> ParserResult<ast::LetStmt> {
-    self.skip_past(&lexer::TokenKind::Let)?;
-
-    let is_mutable = if self.is(&lexer::TokenKind::Mut) {
+    let is_mutable = if self.is(&lexer::TokenKind::Let) {
       self.skip()?;
 
       true
     } else {
+      self.skip_past(&lexer::TokenKind::Const)?;
+
       false
     };
 
@@ -763,8 +779,6 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Equal)?;
 
     let value = self.parse_expr()?;
-
-    self.skip_past(&lexer::TokenKind::SemiColon)?;
 
     // TODO: Value should be treated as rvalue, unless its using an address-of operator. Find out how to translate this to logic.
 
@@ -783,12 +797,13 @@ impl<'a> Parser<'a> {
 
     let condition = self.parse_expr()?;
 
-    self.skip_past(&lexer::TokenKind::Then)?;
+    self.skip_past(&lexer::TokenKind::Colon)?;
 
     let then_value = self.parse_expr()?;
 
     let else_value = if self.is(&lexer::TokenKind::Else) {
       self.skip()?;
+      self.skip_past(&lexer::TokenKind::Colon)?;
 
       Some(Box::new(self.parse_expr()?))
     } else {
@@ -812,6 +827,8 @@ impl<'a> Parser<'a> {
       Some(Box::new(self.parse_expr()?))
     };
 
+    self.skip_past(&lexer::TokenKind::Colon)?;
+
     let body = self.parse_block_expr()?;
 
     Ok(ast::LoopStmt { condition, body })
@@ -820,7 +837,6 @@ impl<'a> Parser<'a> {
   /// break
   fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
     self.skip_past(&lexer::TokenKind::Break)?;
-    self.skip_past(&lexer::TokenKind::SemiColon)?;
 
     Ok(ast::BreakStmt {})
   }
@@ -828,7 +844,6 @@ impl<'a> Parser<'a> {
   /// continue
   fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
     self.skip_past(&lexer::TokenKind::Continue)?;
-    self.skip_past(&lexer::TokenKind::SemiColon)?;
 
     Ok(ast::ContinueStmt)
   }
@@ -838,7 +853,7 @@ impl<'a> Parser<'a> {
     // REVIEW: Why not merge this with the normal block, and just have a flag?
 
     self.skip_past(&lexer::TokenKind::Unsafe)?;
-    self.skip_past(&lexer::TokenKind::Arrow)?;
+    self.skip_past(&lexer::TokenKind::Colon)?;
 
     // BUG: Is there a need for a semi-colon here? I think there is, since the unsafe
     // ... block contains an expression as its last syntax element. Perhaps all those that
@@ -1019,7 +1034,7 @@ impl<'a> Parser<'a> {
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     let kind = match self.get_token()? {
       // REVIEW: Possible redundant check after the fn keyword. But how do we know we're still not on a block and accidentally parse a function as a closure?
-      lexer::TokenKind::Fn
+      lexer::TokenKind::Func
         if (self.peek_is(&lexer::TokenKind::BracketL)
           || self.peek_is(&lexer::TokenKind::ParenthesesL)) =>
       {
@@ -1249,8 +1264,6 @@ impl<'a> Parser<'a> {
 
     let value = Box::new(self.parse_expr()?);
 
-    self.skip_past(&lexer::TokenKind::SemiColon)?;
-
     Ok(ast::AssignStmt {
       assignee_expr: Box::new(assignee_expr),
       value,
@@ -1354,7 +1367,7 @@ impl<'a> Parser<'a> {
 
   /// fn '[' (%name (','))* ']' %prototype %block
   fn parse_closure(&mut self) -> ParserResult<ast::Closure> {
-    self.skip_past(&lexer::TokenKind::Fn)?;
+    self.skip_past(&lexer::TokenKind::Func)?;
 
     let mut captures = Vec::new();
 
@@ -1424,7 +1437,7 @@ impl<'a> Parser<'a> {
     let mut methods = Vec::new();
 
     while self.until(&lexer::TokenKind::BraceR)? {
-      self.skip_past(&lexer::TokenKind::Fn)?;
+      self.skip_past(&lexer::TokenKind::Func)?;
 
       let method_name = self.parse_name()?;
       let prototype = self.parse_prototype(false)?;
@@ -1528,8 +1541,8 @@ mod tests {
     parser.index = 1;
     assert!(!parser.is(&lexer::TokenKind::EOF));
     parser.index = 0;
-    parser.tokens.push((lexer::TokenKind::Fn, 0));
-    assert!(parser.is(&lexer::TokenKind::Fn));
+    parser.tokens.push((lexer::TokenKind::Func, 0));
+    assert!(parser.is(&lexer::TokenKind::Func));
   }
 
   #[test]
@@ -1538,7 +1551,7 @@ mod tests {
     let mut substitution = Vec::new();
     let parser = create_parser(Vec::new(), &mut cache, &mut substitution);
 
-    assert_eq!(false, parser.is(&lexer::TokenKind::Fn));
+    assert_eq!(false, parser.is(&lexer::TokenKind::Func));
   }
 
   #[test]
@@ -1547,7 +1560,7 @@ mod tests {
     let mut substitution = Vec::new();
 
     let mut parser = create_parser(
-      vec![lexer::TokenKind::Fn, lexer::TokenKind::Fn],
+      vec![lexer::TokenKind::Func, lexer::TokenKind::Func],
       &mut cache,
       &mut substitution,
     );
@@ -1560,7 +1573,7 @@ mod tests {
   fn skip_out_of_bounds() {
     let mut cache = cache::Cache::new();
     let mut substitution = Vec::new();
-    let mut parser = create_parser(vec![lexer::TokenKind::Fn], &mut cache, &mut substitution);
+    let mut parser = create_parser(vec![lexer::TokenKind::Func], &mut cache, &mut substitution);
 
     assert!(parser.skip().is_ok());
     assert_eq!(1, parser.index);
@@ -1573,9 +1586,9 @@ mod tests {
     let mut parser = create_parser(Vec::new(), &mut cache, &mut substitution);
 
     assert!(parser.is_eof());
-    parser.tokens.push((lexer::TokenKind::Fn, 0));
+    parser.tokens.push((lexer::TokenKind::Func, 0));
     assert!(parser.is_eof());
-    parser.tokens.push((lexer::TokenKind::Fn, 0));
+    parser.tokens.push((lexer::TokenKind::Func, 0));
     assert!(!parser.is_eof());
     assert!(parser.skip().is_ok());
     assert!(parser.is_eof());

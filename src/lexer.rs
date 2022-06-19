@@ -4,6 +4,7 @@ pub type Token = (TokenKind, usize);
 pub enum TokenKind {
   /// A special token emitted when there are no more tokens to lex.
   EOF,
+  Indentation,
   Illegal(char),
   Identifier(String),
   Whitespace(String),
@@ -13,7 +14,7 @@ pub enum TokenKind {
   Bool(bool),
   Char(char),
   Nullptr,
-  Fn,
+  Func,
   Extern,
   Return,
   Let,
@@ -37,7 +38,6 @@ pub enum TokenKind {
   Impl,
   For,
   Trait,
-  Then,
   TypeInt8,
   TypeInt16,
   TypeInt32,
@@ -83,6 +83,7 @@ pub enum TokenKind {
   QuestionMark,
   Sizeof,
   Pipe,
+  Const,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -99,6 +100,7 @@ pub struct Lexer {
   /// If the input string was empty, or if the index is out of
   /// bounds, it will be `None`.
   current_char: Option<char>,
+  seen_only_whitespace_this_line: bool,
 }
 
 impl Lexer {
@@ -113,6 +115,7 @@ impl Lexer {
       input,
       index: 0,
       current_char,
+      seen_only_whitespace_this_line: true,
     }
   }
 
@@ -286,6 +289,11 @@ impl Lexer {
     Some(self.input[self.index + 1])
   }
 
+  fn is_indentation(&self) -> bool {
+    self.seen_only_whitespace_this_line
+      && (self.current_char == Some(' ') || self.peek_char() == Some(' '))
+  }
+
   /// Attempt to retrieve the next token.
   ///
   /// If the end of the input string has been reached, `None` will be
@@ -299,96 +307,107 @@ impl Lexer {
 
     let current_char = self.current_char.unwrap();
 
+    if !is_whitespace(current_char) && self.seen_only_whitespace_this_line {
+      self.seen_only_whitespace_this_line = false;
+    } else if current_char == '\n' {
+      self.seen_only_whitespace_this_line = true;
+    }
+
     // REVISE: Simplify this chunk of code.
-    let token = if is_whitespace(current_char) {
+    let token = if is_whitespace(current_char) && !self.is_indentation() {
       TokenKind::Whitespace(self.read_whitespace())
     } else {
-      let final_token = match current_char {
-        '#' => TokenKind::Comment(self.read_comment()),
-        '"' => TokenKind::String(self.read_string()?),
-        '\'' => TokenKind::Char(self.read_character()?),
-        '{' => TokenKind::BraceL,
-        '}' => TokenKind::BraceR,
-        '(' => TokenKind::ParenthesesL,
-        ')' => TokenKind::ParenthesesR,
-        '~' => TokenKind::Tilde,
-        '|' if self.peek_char() == Some('>') => {
-          self.read_char();
-
-          TokenKind::Pipe
-        }
-        ':' if self.peek_char() == Some(':') => {
-          self.read_char();
-
-          TokenKind::DoubleColon
-        }
-        ':' => TokenKind::Colon,
-        '&' => TokenKind::Ampersand,
-        ',' => TokenKind::Comma,
-        '+' => TokenKind::Plus,
-        '-' if self.peek_char() == Some('>') => {
-          self.read_char();
-
-          TokenKind::Arrow
-        }
-        '-' => TokenKind::Minus,
-        '*' => TokenKind::Asterisk,
-        '/' => TokenKind::Slash,
-        '!' => TokenKind::Bang,
-        '=' if self.peek_char() == Some('=') => {
-          self.read_char();
-
-          TokenKind::Equality
-        }
-        '=' if self.peek_char() == Some('>') => {
-          self.read_char();
-
-          TokenKind::FatArrow
-        }
-        '=' => TokenKind::Equal,
-        ';' => TokenKind::SemiColon,
-        '<' if self.peek_char() == Some('=') => {
-          self.read_char();
-
-          TokenKind::LessThanEqualTo
-        }
-        '<' => TokenKind::LessThan,
-        '>' if self.peek_char() == Some('=') => {
-          self.read_char();
-
-          TokenKind::LessThanEqualTo
-        }
-        '>' => TokenKind::GreaterThan,
-        '[' => TokenKind::BracketL,
-        ']' => TokenKind::BracketR,
-        '.' if self.peek_char() == Some('.') && self.peek_char() == Some('.') => {
-          self.read_char();
-          self.read_char();
-
-          TokenKind::Ellipsis
-        }
-        '.' => TokenKind::Dot,
-        '@' => TokenKind::At,
-        '`' => TokenKind::Backtick,
-        '?' => TokenKind::QuestionMark,
-        _ => {
-          // NOTE: Identifiers will never start with a digit.
-          return if current_char == '_' || is_letter(current_char) {
-            let identifier = self.read_identifier();
-
-            match match_token(identifier.as_str()) {
-              Some(keyword_token) => Ok(keyword_token),
-              None => Ok(TokenKind::Identifier(identifier)),
-            }
-          } else if is_digit(current_char) {
-            Ok(TokenKind::Int(self.read_number()?))
-          } else {
-            let illegal_char = current_char;
-
+      let final_token = if self.is_indentation() {
+        self.read_char();
+        TokenKind::Indentation
+      } else {
+        match current_char {
+          '#' => TokenKind::Comment(self.read_comment()),
+          '"' => TokenKind::String(self.read_string()?),
+          '\'' => TokenKind::Char(self.read_character()?),
+          '{' => TokenKind::BraceL,
+          '}' => TokenKind::BraceR,
+          '(' => TokenKind::ParenthesesL,
+          ')' => TokenKind::ParenthesesR,
+          '~' => TokenKind::Tilde,
+          '|' if self.peek_char() == Some('>') => {
             self.read_char();
 
-            Ok(TokenKind::Illegal(illegal_char))
-          };
+            TokenKind::Pipe
+          }
+          ':' if self.peek_char() == Some(':') => {
+            self.read_char();
+
+            TokenKind::DoubleColon
+          }
+          ':' => TokenKind::Colon,
+          '&' => TokenKind::Ampersand,
+          ',' => TokenKind::Comma,
+          '+' => TokenKind::Plus,
+          '-' if self.peek_char() == Some('>') => {
+            self.read_char();
+
+            TokenKind::Arrow
+          }
+          '-' => TokenKind::Minus,
+          '*' => TokenKind::Asterisk,
+          '/' => TokenKind::Slash,
+          '!' => TokenKind::Bang,
+          '=' if self.peek_char() == Some('=') => {
+            self.read_char();
+
+            TokenKind::Equality
+          }
+          '=' if self.peek_char() == Some('>') => {
+            self.read_char();
+
+            TokenKind::FatArrow
+          }
+          '=' => TokenKind::Equal,
+          ';' => TokenKind::SemiColon,
+          '<' if self.peek_char() == Some('=') => {
+            self.read_char();
+
+            TokenKind::LessThanEqualTo
+          }
+          '<' => TokenKind::LessThan,
+          '>' if self.peek_char() == Some('=') => {
+            self.read_char();
+
+            TokenKind::LessThanEqualTo
+          }
+          '>' => TokenKind::GreaterThan,
+          '[' => TokenKind::BracketL,
+          ']' => TokenKind::BracketR,
+          '.' if self.peek_char() == Some('.') && self.peek_char() == Some('.') => {
+            self.read_char();
+            self.read_char();
+
+            TokenKind::Ellipsis
+          }
+          '.' => TokenKind::Dot,
+          '@' => TokenKind::At,
+          '`' => TokenKind::Backtick,
+          '?' => TokenKind::QuestionMark,
+          _ => {
+            // NOTE: Identifiers will never start with a digit.
+            return if current_char == '_' || is_letter(current_char) {
+              let identifier = self.read_identifier();
+
+              match match_identifier(identifier.as_str()) {
+                Some(keyword_token) => Ok(keyword_token),
+                None => Ok(TokenKind::Identifier(identifier)),
+              }
+            } else if is_digit(current_char) {
+              Ok(TokenKind::Int(self.read_number()?))
+            } else {
+              let illegal_char = current_char;
+
+              self.read_char();
+
+              Ok(TokenKind::Illegal(illegal_char))
+            };
+          }
         }
       };
 
@@ -420,9 +439,9 @@ impl Iterator for Lexer {
 // REVIEW: Should these functions be moved into the implementation of `Lexer`,
 // ... as associated functions?
 
-fn match_token(identifier: &str) -> Option<TokenKind> {
+fn match_identifier(identifier: &str) -> Option<TokenKind> {
   Some(match identifier {
-    "fn" => TokenKind::Fn,
+    "func" => TokenKind::Func,
     "extern" => TokenKind::Extern,
     "let" => TokenKind::Let,
     "return" => TokenKind::Return,
@@ -446,7 +465,6 @@ fn match_token(identifier: &str) -> Option<TokenKind> {
     "impl" => TokenKind::Impl,
     "for" => TokenKind::For,
     "trait" => TokenKind::Trait,
-    "then" => TokenKind::Then,
     "nullptr" => TokenKind::Nullptr,
     "I8" => TokenKind::TypeInt8,
     "I16" => TokenKind::TypeInt16,
@@ -464,6 +482,7 @@ fn match_token(identifier: &str) -> Option<TokenKind> {
     "false" => TokenKind::Bool(false),
     "import" => TokenKind::Import,
     "sizeof" => TokenKind::Sizeof,
+    "const" => TokenKind::Const,
     _ => return None,
   })
 }
