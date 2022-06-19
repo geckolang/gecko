@@ -1,5 +1,6 @@
 use crate::{ast, cache, dispatch, llvm_lowering};
 
+#[derive(Clone)]
 enum TypeConstrainKind {
   Equality,
 }
@@ -30,7 +31,8 @@ impl SemanticCheckContext {
     let mut semantic_check_context = SemanticCheckContext::new();
 
     for node in ast {
-      node.check(&mut semantic_check_context, cache)
+      node.check(&mut semantic_check_context, cache);
+      // node.report_constraints(&mut semantic_check_context, cache);
     }
 
     (
@@ -197,31 +199,59 @@ impl SemanticCheckContext {
     }
   }
 
-  fn unify(&self, type_a: &ast::Type, type_b: &ast::Type) {
+  // REVISE: Avoid excessive cloning.
+  fn unify(&mut self, type_a: &ast::Type, type_b: &ast::Type) {
     match (type_a, type_b) {
+      // TODO: Missing type constructor support.
       (ast::Type::Variable(id_a), ast::Type::Variable(id_b)) if id_a == id_b => {}
       (ast::Type::Variable(id_a), _)
-        if matches!(self.substitution[id_a.to_owned()], ast::Type::Variable(_)) =>
+        if !matches!(self.substitution[id_a.to_owned()], ast::Type::Variable(_)) =>
       {
-        self.unify(&self.substitution[id_a.to_owned()], type_b)
+        self.unify(&self.substitution[id_a.to_owned()].clone(), type_b)
       }
       (_, ast::Type::Variable(id_b))
-        if matches!(self.substitution[id_b.to_owned()], ast::Type::Variable(_)) =>
+        if !matches!(self.substitution[id_b.to_owned()], ast::Type::Variable(_)) =>
       {
-        self.unify(type_a, &self.substitution[id_b.to_owned()])
+        self.unify(type_a, &self.substitution[id_b.to_owned()].clone())
+      }
+      (ast::Type::Variable(id_a), _) => {
+        // REVISE: Proper error handling.
+        assert!(!self.occurs_in(id_a.to_owned(), &type_b));
+
+        self.substitution[id_a.to_owned()] = type_b.clone();
+      }
+      (_, ast::Type::Variable(id_b)) => {
+        // REVISE: Proper error handling.
+        assert!(!self.occurs_in(id_b.to_owned(), &type_a));
+
+        self.substitution[id_b.to_owned()] = type_a.clone();
       }
       _ => {}
     }
   }
 
   fn solve_constraints(&mut self) {
-    for constrain in &self.constraints {
+    // REVIEW: Any way to avoid cloning?
+    for constrain in self.constraints.clone() {
       self.unify(&constrain.0, &constrain.1);
     }
 
     self.constraints.clear();
   }
 
+  fn substitute(&self, ty: ast::Type) -> ast::Type {
+    if let ast::Type::Variable(id) = &ty {
+      if let ast::Type::Variable(id) = &self.substitution[id.to_owned()] {
+        return self.substitute(self.substitution[id.to_owned()].clone());
+      }
+    }
+
+    // TODO: Missing support for constructor types.
+
+    ty
+  }
+
+  // REVIEW: Consider moving this to be part of `Type` itself.
   fn is_null_pointer_type(ty: &ast::Type) -> bool {
     if let ast::Type::Pointer(ty) = ty {
       return matches!(ty.as_ref(), ast::Type::Basic(ast::BasicType::Null));
@@ -238,6 +268,10 @@ pub trait SemanticCheck {
   }
 
   fn check(&self, _context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+    //
+  }
+
+  fn report_constraints(&mut self, _context: &mut SemanticCheckContext, _cache: &cache::Cache) {
     //
   }
 }
@@ -1011,6 +1045,18 @@ impl SemanticCheck for ast::LetStmt {
     }
 
     self.value.check(context, cache);
+  }
+
+  fn report_constraints(&mut self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+    if !matches!(self.ty, ast::Type::Variable(_)) {
+      return;
+    }
+
+    context.constraints.push((
+      self.ty.clone(),
+      self.value.infer_type(cache),
+      TypeConstrainKind::Equality,
+    ));
   }
 }
 

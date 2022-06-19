@@ -46,24 +46,21 @@ pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
   index: usize,
   cache: &'a mut cache::Cache,
+  substitution: &'a mut Vec<ast::Type>,
 }
 
 impl<'a> Parser<'a> {
-  pub fn new(tokens: Vec<lexer::Token>, cache: &'a mut cache::Cache) -> Self {
+  pub fn new(
+    tokens: Vec<lexer::Token>,
+    cache: &'a mut cache::Cache,
+    substitution: &'a mut Vec<ast::Type>,
+  ) -> Self {
     Self {
       tokens,
       index: 0,
       cache,
+      substitution,
     }
-  }
-
-  pub fn from_tokens(token_kinds: Vec<lexer::TokenKind>, cache: &'a mut cache::Cache) -> Self {
-    let tokens = token_kinds
-      .iter()
-      .map(|kind| (kind.to_owned(), 0 as usize))
-      .collect::<Vec<_>>();
-
-    Self::new(tokens, cache)
   }
 
   // REVIEW: Consider removing the `token` parameter, and adjust the binary expression parsing function accordingly. Or is a better decision to have it the other way around?
@@ -102,8 +99,13 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
-  fn close_span(&self, span_start: usize) -> diagnostic::Span {
-    span_start..self.index
+  fn create_type_variable(&mut self) -> ast::Type {
+    let result = ast::Type::Variable(self.substitution.len());
+
+    // TODO: Is there a need to clone the type?
+    self.substitution.push(result.clone());
+
+    result
   }
 
   fn skip_past(&mut self, token_kind: &lexer::TokenKind) -> ParserResult<()> {
@@ -149,20 +151,6 @@ impl<'a> Parser<'a> {
           .with_message("unexpectedly reached end of file"),
       )
     }
-  }
-
-  /// Retrieve the span of the current token.
-  fn get_token_span(&self) -> diagnostic::Span {
-    // REVIEW: Ensure check is correct.
-    let position = if self.tokens.is_empty() {
-      0
-    } else if self.is_eof() {
-      self.tokens.last().unwrap().1
-    } else {
-      self.tokens[self.index].1
-    };
-
-    position..position
   }
 
   /// Compare the current token to the given token.
@@ -270,8 +258,6 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_statement(&mut self) -> ParserResult<ast::Node> {
-    let span_start = self.index;
-
     let kind = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
       lexer::TokenKind::Let => ast::NodeKind::LetStmt(self.parse_let_stmt()?),
@@ -664,11 +650,9 @@ impl<'a> Parser<'a> {
       );
     }
 
-    let node_span_start = self.index;
     let mut attributes: Vec<ast::Attribute> = Vec::new();
 
     while self.is(&lexer::TokenKind::At) {
-      let attribute_span_start = self.index;
       let attribute = self.parse_attribute()?;
 
       if attributes
@@ -768,6 +752,14 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
 
+    let ty = if self.is(&lexer::TokenKind::Colon) {
+      self.skip()?;
+
+      self.parse_type()?
+    } else {
+      self.create_type_variable()
+    };
+
     self.skip_past(&lexer::TokenKind::Equal)?;
 
     let value = self.parse_expr()?;
@@ -781,6 +773,7 @@ impl<'a> Parser<'a> {
       value: Box::new(value),
       is_mutable,
       binding_id: self.cache.create_binding_id(),
+      ty,
     })
   }
 
@@ -1024,8 +1017,6 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
-    let span_start = self.index;
-
     let kind = match self.get_token()? {
       // REVIEW: Possible redundant check after the fn keyword. But how do we know we're still not on a block and accidentally parse a function as a closure?
       lexer::TokenKind::Fn
@@ -1124,7 +1115,6 @@ impl<'a> Parser<'a> {
       return Ok(left);
     };
 
-    let span_start = self.index;
     let precedence = get_token_precedence(&token_buffer);
     let mut buffer = left;
 
@@ -1506,18 +1496,33 @@ impl<'a> Parser<'a> {
 mod tests {
   use super::*;
 
+  fn create_parser<'a>(
+    tokens: Vec<lexer::TokenKind>,
+    cache: &'a mut cache::Cache,
+    substitution: &'a mut Vec<ast::Type>,
+  ) -> Parser<'a> {
+    // TODO: Consider making the position incremental.
+    Parser::new(
+      tokens.into_iter().map(|token| (token, 0)).collect(),
+      cache,
+      substitution,
+    )
+  }
+
   #[test]
   fn proper_initial_values() {
-    let mut context = cache::Cache::new();
-    let parser = Parser::new(vec![], &mut context);
+    let mut cache = cache::Cache::new();
+    let mut substitution = Vec::new();
+    let parser = create_parser(Vec::new(), &mut cache, &mut substitution);
 
     assert_eq!(0, parser.index);
   }
 
   #[test]
   fn is() {
-    let mut context = cache::Cache::new();
-    let mut parser = Parser::new(Vec::new(), &mut context);
+    let mut cache = cache::Cache::new();
+    let mut substitution = Vec::new();
+    let mut parser = create_parser(Vec::new(), &mut cache, &mut substitution);
 
     assert!(!parser.is(&lexer::TokenKind::EOF));
     parser.index = 1;
@@ -1529,19 +1534,22 @@ mod tests {
 
   #[test]
   fn is_empty() {
-    let mut context = cache::Cache::new();
-    let parser = Parser::new(vec![], &mut context);
+    let mut cache = cache::Cache::new();
+    let mut substitution = Vec::new();
+    let parser = create_parser(Vec::new(), &mut cache, &mut substitution);
 
     assert_eq!(false, parser.is(&lexer::TokenKind::Fn));
   }
 
   #[test]
   fn skip() {
-    let mut context = cache::Cache::new();
+    let mut cache = cache::Cache::new();
+    let mut substitution = Vec::new();
 
-    let mut parser = Parser::from_tokens(
+    let mut parser = create_parser(
       vec![lexer::TokenKind::Fn, lexer::TokenKind::Fn],
-      &mut context,
+      &mut cache,
+      &mut substitution,
     );
 
     assert!(parser.skip().is_ok());
@@ -1550,8 +1558,9 @@ mod tests {
 
   #[test]
   fn skip_out_of_bounds() {
-    let mut context = cache::Cache::new();
-    let mut parser = Parser::from_tokens(vec![lexer::TokenKind::Fn], &mut context);
+    let mut cache = cache::Cache::new();
+    let mut substitution = Vec::new();
+    let mut parser = create_parser(vec![lexer::TokenKind::Fn], &mut cache, &mut substitution);
 
     assert!(parser.skip().is_ok());
     assert_eq!(1, parser.index);
@@ -1559,8 +1568,9 @@ mod tests {
 
   #[test]
   fn is_eof() {
-    let mut context = cache::Cache::new();
-    let mut parser = Parser::new(vec![], &mut context);
+    let mut cache = cache::Cache::new();
+    let mut substitution = Vec::new();
+    let mut parser = create_parser(Vec::new(), &mut cache, &mut substitution);
 
     assert!(parser.is_eof());
     parser.tokens.push((lexer::TokenKind::Fn, 0));
@@ -1573,11 +1583,13 @@ mod tests {
 
   #[test]
   fn after_pattern_is() {
-    let mut context = cache::Cache::new();
+    let mut cache = cache::Cache::new();
+    let mut substitution = Vec::new();
 
-    let mut parser = Parser::new(
-      vec![(lexer::TokenKind::Identifier("test".to_string()), 0)],
-      &mut context,
+    let mut parser = create_parser(
+      vec![lexer::TokenKind::Identifier("test".to_string())],
+      &mut cache,
+      &mut substitution,
     );
 
     parser.tokens.push((lexer::TokenKind::BraceL, 0));
@@ -1606,8 +1618,9 @@ mod tests {
 
   #[test]
   fn peek_is() {
-    let mut context = cache::Cache::new();
-    let mut parser = Parser::new(Vec::new(), &mut context);
+    let mut cache = cache::Cache::new();
+    let mut substitution = Vec::new();
+    let mut parser = create_parser(Vec::new(), &mut cache, &mut substitution);
 
     assert!(!parser.peek_is(&lexer::TokenKind::BraceL));
     parser.tokens.push((lexer::TokenKind::BraceL, 0));

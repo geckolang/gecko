@@ -74,7 +74,8 @@ mod tests {
     // and collect the AST (top-level nodes) from each source file.
     for (index, source_file) in source_files.iter().enumerate() {
       let tokens = lex(&sources[index]);
-      let mut parser = gecko::parser::Parser::new(tokens, &mut cache);
+      let mut substitution = Vec::new();
+      let mut parser = gecko::parser::Parser::new(tokens, &mut cache, &mut substitution);
       let top_level_nodes = parser.parse_all();
 
       assert!(top_level_nodes.is_ok());
@@ -110,7 +111,7 @@ mod tests {
 
     // Lowering cannot proceed if there was an error.
     // TODO: Missing semantic check context's diagnostics.
-    assert!(lint_context.diagnostics.diagnostics.is_empty());
+    assert!(lint_context.diagnostics.is_empty());
 
     // REVISE: Any way for better efficiency (less loops)?
     // Once symbols are resolved, we can proceed to the other phases.

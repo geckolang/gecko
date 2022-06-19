@@ -376,6 +376,7 @@ pub struct LetStmt {
   pub value: Box<Node>,
   pub is_mutable: bool,
   pub binding_id: cache::BindingId,
+  pub ty: Type,
 }
 
 #[derive(Debug, Clone)]

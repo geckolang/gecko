@@ -1939,6 +1939,7 @@ mod tests {
       value: Mock::node(Mock::literal_int()),
       is_mutable: false,
       binding_id: 0,
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1958,6 +1959,7 @@ mod tests {
       value: Mock::node(Mock::literal_int()),
       is_mutable: false,
       binding_id: a_binding_id,
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
@@ -1965,6 +1967,7 @@ mod tests {
       value: Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1986,6 +1989,8 @@ mod tests {
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_mutable: false,
       binding_id: 0,
+      // FIXME: Wrong type.
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -2006,6 +2011,8 @@ mod tests {
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
+      // FIXME: Wrong type.
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
@@ -2013,6 +2020,8 @@ mod tests {
       value: Mock::reference(a_binding_id),
       is_mutable: false,
       binding_id: a_binding_id + 1,
+      // FIXME: Wrong type.
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -2035,6 +2044,8 @@ mod tests {
       ))),
       is_mutable: false,
       binding_id: 0,
+      // FIXME: Wrong type.
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -2054,6 +2065,8 @@ mod tests {
       value: Mock::node(Mock::literal_int()),
       is_mutable: true,
       binding_id: a_binding_id,
+      // FIXME: Wrong type.
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
@@ -2085,6 +2098,8 @@ mod tests {
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
+      // FIXME: Wrong type.
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
@@ -2092,6 +2107,8 @@ mod tests {
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: b_binding_id,
+      // FIXME: Wrong type.
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
