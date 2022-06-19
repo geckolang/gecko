@@ -150,7 +150,7 @@ impl<'a> Parser<'a> {
     } else {
       Err(
         codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("unexpectedly reached end of file"),
+          .with_message("unexpectedly reached end of file while retrieving current token"),
       )
     }
   }
@@ -176,7 +176,7 @@ impl<'a> Parser<'a> {
     if self.index >= self.tokens.len() {
       return Err(
         codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("unexpectedly reached end of file"),
+          .with_message("unexpectedly reached end of file while attempting to skip token"),
       );
     }
 
@@ -311,11 +311,12 @@ impl<'a> Parser<'a> {
   fn parse_block_expr(&mut self) -> ParserResult<ast::BlockExpr> {
     // let initial_indentation_level = self.indentation_level;
     let mut statements = Vec::new();
-    let mut yields_last_expr = true;
+    let mut yields_last_expr = false;
+    let initial_indentation_level = self.indentation_level + 1;
 
     // REVIEW: What if the last statement is a let-statement? Let-statements have inferrable types, used internally.
     // REVIEW: This may be the reason why let-statements shouldn't have inferrable types (only internally).
-    while self.until_indentation_level_reset(self.indentation_level + 1) {
+    loop {
       self.parse_indentation()?;
 
       let statement = self.parse_statement()?;
@@ -327,6 +328,10 @@ impl<'a> Parser<'a> {
       }
 
       statements.push(statement);
+
+      if !self.until_indentation_level_reset(initial_indentation_level) {
+        break;
+      }
     }
 
     Ok(ast::BlockExpr {
@@ -543,7 +548,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
-    let return_type_annotation = if self.is(&lexer::TokenKind::Colon) {
+    let return_type_annotation = if self.is(&lexer::TokenKind::Arrow) {
       self.skip()?;
 
       Some(self.parse_type()?)
@@ -579,12 +584,12 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    let value = self.parse_expr()?;
+    let body_block = self.parse_block_expr()?;
 
     Ok(ast::Function {
       name,
       prototype,
-      body_value: Box::new(value),
+      body_block: Box::new(body_block),
       attributes,
       binding_id: self.cache.create_binding_id(),
       generics,

@@ -84,6 +84,7 @@ pub enum TokenKind {
   Sizeof,
   Pipe,
   Const,
+  Pass,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -291,7 +292,7 @@ impl Lexer {
 
   fn is_indentation(&self) -> bool {
     self.seen_only_whitespace_this_line
-      && (self.current_char == Some(' ') || self.peek_char() == Some(' '))
+      && (self.current_char == Some(' ') && self.peek_char() == Some(' '))
   }
 
   /// Attempt to retrieve the next token.
@@ -483,6 +484,7 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "import" => TokenKind::Import,
     "sizeof" => TokenKind::Sizeof,
     "const" => TokenKind::Const,
+    "pass" => TokenKind::Pass,
     _ => return None,
   })
 }

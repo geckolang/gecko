@@ -529,7 +529,7 @@ impl Resolve for ast::Function {
     // resolver.push_scope();
 
     self.prototype.declare(resolver);
-    self.body_value.declare(resolver);
+    self.body_block.declare(resolver);
 
     // NOTE: The scope tree won't be overwritten by the block's, nor the
     // prototype's scope tree, instead they will be merged, as expected.
@@ -545,7 +545,7 @@ impl Resolve for ast::Function {
 
     // Finally, after both the prototype and its return type have been resolved,
     // proceed to resolve the body.
-    self.body_value.resolve(resolver, cache);
+    self.body_block.resolve(resolver, cache);
 
     cache
       .symbols

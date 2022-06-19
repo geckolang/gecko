@@ -1024,7 +1024,7 @@ impl Lower for ast::Function {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type =
-      generator.lower_prototype(&self.prototype, &self.body_value.infer_type(cache), cache);
+      generator.lower_prototype(&self.prototype, &self.body_block.infer_type(cache), cache);
 
     let is_main = self.name == MAIN_FUNCTION_NAME;
 
@@ -1089,9 +1089,7 @@ impl Lower for ast::Function {
 
     generator.llvm_builder.position_at_end(llvm_entry_block);
 
-    // The body should be lowered with access rules, because it may
-    // be an expression that isn't a block expression.
-    let yielded_result = generator.lower_with_access_rules(&self.body_value.kind, cache);
+    let yielded_result = self.body_block.lower(generator, cache, false);
 
     generator.attempt_build_return(yielded_result);
     generator.llvm_function_buffer = None;

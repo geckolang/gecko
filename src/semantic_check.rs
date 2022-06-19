@@ -867,7 +867,13 @@ impl SemanticCheck for ast::BlockExpr {
       .find(|statement| matches!(statement.kind, ast::NodeKind::ReturnStmt(_)))
     {
       return match &return_stmt.kind {
-        ast::NodeKind::ReturnStmt(return_stmt) => return_stmt.infer_type(cache),
+        ast::NodeKind::ReturnStmt(return_stmt) => {
+          if let Some(return_value) = &return_stmt.value {
+            return_value.infer_type(cache)
+          } else {
+            ast::Type::Unit
+          }
+        }
         _ => unreachable!(),
       };
     } else if !self.statements.is_empty() && self.yields_last_expr {
@@ -1069,7 +1075,7 @@ impl SemanticCheck for ast::ReturnStmt {
     match &current_function_node {
       ast::NodeKind::Function(function) => {
         name = Some(function.name.clone());
-        return_type = function.body_value.infer_type(cache);
+        return_type = function.body_block.infer_type(cache);
       }
       ast::NodeKind::Closure(closure) => {
         return_type = closure.body.infer_type(cache);
@@ -1116,7 +1122,7 @@ impl SemanticCheck for ast::ReturnStmt {
 
 impl SemanticCheck for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    SemanticCheckContext::infer_prototype_type(&self.prototype, self.body_value.infer_type(cache))
+    SemanticCheckContext::infer_prototype_type(&self.prototype, self.body_block.infer_type(cache))
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
@@ -1131,9 +1137,9 @@ impl SemanticCheck for ast::Function {
 
     // TODO: Special case for the `main` function. Unify expected signature?
 
-    let return_type = self.body_value.infer_type(cache);
+    let return_type = self.body_block.infer_type(cache);
 
-    if !SemanticCheckContext::compare(&return_type, &self.body_value.infer_type(cache), cache) {
+    if !SemanticCheckContext::compare(&return_type, &self.body_block.infer_type(cache), cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "function body and prototype return type mismatch for function `{}`",
@@ -1173,7 +1179,7 @@ impl SemanticCheck for ast::Function {
     }
 
     self.prototype.check(context, cache);
-    self.body_value.check(context, cache);
+    self.body_block.check(context, cache);
     context.current_function_key = None;
   }
 }
