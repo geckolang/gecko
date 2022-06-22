@@ -4,10 +4,11 @@ pub type Token = (TokenKind, usize);
 pub enum TokenKind {
   /// A special token emitted when there are no more tokens to lex.
   EOF,
-  Indentation,
+  Indent,
+  Dedent,
   Illegal(char),
   Identifier(String),
-  Whitespace(String),
+  Whitespace(char),
   Comment(String),
   String(String),
   Int(u64),
@@ -64,7 +65,6 @@ pub enum TokenKind {
   Slash,
   Bang,
   Equal,
-  SemiColon,
   LessThan,
   GreaterThan,
   BracketL,
@@ -102,6 +102,8 @@ pub struct Lexer {
   /// bounds, it will be `None`.
   current_char: Option<char>,
   seen_only_whitespace_this_line: bool,
+  previous_line_indent_level: usize,
+  indent_counter: usize,
 }
 
 impl Lexer {
@@ -117,6 +119,8 @@ impl Lexer {
       index: 0,
       current_char,
       seen_only_whitespace_this_line: true,
+      previous_line_indent_level: 0,
+      indent_counter: 0,
     }
   }
 
@@ -215,10 +219,6 @@ impl Lexer {
     self.read_while(|character| character != '\n')
   }
 
-  fn read_whitespace(&mut self) -> String {
-    self.read_while(is_whitespace)
-  }
-
   // TODO: Need tests implemented for this.
   fn read_string(&mut self) -> Result<String, codespan_reporting::diagnostic::Diagnostic<usize>> {
     // Skip the opening double-quote.
@@ -290,7 +290,7 @@ impl Lexer {
     Some(self.input[self.index + 1])
   }
 
-  fn is_indentation(&self) -> bool {
+  fn is_indent(&self) -> bool {
     self.seen_only_whitespace_this_line
       && (self.current_char == Some(' ') && self.peek_char() == Some(' '))
   }
@@ -306,119 +306,142 @@ impl Lexer {
       return Ok(TokenKind::EOF);
     }
 
-    let current_char = self.current_char.unwrap();
+    // TODO: Cleanup logic. This buffer might cause bugs (has already caused one!).
+    let mut current_char = self.current_char.unwrap();
 
     if !is_whitespace(current_char) && self.seen_only_whitespace_this_line {
       self.seen_only_whitespace_this_line = false;
-    } else if current_char == '\n' {
-      self.seen_only_whitespace_this_line = true;
     }
-
-    // REVISE: Simplify this chunk of code.
-    let token = if is_whitespace(current_char) && !self.is_indentation() {
-      TokenKind::Whitespace(self.read_whitespace())
-    } else {
-      let final_token = if self.is_indentation() {
-        self.read_char();
-        TokenKind::Indentation
-      } else {
-        match current_char {
-          '#' => TokenKind::Comment(self.read_comment()),
-          '"' => TokenKind::String(self.read_string()?),
-          '\'' => TokenKind::Char(self.read_character()?),
-          '{' => TokenKind::BraceL,
-          '}' => TokenKind::BraceR,
-          '(' => TokenKind::ParenthesesL,
-          ')' => TokenKind::ParenthesesR,
-          '~' => TokenKind::Tilde,
-          '|' if self.peek_char() == Some('>') => {
-            self.read_char();
-
-            TokenKind::Pipe
-          }
-          ':' if self.peek_char() == Some(':') => {
-            self.read_char();
-
-            TokenKind::DoubleColon
-          }
-          ':' => TokenKind::Colon,
-          '&' => TokenKind::Ampersand,
-          ',' => TokenKind::Comma,
-          '+' => TokenKind::Plus,
-          '-' if self.peek_char() == Some('>') => {
-            self.read_char();
-
-            TokenKind::Arrow
-          }
-          '-' => TokenKind::Minus,
-          '*' => TokenKind::Asterisk,
-          '/' => TokenKind::Slash,
-          '!' => TokenKind::Bang,
-          '=' if self.peek_char() == Some('=') => {
-            self.read_char();
-
-            TokenKind::Equality
-          }
-          '=' if self.peek_char() == Some('>') => {
-            self.read_char();
-
-            TokenKind::FatArrow
-          }
-          '=' => TokenKind::Equal,
-          ';' => TokenKind::SemiColon,
-          '<' if self.peek_char() == Some('=') => {
-            self.read_char();
-
-            TokenKind::LessThanEqualTo
-          }
-          '<' => TokenKind::LessThan,
-          '>' if self.peek_char() == Some('=') => {
-            self.read_char();
-
-            TokenKind::LessThanEqualTo
-          }
-          '>' => TokenKind::GreaterThan,
-          '[' => TokenKind::BracketL,
-          ']' => TokenKind::BracketR,
-          '.' if self.peek_char() == Some('.') && self.peek_char() == Some('.') => {
-            self.read_char();
-            self.read_char();
-
-            TokenKind::Ellipsis
-          }
-          '.' => TokenKind::Dot,
-          '@' => TokenKind::At,
-          '`' => TokenKind::Backtick,
-          '?' => TokenKind::QuestionMark,
-          _ => {
-            // NOTE: Identifiers will never start with a digit.
-            return if current_char == '_' || is_letter(current_char) {
-              let identifier = self.read_identifier();
-
-              match match_identifier(identifier.as_str()) {
-                Some(keyword_token) => Ok(keyword_token),
-                None => Ok(TokenKind::Identifier(identifier)),
-              }
-            } else if is_digit(current_char) {
-              Ok(TokenKind::Int(self.read_number()?))
-            } else {
-              let illegal_char = current_char;
-
-              self.read_char();
-
-              Ok(TokenKind::Illegal(illegal_char))
-            };
-          }
-        }
-      };
-
-      // Skip simple matched token (or in the case of a string, its closing quote).
+    // Reset the indent counter upon reaching the end of each line.
+    else if current_char == '\n' {
+      self.seen_only_whitespace_this_line = true;
+      self.indent_counter = 0;
       self.read_char();
 
-      final_token
+      return Ok(TokenKind::Whitespace(current_char));
+    }
+
+    while self.is_indent() {
+      self.read_char();
+      self.read_char();
+
+      // TODO: Cleanup repeated logic.
+      if self.is_eof() {
+        return Ok(TokenKind::EOF);
+      }
+
+      current_char = self.current_char.unwrap();
+
+      self.indent_counter += 1;
+    }
+
+    if self.indent_counter > self.previous_line_indent_level {
+      self.previous_line_indent_level = self.indent_counter;
+
+      return Ok(TokenKind::Indent);
+    } else if self.indent_counter < self.previous_line_indent_level {
+      self.previous_line_indent_level = self.indent_counter;
+
+      return Ok(TokenKind::Dedent);
+    }
+
+    if is_whitespace(current_char) {
+      self.read_char();
+
+      return Ok(TokenKind::Whitespace(current_char));
+    }
+
+    let result = match current_char {
+      '#' => TokenKind::Comment(self.read_comment()),
+      '"' => TokenKind::String(self.read_string()?),
+      '\'' => TokenKind::Char(self.read_character()?),
+      '{' => TokenKind::BraceL,
+      '}' => TokenKind::BraceR,
+      '(' => TokenKind::ParenthesesL,
+      ')' => TokenKind::ParenthesesR,
+      '~' => TokenKind::Tilde,
+      '|' if self.peek_char() == Some('>') => {
+        self.read_char();
+
+        TokenKind::Pipe
+      }
+      ':' if self.peek_char() == Some(':') => {
+        self.read_char();
+
+        TokenKind::DoubleColon
+      }
+      ':' => TokenKind::Colon,
+      '&' => TokenKind::Ampersand,
+      ',' => TokenKind::Comma,
+      '+' => TokenKind::Plus,
+      '-' if self.peek_char() == Some('>') => {
+        self.read_char();
+
+        TokenKind::Arrow
+      }
+      '-' => TokenKind::Minus,
+      '*' => TokenKind::Asterisk,
+      '/' => TokenKind::Slash,
+      '!' => TokenKind::Bang,
+      '=' if self.peek_char() == Some('=') => {
+        self.read_char();
+
+        TokenKind::Equality
+      }
+      '=' if self.peek_char() == Some('>') => {
+        self.read_char();
+
+        TokenKind::FatArrow
+      }
+      '=' => TokenKind::Equal,
+      '<' if self.peek_char() == Some('=') => {
+        self.read_char();
+
+        TokenKind::LessThanEqualTo
+      }
+      '<' => TokenKind::LessThan,
+      '>' if self.peek_char() == Some('=') => {
+        self.read_char();
+
+        TokenKind::LessThanEqualTo
+      }
+      '>' => TokenKind::GreaterThan,
+      '[' => TokenKind::BracketL,
+      ']' => TokenKind::BracketR,
+      '.' if self.peek_char() == Some('.') && self.peek_char() == Some('.') => {
+        self.read_char();
+        self.read_char();
+
+        TokenKind::Ellipsis
+      }
+      '.' => TokenKind::Dot,
+      '@' => TokenKind::At,
+      '`' => TokenKind::Backtick,
+      '?' => TokenKind::QuestionMark,
+      _ => {
+        // NOTE: Identifiers will never start with a digit.
+        return if current_char == '_' || is_letter(current_char) {
+          let identifier = self.read_identifier();
+
+          match match_identifier(identifier.as_str()) {
+            Some(keyword_token) => Ok(keyword_token),
+            None => Ok(TokenKind::Identifier(identifier)),
+          }
+        } else if is_digit(current_char) {
+          Ok(TokenKind::Int(self.read_number()?))
+        } else {
+          let illegal_char = current_char;
+
+          self.read_char();
+
+          Ok(TokenKind::Illegal(illegal_char))
+        };
+      }
     };
 
-    Ok(token)
+    self.read_char();
+
+    Ok(result)
   }
 }
 
@@ -612,6 +635,9 @@ mod tests {
     let lexer = Lexer::new(vec!['a']);
 
     assert_eq!(Some('a'), lexer.current_char);
+
+    // TODO: Investigate.
+    // assert_eq!(Some('a'), lexer.read_char());
   }
 
   #[test]
@@ -693,6 +719,62 @@ mod tests {
     let mut lexer = Lexer::from_str("123");
 
     assert_eq!(Ok(TokenKind::Int(123)), lexer.lex_token());
+  }
+
+  #[test]
+  fn lex_indent() {
+    let mut lexer = Lexer::from_str("  a  \n  b");
+
+    assert_eq!(Ok(TokenKind::Indent), lexer.lex_token());
+
+    assert_eq!(
+      Ok(TokenKind::Identifier(String::from("a"))),
+      lexer.lex_token()
+    );
+
+    assert_eq!(Ok(TokenKind::Whitespace(' ')), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Whitespace(' ')), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Whitespace('\n')), lexer.lex_token());
+
+    assert_eq!(
+      Ok(TokenKind::Identifier(String::from("b"))),
+      lexer.lex_token()
+    );
+  }
+
+  #[test]
+  fn lex_dedent() {
+    let mut lexer = Lexer::from_str("  a\nb");
+
+    assert_eq!(Ok(TokenKind::Indent), lexer.lex_token());
+
+    assert_eq!(
+      Ok(TokenKind::Identifier(String::from("a"))),
+      lexer.lex_token()
+    );
+
+    assert_eq!(Ok(TokenKind::Whitespace('\n')), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Dedent), lexer.lex_token());
+
+    assert_eq!(
+      Ok(TokenKind::Identifier(String::from("b"))),
+      lexer.lex_token()
+    );
+  }
+
+  #[test]
+  fn lex_dedent_eof() {
+    let mut lexer = Lexer::from_str("  a\n");
+
+    assert_eq!(Ok(TokenKind::Indent), lexer.lex_token());
+
+    assert_eq!(
+      Ok(TokenKind::Identifier(String::from("a"))),
+      lexer.lex_token()
+    );
+
+    assert_eq!(Ok(TokenKind::Whitespace('\n')), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Dedent), lexer.lex_token());
   }
 
   #[test]

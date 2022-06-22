@@ -1122,6 +1122,7 @@ impl SemanticCheck for ast::ReturnStmt {
 
 impl SemanticCheck for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+    // REVIEW: Why not use annotated return type if defined?
     SemanticCheckContext::infer_prototype_type(&self.prototype, self.body_block.infer_type(cache))
   }
 
