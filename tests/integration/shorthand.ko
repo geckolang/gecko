@@ -1,7 +1,0 @@
-fn single_statement() = 1
-
-fn block_yield() = {
-  1
-}
-
-fn unsafe_block() = unsafe -> 1

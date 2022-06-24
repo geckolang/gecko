@@ -1280,9 +1280,10 @@ impl<'a> Parser<'a> {
 
     let mut variants = vec![];
 
+    self.parse_indent()?;
+
     // FIXME: Enums should have at least one variant? What about an empty block?
     while self.until(&lexer::TokenKind::Dedent)? {
-      self.parse_indent();
       variants.push(self.parse_name()?);
 
       // TODO: Iron out case for lonely comma.
@@ -1292,7 +1293,7 @@ impl<'a> Parser<'a> {
     }
 
     // REVIEW: What if we reach `EOF` before dedent?
-    self.skip()?;
+    self.parse_dedent()?;
 
     Ok(ast::Enum {
       name,
@@ -1311,10 +1312,10 @@ impl<'a> Parser<'a> {
 
     let mut fields = Vec::new();
 
+    self.parse_indent()?;
+
     // FIXME: Ensure indentation is properly implemented here.
     while self.until(&lexer::TokenKind::Dedent)? {
-      self.parse_indent();
-
       let field_name = self.parse_name()?;
 
       self.skip_past(&lexer::TokenKind::Colon)?;
@@ -1326,7 +1327,7 @@ impl<'a> Parser<'a> {
     }
 
     // REVIEW: What if we reach `EOF` before dedent?
-    self.skip()?;
+    self.parse_dedent()?;
 
     Ok(ast::StructType {
       name,
@@ -1357,6 +1358,7 @@ impl<'a> Parser<'a> {
       }
     }
 
+    // TODO: What if EOF is reached before the closing brace symbol?
     // Skip the closing brace symbol.
     self.skip()?;
 

@@ -1,23 +1,2 @@
-struct A {
-  value: Int,
-}
-
-fn let_test() = {
-  # Literal value.
-  let a = 1;
-
-  # Binary-expression value.
-  let b = 1+1;
-
-  # Binary-expression using references value.
-  let c = a+b;
-
-  # Struct value.
-  #let d = new A{1};
-
-  # Struct value, stub type.
-  # FIXME: Failing test.
-  #let e = new B{1};
-
-  0
-}
+func let_test():
+  let a = 1

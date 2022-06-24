@@ -35,28 +35,10 @@ mod tests {
       .collect()
   }
 
-  #[test]
-  fn integration_tests() {
-    // REVISE: Unsafe unwrap.
-    let tests_path = std::env::current_dir().unwrap().join("tests");
-
-    // REVIEW: Consider sorting to avoid fragile module output comparison test.
-    // REVISE: Unsafe unwrap.
-    let mut source_files = fs::read_dir(&tests_path.join("integration"))
-      .unwrap()
-      .map(|path| path.unwrap().path())
-      .filter(|path| path.is_file() && path.extension().unwrap() == "ko")
-      .collect::<Vec<_>>();
-
-    // Sort files to ensure consistency, and avoid fragile module output comparison.
-    source_files.sort();
-
-    let mut sources = Vec::new();
-
-    for source_file in &source_files {
-      sources.push(load_test_file(source_file));
-    }
-
+  fn lower_file(
+    source_file_path: &str,
+    global_qualifier: gecko::name_resolution::GlobalQualifier,
+  ) -> String {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let mut cache = gecko::cache::Cache::new();
@@ -64,37 +46,19 @@ mod tests {
     let mut llvm_generator = gecko::llvm_lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
     let mut semantic_check_context = gecko::semantic_check::SemanticCheckContext::new();
     let mut ast_map = std::collections::BTreeMap::new();
+    let tokens = lex(source_file_path);
+    let mut substitution = Vec::new();
+    let mut parser = gecko::parser::Parser::new(tokens, &mut cache, &mut substitution);
+    let top_level_nodes = parser.parse_all();
+
+    assert!(top_level_nodes.is_ok());
 
     // FIXME: Pass the first global qualifier, instead of this dummy value.
     let mut name_resolver =
       gecko::name_resolution::NameResolver::new((String::from("pending"), String::from("pending")));
 
-    // TODO: Ensure both vectors are of same length, and zip iterators.
-    // Read, lex, parse, perform name resolution (declarations)
-    // and collect the AST (top-level nodes) from each source file.
-    for (index, source_file) in source_files.iter().enumerate() {
-      let tokens = lex(&sources[index]);
-      let mut substitution = Vec::new();
-      let mut parser = gecko::parser::Parser::new(tokens, &mut cache, &mut substitution);
-      let top_level_nodes = parser.parse_all();
-
-      assert!(top_level_nodes.is_ok());
-
-      // REVISE: File names need to conform to identifier rules.
-      let global_qualifier = (
-        String::from("string"),
-        // REVISE: Long conversion. Any way to simplify?
-        source_file
-          .file_name()
-          .unwrap()
-          .to_str()
-          .unwrap()
-          .to_string(),
-      );
-
-      name_resolver.create_module(global_qualifier.clone());
-      ast_map.insert(global_qualifier, top_level_nodes.unwrap());
-    }
+    name_resolver.create_module(global_qualifier.clone());
+    ast_map.insert(global_qualifier, top_level_nodes.unwrap());
 
     // After all the ASTs have been collected, perform name resolution step.
     assert!(name_resolver.run(&mut ast_map, &mut cache).is_empty());
@@ -126,17 +90,62 @@ mod tests {
 
     assert!(llvm_module.verify().is_ok());
 
-    let output_file_path = tests_path
-      .join("integration_tests_output")
-      .with_extension("ll");
+    llvm_module.print_to_string().to_string()
+  }
 
-    let output_file_contents = fs::read_to_string(output_file_path);
+  #[test]
+  fn integration_tests() {
+    // REVISE: Unsafe unwrap.
+    let tests_path = std::env::current_dir().unwrap().join("tests");
+    let tests_output_path = tests_path.join("output");
 
-    assert!(output_file_contents.is_ok());
+    // REVIEW: Consider sorting to avoid fragile module output comparison test.
+    // REVISE: Unsafe unwrap.
+    let mut source_files = fs::read_dir(&tests_path.join("integration"))
+      .unwrap()
+      .map(|path| path.unwrap().path())
+      .filter(|path| path.is_file() && path.extension().unwrap() == "ko")
+      .collect::<Vec<_>>();
 
-    assert_eq!(
-      llvm_module.print_to_string().to_string().trim(),
-      output_file_contents.unwrap().trim()
-    );
+    // Sort files to ensure consistency, and avoid fragile module output comparison.
+    source_files.sort();
+
+    let mut sources = Vec::new();
+
+    for source_file in &source_files {
+      sources.push(load_test_file(source_file));
+    }
+
+    // TODO: Ensure both vectors are of same length, and zip iterators.
+    // Read, lex, parse, perform name resolution (declarations)
+    // and collect the AST (top-level nodes) from each source file.
+    for (index, source_file) in source_files.iter().enumerate() {
+      let source_file_name = source_file
+          .file_stem()
+          .unwrap()
+          .to_str()
+          .unwrap()
+          .to_string();
+
+      // REVISE: File names need to conform to identifier rules.
+      let global_qualifier = (
+        String::from("string"),
+        // REVISE: Long conversion. Any way to simplify?
+        source_file_name.clone(),
+      );
+
+      let output_file_path = tests_output_path
+        .join(source_file_name)
+        .with_extension("ll");
+
+      let output_file_contents = fs::read_to_string(output_file_path);
+
+      assert!(output_file_contents.is_ok());
+
+      assert_eq!(
+        lower_file(&sources[index], global_qualifier).trim(),
+        output_file_contents.unwrap().trim()
+      );
+    }
   }
 }

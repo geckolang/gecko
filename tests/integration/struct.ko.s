@@ -1,8 +1,7 @@
-struct A {
-  value: Int,
-}
+#struct A:
+  #value: Int,
 
-fn struct_test() = {
+#func struct_test():
   # Declaration.
   #let a = new A{1};
 
@@ -16,5 +15,4 @@ fn struct_test() = {
   # Field assignment.
   # TODO: Aren't structs immutable?
 
-  0
-}
+ # return 0
