@@ -504,6 +504,7 @@ impl Resolve for ast::BlockExpr {
       statement.declare(resolver);
     }
 
+    // BUG: Something's wrong when an if-expression is present, with a block as its `then` value. It won't resolve declarations.
     resolver.close_scope_tree(self.binding_id);
   }
 

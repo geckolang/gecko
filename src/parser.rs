@@ -309,7 +309,6 @@ impl<'a> Parser<'a> {
     // REVIEW: What if the last statement is a let-statement? Let-statements have inferrable types, used internally.
     // REVIEW: This may be the reason why let-statements shouldn't have inferrable types (only internally).
     loop {
-      println!("tok: {:?}", self.get_token());
       let statement = self.parse_statement()?;
 
       // TODO: Change to indentation-style.
@@ -578,8 +577,6 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Colon)?;
 
     let body_block = self.parse_block_expr()?;
-
-    println!("Body block has {} stmts", body_block.statements.len());
 
     Ok(ast::Function {
       name,
