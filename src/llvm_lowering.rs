@@ -773,6 +773,11 @@ impl Lower for ast::Reference {
       .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false, access)
       .unwrap();
 
+    println!(
+      "--lowered target: {} | access : {}",
+      self.pattern.base_name, access
+    );
+
     Some(llvm_target)
   }
 }
@@ -1314,6 +1319,7 @@ impl Lower for ast::CallExpr {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // BUG: String arguments without `&` are being accessed.
     let mut llvm_arguments = self
       .arguments
       .iter()
@@ -1453,16 +1459,21 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
     // REVIEW: Is there a need to resolve the type?
 
+    let is_string = node.infer_type(cache) == ast::Type::Basic(ast::BasicType::String);
+
+    if is_string || matches!(node, ast::NodeKind::Parameter(_)) {
+      return llvm_value;
+    }
+
     if let ast::NodeKind::Reference(reference) = &node {
       let target = cache
         .symbols
         .get(&reference.pattern.target_id.unwrap())
         .unwrap();
 
-      if matches!(target, ast::NodeKind::Parameter(_)) {
-        return llvm_value;
-      }
-    } // else if let Some(llvm_value) = llvm_value_result ...
+      // TODO: Ensure this recursive nature doesn't cause stack overflow.
+      return self.apply_access_rules(target, llvm_value, cache);
+    }
 
     self.attempt_access(llvm_value)
   }
@@ -1866,6 +1877,10 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // FIXME: Testing.
     // let llvm_value = cache.unsafe_get(&binding_id).lower(self, cache);
     let llvm_value_result = node.lower(self, cache, false);
+
+    if apply_access_rules {
+      println!("lowered res: {:?}\n\n", llvm_value_result);
+    }
 
     let result = if let Some(llvm_value) = llvm_value_result {
       // Cache the value without applying access rules.
