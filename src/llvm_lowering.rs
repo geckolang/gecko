@@ -773,11 +773,6 @@ impl Lower for ast::Reference {
       .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false, access)
       .unwrap();
 
-    println!(
-      "--lowered target: {} | access : {}",
-      self.pattern.base_name, access
-    );
-
     Some(llvm_target)
   }
 }
@@ -1877,10 +1872,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // FIXME: Testing.
     // let llvm_value = cache.unsafe_get(&binding_id).lower(self, cache);
     let llvm_value_result = node.lower(self, cache, false);
-
-    if apply_access_rules {
-      println!("lowered res: {:?}\n\n", llvm_value_result);
-    }
 
     let result = if let Some(llvm_value) = llvm_value_result {
       // Cache the value without applying access rules.
