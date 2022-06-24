@@ -102,7 +102,7 @@ pub struct Lexer {
   /// bounds, it will be `None`.
   current_char: Option<char>,
   seen_only_whitespace_this_line: bool,
-  previous_line_indent_level: usize,
+  indent_level: usize,
   indent_counter: usize,
 }
 
@@ -119,7 +119,7 @@ impl Lexer {
       index: 0,
       current_char,
       seen_only_whitespace_this_line: true,
-      previous_line_indent_level: 0,
+      indent_level: 0,
       indent_counter: 0,
     }
   }
@@ -303,6 +303,12 @@ impl Lexer {
   /// value will be returned.
   fn lex_token(&mut self) -> Result<TokenKind, codespan_reporting::diagnostic::Diagnostic<usize>> {
     if self.is_eof() {
+      if self.indent_level > 0 {
+        self.indent_level -= 1;
+
+        return Ok(TokenKind::Dedent);
+      }
+
       return Ok(TokenKind::EOF);
     }
 
@@ -335,12 +341,12 @@ impl Lexer {
       self.indent_counter += 1;
     }
 
-    if self.indent_counter > self.previous_line_indent_level {
-      self.previous_line_indent_level = self.indent_counter;
+    if self.indent_counter > self.indent_level {
+      self.indent_level = self.indent_counter;
 
       return Ok(TokenKind::Indent);
-    } else if self.indent_counter < self.previous_line_indent_level {
-      self.previous_line_indent_level = self.indent_counter;
+    } else if self.indent_counter < self.indent_level {
+      self.indent_level = self.indent_counter;
 
       return Ok(TokenKind::Dedent);
     }
@@ -764,7 +770,7 @@ mod tests {
 
   #[test]
   fn lex_dedent_eof() {
-    let mut lexer = Lexer::from_str("  a\n");
+    let mut lexer = Lexer::from_str("  a\n    b\n");
 
     assert_eq!(Ok(TokenKind::Indent), lexer.lex_token());
 
@@ -774,7 +780,17 @@ mod tests {
     );
 
     assert_eq!(Ok(TokenKind::Whitespace('\n')), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Indent), lexer.lex_token());
+
+    assert_eq!(
+      Ok(TokenKind::Identifier(String::from("b"))),
+      lexer.lex_token()
+    );
+
+    assert_eq!(Ok(TokenKind::Whitespace('\n')), lexer.lex_token());
     assert_eq!(Ok(TokenKind::Dedent), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::Dedent), lexer.lex_token());
+    assert_eq!(Ok(TokenKind::EOF), lexer.lex_token());
   }
 
   #[test]
