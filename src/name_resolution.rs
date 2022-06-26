@@ -504,18 +504,21 @@ impl Resolve for ast::BlockExpr {
       statement.declare(resolver);
     }
 
-    // BUG: Something's wrong when an if-expression is present, with a block as its `then` value. It won't resolve declarations.
     resolver.close_scope_tree(self.binding_id);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    // BUG: Something's wrong when an if-expression is present, with a block as its `then` value. It won't resolve declarations.
+    // BUG: Will this work as expected, or we might need to use a stack?
+    let previous_block_binding_id = resolver.current_block_binding_id;
+
     resolver.current_block_binding_id = Some(self.binding_id);
 
     for statement in &mut self.statements {
       statement.resolve(resolver, cache);
     }
 
-    resolver.current_block_binding_id = None;
+    resolver.current_block_binding_id = previous_block_binding_id;
   }
 }
 
