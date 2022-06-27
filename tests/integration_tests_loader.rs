@@ -88,9 +88,18 @@ mod tests {
       }
     }
 
-    assert!(llvm_module.verify().is_ok());
+    let llvm_module_string = llvm_module.print_to_string().to_string();
 
-    llvm_module.print_to_string().to_string()
+    if let Err(e) = llvm_module.verify() {
+      println!("\nIn:\n======\n{}======", llvm_module_string);
+
+      panic!(
+        "... LLVM module verification failed: \n======\n{}\n======",
+        e.to_string()
+      );
+    }
+
+    llvm_module_string
   }
 
   #[test]

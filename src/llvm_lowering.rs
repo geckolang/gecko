@@ -129,6 +129,7 @@ impl Lower for ast::MemberAccess {
       );
     }
 
+    // REVIEW: Is it safe to use the binding id of an inferred struct type?
     // Otherwise, it must be a method.
     let impl_method_info = cache
       .struct_impls
@@ -1286,8 +1287,12 @@ impl Lower for ast::LetStmt {
       return result;
     }
 
-    // BUG: Use type-caching. Declaring multiple variables with the same struct type will cause repeated type definitions.
-    let llvm_type = generator.lower_type(&ty, cache);
+    // BUG: This may cause other types that aren't struct types yet have bindings to become duplicated.
+    let llvm_type = if let ast::Type::Struct(struct_type) = &ty {
+      generator.memoize_or_retrieve_type(struct_type.binding_id, cache)
+    } else {
+      generator.lower_type(&ty, cache)
+    };
 
     let llvm_alloca = generator
       .llvm_builder

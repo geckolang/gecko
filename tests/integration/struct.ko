@@ -1,0 +1,7 @@
+struct A:
+  value: Int,
+
+func structs():
+  let a = new A { 1 }
+
+  return a.value
