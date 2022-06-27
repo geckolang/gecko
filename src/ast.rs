@@ -43,6 +43,15 @@ macro_rules! dispatch {
   };
 }
 
+// #[macro_export]
+// macro_rules! dispatch_template {
+//   ( $node:expr, $target_fn:expr $(, $($args:expr),* )?; $($name:ident),+ ) => {
+//     match $node {
+//       $( ast::NodeKind::$name(inner) $target_fn(inner $(, $($args),* )?), )+
+//     }
+//   }
+// }
+
 #[derive(Debug, Clone)]
 pub enum GenericConstraintKind {
   Implements,
