@@ -1,7 +1,22 @@
 struct A:
   value: Int,
 
-func structs():
+func let_stmt_struct_value():
   let a = new A { 1 }
 
   return a.value
+
+func inline_value():
+  let b = new A { 2 }.value
+
+  return b
+
+func impl_method_call():
+  let c = new A { 3 }
+  let d: Int = c.method()
+
+  return d
+
+impl A:
+  func method():
+    return 1

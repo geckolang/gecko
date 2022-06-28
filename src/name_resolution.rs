@@ -129,6 +129,15 @@ impl Resolve for ast::StructImpl {
     let struct_type_id_result = self.target_struct_pattern.target_id;
 
     if let Some(struct_type_id) = struct_type_id_result {
+      cache.add_struct_impl(
+        struct_type_id,
+        self
+          .methods
+          .iter()
+          .map(|m| (m.binding_id, m.name.clone()))
+          .collect::<Vec<_>>(),
+      );
+
       resolver.current_struct_type_id = Some(struct_type_id);
 
       for method in &mut self.methods {
@@ -266,23 +275,8 @@ impl Resolve for ast::StructValue {
 
 impl Resolve for ast::Prototype {
   fn declare(&self, resolver: &mut NameResolver) {
-    if self.accepts_instance {
-      let _this_parameter = self.this_parameter.as_ref().unwrap();
-
-      // TODO: Re-implement.
-      // ast::Definition {
-      //   symbol: Some((this_parameter.0.clone(), SymbolKind::Definition)),
-      //   node_ref_cell: cache::create_cached_node(ast::Node {
-      //     // TODO: Cloning parameter.
-      //     kind: ast::NodeKind::Parameter(this_parameter.clone()),
-      //     // TODO: Span.
-      //     span: 0..0,
-      //     binding_id: cache.create_binding_id(),
-      //   }),
-      //   // TODO: Will this `declare` function ever be called more than once? If so, this could be a problem.
-      //   binding_id: cache.create_binding_id(),
-      // }
-      // .declare(resolver);
+    if let Some(this_parameter) = &self.this_parameter {
+      this_parameter.declare(resolver);
     }
 
     for parameter in &self.parameters {
@@ -296,6 +290,8 @@ impl Resolve for ast::Prototype {
     }
 
     if self.accepts_instance {
+      self.instance_type_id = Some(resolver.current_struct_type_id.unwrap());
+
       self
         .this_parameter
         .as_mut()

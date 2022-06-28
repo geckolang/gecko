@@ -365,10 +365,7 @@ impl<'a> Parser<'a> {
   fn parse_this_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::TypeThis)?;
 
-    Ok(ast::Type::This(ast::ThisType {
-      target_id: None,
-      ty: None,
-    }))
+    Ok(ast::Type::This(ast::ThisType { target_id: None }))
   }
 
   /// '[' %type, 0-9+ ']'
@@ -506,10 +503,7 @@ impl<'a> Parser<'a> {
 
       this_parameter = Some(ast::Parameter {
         name: THIS_IDENTIFIER.to_string(),
-        ty: ast::Type::This(ast::ThisType {
-          target_id: None,
-          ty: None,
-        }),
+        ty: ast::Type::This(ast::ThisType { target_id: None }),
         position: 0,
         binding_id: self.cache.create_binding_id(),
       });
@@ -1409,11 +1403,13 @@ impl<'a> Parser<'a> {
     }
 
     self.skip_past(&lexer::TokenKind::Colon)?;
+    self.parse_indent()?;
 
     // TODO: Support for trait specifications/implementations.
 
     let mut methods = Vec::new();
 
+    // TODO: Should be a do-while loop.
     // FIXME: Ensure indentation is properly implemented here.
     while self.until(&lexer::TokenKind::Dedent)? {
       // TODO: Support for attributes.
@@ -1423,7 +1419,7 @@ impl<'a> Parser<'a> {
     }
 
     // REVIEW: What if we reach `EOF` before dedent?
-    self.skip()?;
+    self.parse_dedent()?;
 
     Ok(ast::StructImpl {
       // TODO: Support for trait specialization.

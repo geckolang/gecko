@@ -202,7 +202,6 @@ pub struct FunctionType {
 #[derive(PartialEq, Clone, Debug)]
 pub struct ThisType {
   pub target_id: Option<cache::BindingId>,
-  pub ty: Option<Box<Type>>,
 }
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.

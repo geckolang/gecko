@@ -148,11 +148,16 @@ impl SemanticCheckContext {
       if let ast::NodeKind::TypeAlias(type_alias) = &target_node {
         return Self::flatten_type(&type_alias.ty, cache);
       } else if let ast::NodeKind::StructType(target_type) = &target_node {
+        // REVIEW: Why is `flatten_type` being called again with a struct type inside?
         return Self::flatten_type(&ast::Type::Struct(target_type.clone()), cache);
       }
-    } else if let ast::Type::This(this_type) = ty {
-      // REVISE: No need to clone.
-      return this_type.ty.as_ref().unwrap().as_ref().clone();
+    } else if let ast::Type::This(this_type) = &ty {
+      // REVISE: No need to clone?
+      let target_struct_type = cache.force_get(&this_type.target_id.unwrap());
+
+      if let ast::NodeKind::StructType(struct_type) = &target_struct_type {
+        return ast::Type::Struct(struct_type.clone());
+      }
     }
 
     // REVISE: Do not clone by default. Find a better alternative.
@@ -340,6 +345,15 @@ impl SemanticCheck for ast::StructImpl {
     context.in_impl = true;
 
     for method in &self.methods {
+      if !method.prototype.accepts_instance {
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+            "implementation method `{}` is missing the instance parameter `this`",
+            method.name
+          )),
+        )
+      }
+
       method.check(context, cache);
     }
 
@@ -557,7 +571,7 @@ impl SemanticCheck for ast::Prototype {
 }
 
 impl SemanticCheck for ast::StructType {
-  // TODO: Implement.
+  // REVIEW: Implement? This is already a type on itself.
 }
 
 impl SemanticCheck for ast::UnaryExpr {
