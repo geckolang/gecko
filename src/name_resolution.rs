@@ -134,7 +134,7 @@ impl Resolve for ast::StructImpl {
         self
           .methods
           .iter()
-          .map(|m| (m.binding_id, m.name.clone()))
+          .map(|method| (method.binding_id, method.name.clone()))
           .collect::<Vec<_>>(),
       );
 
@@ -525,15 +525,18 @@ impl Resolve for ast::Literal {
 impl Resolve for ast::Function {
   fn declare(&self, resolver: &mut NameResolver) {
     // BUG: Something is wrong with this scope tree. Consider adding tests for this API.
+    // ... The `push_scope()` and `close_scope_tree()` lines where commented out. Once uncommented,
+    // ... everything SEEMS to be working fine, but still need tests if there aren't any already, and
+    // ... review of the code, and possibly integration tests.
     // Parameter scope.
-    // resolver.push_scope();
+    resolver.push_scope();
 
     self.prototype.declare(resolver);
     self.body_block.declare(resolver);
 
     // NOTE: The scope tree won't be overwritten by the block's, nor the
     // prototype's scope tree, instead they will be merged, as expected.
-    // resolver.close_scope_tree(self.binding_id);
+    resolver.close_scope_tree(self.binding_id);
 
     resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
   }

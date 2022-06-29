@@ -28,3 +28,28 @@ fn.entry:
   %access1 = load i32, i32* %var.b, align 4
   ret i32 %access1
 }
+
+define private i32 @.3.impl_method_call() {
+fn.entry:
+  %var.c = alloca %.1.struct.A, align 8
+  %struct.A.alloca = alloca %.1.struct.A, align 8
+  %struct.alloca.field.gep = getelementptr inbounds %.1.struct.A, %.1.struct.A* %struct.A.alloca, i32 0, i32 0
+  store i32 3, i32* %struct.alloca.field.gep, align 4
+  %access = load %.1.struct.A, %.1.struct.A* %struct.A.alloca, align 4
+  store %.1.struct.A %access, %.1.struct.A* %var.c, align 4
+  %var.d = alloca i32, align 4
+  %call = call i32 @.4.method(%.1.struct.A* %var.c)
+  store i32 %call, i32* %var.d, align 4
+  %access1 = load i32, i32* %var.d, align 4
+  ret i32 %access1
+}
+
+define private i32 @.4.method(%.1.struct.A* %0) {
+fn.entry:
+  ret i32 1
+}
+
+define private i32 @.5.method(%.1.struct.A* %0) {
+fn.entry:
+  ret i32 1
+}

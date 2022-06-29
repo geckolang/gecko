@@ -94,7 +94,7 @@ impl Lower for ast::MemberAccess {
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
-    _access: bool,
+    access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct = self
       .base_expr
@@ -116,19 +116,17 @@ impl Lower for ast::MemberAccess {
       .iter()
       .position(|field| field.0 == self.member_name)
     {
-      return Some(
-        // REVIEW: Should this actually be always accessed? It seems that `build_struct_gep` returns
-        // ... a pointer to the requested field. Perhaps it should be lowered with access rules?
-        generator
-          .access(
-            generator
-              .llvm_builder
-              // REVIEW: Is this conversion safe?
-              .build_struct_gep(llvm_struct, field_index as u32, "struct.member.gep")
-              .unwrap(),
-          )
-          .as_basic_value_enum(),
-      );
+      let field_gep = generator
+        .llvm_builder
+        // REVIEW: Is this conversion safe?
+        .build_struct_gep(llvm_struct, field_index as u32, "struct.member.gep")
+        .unwrap();
+
+      return Some(if access {
+        generator.access(field_gep).as_basic_value_enum()
+      } else {
+        field_gep.as_basic_value_enum()
+      });
     }
 
     // REVIEW: Is it safe to use the binding id of an inferred struct type?

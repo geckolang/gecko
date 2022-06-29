@@ -298,28 +298,22 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Dedent)
   }
 
-  /// {'{' (%statement+) '}' | '=' {%statement | %expr}}
+  /// {%indent (%statement+) %dedent | '=' {%statement | %expr}}
   fn parse_block_expr(&mut self) -> ParserResult<ast::BlockExpr> {
     // let initial_indentation_level = self.indentation_level;
     let mut statements = Vec::new();
-    let mut yields_last_expr = false;
+    let mut _yields_last_expr = false;
 
     self.parse_indent()?;
 
     // REVIEW: What if the last statement is a let-statement? Let-statements have inferrable types, used internally.
     // REVIEW: This may be the reason why let-statements shouldn't have inferrable types (only internally).
     loop {
-      let statement = self.parse_statement()?;
+      // TODO: Support for yielding in indentation-style.
 
-      // TODO: Change to indentation-style.
-      // if self.peek_is(&lexer::TokenKind::BraceR) && self.is(&lexer::TokenKind::SemiColon) {
-      //   self.skip()?;
-      //   yields_last_expr = false;
-      // }
+      statements.push(self.parse_statement()?);
 
-      statements.push(statement);
-
-      if !self.until(&lexer::TokenKind::Dedent)? {
+      if self.is(&lexer::TokenKind::Dedent) {
         break;
       }
     }
@@ -328,7 +322,8 @@ impl<'a> Parser<'a> {
 
     Ok(ast::BlockExpr {
       statements,
-      yields_last_expr,
+      // TODO: Support for yielding in indentation-style.
+      yields_last_expr: false,
       binding_id: self.cache.create_binding_id(),
     })
   }
@@ -1035,7 +1030,7 @@ impl<'a> Parser<'a> {
         ast::NodeKind::Closure(self.parse_closure()?)
       }
       lexer::TokenKind::If => ast::NodeKind::IfExpr(self.parse_if_expr()?),
-      lexer::TokenKind::Tilde => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
+      lexer::TokenKind::DollarSign => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       // REVISE: Change this syntax to the same treatment as call expressions (check afterwards).
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::BracketL) => {
         ast::NodeKind::ArrayIndexing(self.parse_array_indexing()?)
@@ -1218,13 +1213,13 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// '~' %name '(' (%expr (,))* ')'
+  /// '$' %name '(' (%expr (,))* ')'
   fn parse_intrinsic_call(&mut self) -> ParserResult<ast::IntrinsicCall> {
-    self.skip_past(&lexer::TokenKind::Tilde)?;
+    self.skip_past(&lexer::TokenKind::DollarSign)?;
 
     let kind = match self.parse_name()?.as_str() {
       "panic" => ast::IntrinsicKind::Panic,
-      _ => return Err(self.expected("valid intrinsic name")),
+      _ => return Err(self.expected("a valid intrinsic name")),
     };
 
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
@@ -1247,6 +1242,7 @@ impl<'a> Parser<'a> {
 
   /// %pattern
   fn parse_reference(&mut self) -> ParserResult<ast::Reference> {
+    // REVIEW: Would there be an instance where this method can accept which symbol kind to parse?
     let pattern = self.parse_pattern(name_resolution::SymbolKind::Definition)?;
 
     Ok(ast::Reference { pattern })
@@ -1264,7 +1260,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// enum %name '{' (%name (','))* '}'
+  /// enum %name ':' %indent (%name (','))* %dedent
   fn parse_enum(&mut self) -> ParserResult<ast::Enum> {
     self.skip_past(&lexer::TokenKind::Enum)?;
 
@@ -1276,17 +1272,17 @@ impl<'a> Parser<'a> {
 
     self.parse_indent()?;
 
-    // FIXME: Enums should have at least one variant? What about an empty block?
-    while self.until(&lexer::TokenKind::Dedent)? {
+    loop {
       variants.push(self.parse_name()?);
 
       // TODO: Iron out case for lonely comma.
       if self.is(&lexer::TokenKind::Comma) {
         self.skip()?;
+      } else if self.is(&lexer::TokenKind::Dedent) {
+        break;
       }
     }
 
-    // REVIEW: What if we reach `EOF` before dedent?
     self.parse_dedent()?;
 
     Ok(ast::Enum {
@@ -1296,7 +1292,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// struct %name '{' (%name ':' %type ';')* '}'
+  /// struct %name ':' %indent (%name ':' %type ';')* %dedent
   fn parse_struct_type(&mut self) -> ParserResult<ast::StructType> {
     self.skip_past(&lexer::TokenKind::Struct)?;
 
@@ -1308,8 +1304,7 @@ impl<'a> Parser<'a> {
 
     self.parse_indent()?;
 
-    // FIXME: Ensure indentation is properly implemented here.
-    while self.until(&lexer::TokenKind::Dedent)? {
+    loop {
       let field_name = self.parse_name()?;
 
       self.skip_past(&lexer::TokenKind::Colon)?;
@@ -1318,9 +1313,12 @@ impl<'a> Parser<'a> {
 
       self.skip_past(&lexer::TokenKind::Comma)?;
       fields.push((field_name, field_type));
+
+      if self.is(&lexer::TokenKind::Dedent) {
+        break;
+      }
     }
 
-    // REVIEW: What if we reach `EOF` before dedent?
     self.parse_dedent()?;
 
     Ok(ast::StructType {
@@ -1352,7 +1350,7 @@ impl<'a> Parser<'a> {
       }
     }
 
-    // TODO: What if EOF is reached before the closing brace symbol?
+    // TODO: What if `EOF` is reached before the closing brace symbol?
     // Skip the closing brace symbol.
     self.skip()?;
 
@@ -1364,7 +1362,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// fn '[' (%name (','))* ']' %prototype %block
+  /// func '[' (%name (','))* ']' %prototype ':' %block
   fn parse_closure(&mut self) -> ParserResult<ast::Closure> {
     self.skip_past(&lexer::TokenKind::Func)?;
 
@@ -1381,6 +1379,9 @@ impl<'a> Parser<'a> {
     }
 
     let prototype = self.parse_prototype(false)?;
+
+    self.skip_past(&lexer::TokenKind::Colon)?;
+
     let body = self.parse_block_expr()?;
 
     Ok(ast::Closure {
@@ -1411,14 +1412,15 @@ impl<'a> Parser<'a> {
 
     // TODO: Should be a do-while loop.
     // FIXME: Ensure indentation is properly implemented here.
-    while self.until(&lexer::TokenKind::Dedent)? {
+    loop {
       // TODO: Support for attributes.
-      let method = self.parse_function(Vec::new())?;
+      methods.push(self.parse_function(Vec::new())?);
 
-      methods.push(method);
+      if self.is(&lexer::TokenKind::Dedent) {
+        break;
+      }
     }
 
-    // REVIEW: What if we reach `EOF` before dedent?
     self.parse_dedent()?;
 
     Ok(ast::StructImpl {
@@ -1439,18 +1441,20 @@ impl<'a> Parser<'a> {
 
     let mut methods = Vec::new();
 
-    // FIXME: Ensure indentation is properly implemented here.
-    while self.until(&lexer::TokenKind::Dedent)? {
+    loop {
       self.skip_past(&lexer::TokenKind::Func)?;
 
       let method_name = self.parse_name()?;
       let prototype = self.parse_prototype(false)?;
 
       methods.push((method_name, prototype));
+
+      if self.is(&lexer::TokenKind::Dedent) {
+        break;
+      }
     }
 
-    // REVIEW: What if we reach `EOF` before dedent?
-    self.skip()?;
+    self.parse_dedent()?;
 
     Ok(ast::Trait {
       name,

@@ -18,5 +18,5 @@ func impl_method_call():
   return d
 
 impl A:
-  func method():
+  func method(this):
     return 1

@@ -55,7 +55,7 @@ pub enum TokenKind {
   BraceR,
   ParenthesesL,
   ParenthesesR,
-  Tilde,
+  DollarSign,
   Colon,
   Ampersand,
   Comma,
@@ -365,7 +365,7 @@ impl Lexer {
       '}' => TokenKind::BraceR,
       '(' => TokenKind::ParenthesesL,
       ')' => TokenKind::ParenthesesR,
-      '~' => TokenKind::Tilde,
+      '$' => TokenKind::DollarSign,
       '|' if self.peek_char() == Some('>') => {
         self.read_char();
 

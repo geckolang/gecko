@@ -697,13 +697,17 @@ impl SemanticCheck for ast::AssignStmt {
     let is_array_indexing = matches!(self.assignee_expr.kind, ast::NodeKind::ArrayIndexing(_));
     let is_variable_ref = matches!(self.assignee_expr.kind, ast::NodeKind::Reference(_));
 
+    // FIXME: What if the member accessed is a method? Is that even possible?
+    // ... Maybe to disambiguate that specific case we'd need to add a check below.
+    let is_member_access = matches!(self.assignee_expr.kind, ast::NodeKind::MemberAccess(_));
+
     // TODO: Missing member access (struct fields) support.
     // NOTE: The assignee expression may only be an expression of type `Pointer`
     // or `Reference`, a variable reference, or an array indexing.
-    if !is_pointer && !is_variable_ref && !is_array_indexing {
+    if !is_pointer && !is_variable_ref && !is_array_indexing && !is_member_access {
       context.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message("assignee must be an expression of pointer or reference type, a variable reference, or an array indexing expression"),
+            .with_message("assignee must be an expression of pointer or reference type, a member access expression, a variable reference, or an array indexing expression"),
         );
     } else if is_variable_ref {
       // If the assignee is a variable reference, ensure that the variable is mutable.
@@ -726,6 +730,7 @@ impl SemanticCheck for ast::AssignStmt {
       };
     }
 
+    self.assignee_expr.check(context, cache);
     self.value.check(context, cache);
   }
 }
