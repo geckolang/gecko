@@ -48,7 +48,7 @@ impl Lower for ast::SizeofIntrinsic {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let ty = generator.lower_type(&self.ty, cache);
+    let ty = generator.memoize_or_retrieve_type(&self.ty, cache);
 
     Some(ty.size_of().unwrap().as_basic_value_enum())
   }
@@ -104,7 +104,7 @@ impl Lower for ast::MemberAccess {
 
     // Flatten the type in case it is a `ThisType`.
     let llvm_struct_type =
-      match SemanticCheckContext::infer_and_resolve_type(&self.base_expr, cache) {
+      match SemanticCheckContext::infer_and_flatten_type(&self.base_expr, cache) {
         ast::Type::Struct(struct_type) => struct_type,
         _ => unreachable!(),
       };
@@ -271,7 +271,7 @@ impl Lower for ast::ExternStatic {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_global_value = generator.llvm_module.add_global(
-      generator.lower_type(&self.ty, cache),
+      generator.memoize_or_retrieve_type(&self.ty, cache),
       None,
       self.name.as_str(),
     );
@@ -288,7 +288,7 @@ impl Lower for ast::StructValue {
     access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct_type = generator
-      .memoize_or_retrieve_type(self.target_id.unwrap(), cache)
+      .memoize_or_retrieve_type_by_binding(self.target_id.unwrap(), cache)
       .into_struct_type();
 
     let llvm_struct_alloca = generator.llvm_builder.build_alloca(
@@ -458,7 +458,7 @@ impl Lower for ast::ArrayValue {
 
     // TODO: Is this cast (usize -> u32) safe?
     let llvm_array_type = if llvm_values.is_empty() {
-      generator.lower_type(self.explicit_type.as_ref().unwrap(), cache)
+      generator.memoize_or_retrieve_type(self.explicit_type.as_ref().unwrap(), cache)
     } else {
       llvm_values.first().unwrap().get_type()
     }
@@ -859,7 +859,7 @@ impl Lower for ast::IfExpr {
 
     // Allocate the resulting if-value early on, if applicable.
     if yields_expression {
-      let llvm_if_value_type = generator.lower_type(&ty, cache);
+      let llvm_if_value_type = generator.memoize_or_retrieve_type(&ty, cache);
 
       let llvm_if_value_alloca = generator
         .llvm_builder
@@ -1025,7 +1025,7 @@ impl Lower for ast::Function {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type =
-      generator.lower_prototype(&self.prototype, &self.body_block.infer_type(cache), cache);
+      generator.lower_prototype(&self.prototype, &self.body.infer_type(cache), cache);
 
     let is_main = self.name == MAIN_FUNCTION_NAME;
 
@@ -1090,7 +1090,7 @@ impl Lower for ast::Function {
 
     generator.llvm_builder.position_at_end(llvm_entry_block);
 
-    let yielded_result = self.body_block.lower(generator, cache, false);
+    let yielded_result = self.body.lower(generator, cache, false);
 
     generator.attempt_build_return(yielded_result);
     generator.llvm_function_buffer = None;
@@ -1235,7 +1235,9 @@ impl Lower for ast::UnaryExpr {
       ast::OperatorKind::Cast => {
         let llvm_value = self.expr.lower(generator, cache, false).unwrap();
         let llvm_final_value = generator.attempt_access(llvm_value);
-        let llvm_to_type = generator.lower_type(self.cast_type.as_ref().unwrap(), cache);
+
+        let llvm_to_type =
+          generator.memoize_or_retrieve_type(self.cast_type.as_ref().unwrap(), cache);
 
         if !llvm_value.is_int_value() {
           // TODO: Implement for other cases.
@@ -1265,7 +1267,7 @@ impl Lower for ast::LetStmt {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVISE: Optimize. The type for this construct may be cached.
-    let ty = self.infer_type(cache);
+    let ty = self.value.infer_type(cache);
 
     // Special cases. The allocation is done elsewhere.
     if matches!(
@@ -1289,7 +1291,7 @@ impl Lower for ast::LetStmt {
 
     // BUG: This may cause other types that aren't struct types yet have bindings to become duplicated.
     let llvm_type = if let ast::Type::Struct(struct_type) = &ty {
-      generator.memoize_or_retrieve_type(struct_type.binding_id, cache)
+      generator.memoize_or_retrieve_type_by_binding(struct_type.binding_id, cache)
     } else {
       generator.lower_type(&ty, cache)
     };
@@ -1459,9 +1461,13 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
     // REVIEW: Is there a need to resolve the type?
 
-    let is_string = node.infer_type(cache) == ast::Type::Basic(ast::BasicType::String);
+    // let is_string = node.infer_type(cache) == ast::Type::Basic(ast::BasicType::String);
 
-    if is_string || matches!(node, ast::NodeKind::Parameter(_)) {
+    if matches!(node, ast::NodeKind::Parameter(_)) {
+      // println!(
+      //   "llvm value is: {:?} \n\nnode value is: {:?}",
+      //   llvm_value, node
+      // );
       return llvm_value;
     }
 
@@ -1649,6 +1655,16 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
+  fn find_type_binding_id(&self, ty: &ast::Type, cache: &cache::Cache) -> Option<cache::BindingId> {
+    let resolved_type = SemanticCheckContext::flatten_type(ty, cache);
+
+    Some(match resolved_type {
+      ast::Type::Struct(struct_type) => struct_type.binding_id.clone(),
+      // REVIEW: Any more?
+      _ => return None,
+    })
+  }
+
   // REVIEW: Ensure that this function is tail-recursive.
   fn lower_type(
     &mut self,
@@ -1656,7 +1672,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     cache: &cache::Cache,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
     // BUG: Use type-caching HERE (for structs, or any type that needs to be cached). Declaring multiple variables with the same struct type will cause repeated type definitions.
-
     match ty {
       ast::Type::Basic(primitive_type) => match primitive_type {
         ast::BasicType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
@@ -1709,7 +1724,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       }
       // REVIEW: Why not resolve the type if it is a stub type, then proceed to lower it?
       ast::Type::Stub(stub_type) => {
-        self.memoize_or_retrieve_type(stub_type.pattern.target_id.unwrap(), cache)
+        self.memoize_or_retrieve_type_by_binding(stub_type.pattern.target_id.unwrap(), cache)
       }
       ast::Type::Function(callable_type) => self
         .lower_callable_type(callable_type, cache)
@@ -1719,9 +1734,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::Reference(_reference_type) => todo!(),
       // TODO: Implement.
       ast::Type::This(this_type) => {
-        self.memoize_or_retrieve_type(this_type.target_id.unwrap(), cache)
+        self.memoize_or_retrieve_type_by_binding(this_type.target_id.unwrap(), cache)
       }
-      // FIXME: Should be lowering to the void type instead.
+      // FIXME: Should be lowering to the void type instead, but not allowed by return type!
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
       // REVIEW: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
       ast::Type::Unit => self
@@ -1762,12 +1777,12 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let mut llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|parameter| self.lower_type(&parameter.ty, cache).into())
+      .map(|parameter| self.memoize_or_retrieve_type(&parameter.ty, cache).into())
       .collect::<Vec<_>>();
 
     if prototype.accepts_instance {
       let llvm_instance_type =
-        self.memoize_or_retrieve_type(prototype.instance_type_id.unwrap(), cache);
+        self.memoize_or_retrieve_type_by_binding(prototype.instance_type_id.unwrap(), cache);
 
       // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
       llvm_parameter_types.insert(
@@ -1781,7 +1796,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     // REVISE: Simplify code (find common ground between `void` and `basic` types).
     if !return_type.is_unit() {
       self
-        .lower_type(&return_type, cache)
+        .memoize_or_retrieve_type(return_type, cache)
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)
         .into()
@@ -1798,7 +1813,22 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     .into_function_type()
   }
 
+  // BUG: !!!! REPLACE MOST* (non-directly/indirectly-recursive) INSTANCES OF `lower_type()` WITH THIS METHOD! !!!
+  // ... ENSURE!! That there isn't any possible recursion problems going on.
   fn memoize_or_retrieve_type(
+    &mut self,
+    ty: &ast::Type,
+    cache: &cache::Cache,
+  ) -> inkwell::types::BasicTypeEnum<'ctx> {
+    if let Some(binding_id) = self.find_type_binding_id(ty, cache) {
+      // REVIEW: Isn't this indirectly recursive? Will it cause problems?
+      return self.memoize_or_retrieve_type_by_binding(binding_id, cache);
+    }
+
+    self.lower_type(ty, cache)
+  }
+
+  fn memoize_or_retrieve_type_by_binding(
     &mut self,
     binding_id: cache::BindingId,
     cache: &cache::Cache,
@@ -1811,6 +1841,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     let node = cache.force_get(&binding_id);
 
+    // REVISE: Why not perform type-flattening here instead?
     let ty = match &node {
       ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
       ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),

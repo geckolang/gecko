@@ -260,7 +260,7 @@ impl Lint for ast::Function {
       );
     }
 
-    self.body_block.lint(cache, context);
+    self.body.lint(cache, context);
   }
 }
 

@@ -1,0 +1,8 @@
+func reflect_string(string: Str):
+  return string
+
+func strings():
+  let a = "a"
+  let b = a
+  let c = reflect_string(b)
+  let d = reflect_string("b")

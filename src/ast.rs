@@ -357,7 +357,7 @@ pub struct Attribute {
 pub struct Function {
   pub name: String,
   pub prototype: Prototype,
-  pub body_block: Box<BlockExpr>,
+  pub body: Box<BlockExpr>,
   pub attributes: Vec<Attribute>,
   pub binding_id: cache::BindingId,
   pub generics: Option<Generics>,

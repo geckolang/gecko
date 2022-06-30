@@ -570,7 +570,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Function {
       name,
       prototype,
-      body_block: Box::new(body_block),
+      body: Box::new(body_block),
       attributes,
       binding_id: self.cache.create_binding_id(),
       generics,
@@ -976,10 +976,22 @@ impl<'a> Parser<'a> {
     Ok(match self.get_token()? {
       lexer::TokenKind::Bool(_) => self.parse_bool_literal()?,
       lexer::TokenKind::Int(_) => self.parse_int_literal()?,
+      lexer::TokenKind::Char(_) => self.parse_char_literal()?,
       lexer::TokenKind::String(_) => self.parse_string_literal()?,
       lexer::TokenKind::Nullptr => self.parse_nullptr_literal()?,
       _ => return Err(self.expected("literal")),
     })
+  }
+
+  fn parse_char_literal(&mut self) -> ParserResult<ast::Literal> {
+    let result = match self.get_token()? {
+      lexer::TokenKind::Char(value) => ast::Literal::Char(value.clone()),
+      _ => return Err(self.expected("char literal")),
+    };
+
+    self.skip()?;
+
+    Ok(result)
   }
 
   // TODO: Retire this function. Remove it once its no longer needed.
@@ -1340,9 +1352,7 @@ impl<'a> Parser<'a> {
     let mut fields = Vec::new();
 
     while self.until(&lexer::TokenKind::BraceR)? {
-      let field = self.parse_expr()?;
-
-      fields.push(field);
+      fields.push(self.parse_expr()?);
 
       // TODO: Disallow trailing comma.
       if self.is(&lexer::TokenKind::Comma) {

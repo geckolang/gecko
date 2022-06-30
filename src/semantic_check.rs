@@ -91,7 +91,7 @@ impl SemanticCheckContext {
   }
 
   // TODO: Find instances and replace old usages with this function.
-  pub fn infer_and_resolve_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
+  pub fn infer_and_flatten_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
     SemanticCheckContext::flatten_type(&node.infer_type(cache), cache)
   }
 
@@ -164,6 +164,7 @@ impl SemanticCheckContext {
     ty.clone()
   }
 
+  // TODO: Make use of this function throughout codebase.
   /// Compare two types for equality.
   ///
   /// The types passed-in will be resolved if needed before
@@ -420,11 +421,13 @@ impl SemanticCheck for ast::StructImpl {
 impl SemanticCheck for ast::MemberAccess {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let resolved_base_expr_type =
-      SemanticCheckContext::flatten_type(&self.base_expr.infer_type(cache), cache);
+      SemanticCheckContext::infer_and_flatten_type(&self.base_expr, cache);
 
     let struct_type = match resolved_base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
       // REVIEW: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
+      // ... But this point may be reachable from the user-side. Need to somehow properly
+      // ... handle this case.
       _ => return ast::Type::Error,
     };
 
@@ -451,7 +454,7 @@ impl SemanticCheck for ast::MemberAccess {
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     let resolved_base_expr_type =
-      SemanticCheckContext::flatten_type(&self.base_expr.infer_type(cache), cache);
+      SemanticCheckContext::infer_and_flatten_type(&self.base_expr, cache);
 
     let struct_type = match resolved_base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
@@ -595,7 +598,7 @@ impl SemanticCheck for ast::UnaryExpr {
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let expr_type = SemanticCheckContext::infer_and_resolve_type(&self.expr, cache);
+    let expr_type = SemanticCheckContext::infer_and_flatten_type(&self.expr, cache);
 
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
@@ -674,12 +677,9 @@ impl SemanticCheck for ast::AssignStmt {
     // TODO: Need to unify the value and the target's type.
 
     // REVIEW: No need to flatten the type?
-    let assignee_type = self.assignee_expr.infer_type(cache);
+    let assignee_type = SemanticCheckContext::infer_and_flatten_type(&self.assignee_expr, cache);
 
-    if matches!(
-      SemanticCheckContext::flatten_type(&assignee_type, cache),
-      ast::Type::Reference(_)
-    ) {
+    if matches!(assignee_type, ast::Type::Reference(_)) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("can't assign to a reference; references cannot be reseated"),
@@ -752,7 +752,7 @@ impl SemanticCheck for ast::ArrayIndexing {
 
     // REVISE: Unnecessary cloning.
     let array_type = match target_array_variable {
-      ast::NodeKind::LetStmt(let_stmt) => let_stmt.infer_type(cache),
+      ast::NodeKind::LetStmt(let_stmt) => let_stmt.value.infer_type(cache),
       ast::NodeKind::Parameter(parameter) => parameter.ty.clone(),
       _ => unreachable!(),
     };
@@ -897,6 +897,22 @@ impl SemanticCheck for ast::BlockExpr {
       };
     } else if !self.statements.is_empty() && self.yields_last_expr {
       return self.statements.last().unwrap().infer_type(cache);
+    }
+
+    // BUG: What about the inferred return type when the only return statement is inside
+    // ... an `if` statement? Is that possible?
+    // REVIEW: What about unsafe blocks nested inside parentheses expression?
+    // ... We should make the unsafe expression a statement instead, since block
+    // ... yields where removed. That action would also resolve this comment.
+    // REVISE: Inferring the type of the unsafe expression twice.
+    let nested_returning_unsafe_expr = self
+      .statements
+      .iter()
+      .filter(|statement| matches!(&statement.kind, ast::NodeKind::UnsafeExpr(_)))
+      .find(|unsafe_expr| !matches!(unsafe_expr.infer_type(cache), ast::Type::Unit));
+
+    if let Some(returning_unsafe_expr) = &nested_returning_unsafe_expr {
+      return returning_unsafe_expr.infer_type(cache);
     }
 
     ast::Type::Unit
@@ -1094,7 +1110,7 @@ impl SemanticCheck for ast::ReturnStmt {
     match &current_function_node {
       ast::NodeKind::Function(function) => {
         name = Some(function.name.clone());
-        return_type = function.body_block.infer_type(cache);
+        return_type = function.body.infer_type(cache);
       }
       ast::NodeKind::Closure(closure) => {
         return_type = closure.body.infer_type(cache);
@@ -1142,7 +1158,7 @@ impl SemanticCheck for ast::ReturnStmt {
 impl SemanticCheck for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // REVIEW: Why not use annotated return type if defined?
-    SemanticCheckContext::infer_prototype_type(&self.prototype, self.body_block.infer_type(cache))
+    SemanticCheckContext::infer_prototype_type(&self.prototype, self.body.infer_type(cache))
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
@@ -1157,9 +1173,9 @@ impl SemanticCheck for ast::Function {
 
     // TODO: Special case for the `main` function. Unify expected signature?
 
-    let return_type = self.body_block.infer_type(cache);
+    let return_type = self.body.infer_type(cache);
 
-    if !SemanticCheckContext::compare(&return_type, &self.body_block.infer_type(cache), cache) {
+    if !SemanticCheckContext::compare(&return_type, &self.body.infer_type(cache), cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "function body and prototype return type mismatch for function `{}`",
@@ -1199,7 +1215,7 @@ impl SemanticCheck for ast::Function {
     }
 
     self.prototype.check(context, cache);
-    self.body_block.check(context, cache);
+    self.body.check(context, cache);
     context.current_function_key = None;
   }
 }
@@ -1220,6 +1236,7 @@ impl SemanticCheck for ast::CallExpr {
     // REVIEW: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
     // REVIEW: Need access to the current function?
 
+    // TODO: Isn't there a need to flatten this type?
     let callee_expr_type = self.callee_expr.infer_type(cache);
 
     if !matches!(callee_expr_type, ast::Type::Function(_)) {
@@ -1276,21 +1293,27 @@ impl SemanticCheck for ast::CallExpr {
       );
     }
 
-    // FIXME: Straight up broken. Need to re-verify and fix.
     // FIXME: Different amount of arguments and parameters (due to variadic parameters) may affect this.
-    // Unify argument and parameter types.
-    // for (parameter, argument) in prototype.parameters.iter().zip(self.arguments.iter()) {
-    //   let parameter_type = parameter.infer_type(cache);
-    //   let argument_type = argument.infer_type(cache);
+    // Compare argument and parameter types.
+    for (parameter_type, argument) in callee_type
+      .parameter_types
+      .iter()
+      .zip(self.arguments.iter())
+    {
+      let resolved_argument_type = SemanticCheckContext::infer_and_flatten_type(argument, cache);
+      let resolved_parameter_type = SemanticCheckContext::flatten_type(parameter_type, cache);
 
-    //   if !TypeCheckContext::unify_option(parameter_type.as_ref(), argument_type.as_ref(), cache) {
-    //     // TODO: Include callee name in the error message.
-    //     context.diagnostics.error(format!(
-    //       "function call argument and parameter `{}` type mismatch",
-    //       parameter.0
-    //     ));
-    //   }
-    // }
+      if resolved_argument_type != resolved_parameter_type {
+        // TODO: Include callee name in the error message.
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+            "function call argument and parameter `{}` type mismatch",
+            // TODO: Parameter name.
+            "pending_name"
+          )),
+        );
+      }
+    }
 
     for argument in &self.arguments {
       argument.check(context, cache);
