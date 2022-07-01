@@ -8,7 +8,12 @@ pub enum SymbolKind {
   Type,
 }
 
-pub type Symbol = (String, SymbolKind);
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+pub struct Symbol {
+  pub base_name: String,
+  pub sub_name: Option<String>,
+  pub kind: SymbolKind,
+}
 
 type Scope = std::collections::HashMap<Symbol, cache::BindingId>;
 
@@ -69,7 +74,7 @@ impl Resolve for ast::SizeofIntrinsic {
   }
 }
 
-impl Resolve for ast::Import {
+impl Resolve for ast::Using {
   //
 }
 
@@ -109,11 +114,19 @@ impl Resolve for ast::StructImpl {
 
     resolver.push_scope();
 
-    for method in &self.methods {
+    for method in &self.member_methods {
       method.declare(resolver);
     }
 
+    // REVIEW: Doesn't this just simply invalidate all previous methods' declarations?
     resolver.force_pop_scope();
+
+    // REVIEW: Is this scope the correct one to declare the static methods?
+    // ... What about inside the `impl`'s scope itself, so that member methods can
+    // ... access static ones without the need for a qualifier?
+    for static_method in &self.static_methods {
+      static_method.declare(resolver);
+    }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
@@ -132,7 +145,7 @@ impl Resolve for ast::StructImpl {
       cache.add_struct_impl(
         struct_type_id,
         self
-          .methods
+          .member_methods
           .iter()
           .map(|method| (method.binding_id, method.name.clone()))
           .collect::<Vec<_>>(),
@@ -140,8 +153,14 @@ impl Resolve for ast::StructImpl {
 
       resolver.current_struct_type_id = Some(struct_type_id);
 
-      for method in &mut self.methods {
-        method.resolve(resolver, cache);
+      for member_method in &mut self.member_methods {
+        member_method.resolve(resolver, cache);
+      }
+
+      // REVIEW: Is it okay to export it to the current struct type id?
+      // ... If so, what purpose does it serve?
+      for static_method in &mut self.static_methods {
+        static_method.resolve(resolver, cache);
       }
 
       resolver.current_struct_type_id = None;
@@ -168,9 +187,11 @@ impl Resolve for ast::Closure {
     // FIXME: Continue implementation.
 
     for (_index, capture) in self.captures.iter_mut().enumerate() {
-      let symbol = (capture.0.clone(), SymbolKind::Definition);
-
-      capture.1 = resolver.local_lookup_or_error(&symbol);
+      capture.1 = resolver.local_lookup_or_error(&Symbol {
+        base_name: capture.0.clone(),
+        sub_name: None,
+        kind: SymbolKind::Definition,
+      });
 
       // FIXME: Anything else needs to be done here?
     }
@@ -194,7 +215,14 @@ impl Resolve for ast::Closure {
 
 impl Resolve for ast::TypeAlias {
   fn declare(&self, resolver: &mut NameResolver) {
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.binding_id);
+    resolver.declare_symbol(
+      Symbol {
+        base_name: self.name.clone(),
+        sub_name: None,
+        kind: SymbolKind::Type,
+      },
+      self.binding_id,
+    );
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
@@ -209,18 +237,22 @@ impl Resolve for ast::TypeAlias {
 // REVIEW: This might be getting too complicated. Maybe we should keep it simple in this case?
 impl Resolve for ast::Pattern {
   fn resolve(&mut self, resolver: &mut NameResolver, _cache: &mut cache::Cache) {
-    let symbol = (self.base_name.clone(), self.symbol_kind.clone());
+    let symbol = Symbol {
+      base_name: self.base_name.clone(),
+      sub_name: self.sub_name.clone(),
+      kind: self.symbol_kind.clone(),
+    };
 
-    if let Some(global_qualifier) = &self.global_qualifier {
+    if let Some(qualifier) = &self.qualifier {
       // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
-      self.target_id = resolver.lookup(global_qualifier.clone(), &symbol);
+      self.target_id = resolver.lookup(qualifier.clone(), &symbol);
 
       // TODO: Abstract and reuse error handling.
       if self.target_id.is_none() {
         resolver.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-            "could not retrieve global symbol: {}::{}::{}",
-            global_qualifier.0, global_qualifier.1, self.base_name
+            "qualified symbol does not exist: {}::{}::{}",
+            qualifier.package_name, qualifier.module_name, self.base_name
           )),
         );
       }
@@ -239,7 +271,14 @@ impl Resolve for ast::IntrinsicCall {
 
 impl Resolve for ast::ExternStatic {
   fn declare(&self, resolver: &mut NameResolver) {
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
+    resolver.declare_symbol(
+      Symbol {
+        base_name: self.name.clone(),
+        sub_name: None,
+        kind: SymbolKind::Definition,
+      },
+      self.binding_id,
+    );
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
@@ -260,7 +299,11 @@ impl Resolve for ast::StubType {
 impl Resolve for ast::StructValue {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
-    self.target_id = resolver.local_lookup_or_error(&(self.struct_name.clone(), SymbolKind::Type));
+    self.target_id = resolver.local_lookup_or_error(&Symbol {
+      base_name: self.struct_name.clone(),
+      sub_name: None,
+      kind: SymbolKind::Type,
+    });
 
     if let Some(_target_id) = self.target_id {
       // TODO: Create a struct type based off the target Struct node.
@@ -308,7 +351,14 @@ impl Resolve for ast::Prototype {
 
 impl Resolve for ast::StructType {
   fn declare(&self, resolver: &mut NameResolver) {
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.binding_id);
+    resolver.declare_symbol(
+      Symbol {
+        base_name: self.name.clone(),
+        sub_name: None,
+        kind: SymbolKind::Type,
+      },
+      self.binding_id,
+    );
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
@@ -340,7 +390,25 @@ impl Resolve for ast::UnaryExpr {
 
 impl Resolve for ast::Enum {
   fn declare(&self, resolver: &mut NameResolver) {
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.binding_id);
+    resolver.declare_symbol(
+      Symbol {
+        base_name: self.name.clone(),
+        sub_name: None,
+        kind: SymbolKind::Type,
+      },
+      self.binding_id,
+    );
+
+    for variant in &self.variants {
+      resolver.declare_symbol(
+        Symbol {
+          base_name: self.name.clone(),
+          sub_name: Some(variant.0.clone()),
+          kind: SymbolKind::Definition,
+        },
+        variant.1.clone(),
+      );
+    }
   }
 
   fn resolve(&mut self, _resolver: &mut NameResolver, cache: &mut cache::Cache) {
@@ -368,7 +436,12 @@ impl Resolve for ast::ArrayIndexing {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.index_expr.resolve(resolver, cache);
-    self.target_id = resolver.local_lookup_or_error(&(self.name.clone(), SymbolKind::Definition));
+
+    self.target_id = resolver.local_lookup_or_error(&Symbol {
+      base_name: self.name.clone(),
+      sub_name: None,
+      kind: SymbolKind::Definition,
+    });
   }
 }
 
@@ -398,7 +471,14 @@ impl Resolve for ast::UnsafeExpr {
 // ... virtualizing their environment).
 impl Resolve for ast::Parameter {
   fn declare(&self, resolver: &mut NameResolver) {
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
+    resolver.declare_symbol(
+      Symbol {
+        base_name: self.name.clone(),
+        sub_name: None,
+        kind: SymbolKind::Definition,
+      },
+      self.binding_id,
+    );
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
@@ -460,7 +540,15 @@ impl Resolve for ast::IfExpr {
 
 impl Resolve for ast::LetStmt {
   fn declare(&self, resolver: &mut NameResolver) {
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
+    resolver.declare_symbol(
+      Symbol {
+        base_name: self.name.clone(),
+        sub_name: None,
+        kind: SymbolKind::Definition,
+      },
+      self.binding_id,
+    );
+
     self.value.declare(resolver);
   }
 
@@ -538,7 +626,23 @@ impl Resolve for ast::Function {
     // prototype's scope tree, instead they will be merged, as expected.
     resolver.close_scope_tree(self.binding_id);
 
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
+    resolver.declare_symbol(
+      // TODO: Cleanup.
+      Symbol {
+        base_name: if let Some(static_owner_name) = &self.static_owner_name {
+          static_owner_name.clone()
+        } else {
+          self.name.clone()
+        },
+        sub_name: if self.static_owner_name.is_some() {
+          Some(self.name.clone())
+        } else {
+          None
+        },
+        kind: SymbolKind::Definition,
+      },
+      self.binding_id,
+    );
   }
 
   // REVIEW: This resolve step may need to be repeated for closure.
@@ -573,7 +677,14 @@ impl Resolve for ast::Function {
 
 impl Resolve for ast::ExternFunction {
   fn declare(&self, resolver: &mut NameResolver) {
-    resolver.declare_symbol((self.name.clone(), SymbolKind::Definition), self.binding_id);
+    resolver.declare_symbol(
+      Symbol {
+        base_name: self.name.clone(),
+        sub_name: None,
+        kind: SymbolKind::Definition,
+      },
+      self.binding_id,
+    );
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
@@ -625,14 +736,18 @@ impl Resolve for ast::BinaryExpr {
   }
 }
 
-pub type GlobalQualifier = (String, String);
+#[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+pub struct Qualifier {
+  pub package_name: String,
+  pub module_name: String,
+}
 
 #[derive(Clone)]
 pub struct NameResolver {
   diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
-  current_scope_qualifier: Option<GlobalQualifier>,
+  current_scope_qualifier: Option<Qualifier>,
   /// Contains the modules with their respective top-level definitions.
-  global_scopes: std::collections::HashMap<GlobalQualifier, Scope>,
+  global_scopes: std::collections::HashMap<Qualifier, Scope>,
   /// Contains volatile, relative scopes.
   ///
   /// Only used during the declare step. This is reset when the module changes,
@@ -647,7 +762,7 @@ pub struct NameResolver {
 }
 
 impl NameResolver {
-  pub fn new(initial_module: GlobalQualifier) -> Self {
+  pub fn new(initial_module_qualifier: Qualifier) -> Self {
     let mut result = Self {
       diagnostics: Vec::new(),
       current_scope_qualifier: None,
@@ -658,14 +773,14 @@ impl NameResolver {
       current_struct_type_id: None,
     };
 
-    result.create_module(initial_module);
+    result.create_module(initial_module_qualifier);
 
     result
   }
 
   pub fn run(
     &mut self,
-    ast_map: &mut std::collections::BTreeMap<GlobalQualifier, Vec<ast::Node>>,
+    ast_map: &mut std::collections::BTreeMap<Qualifier, Vec<ast::Node>>,
     cache: &mut cache::Cache,
   ) -> Vec<codespan_reporting::diagnostic::Diagnostic<usize>> {
     if ast_map.is_empty() {
@@ -677,18 +792,18 @@ impl NameResolver {
     // BUG: Cannot be processed linearly. Once an import is used, the whole corresponding
     // ... module must be recursively processed first!
 
-    for (global_qualifier, ast) in ast_map.iter() {
+    for (qualifier, ast) in ast_map.iter() {
       // REVIEW: Shouldn't the module be created before, on the Driver?
-      name_resolver.create_module(global_qualifier.clone());
-      name_resolver.current_scope_qualifier = Some(global_qualifier.clone());
+      name_resolver.create_module(qualifier.clone());
+      name_resolver.current_scope_qualifier = Some(qualifier.clone());
 
       for node in ast.iter() {
         node.declare(&mut name_resolver);
       }
     }
 
-    for (global_qualifier, ast) in ast_map {
-      name_resolver.current_scope_qualifier = Some(global_qualifier.clone());
+    for (qualifier, ast) in ast_map {
+      name_resolver.current_scope_qualifier = Some(qualifier.clone());
 
       for node in ast {
         // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
@@ -704,16 +819,16 @@ impl NameResolver {
   ///
   /// Return `false` if a module associated with the given global qualifier was
   /// already previously defined, or `true` if it was created.
-  pub fn create_module(&mut self, global_qualifier: GlobalQualifier) -> bool {
-    if self.global_scopes.contains_key(&global_qualifier) {
+  pub fn create_module(&mut self, qualifier: Qualifier) -> bool {
+    if self.global_scopes.contains_key(&qualifier) {
       return false;
     }
 
-    self.current_scope_qualifier = Some(global_qualifier.clone());
+    self.current_scope_qualifier = Some(qualifier.clone());
 
     self
       .global_scopes
-      .insert(global_qualifier, std::collections::HashMap::new());
+      .insert(qualifier, std::collections::HashMap::new());
 
     self.relative_scopes.clear();
 
@@ -731,8 +846,9 @@ impl NameResolver {
     // Check for existing definitions.
     if self.current_scope_contains(&symbol) {
       self.diagnostics.push(
+        // TODO: Include sub-name if available.
         codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message(format!("re-definition of `{}`", symbol.0)),
+          .with_message(format!("re-definition of `{}`", symbol.base_name)),
       );
 
       // REVIEW: What about calling the child's declare function?
@@ -800,13 +916,12 @@ impl NameResolver {
   }
 
   /// Lookup a symbol in the global scope of a specific package and module.
-  fn lookup(
-    &mut self,
-    global_qualifier: GlobalQualifier,
-    symbol: &Symbol,
-  ) -> Option<cache::BindingId> {
-    // REVISE: Unsafe unwrap. We assume the global scope exists for the given parameters.
-    let global_scope = self.global_scopes.get(&global_qualifier).unwrap();
+  fn lookup(&mut self, qualifier: Qualifier, symbol: &Symbol) -> Option<cache::BindingId> {
+    if !self.global_scopes.contains_key(&qualifier) {
+      return None;
+    }
+
+    let global_scope = self.global_scopes.get(&qualifier).unwrap();
 
     if let Some(binding_id) = global_scope.get(&symbol) {
       return Some(binding_id.clone());
@@ -844,9 +959,10 @@ impl NameResolver {
       return Some(binding_id.clone());
     }
 
+    // TODO: Include sub-name if available.
     self.diagnostics.push(
       codespan_reporting::diagnostic::Diagnostic::error()
-        .with_message(format!("undefined reference to `{}`", symbol.0)),
+        .with_message(format!("undefined reference to `{}`", symbol.base_name)),
     );
 
     None
@@ -862,12 +978,19 @@ impl NameResolver {
 mod tests {
   use super::*;
 
-  fn mock_qualifier() -> GlobalQualifier {
-    (String::from("test"), String::from("test"))
+  fn mock_qualifier() -> Qualifier {
+    Qualifier {
+      package_name: String::from("test_package"),
+      module_name: String::from("test_module"),
+    }
   }
 
   fn mock_symbol() -> Symbol {
-    (String::from("test"), SymbolKind::Definition)
+    Symbol {
+      base_name: String::from("test"),
+      sub_name: None,
+      kind: SymbolKind::Definition,
+    }
   }
 
   #[test]

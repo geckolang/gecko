@@ -218,17 +218,18 @@ impl<'a> Parser<'a> {
   ) -> ParserResult<ast::Pattern> {
     let starting_name = self.parse_name()?;
 
-    let global_qualifier = if self.is(&lexer::TokenKind::DoubleColon) {
+    let qualifier = if self.is(&lexer::TokenKind::DoubleColon) {
       self.skip()?;
 
-      let module_name = self.parse_name()?;
-
-      Some((starting_name.clone(), module_name))
+      Some(name_resolution::Qualifier {
+        package_name: starting_name.clone(),
+        module_name: self.parse_name()?,
+      })
     } else {
       None
     };
 
-    let base_name = if global_qualifier.is_none() {
+    let base_name = if qualifier.is_none() {
       starting_name
     } else {
       self.skip_past(&lexer::TokenKind::DoubleColon)?;
@@ -236,9 +237,20 @@ impl<'a> Parser<'a> {
       self.parse_name()?
     };
 
+    let sub_name = if self.is(&lexer::TokenKind::DoubleColon) {
+      self.skip_past(&lexer::TokenKind::DoubleColon)?;
+
+      Some(self.parse_name()?)
+    } else {
+      None
+    };
+
+    // TODO: Add support for static sub-entities.
+
     Ok(ast::Pattern {
-      global_qualifier,
+      qualifier,
       base_name,
+      sub_name,
       symbol_kind,
       target_id: None,
     })
@@ -549,7 +561,11 @@ impl<'a> Parser<'a> {
   }
 
   /// fn %prototype %block
-  fn parse_function(&mut self, attributes: Vec<ast::Attribute>) -> ParserResult<ast::Function> {
+  fn parse_function(
+    &mut self,
+    static_owner_name: Option<String>,
+    attributes: Vec<ast::Attribute>,
+  ) -> ParserResult<ast::Function> {
     // TODO: Support for visibility.
     self.skip_past(&lexer::TokenKind::Func)?;
 
@@ -569,6 +585,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Function {
       name,
+      static_owner_name,
       prototype,
       body: Box::new(body_block),
       attributes,
@@ -686,7 +703,7 @@ impl<'a> Parser<'a> {
     let token = self.get_token();
 
     let kind = match token? {
-      lexer::TokenKind::Func => ast::NodeKind::Function(self.parse_function(attributes)?),
+      lexer::TokenKind::Func => ast::NodeKind::Function(self.parse_function(None, attributes)?),
       lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Func) => {
         ast::NodeKind::ExternFunction(self.parse_extern_function(attributes)?)
       }
@@ -698,7 +715,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Type => ast::NodeKind::TypeAlias(self.parse_type_alias()?),
       lexer::TokenKind::Impl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
       lexer::TokenKind::Trait => ast::NodeKind::Trait(self.parse_trait()?),
-      lexer::TokenKind::Import => ast::NodeKind::Import(self.parse_import()?),
+      lexer::TokenKind::Using => ast::NodeKind::Import(self.parse_using()?),
       _ => return Err(self.expected("top-level construct")),
     };
 
@@ -1272,7 +1289,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// enum %name ':' %indent (%name (','))* %dedent
+  /// enum %name ':' %indent (%name ',')+ %dedent
   fn parse_enum(&mut self) -> ParserResult<ast::Enum> {
     self.skip_past(&lexer::TokenKind::Enum)?;
 
@@ -1284,13 +1301,12 @@ impl<'a> Parser<'a> {
 
     self.parse_indent()?;
 
+    // TODO: Support for different basic values/types.
     loop {
-      variants.push(self.parse_name()?);
+      variants.push((self.parse_name()?, self.cache.create_binding_id()));
+      self.skip_past(&lexer::TokenKind::Comma)?;
 
-      // TODO: Iron out case for lonely comma.
-      if self.is(&lexer::TokenKind::Comma) {
-        self.skip()?;
-      } else if self.is(&lexer::TokenKind::Dedent) {
+      if self.is(&lexer::TokenKind::Dedent) {
         break;
       }
     }
@@ -1301,10 +1317,14 @@ impl<'a> Parser<'a> {
       name,
       variants,
       binding_id: self.cache.create_binding_id(),
+      // TODO: Infer the type from the value, or default to `I32` if values are omitted.
+      // ... Issue an error diagnostic if the value is `nullptr`. Finally, verify that all
+      // ... the values are of the same inferred type.
+      ty: ast::BasicType::Int(ast::IntSize::I32),
     })
   }
 
-  /// struct %name ':' %indent (%name ':' %type ';')* %dedent
+  /// struct %name ':' %indent (%name ':' %type ',')+ %dedent
   fn parse_struct_type(&mut self) -> ParserResult<ast::StructType> {
     self.skip_past(&lexer::TokenKind::Struct)?;
 
@@ -1418,13 +1438,22 @@ impl<'a> Parser<'a> {
 
     // TODO: Support for trait specifications/implementations.
 
-    let mut methods = Vec::new();
+    let mut member_methods = Vec::new();
+    let mut static_methods = Vec::new();
 
     // TODO: Should be a do-while loop.
     // FIXME: Ensure indentation is properly implemented here.
     loop {
-      // TODO: Support for attributes.
-      methods.push(self.parse_function(Vec::new())?);
+      // REVISE: Simplify?
+      if self.is(&lexer::TokenKind::Static) {
+        self.skip()?;
+
+        static_methods
+          .push(self.parse_function(Some(target_struct_pattern.base_name.clone()), Vec::new())?)
+      } else {
+        // TODO: Support for attributes.
+        member_methods.push(self.parse_function(None, Vec::new())?);
+      }
 
       if self.is(&lexer::TokenKind::Dedent) {
         break;
@@ -1438,7 +1467,8 @@ impl<'a> Parser<'a> {
       is_default: false,
       target_struct_pattern,
       trait_pattern,
-      methods,
+      member_methods,
+      static_methods,
     })
   }
 
@@ -1485,8 +1515,9 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_import(&mut self) -> ParserResult<ast::Import> {
-    self.skip_past(&lexer::TokenKind::Import)?;
+  /// using %pattern ('::' '{' (%name ',')+ '}')
+  fn parse_using(&mut self) -> ParserResult<ast::Using> {
+    self.skip_past(&lexer::TokenKind::Using)?;
 
     let package_name = self.parse_name()?;
 
@@ -1494,7 +1525,7 @@ impl<'a> Parser<'a> {
 
     let module_name = self.parse_name()?;
 
-    Ok(ast::Import {
+    Ok(ast::Using {
       package_name,
       module_name,
     })

@@ -35,10 +35,7 @@ mod tests {
       .collect()
   }
 
-  fn lower_file(
-    source_file_path: &str,
-    global_qualifier: gecko::name_resolution::GlobalQualifier,
-  ) -> String {
+  fn lower_file(source_file_path: &str, qualifier: gecko::name_resolution::Qualifier) -> String {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let mut cache = gecko::cache::Cache::new();
@@ -53,12 +50,10 @@ mod tests {
 
     assert!(top_level_nodes.is_ok());
 
-    // FIXME: Pass the first global qualifier, instead of this dummy value.
-    let mut name_resolver =
-      gecko::name_resolution::NameResolver::new((String::from("pending"), String::from("pending")));
+    // REVIEW: Is this the correct qualifier to pass it?
+    let mut name_resolver = gecko::name_resolution::NameResolver::new(qualifier.clone());
 
-    name_resolver.create_module(global_qualifier.clone());
-    ast_map.insert(global_qualifier, top_level_nodes.unwrap());
+    ast_map.insert(qualifier, top_level_nodes.unwrap());
 
     // After all the ASTs have been collected, perform name resolution step.
     assert!(name_resolver.run(&mut ast_map, &mut cache).is_empty());
@@ -79,9 +74,9 @@ mod tests {
 
     // REVISE: Any way for better efficiency (less loops)?
     // Once symbols are resolved, we can proceed to the other phases.
-    for (global_qualifier, inner_ast) in &mut ast_map {
+    for (qualifier, inner_ast) in &mut ast_map {
       // REVIEW: Must join package and module name for uniqueness?
-      llvm_generator.module_name = global_qualifier.1.clone();
+      llvm_generator.module_name = qualifier.module_name.clone();
 
       for top_level_node in inner_ast {
         top_level_node.lower(&mut llvm_generator, &mut cache, false);
@@ -137,11 +132,10 @@ mod tests {
         .to_string();
 
       // REVISE: File names need to conform to identifier rules.
-      let global_qualifier = (
-        String::from("string"),
-        // REVISE: Long conversion. Any way to simplify?
-        source_file_name.clone(),
-      );
+      let qualifier = gecko::name_resolution::Qualifier {
+        package_name: String::from("string"),
+        module_name: source_file_name.clone(),
+      };
 
       let output_file_path = tests_output_path
         .join(source_file_name)
@@ -152,7 +146,7 @@ mod tests {
       assert!(output_file_contents.is_ok());
 
       assert_eq!(
-        lower_file(&sources[index], global_qualifier).trim(),
+        lower_file(&sources[index], qualifier).trim(),
         output_file_contents.unwrap().trim()
       );
     }

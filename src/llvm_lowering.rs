@@ -54,7 +54,7 @@ impl Lower for ast::SizeofIntrinsic {
   }
 }
 
-impl Lower for ast::Import {
+impl Lower for ast::Using {
   //
 }
 
@@ -81,7 +81,7 @@ impl Lower for ast::StructImpl {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    for method in &self.methods {
+    for method in &self.member_methods {
       method.lower(generator, cache, false).unwrap();
     }
 
@@ -335,8 +335,8 @@ impl Lower for ast::Enum {
     _cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    for (index, name) in self.variants.iter().enumerate() {
-      let llvm_name = generator.mangle_name(&format!("enum.{}.{}", self.name, name));
+    for (index, variant) in self.variants.iter().enumerate() {
+      let llvm_name = generator.mangle_name(&format!("enum.{}.{}", self.name, variant.0));
 
       let llvm_variant_global = generator.llvm_module.add_global(
         generator.llvm_context.i32_type(),
@@ -2172,7 +2172,8 @@ mod tests {
 
     let enum_ = ast::NodeKind::Enum(ast::Enum {
       name: "a".to_string(),
-      variants: vec!["b".to_string(), "c".to_string()],
+      variants: vec![("b".to_string(), 0), ("c".to_string(), 1)],
+      ty: ast::BasicType::Int(ast::IntSize::I32),
       binding_id: 0,
     });
 

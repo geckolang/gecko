@@ -169,7 +169,7 @@ pub enum NodeKind {
   StructImpl(StructImpl),
   Trait(Trait),
   ParenthesesExpr(ParenthesesExpr),
-  Import(Import),
+  Import(Using),
   SizeofIntrinsic(SizeofIntrinsic),
 }
 
@@ -179,7 +179,7 @@ pub struct Node {
 }
 
 #[derive(Debug, Clone)]
-pub struct Import {
+pub struct Using {
   pub package_name: String,
   pub module_name: String,
 }
@@ -208,8 +208,9 @@ pub struct ThisType {
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
-  pub global_qualifier: Option<name_resolution::GlobalQualifier>,
+  pub qualifier: Option<name_resolution::Qualifier>,
   pub base_name: String,
+  pub sub_name: Option<String>,
   pub symbol_kind: name_resolution::SymbolKind,
   pub target_id: Option<cache::BindingId>,
 }
@@ -234,7 +235,8 @@ pub struct StructImpl {
   pub is_default: bool,
   pub target_struct_pattern: Pattern,
   pub trait_pattern: Option<Pattern>,
-  pub methods: Vec<Function>,
+  pub member_methods: Vec<Function>,
+  pub static_methods: Vec<Function>,
 }
 
 #[derive(Debug, Clone)]
@@ -247,8 +249,9 @@ pub struct Trait {
 #[derive(Debug, Clone)]
 pub struct Enum {
   pub name: String,
-  pub variants: Vec<String>,
+  pub variants: Vec<(String, cache::BindingId)>,
   pub binding_id: cache::BindingId,
+  pub ty: BasicType,
 }
 
 #[derive(Debug, Clone)]
@@ -355,6 +358,7 @@ pub struct Attribute {
 
 #[derive(Debug, Clone)]
 pub struct Function {
+  pub static_owner_name: Option<String>,
   pub name: String,
   pub prototype: Prototype,
   pub body: Box<BlockExpr>,

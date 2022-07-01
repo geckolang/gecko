@@ -15,7 +15,7 @@ pub struct SemanticCheckContext {
   current_function_key: Option<cache::BindingId>,
   // REVISE: Make use-of or discard.
   _types_cache: std::collections::HashMap<cache::BindingId, ast::Type>,
-  imports: Vec<ast::Import>,
+  usings: Vec<ast::Using>,
   constraints: Vec<TypeConstraint>,
   substitution: Vec<ast::Type>,
 }
@@ -26,7 +26,7 @@ impl SemanticCheckContext {
     cache: &cache::Cache,
   ) -> (
     Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
-    Vec<ast::Import>,
+    Vec<ast::Using>,
   ) {
     let mut semantic_check_context = SemanticCheckContext::new();
 
@@ -37,7 +37,7 @@ impl SemanticCheckContext {
 
     (
       semantic_check_context.diagnostics,
-      semantic_check_context.imports,
+      semantic_check_context.usings,
     )
   }
 
@@ -49,7 +49,7 @@ impl SemanticCheckContext {
       in_impl: false,
       current_function_key: None,
       _types_cache: std::collections::HashMap::new(),
-      imports: Vec::new(),
+      usings: Vec::new(),
       constraints: Vec::new(),
       substitution: Vec::new(),
     }
@@ -320,10 +320,10 @@ impl SemanticCheck for ast::SizeofIntrinsic {
   }
 }
 
-impl SemanticCheck for ast::Import {
+impl SemanticCheck for ast::Using {
   fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
     // FIXME: Can't just push the import once encountered; only when it's actually used.
-    context.imports.push(self.clone());
+    context.usings.push(self.clone());
   }
 }
 
@@ -345,7 +345,7 @@ impl SemanticCheck for ast::StructImpl {
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
     context.in_impl = true;
 
-    for method in &self.methods {
+    for method in &self.member_methods {
       if !method.prototype.accepts_instance {
         context.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
@@ -368,7 +368,7 @@ impl SemanticCheck for ast::StructImpl {
         if let ast::NodeKind::Trait(trait_type) = &trait_node {
           for trait_method in &trait_type.methods {
             let impl_method_result = self
-              .methods
+              .member_methods
               .iter()
               .find(|impl_method| impl_method.name == trait_method.0);
 
@@ -669,7 +669,7 @@ impl SemanticCheck for ast::UnaryExpr {
 }
 
 impl SemanticCheck for ast::Enum {
-  //
+  // REVIEW: Isn't there a need for its variants to be considered integer types?
 }
 
 impl SemanticCheck for ast::AssignStmt {
@@ -1171,8 +1171,6 @@ impl SemanticCheck for ast::Function {
       );
     }
 
-    // TODO: Special case for the `main` function. Unify expected signature?
-
     let return_type = self.body.infer_type(cache);
 
     if !SemanticCheckContext::compare(&return_type, &self.body.infer_type(cache), cache) {
@@ -1194,22 +1192,21 @@ impl SemanticCheck for ast::Function {
     }
 
     if self.name == llvm_lowering::MAIN_FUNCTION_NAME {
-      let main_prototype = ast::Prototype {
-        // TODO: Parameters. Also, the comparison should ignore parameter names.
-        parameters: vec![],
-        return_type_annotation: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      let main_function_type = ast::Type::Function(ast::FunctionType {
+        parameter_types: vec![
+          ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+          ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::String))),
+        ],
+        return_type: Box::new(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
         is_variadic: false,
-        accepts_instance: false,
-        instance_type_id: None,
-        this_parameter: None,
         is_extern: false,
-      };
+      });
 
-      // REVISE: Simplify.
-      if self.prototype.infer_type(cache) != main_prototype.infer_type(cache) {
+      if self.infer_type(cache) != main_function_type {
         context.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message("the `main` function has an invalid signature"),
+            .with_message("the `main` function has an invalid signature")
+            .with_notes(vec![String::from("should accept a first parameter of type `Int`, a second one of type `*Str`, and the return type should be `Int`"), String::from("cannot be marked as variadic or extern")]),
         );
       }
     }

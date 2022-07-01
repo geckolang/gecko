@@ -62,7 +62,7 @@ impl Lint for ast::SizeofIntrinsic {
   //
 }
 
-impl Lint for ast::Import {
+impl Lint for ast::Using {
   //
 }
 
@@ -232,7 +232,7 @@ impl Lint for ast::Enum {
     for variant in &self.variants {
       context.lint_name_casing(
         format!("enum `{}` variant", &self.name).as_str(),
-        &variant,
+        &variant.0,
         convert_case::Case::Pascal,
       );
     }

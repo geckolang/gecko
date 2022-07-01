@@ -126,8 +126,9 @@ pub mod tests {
     pub fn reference(binding_id: cache::BindingId) -> Box<ast::Node> {
       Mock::node(ast::NodeKind::Reference(ast::Reference {
         pattern: ast::Pattern {
-          global_qualifier: None,
+          qualifier: None,
           base_name: "test".to_string(),
+          sub_name: None,
           symbol_kind: name_resolution::SymbolKind::Definition,
           target_id: Some(binding_id),
         },

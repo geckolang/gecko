@@ -78,7 +78,7 @@ pub enum TokenKind {
   Equality,
   FatArrow,
   Ellipsis,
-  Import,
+  Using,
   DoubleColon,
   QuestionMark,
   Sizeof,
@@ -346,7 +346,7 @@ impl Lexer {
 
       return Ok(TokenKind::Indent);
     } else if self.indent_counter < self.indent_level {
-      self.indent_level = self.indent_counter;
+      self.indent_level -= 1;
 
       return Ok(TokenKind::Dedent);
     }
@@ -510,7 +510,7 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "Unit" => TokenKind::TypeUnit,
     "true" => TokenKind::Bool(true),
     "false" => TokenKind::Bool(false),
-    "import" => TokenKind::Import,
+    "using" => TokenKind::Using,
     "sizeof" => TokenKind::Sizeof,
     "const" => TokenKind::Const,
     "pass" => TokenKind::Pass,
@@ -792,6 +792,10 @@ mod tests {
     assert_eq!(Ok(TokenKind::Dedent), lexer.lex_token());
     assert_eq!(Ok(TokenKind::EOF), lexer.lex_token());
   }
+
+  // TODO: Write test to ensure that dedents slowly decent (such as the case with `impl`).
+  // ... The change that was used to "fix" this was the decremental of the indentation level,
+  // ... instead of simply setting it equal to the indent counter.
 
   #[test]
   fn lex_all() {
