@@ -43,19 +43,6 @@ impl Resolve for ast::Type {
   }
 }
 
-// REVISE: Get rid-of. `NodeKind` is preferred. This is redundant.
-impl Resolve for ast::Node {
-  // REVIEW: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
-
-  fn declare(&self, resolver: &mut NameResolver) {
-    crate::dispatch!(&self.kind, Resolve::declare, resolver);
-  }
-
-  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    crate::dispatch!(&mut self.kind, Resolve::resolve, resolver, cache);
-  }
-}
-
 impl Resolve for ast::NodeKind {
   // REVIEW: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
@@ -80,11 +67,11 @@ impl Resolve for ast::Using {
 
 impl Resolve for ast::ParenthesesExpr {
   fn declare(&self, resolver: &mut NameResolver) {
-    self.expr.declare(resolver);
+    self.expr.kind.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.expr.resolve(resolver, cache);
+    self.expr.kind.resolve(resolver, cache);
   }
 }
 
@@ -118,7 +105,7 @@ impl Resolve for ast::StructImpl {
       method.declare(resolver);
     }
 
-    // REVIEW: Doesn't this just simply invalidate all previous methods' declarations?
+    // FIXME: Doesn't this just simply invalidate all previous methods' declarations?
     resolver.force_pop_scope();
 
     // REVIEW: Is this scope the correct one to declare the static methods?
@@ -170,7 +157,7 @@ impl Resolve for ast::StructImpl {
 
 impl Resolve for ast::MemberAccess {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.base_expr.resolve(resolver, cache);
+    self.base_expr.kind.resolve(resolver, cache);
   }
 }
 
@@ -311,7 +298,7 @@ impl Resolve for ast::StructValue {
     }
 
     for field in &mut self.fields {
-      field.resolve(resolver, cache);
+      field.kind.resolve(resolver, cache);
     }
   }
 }
@@ -384,7 +371,7 @@ impl Resolve for ast::FunctionType {
 
 impl Resolve for ast::UnaryExpr {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.expr.resolve(resolver, cache);
+    self.expr.kind.resolve(resolver, cache);
   }
 }
 
@@ -420,8 +407,8 @@ impl Resolve for ast::Enum {
 
 impl Resolve for ast::AssignStmt {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.assignee_expr.resolve(resolver, cache);
-    self.value.resolve(resolver, cache);
+    self.assignee_expr.kind.resolve(resolver, cache);
+    self.value.kind.resolve(resolver, cache);
   }
 }
 
@@ -429,13 +416,13 @@ impl Resolve for ast::ContinueStmt {
   //
 }
 
-impl Resolve for ast::ArrayIndexing {
+impl Resolve for ast::IndexingExpr {
   fn declare(&self, resolver: &mut NameResolver) {
-    self.index_expr.declare(resolver);
+    self.index_expr.kind.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.index_expr.resolve(resolver, cache);
+    self.index_expr.kind.resolve(resolver, cache);
 
     self.target_id = resolver.local_lookup_or_error(&Symbol {
       base_name: self.name.clone(),
@@ -445,23 +432,23 @@ impl Resolve for ast::ArrayIndexing {
   }
 }
 
-impl Resolve for ast::ArrayValue {
+impl Resolve for ast::StaticArrayValue {
   // TODO: Do we need to declare the struct value's expressions?
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for element in &mut self.elements {
-      element.resolve(resolver, cache);
+      element.kind.resolve(resolver, cache);
     }
   }
 }
 
 impl Resolve for ast::UnsafeExpr {
   fn declare(&self, resolver: &mut NameResolver) {
-    self.0.declare(resolver);
+    self.0.kind.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.0.resolve(resolver, cache);
+    self.0.kind.resolve(resolver, cache);
   }
 }
 
@@ -503,7 +490,7 @@ impl Resolve for ast::BreakStmt {
 impl Resolve for ast::LoopStmt {
   fn declare(&self, resolver: &mut NameResolver) {
     if let Some(condition) = &self.condition {
-      condition.declare(resolver);
+      condition.kind.declare(resolver);
     }
 
     self.body.declare(resolver);
@@ -511,7 +498,7 @@ impl Resolve for ast::LoopStmt {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(condition) = &mut self.condition {
-      condition.resolve(resolver, cache);
+      condition.kind.resolve(resolver, cache);
     }
 
     self.body.resolve(resolver, cache);
@@ -520,20 +507,20 @@ impl Resolve for ast::LoopStmt {
 
 impl Resolve for ast::IfExpr {
   fn declare(&self, resolver: &mut NameResolver) {
-    self.condition.declare(resolver);
-    self.then_value.declare(resolver);
+    self.condition.kind.declare(resolver);
+    self.then_value.kind.declare(resolver);
 
     if let Some(else_block) = &self.else_value {
-      else_block.declare(resolver);
+      else_block.kind.declare(resolver);
     }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.condition.resolve(resolver, cache);
-    self.then_value.resolve(resolver, cache);
+    self.condition.kind.resolve(resolver, cache);
+    self.then_value.kind.resolve(resolver, cache);
 
     if let Some(else_block) = &mut self.else_value {
-      else_block.resolve(resolver, cache);
+      else_block.kind.resolve(resolver, cache);
     }
   }
 }
@@ -549,14 +536,14 @@ impl Resolve for ast::LetStmt {
       self.binding_id,
     );
 
-    self.value.declare(resolver);
+    self.value.kind.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     // BUG: The problem seems to be occurring only when using let-statements. Investigate.
     // ... On the second iteration of the resolve step only! During cached nodes resolution.
 
-    self.value.resolve(resolver, cache);
+    self.value.kind.resolve(resolver, cache);
 
     // REVIEW: Annotated type is not being resolved.
 
@@ -569,13 +556,13 @@ impl Resolve for ast::LetStmt {
 impl Resolve for ast::ReturnStmt {
   fn declare(&self, resolver: &mut NameResolver) {
     if let Some(value) = &self.value {
-      value.declare(resolver);
+      value.kind.declare(resolver);
     }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(value) = &mut self.value {
-      value.resolve(resolver, cache);
+      value.kind.resolve(resolver, cache);
     }
   }
 }
@@ -585,7 +572,7 @@ impl Resolve for ast::BlockExpr {
     resolver.push_scope();
 
     for statement in &self.statements {
-      statement.declare(resolver);
+      statement.kind.declare(resolver);
     }
 
     resolver.close_scope_tree(self.binding_id);
@@ -599,7 +586,7 @@ impl Resolve for ast::BlockExpr {
     resolver.current_block_binding_id = Some(self.binding_id);
 
     for statement in &mut self.statements {
-      statement.resolve(resolver, cache);
+      statement.kind.resolve(resolver, cache);
     }
 
     resolver.current_block_binding_id = previous_block_binding_id;
@@ -701,38 +688,38 @@ impl Resolve for ast::CallExpr {
     // Declare any possible `Definition` nodes in the arguments
     // (such as inline closures, etc.).
     for argument in &self.arguments {
-      argument.declare(resolver);
+      argument.kind.declare(resolver);
     }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.callee_expr.resolve(resolver, cache);
+    self.callee_expr.kind.resolve(resolver, cache);
 
     for argument in &mut self.arguments {
-      argument.resolve(resolver, cache);
+      argument.kind.resolve(resolver, cache);
     }
   }
 }
 
 impl Resolve for ast::InlineExprStmt {
   fn declare(&self, resolver: &mut NameResolver) {
-    self.expr.declare(resolver);
+    self.expr.kind.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.expr.resolve(resolver, cache);
+    self.expr.kind.resolve(resolver, cache);
   }
 }
 
 impl Resolve for ast::BinaryExpr {
   fn declare(&self, resolver: &mut NameResolver) {
-    self.left.declare(resolver);
-    self.right.declare(resolver);
+    self.left.kind.declare(resolver);
+    self.right.kind.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.left.resolve(resolver, cache);
-    self.right.resolve(resolver, cache);
+    self.left.kind.resolve(resolver, cache);
+    self.right.kind.resolve(resolver, cache);
   }
 }
 
@@ -798,7 +785,7 @@ impl NameResolver {
       name_resolver.current_scope_qualifier = Some(qualifier.clone());
 
       for node in ast.iter() {
-        node.declare(&mut name_resolver);
+        node.kind.declare(&mut name_resolver);
       }
     }
 
@@ -808,7 +795,7 @@ impl NameResolver {
       for node in ast {
         // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
         // ... an auxiliary map must be accepted in the parameters.
-        node.resolve(&mut name_resolver, cache);
+        node.kind.resolve(&mut name_resolver, cache);
       }
     }
 

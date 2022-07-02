@@ -24,8 +24,8 @@ macro_rules! dispatch {
       ast::NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::UnsafeExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ArrayIndexing(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::StaticArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::IndexingExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Enum(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::StructType(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
@@ -156,8 +156,8 @@ pub enum NodeKind {
   UnaryExpr(UnaryExpr),
   Parameter(Parameter),
   UnsafeExpr(UnsafeExpr),
-  ArrayValue(ArrayValue),
-  ArrayIndexing(ArrayIndexing),
+  StaticArrayValue(StaticArrayValue),
+  IndexingExpr(IndexingExpr),
   Enum(Enum),
   StructType(StructType),
   Prototype(Prototype),
@@ -258,14 +258,14 @@ pub struct Enum {
 pub struct ContinueStmt;
 
 #[derive(Debug, Clone)]
-pub struct ArrayIndexing {
+pub struct IndexingExpr {
   pub name: String,
   pub index_expr: Box<Node>,
   pub target_id: Option<cache::BindingId>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ArrayValue {
+pub struct StaticArrayValue {
   pub elements: Vec<Node>,
   /// Holds the type of the array, in case it is an empty array.
   pub explicit_type: Option<Type>,

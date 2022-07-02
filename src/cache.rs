@@ -26,8 +26,6 @@ impl Cache {
     }
   }
 
-  // TODO: Use this function as a guide to ensure that nothing is looked up
-  // ... or inferred before its actually resolved. Within the type-checker.
   /// Forcefully retrieve a node from the cache.
   ///
   /// This function will panic if the given key does not exist.

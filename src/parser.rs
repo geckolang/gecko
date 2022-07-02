@@ -21,7 +21,6 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
   }
 }
 
-// REVIEW: Can't we use this to determine whether a token is an operator or not?
 fn get_token_precedence(token: &lexer::TokenKind) -> usize {
   // FIXME: What about the `not` operator, and others?
   match token {
@@ -89,11 +88,8 @@ impl<'a> Parser<'a> {
   pub fn parse_all(&mut self) -> ParserResult<Vec<ast::Node>> {
     let mut result = Vec::new();
 
-    // REVIEW: There might be a bug here with the recent changes made.
     while !self.is_eof() {
       result.push(self.parse_root_node()?);
-
-      // FIXME: Nothing being done to the parsed top-level node.
     }
 
     Ok(result)
@@ -360,7 +356,6 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Basic(ast::BasicType::Int(size)))
   }
 
-  // REVIEW: Merge with the `parse_type` function (too small)?
   /// bool
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::TypeBool)?;
@@ -435,8 +430,6 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_unit_type(&mut self) -> ParserResult<ast::Type> {
-    // REVIEW: Do we need to ensure that nothing is applied to the unit type?
-
     self.skip_past(&lexer::TokenKind::TypeUnit)?;
 
     Ok(ast::Type::Unit)
@@ -861,11 +854,6 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Unsafe)?;
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    // BUG: Is there a need for a semi-colon here? I think there is, since the unsafe
-    // ... block contains an expression as its last syntax element. Perhaps all those that
-    // ... include an expression as their last syntax element require a semi-colon (to avoid
-    // ... ambiguity with the binary operation parsing).
-
     Ok(ast::UnsafeExpr(Box::new(self.parse_expr()?)))
   }
 
@@ -918,7 +906,7 @@ impl<'a> Parser<'a> {
   }
 
   /// '[' (%expr (','))* ']'
-  fn parse_array_value(&mut self) -> ParserResult<ast::ArrayValue> {
+  fn parse_array_value(&mut self) -> ParserResult<ast::StaticArrayValue> {
     let mut elements = Vec::new();
 
     self.skip_past(&lexer::TokenKind::BracketL)?;
@@ -942,14 +930,14 @@ impl<'a> Parser<'a> {
       None
     };
 
-    Ok(ast::ArrayValue {
+    Ok(ast::StaticArrayValue {
       elements,
       explicit_type,
     })
   }
 
   /// %name '[' %expr ']'
-  fn parse_array_indexing(&mut self) -> ParserResult<ast::ArrayIndexing> {
+  fn parse_array_indexing(&mut self) -> ParserResult<ast::IndexingExpr> {
     // TODO: Work with a pattern instead.
     let name = self.parse_name()?;
 
@@ -959,7 +947,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
-    Ok(ast::ArrayIndexing {
+    Ok(ast::IndexingExpr {
       name,
       index_expr: index,
       target_id: None,
@@ -1062,10 +1050,10 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::DollarSign => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       // REVISE: Change this syntax to the same treatment as call expressions (check afterwards).
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::BracketL) => {
-        ast::NodeKind::ArrayIndexing(self.parse_array_indexing()?)
+        ast::NodeKind::IndexingExpr(self.parse_array_indexing()?)
       }
       lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
-      lexer::TokenKind::BracketL => ast::NodeKind::ArrayValue(self.parse_array_value()?),
+      lexer::TokenKind::BracketL => ast::NodeKind::StaticArrayValue(self.parse_array_value()?),
       lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
       lexer::TokenKind::Indent => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
@@ -1441,8 +1429,6 @@ impl<'a> Parser<'a> {
     let mut member_methods = Vec::new();
     let mut static_methods = Vec::new();
 
-    // TODO: Should be a do-while loop.
-    // FIXME: Ensure indentation is properly implemented here.
     loop {
       // REVISE: Simplify?
       if self.is(&lexer::TokenKind::Static) {

@@ -244,6 +244,7 @@ impl Lexer {
         Some('r') => "\r",
         Some('\\') => "\\",
         // REVIEW: Are we missing any other important escape sequence codes?
+        // TODO: Add null character escape (`\00`).
         Some(char) => {
           return Err(
             codespan_reporting::diagnostic::Diagnostic::error()

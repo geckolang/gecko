@@ -61,7 +61,9 @@ mod tests {
     // Once symbols are resolved, we can proceed to the other phases.
     for inner_ast in ast_map.values_mut() {
       for top_level_node in inner_ast {
-        top_level_node.check(&mut semantic_check_context, &mut cache);
+        top_level_node
+          .kind
+          .check(&mut semantic_check_context, &mut cache);
 
         // REVIEW: Can we mix linting with type-checking without any problems?
         top_level_node.lint(&mut cache, &mut lint_context);

@@ -394,20 +394,21 @@ impl Lower for ast::ContinueStmt {
   }
 }
 
-impl Lower for ast::ArrayIndexing {
+impl Lower for ast::IndexingExpr {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // TODO: Consider adding support for indexing strings (or better yet, generalized indexing implementation).
+
     let llvm_index = self
       .index_expr
       .lower(generator, cache, false)
       .unwrap()
       .into_int_value();
 
-    // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: Opted not to use access rules. Ensure this is correct.
     let llvm_target_array = generator
       .memoize_or_retrieve_value(self.target_id.unwrap(), cache, false, false)
@@ -424,12 +425,22 @@ impl Lower for ast::ArrayIndexing {
         "array.index.gep",
       );
 
+      let target_indexable_type = cache.force_get(&self.target_id.unwrap()).infer_type(cache);
+
+      let target_indexable_size = match target_indexable_type {
+        ast::Type::Array(_, size) => size,
+        _ => unreachable!(),
+      };
+
       generator.build_panic_assertion(
         inkwell::IntPredicate::ULT,
         (
           llvm_index,
-          // REVIEW: Is this the correct way to get the size of the array? Probably not.
-          generator.llvm_context.i32_type().const_int(3, false),
+          generator
+            .llvm_context
+            .i32_type()
+            // TODO: Is this conversion safe? Should we make indexable types' sizes be `u64`?
+            .const_int(target_indexable_size as u64, false),
         ),
         // REVISE: Temporary, the `panic` prefix should be added automatically.
         "panic: array index out of bounds".to_string(),
@@ -441,22 +452,20 @@ impl Lower for ast::ArrayIndexing {
   }
 }
 
-impl Lower for ast::ArrayValue {
+impl Lower for ast::StaticArrayValue {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let mut llvm_values = Vec::new();
+    let llvm_values = self
+      .elements
+      .iter()
+      .map(|element| element.lower(generator, cache, false).unwrap())
+      .collect::<Vec<_>>();
 
-    llvm_values.reserve(self.elements.len());
-
-    for element in &self.elements {
-      llvm_values.push(element.lower(generator, cache, false).unwrap());
-    }
-
-    // TODO: Is this cast (usize -> u32) safe?
+    // REVIEW: Is this cast (usize -> u32) safe?
     let llvm_array_type = if llvm_values.is_empty() {
       generator.memoize_or_retrieve_type(self.explicit_type.as_ref().unwrap(), cache)
     } else {
@@ -468,7 +477,6 @@ impl Lower for ast::ArrayValue {
       .llvm_builder
       .build_alloca(llvm_array_type, "array.value");
 
-    // REVISE: Two loops in a single function is redundant (adds complexity). With a single one should be fine. Re-implement.
     for (index, llvm_value) in llvm_values.iter().enumerate() {
       let first_index = generator.llvm_context.i32_type().const_int(0, false);
 
@@ -528,7 +536,7 @@ impl Lower for ast::UnsafeExpr {
     cache: &cache::Cache,
     access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // REVIEW: Is it correct to pass the `access` parameter along?
+    // REVIEW: Is it correct to pass the `access` parameter along? If this will serve as an expression, then yes, otherwise (block) no.
     self.0.lower(generator, cache, access)
   }
 }
@@ -544,6 +552,8 @@ impl Lower for ast::BinaryExpr {
     let mut llvm_right_value = self.right.lower(generator, cache, false).unwrap();
 
     // REVIEW: Is it okay to semi-force an access here? Why not instead make use of the `access` parameter?
+    // ... Maybe the operands should always be attempted to be accessed? What about strings? Will they ever be a
+    // ... binary expression's operand?
     llvm_left_value = generator.attempt_access(llvm_left_value);
     llvm_right_value = generator.attempt_access(llvm_right_value);
 
@@ -1113,6 +1123,8 @@ impl Lower for ast::ExternFunction {
       cache,
     );
 
+    // TODO: Need to handle if the function already exists.
+
     let llvm_external_function = generator.llvm_module.add_function(
       self.name.as_str(),
       llvm_function_type,
@@ -1161,7 +1173,6 @@ impl Lower for ast::ReturnStmt {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // REVISE: Simplify.
     let llvm_return_value = if let Some(return_value) = &self.value {
       Some(
         generator
@@ -1267,7 +1278,7 @@ impl Lower for ast::LetStmt {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVISE: Optimize. The type for this construct may be cached.
-    let ty = self.value.infer_type(cache);
+    let ty = self.value.kind.infer_type(cache);
 
     // Special cases. The allocation is done elsewhere.
     if matches!(
@@ -1289,12 +1300,7 @@ impl Lower for ast::LetStmt {
       return result;
     }
 
-    // BUG: This may cause other types that aren't struct types yet have bindings to become duplicated.
-    let llvm_type = if let ast::Type::Struct(struct_type) = &ty {
-      generator.memoize_or_retrieve_type_by_binding(struct_type.binding_id, cache)
-    } else {
-      generator.lower_type(&ty, cache)
-    };
+    let llvm_type = generator.memoize_or_retrieve_type(&ty, cache);
 
     let llvm_alloca = generator
       .llvm_builder
@@ -1321,7 +1327,6 @@ impl Lower for ast::CallExpr {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // BUG: String arguments without `&` are being accessed.
     let mut llvm_arguments = self
       .arguments
       .iter()
@@ -1459,15 +1464,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     cache: &cache::Cache,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
-    // REVIEW: Is there a need to resolve the type?
-
-    // let is_string = node.infer_type(cache) == ast::Type::Basic(ast::BasicType::String);
+    // REVIEW: Isn't there a need to resolve the type?
 
     if matches!(node, ast::NodeKind::Parameter(_)) {
-      // println!(
-      //   "llvm value is: {:?} \n\nnode value is: {:?}",
-      //   llvm_value, node
-      // );
       return llvm_value;
     }
 
@@ -1522,7 +1521,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       return cached_panic_function;
     }
 
-    // REVIEW: What if the `abort` function was already defined by the user?
+    // BUG: What if the `abort` function was already defined by the user?
     let libc_abort_function = self.llvm_module.add_function(
       "abort",
       self.llvm_context.void_type().fn_type(&[], false),
@@ -1636,8 +1635,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     &mut self,
     llvm_value: inkwell::values::PointerValue<'ctx>,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
-    // REVIEW: Do we need an assertion here that the `llvm_value` is an LLVM pointer value? Or does it always throw when its not?
-
     self
       .llvm_builder
       .build_load(llvm_value, "access")
@@ -1671,7 +1668,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     ty: &ast::Type,
     cache: &cache::Cache,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
-    // BUG: Use type-caching HERE (for structs, or any type that needs to be cached). Declaring multiple variables with the same struct type will cause repeated type definitions.
     match ty {
       ast::Type::Basic(primitive_type) => match primitive_type {
         ast::BasicType::Bool => self.llvm_context.bool_type().as_basic_type_enum(),
@@ -1713,8 +1709,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
           .map(|field| self.lower_type(&field.1, cache))
           .collect::<Vec<_>>();
 
-        // REVIEW: Consider caching the struct type here?
-
         let name = self.mangle_name(&format!("struct.{}", struct_type.name));
         let llvm_struct_type = self.llvm_context.opaque_struct_type(name.as_str());
 
@@ -1736,12 +1730,13 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       ast::Type::This(this_type) => {
         self.memoize_or_retrieve_type_by_binding(this_type.target_id.unwrap(), cache)
       }
+      // FIXME: Will never be able to treat void type as we expect here, because it is only usable to create void return types!
       // FIXME: Should be lowering to the void type instead, but not allowed by return type!
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
       // REVIEW: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
       ast::Type::Unit => self
         .llvm_context
-        .i8_type()
+        .bool_type()
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
       ast::Type::Error | ast::Type::Variable(_) => unreachable!(),
@@ -1793,7 +1788,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       );
     }
 
-    // REVISE: Simplify code (find common ground between `void` and `basic` types).
     if !return_type.is_unit() {
       self
         .memoize_or_retrieve_type(return_type, cache)
@@ -1813,8 +1807,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     .into_function_type()
   }
 
-  // BUG: !!!! REPLACE MOST* (non-directly/indirectly-recursive) INSTANCES OF `lower_type()` WITH THIS METHOD! !!!
-  // ... ENSURE!! That there isn't any possible recursion problems going on.
+  // TODO: Ensure that there isn't any possible recursion problems going on.
   fn memoize_or_retrieve_type(
     &mut self,
     ty: &ast::Type,
@@ -1841,7 +1834,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     let node = cache.force_get(&binding_id);
 
-    // REVISE: Why not perform type-flattening here instead?
+    // REVIEW: Why not perform type-flattening here instead?
     let ty = match &node {
       ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
       ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
@@ -1904,9 +1897,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
 
     let buffers = self.copy_buffers();
-
-    // FIXME: Testing.
-    // let llvm_value = cache.unsafe_get(&binding_id).lower(self, cache);
     let llvm_value_result = node.lower(self, cache, false);
 
     let result = if let Some(llvm_value) = llvm_value_result {

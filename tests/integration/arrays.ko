@@ -1,0 +1,6 @@
+func arrays():
+  let empty_arr = [] Int
+  let arr = [1]
+  let arr_2 = [arr[0]]
+
+  return arr[`U32 0]

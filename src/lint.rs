@@ -2,7 +2,6 @@ use crate::{ast, cache};
 
 pub struct LintContext {
   pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
-  block_depth: usize,
   variable_references: std::collections::HashMap<cache::BindingId, bool>,
 }
 
@@ -10,7 +9,6 @@ impl LintContext {
   pub fn new() -> Self {
     Self {
       diagnostics: Vec::new(),
-      block_depth: 0,
       variable_references: std::collections::HashMap::new(),
     }
   }
@@ -130,7 +128,7 @@ impl Lint for ast::UnaryExpr {
   }
 }
 
-impl Lint for ast::ArrayIndexing {
+impl Lint for ast::IndexingExpr {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     context
       .variable_references
@@ -140,7 +138,7 @@ impl Lint for ast::ArrayIndexing {
   }
 }
 
-impl Lint for ast::ArrayValue {
+impl Lint for ast::StaticArrayValue {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     for element in &self.elements {
       element.lint(cache, context);
@@ -159,16 +157,6 @@ impl Lint for ast::BlockExpr {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     let mut did_return = false;
 
-    // REVIEW: Might be repetitive for subsequent nested blocks.
-    if context.block_depth > 4 {
-      context.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::warning()
-          .with_message("block depth is deeper than 4"),
-      );
-    }
-
-    context.block_depth += 1;
-
     for statement in &self.statements {
       if did_return {
         context.diagnostics.push(
@@ -185,8 +173,6 @@ impl Lint for ast::BlockExpr {
 
       statement.lint(cache, context);
     }
-
-    context.block_depth -= 1;
   }
 }
 
@@ -197,27 +183,6 @@ impl Lint for ast::BreakStmt {
 impl Lint for ast::ContinueStmt {
   //
 }
-
-// impl Lint for ast::Definition {
-//   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-//     // REVISE: Simplify. Abstract the map, then process.
-//     match self.node.kind {
-//       ast::NodeKind::Function(_) => {
-//         if !context.function_references.contains_key(&self.binding_id) {
-//           context.function_references.insert(self.binding_id, false);
-//         }
-//       }
-//       ast::NodeKind::LetStmt(_) => {
-//         // NOTE: Variable declarations always occur before their usage.
-//         context.variable_references.insert(self.binding_id, false);
-//       }
-//       // TODO: Lint other definitions.
-//       _ => {}
-//     };
-
-//     self.node.lint(cache, context);
-//   }
-// }
 
 impl Lint for ast::Enum {
   fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {

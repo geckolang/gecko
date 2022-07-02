@@ -1,5 +1,3 @@
-// REVISE: Instead of placing everything inside the `tests` module, label
-// ... each implementation (impl) with `#[cfg(test)]`.
 #[cfg(test)]
 pub mod tests {
   use crate::{ast, cache, llvm_lowering::LlvmGenerator};
