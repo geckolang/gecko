@@ -15,9 +15,7 @@
 
 #### Technology & principles
 
-Gecko is a general-purpose, strongly-typed programming language, with a focus on a powerful type system, memory safety, and simplicity. Inspired by Rust, Java, C#, JavaScript, Scala, and others. Built using Rust. It uses [🔗LLVM](https://llvm.org/) as its backend.
-
-[🔗Join our Discord server](https://discord.gg/H3eMUXp)
+Gecko is a general-purpose, strongly-typed programming language, with a focus on a powerful type system, memory safety, and simplicity. Inspired by Rust, Python, Java, C#, JavaScript, Scala, and others. Built using Rust. It uses [🔗LLVM](https://llvm.org/) as its backend.
 
 Overview:
 
@@ -30,15 +28,13 @@ Overview:
 #### Syntax example
 
 ```rust
-extern fn puts(msg: str): i32;
+extern func puts(msg: Str) -> Int
 
-fn main(): i32 {
-  unsafe {
-    puts("hello world");
-  }
+func main(argc: Int, argv: *Str):
+  unsafe:
+    puts("hello world")
 
-  return 0;
-}
+  return 0
 ```
 
 ### Project roadmap
@@ -50,17 +46,16 @@ _🔨 &mdash; Work in progress._ _✔️ &mdash; Completed._
 | Externs | - | ✔️ |
 | Function calls | - | ✔️ |
 | Structs | Definition, declaration & accessing of structs. | 🔨 |
-| Global variables | - | 🔨 |
 | Modules | - | 🔨 |
 | Generics | - | 🔨 |
-| `if` statement | Includes the `else` statement as well. | 🔨 |
+| `if` statement | Includes the `else` statement as well. | ✔️ |
 | `return` statement | - | ✔️ |
 | Variables | Declaration, assignment, and reference of variables. | ✔️ |
-| Casting | - | 🔨 |
-| Binary expressions | - | 🔨 |
+| Casting | Type casts between primitives. | ✔️ |
+| Binary expressions | - | ✔️ |
 | Literals | Includes string, integer, character, and boolean literals. | ✔️ |
-| Types | Intrinsic types such as `bool`, `i32`, `str`, etc. | ✔️ |
-| Arrays | - | 🔨 |
+| Types | Basic types such as `Bool`, `Int`, `Str`, etc. | ✔️ |
+| Static arrays | Arrays with sizes specified (or determined) at compile-time. | ✔️ |
 
 ### Directory structure
 
@@ -111,12 +106,12 @@ Several intrinsic types are defined by the compiler. It is intended for the intr
 
 | Definition | Description                                                                                                         |
 | ---------- | ------------------------------------------------------------------------------------------------------------------- |
-| `bool`     | Boolean type. Its value can either be `true` or `false`.                                                            |
-| `str`      | String type. Equivalent to `i8*` or `int*` in other languages.                                                      |
-| `i8`       | Integer type with bit-size 8. Can be used to define characters, as well as strings as a pointer.                    |
-| `i16`      | Integer type with bit-size 16. Equivalent to a `short int` on other languages.                                      |
-| `i32`      | Integer type with bit-size 32. Equivalent to an `int` on other languages. Usually the most common number type used. |
-| `i64`      | Integer type with bit-size 64. Equivalent to a `long int` on other languages. Useful for larger numbers.            |
+| `Bool`     | Boolean type. Its value can either be `true` or `false`.                                                            |
+| `Str`      | String type. Equivalent to `i8*` or `int*` in other languages.                                                      |
+| `I8`       | Integer type with bit-size 8. Can be used to define characters, as well as strings as a pointer.                    |
+| `I16`      | Integer type with bit-size 16. Equivalent to a `short int` on other languages.                                      |
+| `I32`      | Integer type with bit-size 32. Equivalent to an `int` on other languages. Usually the most common number type used. |
+| `I64`      | Integer type with bit-size 64. Equivalent to a `long int` on other languages. Useful for larger numbers.            |
 
 #### &mdash; Modules
 
@@ -125,7 +120,7 @@ Modules provide a simple way of organizing code within a project. They also have
 Accessing a module is trivial:
 
 ```rust
-foo.bar.entity
+foo::bar::entity
 ```
 
 #### &mdash; Functions
@@ -135,11 +130,11 @@ Function definitions & calls follow conventional norms. They are easy to define 
 Omitting the return type will imply that such function does not return a value (the equivalent to other languages' `void` type). Functions without return types may not return a value, nor are they required to have a `return` statement on their bodies.
 
 ```rust
-fn main(argc: i32, argv: i32[]): i32 {
-  return 0;
-}
+func main(argc: Int, argv: *Str):
+  return 0
 
-fn do_nothing() { }
+func do_nothing():
+  pass
 ```
 
 #### &mdash; Variables
@@ -147,7 +142,7 @@ fn do_nothing() { }
 Variable declaration, assignment and reference follow straight-forward rules and adhere to common conventions. This makes creating, and using variables easy and most programmers will be familiar with this style. Variable names adhere to the `identifier` rule.
 
 ```rust
-let product: i32 = 3 * 4;
+let product: Int = 3 * 4
 ```
 
 For convenience, variables can also be declared without specifying their types by using the `let` keyword for type inference. When inferring type from a literal integer, the preferred type inferred by the compiler will be `i32`, unless the integer cannot fit into `i32`'s bit-size, in which case it will be either `i64` or `i128` depending on the value's required bit-width. For example, a value larger than `2147483647` will be inferred as `i64` because it cannot fit into `i32`.
@@ -155,10 +150,10 @@ For convenience, variables can also be declared without specifying their types b
 Variable declarations are _immutable_ by default, unless the `mut` keyword is used.
 
 ```rust
-let five: i32 = 5; // type is explicitly given
-let inferred_three = 3; // inferred type is `i32`
-let big_number_i64 = 2147483647 + 1; // type is inferred to be `i64`
-let mut counter = 0; // can be mutated/re-assigned
+let five: Int = 5 // type is explicitly given
+let inferred_three = 3 // inferred type is `Int`
+let big_number_i64 = 2147483647 + 1 // type is inferred to be `I64`
+var counter = 0 // can be mutated/re-assigned
 ```
 
 #### &mdash; Loops
@@ -168,20 +163,20 @@ There is a single loop construct that can be used to emulate while, for, and inf
 You can use the `continue` and `break` keywords as statements inside the loop body to control the loop.
 
 ```rs
-loop { } // no condition specified: infinite loop (the condition is assumed to be `true`)
-loop condition { } // pre-test loop with a condition, emulates a while loop
+loop: // no condition specified: infinite loop (the condition is assumed to be `true`)
+  pass
+
+loop condition: // pre-test loop with a condition, emulates a while loop
+  pass
 ```
 
 Here's a code example that will iterate 10 times:
 
 ```rs
-let mut counter = 0;
+let mut counter = 0
 
-loop counter < 9 {
-  // .. code ..
-
-  counter = counter + 1;
-}
+loop counter < 9:
+  counter += 1
 ```
 
 #### &mdash; Attributes
@@ -218,7 +213,7 @@ On Linux, you simply need to install the `llvm` and `llvm-devel` packages. Make 
 If you're using Fedora:
 
 ```bash
-$ sudo dnf -y install llvm llvm-devel
+sudo dnf -y install llvm llvm-devel
 ```
 
 You won't need to set any environment variables. Additionally, avoid using the `llvmenv` crate, since it's barely maintained and may lead you to issues.
@@ -233,7 +228,7 @@ $ llvm-config --version
 If, after installing `llvm-devel` and restarting your shell session you're still having problems with the `inkwell` crate not being able to find the LLVM installation, try setting the `LLVM_SYS_130_PREFIX` environment variable manually:
 
 ```bash
-$ export LLVM_SYS_130_PREFIX=${llvm-config --prefix}
+export LLVM_SYS_130_PREFIX=${llvm-config --prefix}
 ```
 
 That should fix the problem, then try running `cargo build` once more.
@@ -243,7 +238,7 @@ That should fix the problem, then try running `cargo build` once more.
 On the Windows platform, it is recommended to use MSYS2 to install the GCC toolchain. After installing MSYS2, open the `MSYS2 MinGW (64-bit)` console (or the `32-bit` if you're on 32-bit arch.), then install the GCC toolchain using:
 
 ```bash
-$ pacman -S mingw-w64-x86_64-gcc
+pacman -S mingw-w64-x86_64-gcc
 ```
 
 This project uses the `inkwell` crate to interface with LLVM. Thus, the GCC toolchain (through MSYS2) is required in order to build the `llvm-sys` Cargo package (which is a dependency of `inkwell`).
@@ -254,11 +249,11 @@ You will need to have [🔗Rust](https://www.rust-lang.org/tools/install) instal
 if you already have it) installed, you can simply build the project and its dependencies by issuing the following command:
 
 ```bash
-$ cargo build
+cargo build
 ```
 
 Running tests is also straight-forward:
 
 ```bash
-$ cargo test
+cargo test
 ```

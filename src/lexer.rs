@@ -85,6 +85,7 @@ pub enum TokenKind {
   Pipe,
   Const,
   Pass,
+  Var,
 }
 
 impl std::fmt::Display for TokenKind {
@@ -514,6 +515,7 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "using" => TokenKind::Using,
     "sizeof" => TokenKind::Sizeof,
     "const" => TokenKind::Const,
+    "var" => TokenKind::Var,
     "pass" => TokenKind::Pass,
     _ => return None,
   })
