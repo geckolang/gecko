@@ -88,12 +88,6 @@ pub enum TokenKind {
   Var,
 }
 
-impl std::fmt::Display for TokenKind {
-  fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(formatter, "{:?}", self)
-  }
-}
-
 pub struct Lexer {
   input: Vec<char>,
   index: usize,

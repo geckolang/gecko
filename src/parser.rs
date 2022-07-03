@@ -106,7 +106,7 @@ impl<'a> Parser<'a> {
 
   fn skip_past(&mut self, token_kind: &lexer::TokenKind) -> ParserResult<()> {
     if !self.is(token_kind) {
-      return Err(self.expected(format!("token `{}`", token_kind).as_str()));
+      return Err(self.expected(format!("token `{:?}`", token_kind).as_str()));
     }
 
     self.skip()?;
@@ -116,7 +116,7 @@ impl<'a> Parser<'a> {
 
   fn expected(&self, expected: &str) -> codespan_reporting::diagnostic::Diagnostic<usize> {
     codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-      "expected {}, but got `{}`",
+      "expected {}, but got `{:?}`",
       expected,
       self.get_token().unwrap_or(&lexer::TokenKind::EOF)
     ))
@@ -268,7 +268,9 @@ impl<'a> Parser<'a> {
   fn parse_statement(&mut self) -> ParserResult<ast::Node> {
     let kind = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
-      lexer::TokenKind::Let => ast::NodeKind::LetStmt(self.parse_let_stmt()?),
+      lexer::TokenKind::Let | lexer::TokenKind::Var => {
+        ast::NodeKind::VariableDefStmt(self.parse_variable_def_stmt()?)
+      }
       lexer::TokenKind::Loop => ast::NodeKind::LoopStmt(self.parse_loop_stmt()?),
       lexer::TokenKind::Break => ast::NodeKind::BreakStmt(self.parse_break_stmt()?),
       lexer::TokenKind::Continue => ast::NodeKind::ContinueStmt(self.parse_continue_stmt()?),
@@ -751,13 +753,13 @@ impl<'a> Parser<'a> {
   }
 
   /// let (mut) %name (':' %type) '=' %expr
-  fn parse_let_stmt(&mut self) -> ParserResult<ast::LetStmt> {
-    let is_mutable = if self.is(&lexer::TokenKind::Let) {
+  fn parse_variable_def_stmt(&mut self) -> ParserResult<ast::LetStmt> {
+    let is_mutable = if self.is(&lexer::TokenKind::Var) {
       self.skip()?;
 
       true
     } else {
-      self.skip_past(&lexer::TokenKind::Const)?;
+      self.skip_past(&lexer::TokenKind::Let)?;
 
       false
     };

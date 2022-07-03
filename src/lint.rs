@@ -33,7 +33,7 @@ impl LintContext {
 
     if !name.is_case(case) {
       self.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+        codespan_reporting::diagnostic::Diagnostic::warning().with_message(format!(
           "{} name `{}` should be written in {} case",
           subject, name, case_name
         )),

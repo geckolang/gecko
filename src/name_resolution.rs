@@ -547,9 +547,10 @@ impl Resolve for ast::LetStmt {
 
     // REVIEW: Annotated type is not being resolved.
 
-    cache
-      .symbols
-      .insert(self.binding_id, ast::NodeKind::LetStmt(self.clone()));
+    cache.symbols.insert(
+      self.binding_id,
+      ast::NodeKind::VariableDefStmt(self.clone()),
+    );
   }
 }
 

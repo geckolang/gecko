@@ -10,7 +10,7 @@ macro_rules! dispatch {
       ast::NodeKind::Function(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::BlockExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::LetStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::VariableDefStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::IfExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
@@ -42,15 +42,6 @@ macro_rules! dispatch {
     }
   };
 }
-
-// #[macro_export]
-// macro_rules! dispatch_template {
-//   ( $node:expr, $target_fn:expr $(, $($args:expr),* )?; $($name:ident),+ ) => {
-//     match $node {
-//       $( ast::NodeKind::$name(inner) $target_fn(inner $(, $($args),* )?), )+
-//     }
-//   }
-// }
 
 #[derive(Debug, Clone)]
 pub enum GenericConstraintKind {
@@ -142,7 +133,7 @@ pub enum NodeKind {
   Function(Function),
   BlockExpr(BlockExpr),
   ReturnStmt(ReturnStmt),
-  LetStmt(LetStmt),
+  VariableDefStmt(LetStmt),
   IfExpr(IfExpr),
   LoopStmt(LoopStmt),
   CallExpr(CallExpr),
@@ -344,6 +335,7 @@ pub struct ExternStatic {
   pub binding_id: cache::BindingId,
 }
 
+// TODO: Change this into a macro.
 impl visitor::Visitable for ExternStatic {
   fn accept<T>(&mut self, visitor: &mut impl visitor::Visitor<T>) -> T {
     visitor.visit_extern_static(self)

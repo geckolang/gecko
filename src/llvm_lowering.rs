@@ -1964,7 +1964,7 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "a".to_string(),
       value: Mock::node(Mock::literal_int()),
       is_mutable: false,
@@ -1984,7 +1984,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let a_binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "a".to_string(),
       value: Mock::node(Mock::literal_int()),
       is_mutable: false,
@@ -1992,7 +1992,7 @@ mod tests {
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "b".to_string(),
       value: Mock::reference(a_binding_id),
       is_mutable: false,
@@ -2014,7 +2014,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
 
-    let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "a".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_mutable: false,
@@ -2036,7 +2036,7 @@ mod tests {
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
     let a_binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "a".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
@@ -2045,7 +2045,7 @@ mod tests {
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "b".to_string(),
       value: Mock::reference(a_binding_id),
       is_mutable: false,
@@ -2067,7 +2067,7 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let let_stmt = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "a".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
@@ -2090,7 +2090,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let a_binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "a".to_string(),
       value: Mock::node(Mock::literal_int()),
       is_mutable: true,
@@ -2123,7 +2123,7 @@ mod tests {
     let a_binding_id: cache::BindingId = 0;
     let b_binding_id: cache::BindingId = a_binding_id + 1;
 
-    let let_stmt_a = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "a".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
@@ -2132,7 +2132,7 @@ mod tests {
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::LetStmt(ast::LetStmt {
+    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::LetStmt {
       name: "b".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,

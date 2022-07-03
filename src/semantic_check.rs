@@ -700,7 +700,7 @@ impl SemanticCheck for ast::AssignStmt {
           let declaration = cache.force_get(&variable_ref.pattern.target_id.unwrap());
 
           match declaration {
-            ast::NodeKind::LetStmt(let_stmt) if !let_stmt.is_mutable => {
+            ast::NodeKind::VariableDefStmt(let_stmt) if !let_stmt.is_mutable => {
               context.diagnostics.push(
                 codespan_reporting::diagnostic::Diagnostic::error()
                   .with_message("assignee is immutable"),
@@ -736,7 +736,7 @@ impl SemanticCheck for ast::IndexingExpr {
 
     // REVISE: Unnecessary cloning.
     let array_type = match target_array_variable {
-      ast::NodeKind::LetStmt(let_stmt) => let_stmt.value.kind.infer_type(cache),
+      ast::NodeKind::VariableDefStmt(let_stmt) => let_stmt.value.kind.infer_type(cache),
       ast::NodeKind::Parameter(parameter) => parameter.ty.clone(),
       _ => unreachable!(),
     };
