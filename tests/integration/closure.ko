@@ -1,0 +1,5 @@
+func closure():
+  let doubleIt = func (n: Int):
+    return n * 2
+
+  let doubled = doubleIt(2) # 4

@@ -86,6 +86,8 @@ pub enum TokenKind {
   Const,
   Pass,
   Var,
+  Yield,
+  Elif,
 }
 
 pub struct Lexer {
@@ -258,8 +260,8 @@ impl Lexer {
       self.read_char();
     }
 
-    // REVISE: We SHOULD be skipping the closing double-quote here (function independence).
-    // No need to skip the closing double-quote.
+    // Skip the closing double-quote.
+    self.read_char();
 
     Ok(string)
   }
@@ -355,7 +357,7 @@ impl Lexer {
 
     let result = match current_char {
       '#' => TokenKind::Comment(self.read_comment()),
-      '"' => TokenKind::String(self.read_string()?),
+      '"' => return Ok(TokenKind::String(self.read_string()?)),
       '\'' => TokenKind::Char(self.read_character()?),
       '{' => TokenKind::BraceL,
       '}' => TokenKind::BraceR,
@@ -511,6 +513,8 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "const" => TokenKind::Const,
     "var" => TokenKind::Var,
     "pass" => TokenKind::Pass,
+    "yield" => TokenKind::Yield,
+    "elif" => TokenKind::Elif,
     _ => return None,
   })
 }
@@ -802,6 +806,8 @@ mod tests {
     assert_eq!(true, tokens_result.is_ok());
     assert_eq!(7, tokens_result.unwrap().len());
   }
+
+  // BUG: Need test to catch bug with comments messing up indentation.
 
   // TODO: Add tests for number-overflow cases.
 }

@@ -1,0 +1,20 @@
+# TODO: Producing if-after blocks with no predecessors.
+func if_expr():
+  if true:
+    return 0
+
+  if true:
+    return 1
+  else:
+    return 2
+
+  if true:
+    return 3
+  elif false:
+    return 4
+  elif true:
+    return 5
+  else:
+    return 6
+
+  return 7

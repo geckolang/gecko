@@ -68,6 +68,49 @@ impl SemanticCheckContext {
     })
   }
 
+  pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
+    let body_type = body.infer_type(cache);
+
+    if !body_type.is_unit() {
+      return body_type;
+    }
+
+    if let Some(return_stmt) = body
+      .statements
+      .iter()
+      .find(|statement| matches!(statement.kind, ast::NodeKind::ReturnStmt(_)))
+    {
+      return match &return_stmt.kind {
+        ast::NodeKind::ReturnStmt(return_stmt) => {
+          if let Some(return_value) = &return_stmt.value {
+            return_value.kind.infer_type(cache)
+          } else {
+            ast::Type::Unit
+          }
+        }
+        _ => unreachable!(),
+      };
+    }
+
+    // BUG: What about the inferred return type when the only return statement is inside
+    // ... an `if` statement? Is that possible?
+    // REVIEW: What about unsafe blocks nested inside parentheses expression?
+    // ... We should make the unsafe expression a statement instead, since block
+    // ... yields where removed. That action would also resolve this comment.
+    // REVISE: Inferring the type of the unsafe expression twice.
+    let nested_returning_unsafe_expr = body
+      .statements
+      .iter()
+      .filter(|statement| matches!(&statement.kind, ast::NodeKind::UnsafeExpr(_)))
+      .find(|unsafe_expr| !matches!(unsafe_expr.kind.infer_type(cache), ast::Type::Unit));
+
+    if let Some(returning_unsafe_expr) = &nested_returning_unsafe_expr {
+      return returning_unsafe_expr.kind.infer_type(cache);
+    }
+
+    ast::Type::Unit
+  }
+
   // TODO: Make use-of, or get rid-of.
   fn _fetch_type(
     &mut self,
@@ -291,6 +334,12 @@ impl SemanticCheck for ast::NodeKind {
   }
 }
 
+impl SemanticCheck for ast::YieldStmt {
+  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+    self.value.kind.check(context, cache);
+  }
+}
+
 impl SemanticCheck for ast::SizeofIntrinsic {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I64))
@@ -470,7 +519,10 @@ impl SemanticCheck for ast::MemberAccess {
 
 impl SemanticCheck for ast::Closure {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    SemanticCheckContext::infer_prototype_type(&self.prototype, self.body.infer_type(cache))
+    SemanticCheckContext::infer_prototype_type(
+      &self.prototype,
+      SemanticCheckContext::infer_return_value_type(&self.body, cache),
+    )
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
@@ -862,41 +914,8 @@ impl SemanticCheck for ast::Parameter {
 
 impl SemanticCheck for ast::BlockExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // REVIEW: Blocks should no longer yield and values, therefore should not have a type?
-
-    if let Some(return_stmt) = self
-      .statements
-      .iter()
-      .find(|statement| matches!(statement.kind, ast::NodeKind::ReturnStmt(_)))
-    {
-      return match &return_stmt.kind {
-        ast::NodeKind::ReturnStmt(return_stmt) => {
-          if let Some(return_value) = &return_stmt.value {
-            return_value.kind.infer_type(cache)
-          } else {
-            ast::Type::Unit
-          }
-        }
-        _ => unreachable!(),
-      };
-    } else if !self.statements.is_empty() && self.yields_last_expr {
-      return self.statements.last().unwrap().kind.infer_type(cache);
-    }
-
-    // BUG: What about the inferred return type when the only return statement is inside
-    // ... an `if` statement? Is that possible?
-    // REVIEW: What about unsafe blocks nested inside parentheses expression?
-    // ... We should make the unsafe expression a statement instead, since block
-    // ... yields where removed. That action would also resolve this comment.
-    // REVISE: Inferring the type of the unsafe expression twice.
-    let nested_returning_unsafe_expr = self
-      .statements
-      .iter()
-      .filter(|statement| matches!(&statement.kind, ast::NodeKind::UnsafeExpr(_)))
-      .find(|unsafe_expr| !matches!(unsafe_expr.kind.infer_type(cache), ast::Type::Unit));
-
-    if let Some(returning_unsafe_expr) = &nested_returning_unsafe_expr {
-      return returning_unsafe_expr.kind.infer_type(cache);
+    if let Some(yields_value) = &self.yields {
+      return yields_value.kind.infer_type(cache);
     }
 
     ast::Type::Unit
@@ -938,10 +957,11 @@ impl SemanticCheck for ast::IfExpr {
       return ast::Type::Unit;
     }
 
+    // TODO: Take into consideration newly-added alternative branches.
+
     let else_block = self.else_value.as_ref().unwrap();
     let then_block_type = self.then_value.kind.infer_type(cache);
 
-    // FIXME: Perhaps make a special case for let-statement? Its type inference is used internally, but they should yield 'Unit' for the user.
     // In case of a type-mismatch between branches, simply return the unit type.
     if !SemanticCheckContext::compare(&then_block_type, &else_block.kind.infer_type(cache), cache) {
       return ast::Type::Unit;
@@ -961,6 +981,8 @@ impl SemanticCheck for ast::IfExpr {
           .with_message("if statement condition must evaluate to a boolean"),
       );
     }
+
+    // TODO: Check for type-mismatch between branches (they may yield).
 
     self.condition.kind.check(context, cache);
     self.then_value.kind.check(context, cache);
@@ -1141,7 +1163,10 @@ impl SemanticCheck for ast::ReturnStmt {
 impl SemanticCheck for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // REVIEW: Why not use annotated return type if defined?
-    SemanticCheckContext::infer_prototype_type(&self.prototype, self.body.infer_type(cache))
+    SemanticCheckContext::infer_prototype_type(
+      &self.prototype,
+      SemanticCheckContext::infer_return_value_type(&self.body, cache),
+    )
   }
 
   fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {

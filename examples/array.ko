@@ -1,0 +1,10 @@
+extern func printf(template: Str, ...) -> Int
+
+func main(argc: Int, argv: *Str):
+  let first_10_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
+  var i = 0
+
+  loop i < 9:
+    unsafe: printf("%d\n", first_10_primes[i])
+
+  return 0

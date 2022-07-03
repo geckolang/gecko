@@ -48,11 +48,19 @@ pub trait Lint {
   }
 }
 
+// REVISE: Redundant, implement for `NodeKind` instead?
 impl Lint for ast::Node {
   fn lint(&self, cache: &cache::Cache, lint_context: &mut LintContext) {
     // TODO: Here we have access to the node's metadata.
     // ... Consider using some system to provide it to whatever needs it.
     crate::dispatch!(&self.kind, Lint::lint, cache, lint_context);
+  }
+}
+
+impl Lint for ast::YieldStmt {
+  fn lint(&self, _cache: &cache::Cache, _context: &mut LintContext) {
+    // TODO:
+    // self.value(_cache, _context);
   }
 }
 

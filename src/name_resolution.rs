@@ -55,6 +55,16 @@ impl Resolve for ast::NodeKind {
   }
 }
 
+impl Resolve for ast::YieldStmt {
+  fn declare(&self, resolver: &mut NameResolver) {
+    self.value.kind.declare(resolver);
+  }
+
+  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
+    self.value.kind.resolve(resolver, cache);
+  }
+}
+
 impl Resolve for ast::SizeofIntrinsic {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.ty.resolve(resolver, cache);

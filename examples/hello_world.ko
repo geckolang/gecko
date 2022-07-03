@@ -1,0 +1,10 @@
+# This extern is loaded from `libc`.
+extern func puts(text: Str) -> Int
+
+# No need to annotate return type, it is inferred from the return value.
+func main(argc: Int, argv: *Str):
+  # Any call to an extern function is considered unsafe.
+  # Unsafe code is required to be annotated with the `unsafe` keyword.
+  unsafe: puts("hello world!")
+
+  return 0

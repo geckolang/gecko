@@ -312,16 +312,28 @@ impl<'a> Parser<'a> {
   fn parse_block_expr(&mut self) -> ParserResult<ast::BlockExpr> {
     // let initial_indentation_level = self.indentation_level;
     let mut statements = Vec::new();
-    let mut _yields_last_expr = false;
+    let mut yields = None;
 
     self.parse_indent()?;
 
     // REVIEW: What if the last statement is a let-statement? Let-statements have inferrable types, used internally.
     // REVIEW: This may be the reason why let-statements shouldn't have inferrable types (only internally).
     loop {
-      // TODO: Support for yielding in indentation-style.
+      // REVIEW: Is it okay to have exclusive syntax here, and instead not treat it as a statement?
+      if self.is(&lexer::TokenKind::Yield) {
+        self.skip()?;
+        yields = Some(Box::new(self.parse_expr()?));
 
-      statements.push(self.parse_statement()?);
+        break;
+      } else if self.is(&lexer::TokenKind::Pass) {
+        self.skip()?;
+
+        break;
+      }
+
+      let statement = self.parse_statement()?;
+
+      statements.push(statement);
 
       if self.is(&lexer::TokenKind::Dedent) {
         break;
@@ -332,8 +344,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::BlockExpr {
       statements,
-      // TODO: Support for yielding in indentation-style.
-      yields_last_expr: false,
+      yields,
       binding_id: self.cache.create_binding_id(),
     })
   }
@@ -797,10 +808,20 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    // TODO: Temporarily forcing block expression.
-    let then_value = ast::Node {
-      kind: ast::NodeKind::BlockExpr(self.parse_block_expr()?),
-    };
+    let then_value = self.parse_expr()?;
+    let mut alternative_branches = Vec::new();
+
+    while self.is(&lexer::TokenKind::Elif) {
+      self.skip_past(&lexer::TokenKind::Elif)?;
+
+      let alternative_condition = self.parse_expr()?;
+
+      self.skip_past(&lexer::TokenKind::Colon)?;
+
+      let alternative_value = self.parse_expr()?;
+
+      alternative_branches.push((alternative_condition, alternative_value));
+    }
 
     let else_value = if self.is(&lexer::TokenKind::Else) {
       self.skip()?;
@@ -814,6 +835,7 @@ impl<'a> Parser<'a> {
     Ok(ast::IfExpr {
       condition: Box::new(condition),
       then_value: Box::new(then_value),
+      alternative_branches,
       else_value,
     })
   }

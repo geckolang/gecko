@@ -39,6 +39,7 @@ macro_rules! dispatch {
       ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Import(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::YieldStmt(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -162,6 +163,7 @@ pub enum NodeKind {
   ParenthesesExpr(ParenthesesExpr),
   Import(Using),
   SizeofIntrinsic(SizeofIntrinsic),
+  YieldStmt(YieldStmt),
 }
 
 #[derive(Debug, Clone)]
@@ -362,7 +364,7 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct BlockExpr {
   pub statements: Vec<Node>,
-  pub yields_last_expr: bool,
+  pub yields: Option<Box<Node>>,
   pub binding_id: cache::BindingId,
 }
 
@@ -372,6 +374,11 @@ pub struct BreakStmt;
 #[derive(Debug, Clone)]
 pub struct ReturnStmt {
   pub value: Option<Box<Node>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct YieldStmt {
+  pub value: Box<Node>,
 }
 
 #[derive(Debug, Clone)]
@@ -387,6 +394,7 @@ pub struct LetStmt {
 pub struct IfExpr {
   pub condition: Box<Node>,
   pub then_value: Box<Node>,
+  pub alternative_branches: Vec<(Node, Node)>,
   pub else_value: Option<Box<Node>>,
 }
 

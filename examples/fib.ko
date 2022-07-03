@@ -1,0 +1,28 @@
+extern func printf(template: Str, ...) -> Int
+
+func fib(n: Int):
+  var a = 0
+  var b = 1
+
+  if n == 0:
+    return a
+
+  var i = 2
+
+  # Omitting the condition will create an infinite loop.
+  loop i <= n:
+    let c = a + b
+
+    a = b
+    b = c
+    i = i + 1
+
+  return b
+
+func main(argc: Int, argv: *Str):
+  # Variables created with `let` are immutable.
+  let n = 10
+
+  unsafe: printf("fib of %d: %d\n", n, fib(n))
+
+  return 0

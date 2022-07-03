@@ -1,5 +1,0 @@
-func if_expr():
-  if true:
-    return 0
-
-  return 1

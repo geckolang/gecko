@@ -41,6 +41,17 @@ impl Lower for ast::NodeKind {
   }
 }
 
+impl Lower for ast::YieldStmt {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    cache: &cache::Cache,
+    access: bool,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    self.value.lower(generator, cache, access)
+  }
+}
+
 impl Lower for ast::SizeofIntrinsic {
   fn lower<'a, 'ctx>(
     &self,
@@ -172,8 +183,11 @@ impl Lower for ast::Closure {
     }
 
     // FIXME: Use the modified prototype.
-    let llvm_function_type =
-      generator.lower_prototype(&self.prototype, &self.body.infer_type(cache), cache);
+    let llvm_function_type = generator.lower_prototype(
+      &self.prototype,
+      &&SemanticCheckContext::infer_return_value_type(&self.body, cache),
+      cache,
+    );
 
     let llvm_function_name = generator.mangle_name(&String::from("closure"));
 
@@ -300,7 +314,6 @@ impl Lower for ast::StructValue {
       let struct_field_gep = generator
         .llvm_builder
         // REVIEW: Is this conversion safe?
-        // REVISE: Better name.
         .build_struct_gep(llvm_struct_alloca, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
@@ -465,12 +478,12 @@ impl Lower for ast::StaticArrayValue {
       .map(|element| element.lower(generator, cache, false).unwrap())
       .collect::<Vec<_>>();
 
-    // REVIEW: Is this cast (usize -> u32) safe?
     let llvm_array_type = if llvm_values.is_empty() {
       generator.memoize_or_retrieve_type(self.explicit_type.as_ref().unwrap(), cache)
     } else {
       llvm_values.first().unwrap().get_type()
     }
+    // REVIEW: Is this cast (usize -> u32) safe?
     .array_type(llvm_values.len() as u32);
 
     let llvm_array_ptr = generator
@@ -480,10 +493,10 @@ impl Lower for ast::StaticArrayValue {
     for (index, llvm_value) in llvm_values.iter().enumerate() {
       let first_index = generator.llvm_context.i32_type().const_int(0, false);
 
-      // REVIEW: Is this conversion safe?
       let llvm_index = generator
         .llvm_context
         .i32_type()
+        // REVIEW: Is this conversion safe?
         .const_int(index as u64, false);
 
       // FIXME: There is no bounds checking guard being inserted (panic).
@@ -861,6 +874,8 @@ impl Lower for ast::IfExpr {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // TODO: Process alternative branches.
+
     let llvm_condition = self.condition.lower(generator, cache, false).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
     let ty = self.infer_type(cache);
@@ -939,6 +954,8 @@ impl Lower for ast::IfExpr {
       generator
         .llvm_builder
         .position_before(&llvm_then_block.get_last_instruction().unwrap());
+
+      println!("ten block value: {:?}", llvm_then_block_value);
 
       generator.llvm_builder.build_store(
         llvm_if_value.unwrap().into_pointer_value(),
@@ -1034,8 +1051,11 @@ impl Lower for ast::Function {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_function_type =
-      generator.lower_prototype(&self.prototype, &self.body.infer_type(cache), cache);
+    let llvm_function_type = generator.lower_prototype(
+      &self.prototype,
+      &SemanticCheckContext::infer_return_value_type(&self.body, cache),
+      cache,
+    );
 
     let is_main = self.name == MAIN_FUNCTION_NAME;
 
@@ -1146,11 +1166,7 @@ impl Lower for ast::BlockExpr {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    for (index, statement) in self.statements.iter().enumerate() {
-      if index == self.statements.len() - 1 && self.yields_last_expr {
-        return generator.lower_with_access_rules(&statement.kind, cache);
-      }
-
+    for statement in &self.statements {
       // FIXME: Some binding statements (such as let-statement) need to be manually
       // ... cached in the generator, this is because not all calls to lower it are made
       // ... using the `memoize_or_retrieve_value` helper function (such as this one!).
@@ -1162,7 +1178,11 @@ impl Lower for ast::BlockExpr {
       }
     }
 
-    None
+    if let Some(yields_value) = &self.yields {
+      generator.lower_with_access_rules(&yields_value.kind, cache)
+    } else {
+      None
+    }
   }
 }
 
@@ -2243,6 +2263,7 @@ mod tests {
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
       condition: Mock::node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
       then_value: Mock::node(Mock::literal_int()),
+      alternative_branches: Vec::new(),
       else_value: None,
     });
 
