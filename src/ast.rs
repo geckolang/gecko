@@ -39,7 +39,6 @@ macro_rules! dispatch {
       ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Import(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::YieldStmt(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -163,7 +162,6 @@ pub enum NodeKind {
   ParenthesesExpr(ParenthesesExpr),
   Import(Using),
   SizeofIntrinsic(SizeofIntrinsic),
-  YieldStmt(YieldStmt),
 }
 
 #[derive(Debug, Clone)]
@@ -374,11 +372,6 @@ pub struct BreakStmt;
 #[derive(Debug, Clone)]
 pub struct ReturnStmt {
   pub value: Option<Box<Node>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct YieldStmt {
-  pub value: Box<Node>,
 }
 
 #[derive(Debug, Clone)]

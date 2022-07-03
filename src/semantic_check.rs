@@ -334,12 +334,6 @@ impl SemanticCheck for ast::NodeKind {
   }
 }
 
-impl SemanticCheck for ast::YieldStmt {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    self.value.kind.check(context, cache);
-  }
-}
-
 impl SemanticCheck for ast::SizeofIntrinsic {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I64))

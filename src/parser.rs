@@ -349,7 +349,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// {u8 | u16 | u32 | u64 | i8 | i16 | i32 | i64}
+  /// {U8 | U16 | U32 | U64 | I8 | I16 | Int | I64}
   fn parse_int_type(&mut self) -> ParserResult<ast::Type> {
     let size = match self.get_token()? {
       lexer::TokenKind::TypeInt8 => ast::IntSize::I8,
@@ -369,7 +369,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Basic(ast::BasicType::Int(size)))
   }
 
-  /// bool
+  /// Bool
   fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::TypeBool)?;
 

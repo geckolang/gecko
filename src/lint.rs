@@ -57,13 +57,6 @@ impl Lint for ast::Node {
   }
 }
 
-impl Lint for ast::YieldStmt {
-  fn lint(&self, _cache: &cache::Cache, _context: &mut LintContext) {
-    // TODO:
-    // self.value(_cache, _context);
-  }
-}
-
 impl Lint for ast::SizeofIntrinsic {
   //
 }

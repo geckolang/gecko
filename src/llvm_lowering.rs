@@ -41,17 +41,6 @@ impl Lower for ast::NodeKind {
   }
 }
 
-impl Lower for ast::YieldStmt {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &cache::Cache,
-    access: bool,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.value.lower(generator, cache, access)
-  }
-}
-
 impl Lower for ast::SizeofIntrinsic {
   fn lower<'a, 'ctx>(
     &self,
