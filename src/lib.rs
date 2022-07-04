@@ -2,7 +2,7 @@
 
 pub mod ast;
 pub mod cache;
-pub mod check;
+pub mod type_system;
 pub mod lexer;
 pub mod lifetime_check;
 pub mod lint;

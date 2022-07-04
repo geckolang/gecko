@@ -7,7 +7,7 @@ enum TypeConstrainKind {
 
 type TypeConstraint = (ast::Type, ast::Type, TypeConstrainKind);
 
-pub struct CheckContext {
+pub struct TypeContext {
   diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   in_loop: bool,
   in_unsafe_block: bool,
@@ -17,10 +17,15 @@ pub struct CheckContext {
   _types_cache: std::collections::HashMap<cache::BindingId, ast::Type>,
   usings: Vec<ast::Using>,
   constraints: Vec<TypeConstraint>,
-  substitution: Vec<ast::Type>,
+  /// A map from a type variable's id to a type.
+  ///
+  /// This serves as a buffer for type inference to occur. It is
+  /// populated during parsing phase, when type variables are created, and
+  /// it also is scope-less/context-free.
+  substitutions: std::collections::HashMap<usize, ast::Type>,
 }
 
-impl CheckContext {
+impl TypeContext {
   pub fn run(
     ast: &Vec<std::rc::Rc<ast::Node>>,
     cache: &cache::Cache,
@@ -28,17 +33,14 @@ impl CheckContext {
     Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
     Vec<ast::Using>,
   ) {
-    let mut semantic_check_context = CheckContext::new();
+    let mut type_context = TypeContext::new();
 
     for node in ast {
-      node.kind.check(&mut semantic_check_context, cache);
+      node.kind.check(&mut type_context, cache);
       // node.report_constraints(&mut semantic_check_context, cache);
     }
 
-    (
-      semantic_check_context.diagnostics,
-      semantic_check_context.usings,
-    )
+    (type_context.diagnostics, type_context.usings)
   }
 
   pub fn new() -> Self {
@@ -51,7 +53,7 @@ impl CheckContext {
       _types_cache: std::collections::HashMap::new(),
       usings: Vec::new(),
       constraints: Vec::new(),
-      substitution: Vec::new(),
+      substitutions: std::collections::HashMap::new(),
     }
   }
 
@@ -92,27 +94,23 @@ impl CheckContext {
       };
     }
 
-    // BUG: What about the inferred return type when the only return statement is inside
-    // ... an `if` statement? Is that possible?
-    // REVIEW: What about unsafe blocks nested inside parentheses expression?
-    // ... We should make the unsafe expression a statement instead, since block
-    // ... yields where removed. That action would also resolve this comment.
-    // REVISE: Inferring the type of the unsafe expression twice.
-    let nested_returning_unsafe_expr = body
-      .statements
-      .iter()
-      .filter(|statement| matches!(&statement.kind, ast::NodeKind::UnsafeExpr(_)))
-      .find(|unsafe_expr| !matches!(unsafe_expr.kind.infer_type(cache), ast::Type::Unit));
+    let mut final_type = ast::Type::Unit;
 
-    if let Some(ast::Node {
-      kind: ast::NodeKind::UnsafeExpr(unsafe_expr),
-      cached_type: _,
-    }) = &nested_returning_unsafe_expr
-    {
-      return Self::infer_return_value_type(unsafe_expr.0, cache);
-    }
+    // REVISE: Cloning body. This may be a large AST.
+    ast::traverse(&ast::NodeKind::BlockExpr(body.clone()), |child| {
+      if let ast::NodeKind::ReturnStmt(return_stmt) = child {
+        // REVIEW: What if the return statement's value is a block that contains a return statement?
+        if let Some(return_value) = &return_stmt.value {
+          final_type = return_value.kind.infer_type(cache);
 
-    ast::Type::Unit
+          return false;
+        }
+      }
+
+      true
+    });
+
+    final_type
   }
 
   // TODO: Make use-of, or get rid-of.
@@ -138,7 +136,7 @@ impl CheckContext {
 
   // TODO: Find instances and replace old usages with this function.
   pub fn infer_and_flatten_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
-    CheckContext::flatten_type(&node.kind.infer_type(cache), cache)
+    TypeContext::flatten_type(&node.kind.infer_type(cache), cache)
   }
 
   // TODO: Use an enum to specify error type instead of a string.
@@ -237,6 +235,15 @@ impl CheckContext {
     flat_type_a == flat_type_b
   }
 
+  fn create_type_variable(&mut self) -> ast::Type {
+    let id = self.substitutions.len();
+    let result = ast::Type::Variable(id.clone());
+
+    self.substitutions.insert(id, result.clone());
+
+    result
+  }
+
   /// Recursively check if a type variable index occurs in
   /// a type.
   ///
@@ -245,9 +252,9 @@ impl CheckContext {
   fn occurs_in(&self, index_id: usize, ty: &ast::Type) -> bool {
     match ty {
       ast::Type::Variable(id)
-        if self.substitution[id.to_owned()] != ast::Type::Variable(id.to_owned()) =>
+        if self.substitutions.get(id).unwrap() != &ast::Type::Variable(id.to_owned()) =>
       {
-        self.occurs_in(index_id, &self.substitution[id.to_owned()])
+        self.occurs_in(index_id, &self.substitutions.get(id).unwrap())
       }
       // REVIEW: Will this compare the underlying values or the addresses?
       ast::Type::Variable(id) => id == &index_id,
@@ -258,21 +265,32 @@ impl CheckContext {
 
   // REVISE: Avoid excessive cloning.
   fn unify(&mut self, type_a: &ast::Type, type_b: &ast::Type) {
+    // TODO: Cleanup code. Perhaps expand it to not be a big match statement?
     match (type_a, type_b) {
       // TODO: Missing type constructor support.
       // If both sides are the same type variable, do nothing.
       (ast::Type::Variable(id_a), ast::Type::Variable(id_b)) if id_a == id_b => {}
       // If one of the types is a type variable that’s bound in the substitution,
       // use unify with that type instead.
-      (ast::Type::Variable(id_a), _)
-        if !matches!(self.substitution[id_a.to_owned()], ast::Type::Variable(_)) =>
+      (ast::Type::Variable(id), _)
+        if {
+          let access = self.substitutions.get(id);
+
+          // REVIEW: Here we manually added the `.is_some()` check. Verify this is as expected.
+          access.is_some() && access != Some(&ast::Type::Variable(*id))
+        } =>
       {
-        self.unify(&self.substitution[id_a.to_owned()].clone(), type_b)
+        self.unify(&self.substitutions.get(id).unwrap().clone(), type_b)
       }
-      (_, ast::Type::Variable(id_b))
-        if !matches!(self.substitution[id_b.to_owned()], ast::Type::Variable(_)) =>
+      (_, ast::Type::Variable(id))
+        if {
+          let access = self.substitutions.get(id);
+
+          // REVIEW: Here we manually added the `.is_some()` check. Verify this is as expected.
+          access.is_some() && access != Some(&ast::Type::Variable(*id))
+        } =>
       {
-        self.unify(type_a, &self.substitution[id_b.to_owned()].clone())
+        self.unify(type_a, &self.substitutions.get(id).unwrap().clone())
       }
       // Otherwise, if one of the types is an unbound type variable, bind it to the
       // other type. Remember to do an occurs check to avoid constructing infinite types.
@@ -280,18 +298,26 @@ impl CheckContext {
         // REVISE: Proper error handling.
         assert!(!self.occurs_in(id_a.to_owned(), &type_b));
 
-        self.substitution[id_a.to_owned()] = type_b.clone();
+        self.substitutions.insert(*id_a, type_b.clone());
       }
       (_, ast::Type::Variable(id_b)) => {
         // REVISE: Proper error handling.
         assert!(!self.occurs_in(id_b.to_owned(), &type_a));
 
-        self.substitution[id_b.to_owned()] = type_a.clone();
+        self.substitutions.insert(*id_b, type_a.clone());
       }
       _ => {}
     }
   }
 
+  // TODO: This is the same thing as `node.unification`, but it assumed nodes can be mutated as in object-oriented languages.
+  /// Solves constraints by performing unification.
+  ///
+  /// This occurs after all the constraints have been added,
+  /// and is the last step for Hindley-Milner type inference.
+  /// After this process is completed, nodes can proceed to perform
+  /// their post-unification phase, which mostly consists of replacing
+  /// their type variables with concrete types.
   fn solve_constraints(&mut self) {
     // REVIEW: Any way to avoid cloning?
     for constrain in self.constraints.clone() {
@@ -307,7 +333,7 @@ impl CheckContext {
   /// until a non-variable type is found.
   pub fn substitute(&self, ty: ast::Type) -> ast::Type {
     if let ast::Type::Variable(id) = &ty {
-      let substitution = self.substitution[id.to_owned()].clone();
+      let substitution = self.substitutions.get(id).unwrap().clone();
 
       // case TVariable(i) if substitution(i) != TVariable(i) =>
       //substitute(substitution(i))
@@ -339,15 +365,15 @@ pub trait Check {
     ast::Type::Unit
   }
 
-  fn check(&self, _context: &mut CheckContext, _cache: &cache::Cache) {
+  fn check(&self, _context: &mut TypeContext, _cache: &cache::Cache) {
     //
   }
 
-  fn report_constraints(&mut self, _context: &mut CheckContext, _cache: &cache::Cache) {
+  fn report_constraints(&mut self, _context: &mut TypeContext, _cache: &cache::Cache) {
     //
   }
 
-  fn substitution(&mut self, _context: &mut CheckContext, _cache: &cache::Cache) {
+  fn post_unification(&mut self, _context: &mut TypeContext, _cache: &cache::Cache) {
     //
   }
 }
@@ -357,7 +383,7 @@ impl Check for ast::NodeKind {
     dispatch!(&self, Check::infer_type, cache)
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     dispatch!(&self, Check::check, context, cache);
   }
 }
@@ -367,8 +393,8 @@ impl Check for ast::SizeofIntrinsic {
     ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I64))
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
-    let flattened_type = CheckContext::flatten_type(&self.ty, cache);
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    let flattened_type = TypeContext::flatten_type(&self.ty, cache);
 
     if matches!(flattened_type, ast::Type::Unit) {
       context.diagnostics.push(
@@ -380,7 +406,7 @@ impl Check for ast::SizeofIntrinsic {
 }
 
 impl Check for ast::Using {
-  fn check(&self, context: &mut CheckContext, _cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
     // FIXME: Can't just push the import once encountered; only when it's actually used.
     context.usings.push(self.clone());
   }
@@ -391,7 +417,7 @@ impl Check for ast::ParenthesesExpr {
     self.expr.kind.infer_type(cache)
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     self.expr.kind.check(context, cache);
   }
 }
@@ -401,7 +427,7 @@ impl Check for ast::Trait {
 }
 
 impl Check for ast::StructImpl {
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     context.in_impl = true;
 
     for method in &self.member_methods {
@@ -479,7 +505,7 @@ impl Check for ast::StructImpl {
 
 impl Check for ast::MemberAccess {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let resolved_base_expr_type = CheckContext::infer_and_flatten_type(&self.base_expr, cache);
+    let resolved_base_expr_type = TypeContext::infer_and_flatten_type(&self.base_expr, cache);
 
     let struct_type = match resolved_base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
@@ -510,8 +536,8 @@ impl Check for ast::MemberAccess {
     return ast::Type::Error;
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
-    let resolved_base_expr_type = CheckContext::infer_and_flatten_type(&self.base_expr, cache);
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    let resolved_base_expr_type = TypeContext::infer_and_flatten_type(&self.base_expr, cache);
 
     let struct_type = match resolved_base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
@@ -539,13 +565,13 @@ impl Check for ast::MemberAccess {
 
 impl Check for ast::Closure {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    CheckContext::infer_prototype_type(
+    TypeContext::infer_prototype_type(
       &self.prototype,
-      CheckContext::infer_return_value_type(&self.body, cache),
+      TypeContext::infer_return_value_type(&self.body, cache),
     )
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     // REVIEW: Might need to mirror `Function`'s type check.
 
     if self.prototype.accepts_instance {
@@ -589,7 +615,7 @@ impl Check for ast::StructValue {
     ast::Type::Struct(struct_type.clone())
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let struct_type_node = cache.force_get(&self.target_id.unwrap());
 
     let struct_type = match struct_type_node {
@@ -628,7 +654,7 @@ impl Check for ast::StructValue {
 }
 
 impl Check for ast::Prototype {
-  fn check(&self, _context: &mut CheckContext, _cache: &cache::Cache) {
+  fn check(&self, _context: &mut TypeContext, _cache: &cache::Cache) {
     // TODO: Implement?
   }
 }
@@ -657,8 +683,8 @@ impl Check for ast::UnaryExpr {
     };
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
-    let expr_type = CheckContext::infer_and_flatten_type(&self.expr, cache);
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    let expr_type = TypeContext::infer_and_flatten_type(&self.expr, cache);
 
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
@@ -677,7 +703,7 @@ impl Check for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !CheckContext::compare(&expr_type, &ast::Type::Basic(ast::BasicType::Bool), cache) {
+        if !TypeContext::compare(&expr_type, &ast::Type::Basic(ast::BasicType::Bool), cache) {
           context.diagnostics.push(
             codespan_reporting::diagnostic::Diagnostic::error()
               .with_message("can only negate boolean expressions"),
@@ -707,7 +733,7 @@ impl Check for ast::UnaryExpr {
             codespan_reporting::diagnostic::Diagnostic::error()
               .with_message("can only cast between primitive types"),
           );
-        } else if CheckContext::compare(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
+        } else if TypeContext::compare(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
           context.diagnostics.push(
             codespan_reporting::diagnostic::Diagnostic::warning()
               .with_message("redundant cast to the same type"),
@@ -724,11 +750,11 @@ impl Check for ast::Enum {
 }
 
 impl Check for ast::AssignStmt {
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     // TODO: Need to unify the value and the target's type.
 
     // REVIEW: No need to flatten the type?
-    let assignee_type = CheckContext::infer_and_flatten_type(&self.assignee_expr, cache);
+    let assignee_type = TypeContext::infer_and_flatten_type(&self.assignee_expr, cache);
 
     if matches!(assignee_type, ast::Type::Reference(_)) {
       context.diagnostics.push(
@@ -787,7 +813,7 @@ impl Check for ast::AssignStmt {
 }
 
 impl Check for ast::ContinueStmt {
-  fn check(&self, context: &mut CheckContext, _cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
     if !context.in_loop {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
@@ -816,7 +842,7 @@ impl Check for ast::IndexingExpr {
     array_element_type
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let index_expr_type = self.index_expr.kind.infer_type(cache);
 
     let is_unsigned_int_type =
@@ -856,7 +882,7 @@ impl Check for ast::StaticArrayValue {
     ast::Type::Array(Box::new(array_element_type), self.elements.len() as u32)
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let mut mixed_elements_flag = false;
 
     let expected_element_type = if let Some(explicit_type) = &self.explicit_type {
@@ -887,7 +913,7 @@ impl Check for ast::UnsafeExpr {
     self.0.kind.infer_type(cache)
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     // REVIEW: To avoid problems with nested cases, save a buffer here, then restore?
     context.in_unsafe_block = true;
     self.0.kind.check(context, cache);
@@ -897,13 +923,13 @@ impl Check for ast::UnsafeExpr {
 
 impl Check for ast::ExternFunction {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    CheckContext::infer_prototype_type(
+    TypeContext::infer_prototype_type(
       &self.prototype,
       self.prototype.return_type_annotation.clone(),
     )
   }
 
-  fn check(&self, context: &mut CheckContext, _cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
     if self.prototype.accepts_instance {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
@@ -928,7 +954,7 @@ impl Check for ast::BlockExpr {
     ast::Type::Unit
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     for statement in &self.statements {
       statement.kind.check(context, cache);
     }
@@ -970,15 +996,15 @@ impl Check for ast::IfExpr {
     let then_block_type = self.then_value.kind.infer_type(cache);
 
     // In case of a type-mismatch between branches, simply return the unit type.
-    if !CheckContext::compare(&then_block_type, &else_block.kind.infer_type(cache), cache) {
+    if !TypeContext::compare(&then_block_type, &else_block.kind.infer_type(cache), cache) {
       return ast::Type::Unit;
     }
 
     then_block_type
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
-    if !CheckContext::compare(
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    if !TypeContext::compare(
       &self.condition.kind.infer_type(cache),
       &ast::Type::Basic(ast::BasicType::Bool),
       cache,
@@ -1015,13 +1041,13 @@ impl Check for ast::BinaryExpr {
     }
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let left_type = self.left.kind.infer_type(cache);
     let right_type = self.right.kind.infer_type(cache);
 
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
-    if !CheckContext::compare(&left_type, &right_type, cache) {
+    if !TypeContext::compare(&left_type, &right_type, cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("binary expression operands must be the same type"),
@@ -1058,7 +1084,7 @@ impl Check for ast::BinaryExpr {
 }
 
 impl Check for ast::BreakStmt {
-  fn check(&self, context: &mut CheckContext, _cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
     if !context.in_loop {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
@@ -1073,7 +1099,7 @@ impl Check for ast::InlineExprStmt {
     self.expr.kind.infer_type(cache)
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     self.expr.kind.check(context, cache);
   }
 }
@@ -1084,11 +1110,11 @@ impl Check for ast::VariableDefStmt {
     self.value.kind.infer_type(cache)
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let value_type = self.value.kind.infer_type(cache);
     let ty = &self.infer_type(cache);
 
-    if !CheckContext::compare(&ty, &value_type, cache) {
+    if !TypeContext::compare(&ty, &value_type, cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "variable declaration of `{}` value and type mismatch",
@@ -1100,7 +1126,9 @@ impl Check for ast::VariableDefStmt {
     self.value.kind.check(context, cache);
   }
 
-  fn report_constraints(&mut self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn report_constraints(&mut self, context: &mut TypeContext, cache: &cache::Cache) {
+    // TODO: Abstract this to a method that accepts a type and a list of constraints.
+    // ... This way it can be reused for other implementations.
     if !matches!(self.ty, ast::Type::Variable(_)) {
       return;
     }
@@ -1112,13 +1140,21 @@ impl Check for ast::VariableDefStmt {
     ));
   }
 
-  fn substitution(&mut self, _context: &mut CheckContext, _cache: &cache::Cache) {
-    // TODO: ?
+  fn post_unification(&mut self, context: &mut TypeContext, _cache: &cache::Cache) {
+    let variable_type_id = match self.ty {
+      ast::Type::Variable(ref id) => id,
+      _ => return,
+    };
+
+    // REVIEW: What if there was no substitution defined? Unsafe unwrap?
+    // ... Or maybe this is the part where we report diagnostics in this implementation?
+    // ... Bingo! The `unify` method is where the diagnostics are reported.
+    self.ty = context.substitutions.get(variable_type_id).unwrap().clone();
   }
 }
 
 impl Check for ast::ReturnStmt {
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let current_function_node = cache.force_get(&context.current_function_key.unwrap());
     let mut name = None;
     let return_type;
@@ -1126,10 +1162,10 @@ impl Check for ast::ReturnStmt {
     match &current_function_node {
       ast::NodeKind::Function(function) => {
         name = Some(function.name.clone());
-        return_type = CheckContext::infer_return_value_type(&function.body, cache);
+        return_type = TypeContext::infer_return_value_type(&function.body, cache);
       }
       ast::NodeKind::Closure(closure) => {
-        return_type = CheckContext::infer_return_value_type(&closure.body, cache);
+        return_type = TypeContext::infer_return_value_type(&closure.body, cache);
       }
       _ => unreachable!(),
     };
@@ -1153,7 +1189,7 @@ impl Check for ast::ReturnStmt {
     if let Some(value) = &self.value {
       let value_type = value.kind.infer_type(cache);
 
-      if !CheckContext::compare(&return_type, &value_type, cache) {
+      if !TypeContext::compare(&return_type, &value_type, cache) {
         context.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
             "return statement value and prototype return type mismatch for {}",
@@ -1174,13 +1210,13 @@ impl Check for ast::ReturnStmt {
 impl Check for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // REVIEW: Why not use annotated return type if defined?
-    CheckContext::infer_prototype_type(
+    TypeContext::infer_prototype_type(
       &self.prototype,
-      CheckContext::infer_return_value_type(&self.body, cache),
+      TypeContext::infer_return_value_type(&self.body, cache),
     )
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     context.current_function_key = Some(self.binding_id);
 
     if self.prototype.accepts_instance && !context.in_impl {
@@ -1192,7 +1228,7 @@ impl Check for ast::Function {
 
     let return_type = self.body.infer_type(cache);
 
-    if !CheckContext::compare(&return_type, &self.body.infer_type(cache), cache) {
+    if !TypeContext::compare(&return_type, &self.body.infer_type(cache), cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "function body and prototype return type mismatch for function `{}`",
@@ -1235,7 +1271,7 @@ impl Check for ast::Function {
     context.current_function_key = None;
   }
 
-  fn substitution(&mut self, _context: &mut CheckContext, _cache: &cache::Cache) {
+  fn post_unification(&mut self, _context: &mut TypeContext, _cache: &cache::Cache) {
     // TODO: Parameters, etc.
 
     self.prototype.return_type_annotation =
@@ -1258,7 +1294,7 @@ impl Check for ast::CallExpr {
     }
   }
 
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     self.callee_expr.kind.check(context, cache);
 
     // REVIEW: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
@@ -1327,8 +1363,8 @@ impl Check for ast::CallExpr {
       .iter()
       .zip(self.arguments.iter())
     {
-      let resolved_argument_type = CheckContext::infer_and_flatten_type(argument, cache);
-      let resolved_parameter_type = CheckContext::flatten_type(parameter_type, cache);
+      let resolved_argument_type = TypeContext::infer_and_flatten_type(argument, cache);
+      let resolved_parameter_type = TypeContext::flatten_type(parameter_type, cache);
 
       if resolved_argument_type != resolved_parameter_type {
         // TODO: Include callee name in the error message.
@@ -1349,9 +1385,9 @@ impl Check for ast::CallExpr {
 }
 
 impl Check for ast::LoopStmt {
-  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
-      if !CheckContext::compare(
+      if !TypeContext::compare(
         &condition.kind.infer_type(cache),
         &ast::Type::Basic(ast::BasicType::Bool),
         cache,
@@ -1380,58 +1416,104 @@ mod tests {
   fn is_null_pointer_type() {
     let null_ptr_type = ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::Null)));
 
-    assert!(CheckContext::is_null_pointer_type(&null_ptr_type));
-    assert!(!CheckContext::is_null_pointer_type(&ast::Type::Unit));
+    assert!(TypeContext::is_null_pointer_type(&null_ptr_type));
+    assert!(!TypeContext::is_null_pointer_type(&ast::Type::Unit));
   }
 
   #[test]
   fn proper_initial_values() {
-    let check_context = CheckContext::new();
+    let type_context = TypeContext::new();
 
-    assert!(check_context.constraints.is_empty());
-    assert!(check_context.substitution.is_empty());
-    assert!(check_context.diagnostics.is_empty());
-    assert!(check_context.usings.is_empty());
-    assert!(check_context.current_function_key.is_none());
-    assert!(!check_context.in_impl);
-    assert!(!check_context.in_loop);
-    assert!(!check_context.in_unsafe_block);
+    assert!(type_context.constraints.is_empty());
+    assert!(type_context.substitutions.is_empty());
+    assert!(type_context.diagnostics.is_empty());
+    assert!(type_context.usings.is_empty());
+    assert!(type_context.current_function_key.is_none());
+    assert!(!type_context.in_impl);
+    assert!(!type_context.in_loop);
+    assert!(!type_context.in_unsafe_block);
   }
 
   #[test]
   fn occurs_in() {
-    let mut check_context = CheckContext::new();
+    let mut type_context = TypeContext::new();
     let first_index_id = 0;
     let second_index_id = first_index_id + 1;
 
-    check_context
-      .substitution
-      .push(ast::Type::Variable(first_index_id));
+    type_context
+      .substitutions
+      .insert(first_index_id, ast::Type::Variable(first_index_id));
 
-    check_context.substitution.push(ast::Type::Unit);
+    type_context
+      .substitutions
+      .insert(second_index_id, ast::Type::Unit);
 
     let subject_type_variable = ast::Type::Variable(first_index_id);
 
-    assert!(check_context.occurs_in(first_index_id, &subject_type_variable));
-    assert!(!check_context.occurs_in(second_index_id, &subject_type_variable));
-    assert!(!check_context.occurs_in(first_index_id, &ast::Type::Unit));
+    assert!(type_context.occurs_in(first_index_id, &subject_type_variable));
+    assert!(!type_context.occurs_in(second_index_id, &subject_type_variable));
+    assert!(!type_context.occurs_in(first_index_id, &ast::Type::Unit));
+  }
+
+  #[test]
+  fn create_type_variable() {
+    let mut type_context = TypeContext::new();
+
+    assert_eq!(type_context.create_type_variable(), ast::Type::Variable(0));
+    assert_eq!(1, type_context.substitutions.len());
+  }
+
+  #[test]
+  fn solve_constraints() {
+    let mut type_context = TypeContext::new();
+
+    // TODO: Add actual constraints to complete this test.
+
+    type_context.solve_constraints();
+    assert!(type_context.constraints.is_empty());
   }
 
   #[test]
   fn substitute() {
-    let mut check_context = CheckContext::new();
+    let mut type_context = TypeContext::new();
 
-    assert_eq!(ast::Type::Unit, check_context.substitute(ast::Type::Unit));
+    assert_eq!(ast::Type::Unit, type_context.substitute(ast::Type::Unit));
 
-    let id = 0;
+    let type_variable_id = 0;
     let non_type_variable = ast::Type::Basic(ast::BasicType::Bool);
 
-    check_context.substitution.push(non_type_variable.clone());
+    type_context
+      .substitutions
+      .insert(type_variable_id, non_type_variable.clone());
 
     assert_eq!(
       non_type_variable,
-      check_context.substitute(ast::Type::Variable(id))
+      type_context.substitute(ast::Type::Variable(type_variable_id))
     );
+  }
+
+  #[test]
+  fn hindley_milner_type_inference() {
+    let mut type_context = TypeContext::new();
+    let cache = cache::Cache::new();
+    let type_variable_id = 0;
+
+    let mut variable_def_stmt = ast::VariableDefStmt {
+      name: String::from("a"),
+      ty: ast::Type::Variable(type_variable_id),
+      // TODO: Use `Mock` scaffolding.
+      value: Box::new(ast::Node {
+        kind: ast::NodeKind::Literal(ast::Literal::Bool(true)),
+        cached_type: None,
+      }),
+      binding_id: 0,
+      is_mutable: false,
+    };
+
+    variable_def_stmt.report_constraints(&mut type_context, &cache);
+    type_context.solve_constraints();
+    variable_def_stmt.post_unification(&mut type_context, &cache);
+    assert_eq!(variable_def_stmt.ty, ast::Type::Basic(ast::BasicType::Bool));
   }
 
   // TODO: Add tests for `compare()`, `infer_and_flatten_type()`, `flatten_type()`, and others.

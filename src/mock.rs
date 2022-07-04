@@ -122,7 +122,7 @@ pub mod tests {
     }
 
     pub fn reference(binding_id: cache::BindingId) -> Box<ast::Node> {
-      Mock::node(ast::NodeKind::Reference(ast::Reference {
+      Mock::boxed_node(ast::NodeKind::Reference(ast::Reference {
         pattern: ast::Pattern {
           qualifier: None,
           base_name: "test".to_string(),
@@ -170,7 +170,7 @@ pub mod tests {
       Mock::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
     }
 
-    pub fn node(kind: ast::NodeKind) -> Box<ast::Node> {
+    pub fn boxed_node(kind: ast::NodeKind) -> Box<ast::Node> {
       Box::new(ast::Node {
         kind,
         cached_type: None,

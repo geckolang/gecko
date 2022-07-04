@@ -1,6 +1,6 @@
 use crate::{
   ast, cache,
-  check::{Check, CheckContext},
+  type_system::{Check, TypeContext},
   dispatch,
 };
 
@@ -104,7 +104,7 @@ impl Lower for ast::MemberAccess {
       .into_pointer_value();
 
     // Flatten the type in case it is a `ThisType`.
-    let llvm_struct_type = match CheckContext::infer_and_flatten_type(&self.base_expr, cache) {
+    let llvm_struct_type = match TypeContext::infer_and_flatten_type(&self.base_expr, cache) {
       ast::Type::Struct(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -174,7 +174,7 @@ impl Lower for ast::Closure {
     // FIXME: Use the modified prototype.
     let llvm_function_type = generator.lower_prototype(
       &self.prototype,
-      &CheckContext::infer_return_value_type(&self.body, cache),
+      &TypeContext::infer_return_value_type(&self.body, cache),
       cache,
     );
 
@@ -1042,7 +1042,7 @@ impl Lower for ast::Function {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator.lower_prototype(
       &self.prototype,
-      &CheckContext::infer_return_value_type(&self.body, cache),
+      &TypeContext::infer_return_value_type(&self.body, cache),
       cache,
     );
 
@@ -1291,7 +1291,7 @@ impl Lower for ast::VariableDefStmt {
 
     // Special cases. The allocation is done elsewhere.
     if matches!(
-      CheckContext::flatten_type(&ty, cache),
+      TypeContext::flatten_type(&ty, cache),
       ast::Type::Function(_)
     ) {
       // REVISE: Cleanup the caching code.
@@ -1662,7 +1662,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   }
 
   fn find_type_binding_id(&self, ty: &ast::Type, cache: &cache::Cache) -> Option<cache::BindingId> {
-    let resolved_type = CheckContext::flatten_type(ty, cache);
+    let resolved_type = TypeContext::flatten_type(ty, cache);
 
     Some(match resolved_type {
       ast::Type::Struct(struct_type) => struct_type.binding_id.clone(),
@@ -1975,7 +1975,7 @@ mod tests {
 
     let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
-      value: Mock::node(Mock::literal_int()),
+      value: Mock::boxed_node(Mock::literal_int()),
       is_mutable: false,
       binding_id: 0,
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
@@ -1995,7 +1995,7 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
-      value: Mock::node(Mock::literal_int()),
+      value: Mock::boxed_node(Mock::literal_int()),
       is_mutable: false,
       binding_id: a_binding_id,
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
@@ -2025,7 +2025,7 @@ mod tests {
 
     let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
-      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
+      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_mutable: false,
       binding_id: 0,
       // FIXME: Wrong type.
@@ -2047,7 +2047,7 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
-      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
       // FIXME: Wrong type.
@@ -2078,7 +2078,7 @@ mod tests {
 
     let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
-      value: Mock::node(ast::NodeKind::Literal(ast::Literal::String(
+      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
       ))),
       is_mutable: false,
@@ -2101,7 +2101,7 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
-      value: Mock::node(Mock::literal_int()),
+      value: Mock::boxed_node(Mock::literal_int()),
       is_mutable: true,
       binding_id: a_binding_id,
       // FIXME: Wrong type.
@@ -2110,7 +2110,7 @@ mod tests {
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
       assignee_expr: Mock::reference(a_binding_id),
-      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Int(
+      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Int(
         2,
         ast::IntSize::I32,
       ))),
@@ -2134,7 +2134,7 @@ mod tests {
 
     let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
-      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: a_binding_id,
       // FIXME: Wrong type.
@@ -2143,7 +2143,7 @@ mod tests {
 
     let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "b".to_string(),
-      value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
       binding_id: b_binding_id,
       // FIXME: Wrong type.
@@ -2200,7 +2200,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
-      value: Some(Mock::node(Mock::literal_int())),
+      value: Some(Mock::boxed_node(Mock::literal_int())),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -2250,8 +2250,8 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
-      condition: Mock::node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
-      then_value: Mock::node(Mock::literal_int()),
+      condition: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
+      then_value: Mock::boxed_node(Mock::literal_int()),
       alternative_branches: Vec::new(),
       else_value: None,
     });

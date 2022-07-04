@@ -3,9 +3,9 @@ extern crate inkwell;
 
 #[cfg(test)]
 mod tests {
-  use gecko::check::Check;
   use gecko::lint::Lint;
   use gecko::lowering::Lower;
+  use gecko::type_system::Check;
   use std::{fs, io::Read};
 
   fn load_test_file(path: &std::path::PathBuf) -> String {
@@ -41,7 +41,7 @@ mod tests {
     let mut cache = gecko::cache::Cache::new();
     let mut lint_context = gecko::lint::LintContext::new();
     let mut llvm_generator = gecko::lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
-    let mut check_context = gecko::check::CheckContext::new();
+    let mut type_context = gecko::type_system::TypeContext::new();
     let mut ast_map = std::collections::BTreeMap::new();
     let tokens = lex(source_file_path);
     let mut substitution = Vec::new();
@@ -63,11 +63,13 @@ mod tests {
       // TODO: What about constraint reports?
 
       for top_level_node in inner_ast.iter_mut() {
-        top_level_node.kind.substitution(&mut check_context, &cache);
+        top_level_node
+          .kind
+          .post_unification(&mut type_context, &cache);
       }
 
       for top_level_node in inner_ast {
-        top_level_node.kind.check(&mut check_context, &cache);
+        top_level_node.kind.check(&mut type_context, &cache);
 
         // REVIEW: Can we mix linting with type-checking without any problems?
         top_level_node.lint(&cache, &mut lint_context);

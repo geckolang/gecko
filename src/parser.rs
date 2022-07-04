@@ -45,7 +45,8 @@ pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
   index: usize,
   cache: &'a mut cache::Cache,
-  substitution: &'a mut Vec<ast::Type>,
+  // TODO: This shouldn't be present here. Instantiate unspecified types to `None` or a special value.
+  substitutions: &'a mut Vec<ast::Type>,
 }
 
 impl<'a> Parser<'a> {
@@ -58,7 +59,7 @@ impl<'a> Parser<'a> {
       tokens,
       index: 0,
       cache,
-      substitution,
+      substitutions: substitution,
     }
   }
 
@@ -95,11 +96,12 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
+  // TODO: Migrate this to the `CheckContext` struct.
   fn create_type_variable(&mut self) -> ast::Type {
-    let result = ast::Type::Variable(self.substitution.len());
+    let result = ast::Type::Variable(self.substitutions.len());
 
     // TODO: Is there a need to clone the type?
-    self.substitution.push(result.clone());
+    self.substitutions.push(result.clone());
 
     result
   }

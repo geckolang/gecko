@@ -1,8 +1,4 @@
-use crate::{
-  cache,
-  check::{Check, CheckContext},
-  name_resolution, visitor,
-};
+use crate::{cache, type_system::Check, name_resolution, visitor};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -493,4 +489,96 @@ pub struct UnaryExpr {
 pub struct MemberAccess {
   pub base_expr: Box<Node>,
   pub member_name: String,
+}
+
+// TODO: Consider making an associated/member function instead.
+pub fn traverse<'a, F: FnMut(&'a NodeKind) -> bool>(ast: &'a NodeKind, mut visitor: F) {
+  let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
+    match node {
+      NodeKind::AssignStmt(assign_stmt) => vec![&assign_stmt.assignee_expr.kind],
+      NodeKind::BinaryExpr(binary_expr) => {
+        vec![&binary_expr.left.kind, &binary_expr.right.kind]
+      }
+      NodeKind::BlockExpr(block_expr) => block_expr
+        .statements
+        .iter()
+        .map(|statement| &statement.kind)
+        .collect(),
+      // TODO: Implement all other nodes with visitable children.
+      _ => vec![],
+    }
+  };
+
+  let mut queue = vec![ast];
+
+  while let Some(node) = queue.pop() {
+    if !visitor(node) {
+      return;
+    }
+
+    for child in dispatcher(node) {
+      queue.push(child);
+    }
+  }
+}
+
+pub fn find_node<'a, F: FnMut(&'a NodeKind) -> bool>(
+  ast: &'a NodeKind,
+  mut predicate: F,
+) -> Option<&'a NodeKind> {
+  let mut result = None;
+
+  traverse(ast, |node| {
+    if predicate(node) {
+      result = Some(node);
+
+      return false;
+    }
+
+    true
+  });
+
+  result
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn traverse_ast() {
+    let node = NodeKind::BlockExpr(BlockExpr {
+      binding_id: 0,
+      statements: Vec::new(),
+      yields: None,
+    });
+
+    let mut visitations = 0;
+
+    traverse(&node, |_| {
+      visitations += 1;
+
+      true
+    });
+
+    assert_eq!(1, visitations);
+  }
+
+  #[test]
+  fn find_node_in_ast() {
+    let target_node = NodeKind::BreakStmt(BreakStmt);
+
+    let block = NodeKind::BlockExpr(BlockExpr {
+      binding_id: 0,
+      statements: vec![Node {
+        cached_type: None,
+        kind: target_node.clone(),
+      }],
+      yields: None,
+    });
+
+    let search_result = find_node(&block, |node| matches!(node, NodeKind::BreakStmt(_)));
+
+    assert!(matches!(search_result, Some(NodeKind::BreakStmt(_))));
+  }
 }
