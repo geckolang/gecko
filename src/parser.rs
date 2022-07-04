@@ -297,7 +297,10 @@ impl<'a> Parser<'a> {
       }
     };
 
-    Ok(ast::Node { kind })
+    Ok(ast::Node {
+      kind,
+      cached_type: None,
+    })
   }
 
   fn parse_indent(&mut self) -> ParserResult<()> {
@@ -550,9 +553,9 @@ impl<'a> Parser<'a> {
     let return_type_annotation = if self.is(&lexer::TokenKind::Arrow) {
       self.skip()?;
 
-      Some(self.parse_type()?)
+      self.parse_type()?
     } else {
-      None
+      self.create_type_variable()
     };
 
     Ok(ast::Prototype {
@@ -725,7 +728,10 @@ impl<'a> Parser<'a> {
       _ => return Err(self.expected("top-level construct")),
     };
 
-    Ok(ast::Node { kind })
+    Ok(ast::Node {
+      kind,
+      cached_type: None,
+    })
   }
 
   /// type %name = %type
@@ -764,7 +770,7 @@ impl<'a> Parser<'a> {
   }
 
   /// let (mut) %name (':' %type) '=' %expr
-  fn parse_variable_def_stmt(&mut self) -> ParserResult<ast::LetStmt> {
+  fn parse_variable_def_stmt(&mut self) -> ParserResult<ast::VariableDefStmt> {
     let is_mutable = if self.is(&lexer::TokenKind::Var) {
       self.skip()?;
 
@@ -791,7 +797,7 @@ impl<'a> Parser<'a> {
 
     // TODO: Value should be treated as rvalue, unless its using an address-of operator. Find out how to translate this to logic.
 
-    Ok(ast::LetStmt {
+    Ok(ast::VariableDefStmt {
       name,
       value: Box::new(value),
       is_mutable,
@@ -1092,7 +1098,10 @@ impl<'a> Parser<'a> {
       _ => ast::NodeKind::Literal(self.parse_literal()?),
     };
 
-    let mut node = ast::Node { kind };
+    let mut node = ast::Node {
+      kind,
+      cached_type: None,
+    };
 
     // Promote the node to a chain, if applicable.
     while self.is_chain() {
@@ -1103,7 +1112,10 @@ impl<'a> Parser<'a> {
       };
 
       // REVIEW: Simplify (DRY)?
-      node = ast::Node { kind };
+      node = ast::Node {
+        kind,
+        cached_type: None,
+      };
     }
 
     Ok(node)
@@ -1184,7 +1196,10 @@ impl<'a> Parser<'a> {
         operator,
       });
 
-      buffer = ast::Node { kind };
+      buffer = ast::Node {
+        kind,
+        cached_type: None,
+      };
     }
 
     Ok(buffer)

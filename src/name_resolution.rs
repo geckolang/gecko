@@ -1,4 +1,4 @@
-use crate::{ast, cache, llvm_lowering};
+use crate::{ast, cache, lowering};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
@@ -329,10 +329,7 @@ impl Resolve for ast::Prototype {
         .resolve(resolver, cache);
     }
 
-    // Resolve return type regardless, in case of an extern.
-    if let Some(return_type) = &mut self.return_type_annotation {
-      return_type.resolve(resolver, cache);
-    }
+    self.return_type_annotation.resolve(resolver, cache);
   }
 }
 
@@ -525,7 +522,7 @@ impl Resolve for ast::IfExpr {
   }
 }
 
-impl Resolve for ast::LetStmt {
+impl Resolve for ast::VariableDefStmt {
   fn declare(&self, resolver: &mut NameResolver) {
     resolver.declare_symbol(
       Symbol {
@@ -650,7 +647,7 @@ impl Resolve for ast::Function {
     // ... can be defined elsewhere on its dependencies (even if they're libraries).
     // REVIEW: Should we have this check positioned here? Or should it be placed elsewhere?
     // ... Also, should the main function binding id be located under the cache?
-    if self.name == llvm_lowering::MAIN_FUNCTION_NAME {
+    if self.name == lowering::MAIN_FUNCTION_NAME {
       if cache.main_function_id.is_some() {
         resolver.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error()

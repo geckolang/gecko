@@ -1,4 +1,4 @@
-use crate::{ast, cache, dispatch, llvm_lowering};
+use crate::{ast, cache, dispatch, lowering};
 
 #[derive(Clone)]
 enum TypeConstrainKind {
@@ -7,7 +7,7 @@ enum TypeConstrainKind {
 
 type TypeConstraint = (ast::Type, ast::Type, TypeConstrainKind);
 
-pub struct SemanticCheckContext {
+pub struct CheckContext {
   diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   in_loop: bool,
   in_unsafe_block: bool,
@@ -20,7 +20,7 @@ pub struct SemanticCheckContext {
   substitution: Vec<ast::Type>,
 }
 
-impl SemanticCheckContext {
+impl CheckContext {
   pub fn run(
     ast: &Vec<std::rc::Rc<ast::Node>>,
     cache: &cache::Cache,
@@ -28,7 +28,7 @@ impl SemanticCheckContext {
     Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
     Vec<ast::Using>,
   ) {
-    let mut semantic_check_context = SemanticCheckContext::new();
+    let mut semantic_check_context = CheckContext::new();
 
     for node in ast {
       node.kind.check(&mut semantic_check_context, cache);
@@ -104,8 +104,12 @@ impl SemanticCheckContext {
       .filter(|statement| matches!(&statement.kind, ast::NodeKind::UnsafeExpr(_)))
       .find(|unsafe_expr| !matches!(unsafe_expr.kind.infer_type(cache), ast::Type::Unit));
 
-    if let Some(returning_unsafe_expr) = &nested_returning_unsafe_expr {
-      return returning_unsafe_expr.kind.infer_type(cache);
+    if let Some(ast::Node {
+      kind: ast::NodeKind::UnsafeExpr(unsafe_expr),
+      cached_type: _,
+    }) = &nested_returning_unsafe_expr
+    {
+      return Self::infer_return_value_type(unsafe_expr.0, cache);
     }
 
     ast::Type::Unit
@@ -134,7 +138,7 @@ impl SemanticCheckContext {
 
   // TODO: Find instances and replace old usages with this function.
   pub fn infer_and_flatten_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
-    SemanticCheckContext::flatten_type(&node.kind.infer_type(cache), cache)
+    CheckContext::flatten_type(&node.kind.infer_type(cache), cache)
   }
 
   // TODO: Use an enum to specify error type instead of a string.
@@ -162,8 +166,8 @@ impl SemanticCheckContext {
     }
 
     if !Self::compare(
-      prototype_a.return_type_annotation.as_ref().unwrap(),
-      prototype_b.return_type_annotation.as_ref().unwrap(),
+      &prototype_a.return_type_annotation,
+      &prototype_b.return_type_annotation,
       cache,
     ) {
       return Some("return type".to_string());
@@ -233,15 +237,20 @@ impl SemanticCheckContext {
     flat_type_a == flat_type_b
   }
 
-  fn occurs_in(&self, index: usize, ty: &ast::Type) -> bool {
+  /// Recursively check if a type variable index occurs in
+  /// a type.
+  ///
+  /// For this to be `true`, the type in question must be a type variable.
+  /// Any other type will yield `false`.
+  fn occurs_in(&self, index_id: usize, ty: &ast::Type) -> bool {
     match ty {
       ast::Type::Variable(id)
         if self.substitution[id.to_owned()] != ast::Type::Variable(id.to_owned()) =>
       {
-        self.occurs_in(index, &self.substitution[id.to_owned()])
+        self.occurs_in(index_id, &self.substitution[id.to_owned()])
       }
       // REVIEW: Will this compare the underlying values or the addresses?
-      ast::Type::Variable(id) => id == &index,
+      ast::Type::Variable(id) => id == &index_id,
       // TODO: Generics / type constructors.
       _ => false,
     }
@@ -251,7 +260,10 @@ impl SemanticCheckContext {
   fn unify(&mut self, type_a: &ast::Type, type_b: &ast::Type) {
     match (type_a, type_b) {
       // TODO: Missing type constructor support.
+      // If both sides are the same type variable, do nothing.
       (ast::Type::Variable(id_a), ast::Type::Variable(id_b)) if id_a == id_b => {}
+      // If one of the types is a type variable that’s bound in the substitution,
+      // use unify with that type instead.
       (ast::Type::Variable(id_a), _)
         if !matches!(self.substitution[id_a.to_owned()], ast::Type::Variable(_)) =>
       {
@@ -262,6 +274,8 @@ impl SemanticCheckContext {
       {
         self.unify(type_a, &self.substitution[id_b.to_owned()].clone())
       }
+      // Otherwise, if one of the types is an unbound type variable, bind it to the
+      // other type. Remember to do an occurs check to avoid constructing infinite types.
       (ast::Type::Variable(id_a), _) => {
         // REVISE: Proper error handling.
         assert!(!self.occurs_in(id_a.to_owned(), &type_b));
@@ -287,10 +301,20 @@ impl SemanticCheckContext {
     self.constraints.clear();
   }
 
-  fn substitute(&self, ty: ast::Type) -> ast::Type {
+  /// Substitute a type variable with its non-variable type (if defined).
+  ///
+  /// This function will recursively substitute type variables,
+  /// until a non-variable type is found.
+  pub fn substitute(&self, ty: ast::Type) -> ast::Type {
     if let ast::Type::Variable(id) = &ty {
-      if let ast::Type::Variable(id) = &self.substitution[id.to_owned()] {
-        return self.substitute(self.substitution[id.to_owned()].clone());
+      let substitution = self.substitution[id.to_owned()].clone();
+
+      // case TVariable(i) if substitution(i) != TVariable(i) =>
+      //substitute(substitution(i))
+
+      // REVIEW: Is this condition correct?
+      if substitution != ty {
+        return self.substitute(substitution);
       }
     }
 
@@ -309,38 +333,42 @@ impl SemanticCheckContext {
   }
 }
 
-pub trait SemanticCheck {
+pub trait Check {
   // REVIEW: Consider caching inference results here, if they are indeed costly.
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Unit
   }
 
-  fn check(&self, _context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+  fn check(&self, _context: &mut CheckContext, _cache: &cache::Cache) {
     //
   }
 
-  fn report_constraints(&mut self, _context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+  fn report_constraints(&mut self, _context: &mut CheckContext, _cache: &cache::Cache) {
+    //
+  }
+
+  fn substitution(&mut self, _context: &mut CheckContext, _cache: &cache::Cache) {
     //
   }
 }
 
-impl SemanticCheck for ast::NodeKind {
+impl Check for ast::NodeKind {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    dispatch!(&self, SemanticCheck::infer_type, cache)
+    dispatch!(&self, Check::infer_type, cache)
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    dispatch!(&self, SemanticCheck::check, context, cache);
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+    dispatch!(&self, Check::check, context, cache);
   }
 }
 
-impl SemanticCheck for ast::SizeofIntrinsic {
+impl Check for ast::SizeofIntrinsic {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I64))
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let flattened_type = SemanticCheckContext::flatten_type(&self.ty, cache);
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+    let flattened_type = CheckContext::flatten_type(&self.ty, cache);
 
     if matches!(flattened_type, ast::Type::Unit) {
       context.diagnostics.push(
@@ -351,29 +379,29 @@ impl SemanticCheck for ast::SizeofIntrinsic {
   }
 }
 
-impl SemanticCheck for ast::Using {
-  fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+impl Check for ast::Using {
+  fn check(&self, context: &mut CheckContext, _cache: &cache::Cache) {
     // FIXME: Can't just push the import once encountered; only when it's actually used.
     context.usings.push(self.clone());
   }
 }
 
-impl SemanticCheck for ast::ParenthesesExpr {
+impl Check for ast::ParenthesesExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.expr.kind.infer_type(cache)
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     self.expr.kind.check(context, cache);
   }
 }
 
-impl SemanticCheck for ast::Trait {
+impl Check for ast::Trait {
   //
 }
 
-impl SemanticCheck for ast::StructImpl {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+impl Check for ast::StructImpl {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     context.in_impl = true;
 
     for method in &self.member_methods {
@@ -449,10 +477,9 @@ impl SemanticCheck for ast::StructImpl {
   }
 }
 
-impl SemanticCheck for ast::MemberAccess {
+impl Check for ast::MemberAccess {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let resolved_base_expr_type =
-      SemanticCheckContext::infer_and_flatten_type(&self.base_expr, cache);
+    let resolved_base_expr_type = CheckContext::infer_and_flatten_type(&self.base_expr, cache);
 
     let struct_type = match resolved_base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
@@ -483,9 +510,8 @@ impl SemanticCheck for ast::MemberAccess {
     return ast::Type::Error;
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let resolved_base_expr_type =
-      SemanticCheckContext::infer_and_flatten_type(&self.base_expr, cache);
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+    let resolved_base_expr_type = CheckContext::infer_and_flatten_type(&self.base_expr, cache);
 
     let struct_type = match resolved_base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
@@ -511,15 +537,15 @@ impl SemanticCheck for ast::MemberAccess {
   }
 }
 
-impl SemanticCheck for ast::Closure {
+impl Check for ast::Closure {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    SemanticCheckContext::infer_prototype_type(
+    CheckContext::infer_prototype_type(
       &self.prototype,
-      SemanticCheckContext::infer_return_value_type(&self.body, cache),
+      CheckContext::infer_return_value_type(&self.body, cache),
     )
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     // REVIEW: Might need to mirror `Function`'s type check.
 
     if self.prototype.accepts_instance {
@@ -534,25 +560,25 @@ impl SemanticCheck for ast::Closure {
   }
 }
 
-impl SemanticCheck for ast::TypeAlias {
+impl Check for ast::TypeAlias {
   // REVIEW: Don't we need to implement `infer_type` here? Seems like not. Confirm.
 }
 
-impl SemanticCheck for ast::Pattern {
+impl Check for ast::Pattern {
   //
 }
 
-impl SemanticCheck for ast::IntrinsicCall {
+impl Check for ast::IntrinsicCall {
   // TODO: Implement.
 }
 
-impl SemanticCheck for ast::ExternStatic {
+impl Check for ast::ExternStatic {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     self.ty.clone()
   }
 }
 
-impl SemanticCheck for ast::StructValue {
+impl Check for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let struct_type = match cache.force_get(&self.target_id.unwrap()) {
       ast::NodeKind::StructType(struct_type) => struct_type,
@@ -563,7 +589,7 @@ impl SemanticCheck for ast::StructValue {
     ast::Type::Struct(struct_type.clone())
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     let struct_type_node = cache.force_get(&self.target_id.unwrap());
 
     let struct_type = match struct_type_node {
@@ -601,17 +627,17 @@ impl SemanticCheck for ast::StructValue {
   }
 }
 
-impl SemanticCheck for ast::Prototype {
-  fn check(&self, _context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+impl Check for ast::Prototype {
+  fn check(&self, _context: &mut CheckContext, _cache: &cache::Cache) {
     // TODO: Implement?
   }
 }
 
-impl SemanticCheck for ast::StructType {
+impl Check for ast::StructType {
   // REVIEW: Implement? This is already a type on itself.
 }
 
-impl SemanticCheck for ast::UnaryExpr {
+impl Check for ast::UnaryExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let expr_type = self.expr.kind.infer_type(cache);
 
@@ -631,8 +657,8 @@ impl SemanticCheck for ast::UnaryExpr {
     };
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    let expr_type = SemanticCheckContext::infer_and_flatten_type(&self.expr, cache);
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+    let expr_type = CheckContext::infer_and_flatten_type(&self.expr, cache);
 
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
@@ -651,11 +677,7 @@ impl SemanticCheck for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !SemanticCheckContext::compare(
-          &expr_type,
-          &ast::Type::Basic(ast::BasicType::Bool),
-          cache,
-        ) {
+        if !CheckContext::compare(&expr_type, &ast::Type::Basic(ast::BasicType::Bool), cache) {
           context.diagnostics.push(
             codespan_reporting::diagnostic::Diagnostic::error()
               .with_message("can only negate boolean expressions"),
@@ -685,8 +707,7 @@ impl SemanticCheck for ast::UnaryExpr {
             codespan_reporting::diagnostic::Diagnostic::error()
               .with_message("can only cast between primitive types"),
           );
-        } else if SemanticCheckContext::compare(&expr_type, self.cast_type.as_ref().unwrap(), cache)
-        {
+        } else if CheckContext::compare(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
           context.diagnostics.push(
             codespan_reporting::diagnostic::Diagnostic::warning()
               .with_message("redundant cast to the same type"),
@@ -698,16 +719,16 @@ impl SemanticCheck for ast::UnaryExpr {
   }
 }
 
-impl SemanticCheck for ast::Enum {
+impl Check for ast::Enum {
   // REVIEW: Isn't there a need for its variants to be considered integer types?
 }
 
-impl SemanticCheck for ast::AssignStmt {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+impl Check for ast::AssignStmt {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     // TODO: Need to unify the value and the target's type.
 
     // REVIEW: No need to flatten the type?
-    let assignee_type = SemanticCheckContext::infer_and_flatten_type(&self.assignee_expr, cache);
+    let assignee_type = CheckContext::infer_and_flatten_type(&self.assignee_expr, cache);
 
     if matches!(assignee_type, ast::Type::Reference(_)) {
       context.diagnostics.push(
@@ -765,8 +786,8 @@ impl SemanticCheck for ast::AssignStmt {
   }
 }
 
-impl SemanticCheck for ast::ContinueStmt {
-  fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+impl Check for ast::ContinueStmt {
+  fn check(&self, context: &mut CheckContext, _cache: &cache::Cache) {
     if !context.in_loop {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
@@ -776,7 +797,7 @@ impl SemanticCheck for ast::ContinueStmt {
   }
 }
 
-impl SemanticCheck for ast::IndexingExpr {
+impl Check for ast::IndexingExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let target_array_variable = cache.force_get(&self.target_id.unwrap());
 
@@ -795,7 +816,7 @@ impl SemanticCheck for ast::IndexingExpr {
     array_element_type
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     let index_expr_type = self.index_expr.kind.infer_type(cache);
 
     let is_unsigned_int_type =
@@ -820,7 +841,7 @@ impl SemanticCheck for ast::IndexingExpr {
   }
 }
 
-impl SemanticCheck for ast::StaticArrayValue {
+impl Check for ast::StaticArrayValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // TODO: Temporary, until type-inference is implemented.
     // We assume that the length is `0` if the explicit type is provided, otherwise
@@ -835,7 +856,7 @@ impl SemanticCheck for ast::StaticArrayValue {
     ast::Type::Array(Box::new(array_element_type), self.elements.len() as u32)
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     let mut mixed_elements_flag = false;
 
     let expected_element_type = if let Some(explicit_type) = &self.explicit_type {
@@ -861,12 +882,12 @@ impl SemanticCheck for ast::StaticArrayValue {
   }
 }
 
-impl SemanticCheck for ast::UnsafeExpr {
+impl Check for ast::UnsafeExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.0.kind.infer_type(cache)
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     // REVIEW: To avoid problems with nested cases, save a buffer here, then restore?
     context.in_unsafe_block = true;
     self.0.kind.check(context, cache);
@@ -874,23 +895,15 @@ impl SemanticCheck for ast::UnsafeExpr {
   }
 }
 
-impl SemanticCheck for ast::ExternFunction {
+impl Check for ast::ExternFunction {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    SemanticCheckContext::infer_prototype_type(
+    CheckContext::infer_prototype_type(
       &self.prototype,
-      // REVIEW: Cloning return type.
-      self.prototype.return_type_annotation.clone().unwrap(),
+      self.prototype.return_type_annotation.clone(),
     )
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
-    if self.prototype.return_type_annotation.is_none() {
-      context.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("extern function must have a return type"),
-      );
-    }
-
+  fn check(&self, context: &mut CheckContext, _cache: &cache::Cache) {
     if self.prototype.accepts_instance {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
@@ -900,13 +913,13 @@ impl SemanticCheck for ast::ExternFunction {
   }
 }
 
-impl SemanticCheck for ast::Parameter {
+impl Check for ast::Parameter {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     self.ty.clone()
   }
 }
 
-impl SemanticCheck for ast::BlockExpr {
+impl Check for ast::BlockExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     if let Some(yields_value) = &self.yields {
       return yields_value.kind.infer_type(cache);
@@ -915,14 +928,14 @@ impl SemanticCheck for ast::BlockExpr {
     ast::Type::Unit
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     for statement in &self.statements {
       statement.kind.check(context, cache);
     }
   }
 }
 
-impl SemanticCheck for ast::Reference {
+impl Check for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // REVIEW: We should have some sort of caching specifically applied to this construct.
     cache
@@ -931,7 +944,7 @@ impl SemanticCheck for ast::Reference {
   }
 }
 
-impl SemanticCheck for ast::Literal {
+impl Check for ast::Literal {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     ast::Type::Basic(match self {
       ast::Literal::Bool(_) => ast::BasicType::Bool,
@@ -943,7 +956,7 @@ impl SemanticCheck for ast::Literal {
   }
 }
 
-impl SemanticCheck for ast::IfExpr {
+impl Check for ast::IfExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // Both branches must be present in order for a value
     // to possibly evaluate.
@@ -957,15 +970,15 @@ impl SemanticCheck for ast::IfExpr {
     let then_block_type = self.then_value.kind.infer_type(cache);
 
     // In case of a type-mismatch between branches, simply return the unit type.
-    if !SemanticCheckContext::compare(&then_block_type, &else_block.kind.infer_type(cache), cache) {
+    if !CheckContext::compare(&then_block_type, &else_block.kind.infer_type(cache), cache) {
       return ast::Type::Unit;
     }
 
     then_block_type
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
-    if !SemanticCheckContext::compare(
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
+    if !CheckContext::compare(
       &self.condition.kind.infer_type(cache),
       &ast::Type::Basic(ast::BasicType::Bool),
       cache,
@@ -987,7 +1000,7 @@ impl SemanticCheck for ast::IfExpr {
   }
 }
 
-impl SemanticCheck for ast::BinaryExpr {
+impl Check for ast::BinaryExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     match self.operator {
       ast::OperatorKind::LessThan
@@ -1002,13 +1015,13 @@ impl SemanticCheck for ast::BinaryExpr {
     }
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     let left_type = self.left.kind.infer_type(cache);
     let right_type = self.right.kind.infer_type(cache);
 
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
-    if !SemanticCheckContext::compare(&left_type, &right_type, cache) {
+    if !CheckContext::compare(&left_type, &right_type, cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("binary expression operands must be the same type"),
@@ -1044,8 +1057,8 @@ impl SemanticCheck for ast::BinaryExpr {
   }
 }
 
-impl SemanticCheck for ast::BreakStmt {
-  fn check(&self, context: &mut SemanticCheckContext, _cache: &cache::Cache) {
+impl Check for ast::BreakStmt {
+  fn check(&self, context: &mut CheckContext, _cache: &cache::Cache) {
     if !context.in_loop {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
@@ -1055,27 +1068,27 @@ impl SemanticCheck for ast::BreakStmt {
   }
 }
 
-impl SemanticCheck for ast::InlineExprStmt {
+impl Check for ast::InlineExprStmt {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.expr.kind.infer_type(cache)
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     self.expr.kind.check(context, cache);
   }
 }
 
-impl SemanticCheck for ast::LetStmt {
+impl Check for ast::VariableDefStmt {
   // BUG: This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.value.kind.infer_type(cache)
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     let value_type = self.value.kind.infer_type(cache);
     let ty = &self.infer_type(cache);
 
-    if !SemanticCheckContext::compare(&ty, &value_type, cache) {
+    if !CheckContext::compare(&ty, &value_type, cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "variable declaration of `{}` value and type mismatch",
@@ -1087,7 +1100,7 @@ impl SemanticCheck for ast::LetStmt {
     self.value.kind.check(context, cache);
   }
 
-  fn report_constraints(&mut self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn report_constraints(&mut self, context: &mut CheckContext, cache: &cache::Cache) {
     if !matches!(self.ty, ast::Type::Variable(_)) {
       return;
     }
@@ -1098,10 +1111,14 @@ impl SemanticCheck for ast::LetStmt {
       TypeConstrainKind::Equality,
     ));
   }
+
+  fn substitution(&mut self, _context: &mut CheckContext, _cache: &cache::Cache) {
+    // TODO: ?
+  }
 }
 
-impl SemanticCheck for ast::ReturnStmt {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+impl Check for ast::ReturnStmt {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     let current_function_node = cache.force_get(&context.current_function_key.unwrap());
     let mut name = None;
     let return_type;
@@ -1109,10 +1126,10 @@ impl SemanticCheck for ast::ReturnStmt {
     match &current_function_node {
       ast::NodeKind::Function(function) => {
         name = Some(function.name.clone());
-        return_type = function.body.infer_type(cache);
+        return_type = CheckContext::infer_return_value_type(&function.body, cache);
       }
       ast::NodeKind::Closure(closure) => {
-        return_type = closure.body.infer_type(cache);
+        return_type = CheckContext::infer_return_value_type(&closure.body, cache);
       }
       _ => unreachable!(),
     };
@@ -1136,7 +1153,7 @@ impl SemanticCheck for ast::ReturnStmt {
     if let Some(value) = &self.value {
       let value_type = value.kind.infer_type(cache);
 
-      if !SemanticCheckContext::compare(&return_type, &value_type, cache) {
+      if !CheckContext::compare(&return_type, &value_type, cache) {
         context.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
             "return statement value and prototype return type mismatch for {}",
@@ -1154,16 +1171,16 @@ impl SemanticCheck for ast::ReturnStmt {
   }
 }
 
-impl SemanticCheck for ast::Function {
+impl Check for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // REVIEW: Why not use annotated return type if defined?
-    SemanticCheckContext::infer_prototype_type(
+    CheckContext::infer_prototype_type(
       &self.prototype,
-      SemanticCheckContext::infer_return_value_type(&self.body, cache),
+      CheckContext::infer_return_value_type(&self.body, cache),
     )
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     context.current_function_key = Some(self.binding_id);
 
     if self.prototype.accepts_instance && !context.in_impl {
@@ -1175,7 +1192,7 @@ impl SemanticCheck for ast::Function {
 
     let return_type = self.body.infer_type(cache);
 
-    if !SemanticCheckContext::compare(&return_type, &self.body.infer_type(cache), cache) {
+    if !CheckContext::compare(&return_type, &self.body.infer_type(cache), cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "function body and prototype return type mismatch for function `{}`",
@@ -1193,7 +1210,7 @@ impl SemanticCheck for ast::Function {
       );
     }
 
-    if self.name == llvm_lowering::MAIN_FUNCTION_NAME {
+    if self.name == lowering::MAIN_FUNCTION_NAME {
       let main_function_type = ast::Type::Function(ast::FunctionType {
         parameter_types: vec![
           ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
@@ -1217,9 +1234,21 @@ impl SemanticCheck for ast::Function {
     self.body.check(context, cache);
     context.current_function_key = None;
   }
+
+  fn substitution(&mut self, _context: &mut CheckContext, _cache: &cache::Cache) {
+    // TODO: Parameters, etc.
+
+    self.prototype.return_type_annotation =
+      _context.substitute(self.prototype.return_type_annotation.clone());
+
+    println!(
+      "\n\n---> final type annotation: {:?}\n\n",
+      self.prototype.return_type_annotation
+    );
+  }
 }
 
-impl SemanticCheck for ast::CallExpr {
+impl Check for ast::CallExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let callee_expr_type = self.callee_expr.kind.infer_type(cache);
 
@@ -1229,7 +1258,7 @@ impl SemanticCheck for ast::CallExpr {
     }
   }
 
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     self.callee_expr.kind.check(context, cache);
 
     // REVIEW: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
@@ -1298,8 +1327,8 @@ impl SemanticCheck for ast::CallExpr {
       .iter()
       .zip(self.arguments.iter())
     {
-      let resolved_argument_type = SemanticCheckContext::infer_and_flatten_type(argument, cache);
-      let resolved_parameter_type = SemanticCheckContext::flatten_type(parameter_type, cache);
+      let resolved_argument_type = CheckContext::infer_and_flatten_type(argument, cache);
+      let resolved_parameter_type = CheckContext::flatten_type(parameter_type, cache);
 
       if resolved_argument_type != resolved_parameter_type {
         // TODO: Include callee name in the error message.
@@ -1319,10 +1348,10 @@ impl SemanticCheck for ast::CallExpr {
   }
 }
 
-impl SemanticCheck for ast::LoopStmt {
-  fn check(&self, context: &mut SemanticCheckContext, cache: &cache::Cache) {
+impl Check for ast::LoopStmt {
+  fn check(&self, context: &mut CheckContext, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
-      if !SemanticCheckContext::compare(
+      if !CheckContext::compare(
         &condition.kind.infer_type(cache),
         &ast::Type::Basic(ast::BasicType::Bool),
         cache,
@@ -1341,4 +1370,69 @@ impl SemanticCheck for ast::LoopStmt {
     self.body.check(context, cache);
     context.in_loop = false;
   }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn is_null_pointer_type() {
+    let null_ptr_type = ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::Null)));
+
+    assert!(CheckContext::is_null_pointer_type(&null_ptr_type));
+    assert!(!CheckContext::is_null_pointer_type(&ast::Type::Unit));
+  }
+
+  #[test]
+  fn proper_initial_values() {
+    let check_context = CheckContext::new();
+
+    assert!(check_context.constraints.is_empty());
+    assert!(check_context.substitution.is_empty());
+    assert!(check_context.diagnostics.is_empty());
+    assert!(check_context.usings.is_empty());
+    assert!(check_context.current_function_key.is_none());
+    assert!(!check_context.in_impl);
+    assert!(!check_context.in_loop);
+    assert!(!check_context.in_unsafe_block);
+  }
+
+  #[test]
+  fn occurs_in() {
+    let mut check_context = CheckContext::new();
+    let first_index_id = 0;
+    let second_index_id = first_index_id + 1;
+
+    check_context
+      .substitution
+      .push(ast::Type::Variable(first_index_id));
+
+    check_context.substitution.push(ast::Type::Unit);
+
+    let subject_type_variable = ast::Type::Variable(first_index_id);
+
+    assert!(check_context.occurs_in(first_index_id, &subject_type_variable));
+    assert!(!check_context.occurs_in(second_index_id, &subject_type_variable));
+    assert!(!check_context.occurs_in(first_index_id, &ast::Type::Unit));
+  }
+
+  #[test]
+  fn substitute() {
+    let mut check_context = CheckContext::new();
+
+    assert_eq!(ast::Type::Unit, check_context.substitute(ast::Type::Unit));
+
+    let id = 0;
+    let non_type_variable = ast::Type::Basic(ast::BasicType::Bool);
+
+    check_context.substitution.push(non_type_variable.clone());
+
+    assert_eq!(
+      non_type_variable,
+      check_context.substitute(ast::Type::Variable(id))
+    );
+  }
+
+  // TODO: Add tests for `compare()`, `infer_and_flatten_type()`, `flatten_type()`, and others.
 }

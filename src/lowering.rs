@@ -1,6 +1,7 @@
 use crate::{
-  ast, cache, dispatch,
-  semantic_check::{SemanticCheck, SemanticCheckContext},
+  ast, cache,
+  check::{Check, CheckContext},
+  dispatch,
 };
 
 use inkwell::{types::BasicType, values::BasicValue};
@@ -103,11 +104,10 @@ impl Lower for ast::MemberAccess {
       .into_pointer_value();
 
     // Flatten the type in case it is a `ThisType`.
-    let llvm_struct_type =
-      match SemanticCheckContext::infer_and_flatten_type(&self.base_expr, cache) {
-        ast::Type::Struct(struct_type) => struct_type,
-        _ => unreachable!(),
-      };
+    let llvm_struct_type = match CheckContext::infer_and_flatten_type(&self.base_expr, cache) {
+      ast::Type::Struct(struct_type) => struct_type,
+      _ => unreachable!(),
+    };
 
     // TODO: Must disallow fields and methods with the same name on semantic check phase.
     // First, check if its a field.
@@ -174,7 +174,7 @@ impl Lower for ast::Closure {
     // FIXME: Use the modified prototype.
     let llvm_function_type = generator.lower_prototype(
       &self.prototype,
-      &&SemanticCheckContext::infer_return_value_type(&self.body, cache),
+      &CheckContext::infer_return_value_type(&self.body, cache),
       cache,
     );
 
@@ -1042,7 +1042,7 @@ impl Lower for ast::Function {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_function_type = generator.lower_prototype(
       &self.prototype,
-      &SemanticCheckContext::infer_return_value_type(&self.body, cache),
+      &CheckContext::infer_return_value_type(&self.body, cache),
       cache,
     );
 
@@ -1128,7 +1128,7 @@ impl Lower for ast::ExternFunction {
     // NOTE: The return type is always explicitly-given for extern functions.
     let llvm_function_type = generator.lower_prototype(
       &self.prototype,
-      self.prototype.return_type_annotation.as_ref().unwrap(),
+      &self.prototype.return_type_annotation,
       cache,
     );
 
@@ -1279,7 +1279,7 @@ impl Lower for ast::UnaryExpr {
   }
 }
 
-impl Lower for ast::LetStmt {
+impl Lower for ast::VariableDefStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -1291,7 +1291,7 @@ impl Lower for ast::LetStmt {
 
     // Special cases. The allocation is done elsewhere.
     if matches!(
-      SemanticCheckContext::flatten_type(&ty, cache),
+      CheckContext::flatten_type(&ty, cache),
       ast::Type::Function(_)
     ) {
       // REVISE: Cleanup the caching code.
@@ -1662,7 +1662,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   }
 
   fn find_type_binding_id(&self, ty: &ast::Type, cache: &cache::Cache) -> Option<cache::BindingId> {
-    let resolved_type = SemanticCheckContext::flatten_type(ty, cache);
+    let resolved_type = CheckContext::flatten_type(ty, cache);
 
     Some(match resolved_type {
       ast::Type::Struct(struct_type) => struct_type.binding_id.clone(),
@@ -1973,7 +1973,7 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let let_stmt = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
       value: Mock::node(Mock::literal_int()),
       is_mutable: false,
@@ -1993,7 +1993,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let a_binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
       value: Mock::node(Mock::literal_int()),
       is_mutable: false,
@@ -2001,7 +2001,7 @@ mod tests {
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "b".to_string(),
       value: Mock::reference(a_binding_id),
       is_mutable: false,
@@ -2023,7 +2023,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
 
-    let let_stmt = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_mutable: false,
@@ -2045,7 +2045,7 @@ mod tests {
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
     let a_binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
@@ -2054,7 +2054,7 @@ mod tests {
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "b".to_string(),
       value: Mock::reference(a_binding_id),
       is_mutable: false,
@@ -2076,7 +2076,7 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let let_stmt = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
@@ -2099,7 +2099,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let a_binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
       value: Mock::node(Mock::literal_int()),
       is_mutable: true,
@@ -2132,7 +2132,7 @@ mod tests {
     let a_binding_id: cache::BindingId = 0;
     let b_binding_id: cache::BindingId = a_binding_id + 1;
 
-    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "a".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,
@@ -2141,7 +2141,7 @@ mod tests {
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::LetStmt {
+    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
       name: "b".to_string(),
       value: Mock::node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_mutable: false,

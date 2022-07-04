@@ -1,4 +1,8 @@
-use crate::{cache, name_resolution, visitor};
+use crate::{
+  cache,
+  check::{Check, CheckContext},
+  name_resolution, visitor,
+};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -133,7 +137,7 @@ pub enum NodeKind {
   Function(Function),
   BlockExpr(BlockExpr),
   ReturnStmt(ReturnStmt),
-  VariableDefStmt(LetStmt),
+  VariableDefStmt(VariableDefStmt),
   IfExpr(IfExpr),
   LoopStmt(LoopStmt),
   CallExpr(CallExpr),
@@ -167,6 +171,22 @@ pub enum NodeKind {
 #[derive(Debug, Clone)]
 pub struct Node {
   pub kind: NodeKind,
+  pub cached_type: Option<Type>,
+}
+
+impl Node {
+  // TODO: Since this mutates the instance, it cannot be used anywhere pretty much.
+  pub fn mem_infer_type(&mut self, cache: &cache::Cache) -> Type {
+    if let Some(cached_type) = &self.cached_type {
+      return cached_type.clone();
+    }
+
+    let inferred_type = self.kind.infer_type(cache);
+
+    self.cached_type = Some(inferred_type.clone());
+
+    inferred_type
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -298,9 +318,7 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
-  /// An optional, explicitly-given return type to serve for metadata or
-  /// disambiguation only (except in the case of an extern function).
-  pub return_type_annotation: Option<Type>,
+  pub return_type_annotation: Type,
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
@@ -375,7 +393,7 @@ pub struct ReturnStmt {
 }
 
 #[derive(Debug, Clone)]
-pub struct LetStmt {
+pub struct VariableDefStmt {
   pub name: String,
   pub value: Box<Node>,
   pub is_mutable: bool,

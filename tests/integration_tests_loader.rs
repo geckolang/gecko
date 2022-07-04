@@ -3,9 +3,9 @@ extern crate inkwell;
 
 #[cfg(test)]
 mod tests {
+  use gecko::check::Check;
   use gecko::lint::Lint;
-  use gecko::llvm_lowering::Lower;
-  use gecko::semantic_check::SemanticCheck;
+  use gecko::lowering::Lower;
   use std::{fs, io::Read};
 
   fn load_test_file(path: &std::path::PathBuf) -> String {
@@ -40,8 +40,8 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let mut cache = gecko::cache::Cache::new();
     let mut lint_context = gecko::lint::LintContext::new();
-    let mut llvm_generator = gecko::llvm_lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
-    let mut semantic_check_context = gecko::semantic_check::SemanticCheckContext::new();
+    let mut llvm_generator = gecko::lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
+    let mut check_context = gecko::check::CheckContext::new();
     let mut ast_map = std::collections::BTreeMap::new();
     let tokens = lex(source_file_path);
     let mut substitution = Vec::new();
@@ -60,13 +60,17 @@ mod tests {
 
     // Once symbols are resolved, we can proceed to the other phases.
     for inner_ast in ast_map.values_mut() {
+      // TODO: What about constraint reports?
+
+      for top_level_node in inner_ast.iter_mut() {
+        top_level_node.kind.substitution(&mut check_context, &cache);
+      }
+
       for top_level_node in inner_ast {
-        top_level_node
-          .kind
-          .check(&mut semantic_check_context, &mut cache);
+        top_level_node.kind.check(&mut check_context, &cache);
 
         // REVIEW: Can we mix linting with type-checking without any problems?
-        top_level_node.lint(&mut cache, &mut lint_context);
+        top_level_node.lint(&cache, &mut lint_context);
       }
     }
 

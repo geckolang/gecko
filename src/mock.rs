@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub mod tests {
-  use crate::{ast, cache, llvm_lowering::LlvmGenerator};
-  use crate::{llvm_lowering::Lower, name_resolution};
+  use crate::{ast, cache, lowering::LlvmGenerator};
+  use crate::{lowering::Lower, name_resolution};
 
   pub trait ComparableMock: ToString {
     fn compare_with(&self, expected: &str) {
@@ -136,7 +136,7 @@ pub mod tests {
     pub fn prototype_simple(is_extern: bool) -> ast::Prototype {
       ast::Prototype {
         parameters: Vec::new(),
-        return_type_annotation: Some(ast::Type::Unit),
+        return_type_annotation: ast::Type::Unit,
         is_variadic: false,
         is_extern,
         accepts_instance: false,
@@ -171,7 +171,10 @@ pub mod tests {
     }
 
     pub fn node(kind: ast::NodeKind) -> Box<ast::Node> {
-      Box::new(ast::Node { kind })
+      Box::new(ast::Node {
+        kind,
+        cached_type: None,
+      })
     }
 
     pub fn new(

@@ -32,12 +32,13 @@ impl LintContext {
     };
 
     if !name.is_case(case) {
-      self.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::warning().with_message(format!(
-          "{} name `{}` should be written in {} case",
-          subject, name, case_name
-        )),
-      )
+      // TODO: Temporarily disabled.
+      // self.diagnostics.push(
+      //   codespan_reporting::diagnostic::Diagnostic::warning().with_message(format!(
+      //     "{} name `{}` should be written in {} case",
+      //     subject, name, case_name
+      //   )),
+      // )
     }
   }
 }
@@ -259,7 +260,7 @@ impl Lint for ast::IfExpr {
   }
 }
 
-impl Lint for ast::LetStmt {
+impl Lint for ast::VariableDefStmt {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     context.lint_name_casing("variable", &self.name, convert_case::Case::Snake);
     self.value.lint(cache, context);
