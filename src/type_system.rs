@@ -97,7 +97,7 @@ impl TypeContext {
     let mut final_type = ast::Type::Unit;
 
     // REVISE: Cloning body. This may be a large AST.
-    ast::traverse(&ast::NodeKind::BlockExpr(body.clone()), |child| {
+    ast::NodeKind::BlockExpr(body.clone()).traverse(|child| {
       if let ast::NodeKind::ReturnStmt(return_stmt) = child {
         // REVIEW: What if the return statement's value is a block that contains a return statement?
         if let Some(return_value) = &return_stmt.value {
@@ -1114,6 +1114,7 @@ impl Check for ast::VariableDefStmt {
     let value_type = self.value.kind.infer_type(cache);
     let ty = &self.infer_type(cache);
 
+    // FIXME: This is redundant. The same type is being compared!
     if !TypeContext::compare(&ty, &value_type, cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
@@ -1509,6 +1510,9 @@ mod tests {
       binding_id: 0,
       is_mutable: false,
     };
+
+    // TODO: Use the empty array type test.
+    // TODO: Also, create a second test for inferring of parameter types.
 
     variable_def_stmt.report_constraints(&mut type_context, &cache);
     type_context.solve_constraints();

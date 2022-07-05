@@ -77,7 +77,8 @@ pub enum TokenKind {
   GreaterThanEqualTo,
   Equality,
   FatArrow,
-  Ellipsis,
+  LongEllipsis,
+  ShortEllipsis,
   Using,
   DoubleColon,
   QuestionMark,
@@ -416,7 +417,12 @@ impl Lexer {
         self.read_char();
         self.read_char();
 
-        TokenKind::Ellipsis
+        TokenKind::LongEllipsis
+      }
+      '.' if self.peek_char() == Some('.') => {
+        self.read_char();
+
+        TokenKind::ShortEllipsis
       }
       '.' => TokenKind::Dot,
       '@' => TokenKind::At,

@@ -533,7 +533,7 @@ impl<'a> Parser<'a> {
 
     // REVISE: Analyze, and remove possibility of lonely comma.
     while self.until(&lexer::TokenKind::ParenthesesR)? {
-      if self.is(&lexer::TokenKind::Ellipsis) {
+      if self.is(&lexer::TokenKind::LongEllipsis) {
         is_variadic = true;
         self.skip()?;
 
@@ -1558,21 +1558,21 @@ impl<'a> Parser<'a> {
     })
   }
 
+  /// '[' ()* ']'
   fn parse_generics(&mut self) -> ParserResult<ast::Generics> {
-    self.skip_past(&lexer::TokenKind::LessThan)?;
+    self.skip_past(&lexer::TokenKind::BracketL)?;
 
     let mut parameters = Vec::new();
 
-    while self.until(&lexer::TokenKind::GreaterThan)? {
+    while self.until(&lexer::TokenKind::BracketR)? {
       parameters.push(self.parse_name()?);
 
-      // REVIEW: Ensure comma syntax is valid.
-      if self.is(&lexer::TokenKind::Comma) {
-        self.skip()?;
+      if !self.is(&lexer::TokenKind::BracketR) {
+        self.skip_past(&lexer::TokenKind::Comma)?;
       }
     }
 
-    self.skip_past(&lexer::TokenKind::GreaterThan)?;
+    self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::Generics {
       parameters,
@@ -1580,6 +1580,13 @@ impl<'a> Parser<'a> {
       constraints: None,
     })
   }
+
+  // fn parse_range(&mut self) -> ParserResult<ast::Range> {
+  //   // TODO: In the future allow for constant expressions to be included in the range.
+  //   self.skip_past(&lexer::TokenKind::ShortEllipsis);
+
+  //   todo!();
+  // }
 }
 
 #[cfg(test)]

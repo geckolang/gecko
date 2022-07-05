@@ -1,4 +1,4 @@
-use crate::{cache, type_system::Check, name_resolution, visitor};
+use crate::{cache, name_resolution, type_system::Check, visitor};
 
 #[macro_export]
 macro_rules! dispatch {
@@ -162,6 +162,38 @@ pub enum NodeKind {
   ParenthesesExpr(ParenthesesExpr),
   Import(Using),
   SizeofIntrinsic(SizeofIntrinsic),
+}
+
+impl NodeKind {
+  pub fn traverse<'a, F: FnMut(&'a NodeKind) -> bool>(&'a self, mut visitor: F) {
+    let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
+      match node {
+        NodeKind::AssignStmt(assign_stmt) => vec![&assign_stmt.assignee_expr.kind],
+        NodeKind::BinaryExpr(binary_expr) => {
+          vec![&binary_expr.left.kind, &binary_expr.right.kind]
+        }
+        NodeKind::BlockExpr(block_expr) => block_expr
+          .statements
+          .iter()
+          .map(|statement| &statement.kind)
+          .collect(),
+        // TODO: Implement all other nodes with visitable children.
+        _ => vec![],
+      }
+    };
+
+    let mut queue = vec![self];
+
+    while let Some(node) = queue.pop() {
+      if !visitor(node) {
+        return;
+      }
+
+      for child in dispatcher(node) {
+        queue.push(child);
+      }
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -491,44 +523,13 @@ pub struct MemberAccess {
   pub member_name: String,
 }
 
-// TODO: Consider making an associated/member function instead.
-pub fn traverse<'a, F: FnMut(&'a NodeKind) -> bool>(ast: &'a NodeKind, mut visitor: F) {
-  let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
-    match node {
-      NodeKind::AssignStmt(assign_stmt) => vec![&assign_stmt.assignee_expr.kind],
-      NodeKind::BinaryExpr(binary_expr) => {
-        vec![&binary_expr.left.kind, &binary_expr.right.kind]
-      }
-      NodeKind::BlockExpr(block_expr) => block_expr
-        .statements
-        .iter()
-        .map(|statement| &statement.kind)
-        .collect(),
-      // TODO: Implement all other nodes with visitable children.
-      _ => vec![],
-    }
-  };
-
-  let mut queue = vec![ast];
-
-  while let Some(node) = queue.pop() {
-    if !visitor(node) {
-      return;
-    }
-
-    for child in dispatcher(node) {
-      queue.push(child);
-    }
-  }
-}
-
 pub fn find_node<'a, F: FnMut(&'a NodeKind) -> bool>(
   ast: &'a NodeKind,
   mut predicate: F,
 ) -> Option<&'a NodeKind> {
   let mut result = None;
 
-  traverse(ast, |node| {
+  ast.traverse(|node| {
     if predicate(node) {
       result = Some(node);
 
@@ -555,7 +556,7 @@ mod tests {
 
     let mut visitations = 0;
 
-    traverse(&node, |_| {
+    node.traverse(|_| {
       visitations += 1;
 
       true
