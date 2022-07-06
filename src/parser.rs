@@ -271,7 +271,7 @@ impl<'a> Parser<'a> {
     let kind = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
       lexer::TokenKind::Let | lexer::TokenKind::Var => {
-        ast::NodeKind::VariableDefStmt(self.parse_variable_def_stmt()?)
+        ast::NodeKind::BindingStmt(self.parse_declaration_stmt()?)
       }
       lexer::TokenKind::Loop => ast::NodeKind::LoopStmt(self.parse_loop_stmt()?),
       lexer::TokenKind::Break => ast::NodeKind::BreakStmt(self.parse_break_stmt()?),
@@ -772,15 +772,12 @@ impl<'a> Parser<'a> {
   }
 
   /// let (mut) %name (':' %type) '=' %expr
-  fn parse_variable_def_stmt(&mut self) -> ParserResult<ast::VariableDefStmt> {
-    let is_mutable = if self.is(&lexer::TokenKind::Var) {
-      self.skip()?;
-
-      true
-    } else {
-      self.skip_past(&lexer::TokenKind::Let)?;
-
-      false
+  fn parse_declaration_stmt(&mut self) -> ParserResult<ast::BindingStmt> {
+    let modifier = match self.get_token()? {
+      lexer::TokenKind::Let => ast::BindingModifier::Immutable,
+      lexer::TokenKind::Mut => ast::BindingModifier::Mutable,
+      lexer::TokenKind::Const => ast::BindingModifier::ConstExpr,
+      _ => return Err(self.expected("declaration modifier")),
     };
 
     let name = self.parse_name()?;
@@ -799,10 +796,10 @@ impl<'a> Parser<'a> {
 
     // TODO: Value should be treated as rvalue, unless its using an address-of operator. Find out how to translate this to logic.
 
-    Ok(ast::VariableDefStmt {
+    Ok(ast::BindingStmt {
       name,
       value: Box::new(value),
-      is_mutable,
+      modifier,
       binding_id: self.cache.create_binding_id(),
       ty,
     })
@@ -842,9 +839,9 @@ impl<'a> Parser<'a> {
 
     Ok(ast::IfExpr {
       condition: Box::new(condition),
-      then_value: Box::new(then_value),
+      then_expr: Box::new(then_value),
       alternative_branches,
-      else_value,
+      else_expr: else_value,
     })
   }
 
@@ -1071,6 +1068,9 @@ impl<'a> Parser<'a> {
 
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     let kind = match self.get_token()? {
+      lexer::TokenKind::Int(_) if self.peek_is(&lexer::TokenKind::ShortEllipsis) => {
+        ast::NodeKind::Range(self.parse_range()?)
+      }
       // REVIEW: Possible redundant check after the fn keyword. But how do we know we're still not on a block and accidentally parse a function as a closure?
       lexer::TokenKind::Func
         if (self.peek_is(&lexer::TokenKind::BracketL)
@@ -1581,12 +1581,25 @@ impl<'a> Parser<'a> {
     })
   }
 
-  // fn parse_range(&mut self) -> ParserResult<ast::Range> {
-  //   // TODO: In the future allow for constant expressions to be included in the range.
-  //   self.skip_past(&lexer::TokenKind::ShortEllipsis);
+  /// %int_literal '..' %int_literal
+  fn parse_range(&mut self) -> ParserResult<ast::Range> {
+    let start = ast::Node {
+      kind: ast::NodeKind::Literal(self.parse_int_literal()?),
+      cached_type: None,
+    };
 
-  //   todo!();
-  // }
+    self.skip_past(&lexer::TokenKind::ShortEllipsis)?;
+
+    let end = ast::Node {
+      kind: ast::NodeKind::Literal(self.parse_int_literal()?),
+      cached_type: None,
+    };
+
+    Ok(ast::Range {
+      start: Box::new(start),
+      end: Box::new(end),
+    })
+  }
 }
 
 #[cfg(test)]

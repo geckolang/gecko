@@ -59,26 +59,18 @@ mod tests {
     assert!(name_resolver.run(&mut ast_map, &mut cache).is_empty());
 
     // Once symbols are resolved, we can proceed to the other phases.
-    for inner_ast in ast_map.values_mut() {
-      // TODO: What about constraint reports?
-
-      for top_level_node in inner_ast.iter_mut() {
-        top_level_node
-          .kind
-          .post_unification(&mut type_context, &cache);
-      }
-
+    for inner_ast in ast_map.values() {
+      // REVIEW: Can we mix linting with type-checking without any problems?
       for top_level_node in inner_ast {
-        top_level_node.kind.check(&mut type_context, &cache);
-
-        // REVIEW: Can we mix linting with type-checking without any problems?
         top_level_node.lint(&cache, &mut lint_context);
       }
+
+      let check_result = gecko::type_system::TypeContext::run(inner_ast, &cache);
+
+      assert!(check_result.0.is_empty());
     }
 
-    // Lowering cannot proceed if there was an error.
-    // TODO: Missing semantic check context's diagnostics.
-    // assert!(lint_context.diagnostics.is_empty());
+    assert!(lint_context.diagnostics.is_empty());
 
     // REVISE: Any way for better efficiency (less loops)?
     // Once symbols are resolved, we can proceed to the other phases.

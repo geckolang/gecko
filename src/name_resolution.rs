@@ -55,6 +55,10 @@ impl Resolve for ast::NodeKind {
   }
 }
 
+impl Resolve for ast::Range {
+  // REVIEW: Will the constant expressions ever need to declare or resolve?
+}
+
 impl Resolve for ast::SizeofIntrinsic {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.ty.resolve(resolver, cache);
@@ -505,24 +509,24 @@ impl Resolve for ast::LoopStmt {
 impl Resolve for ast::IfExpr {
   fn declare(&self, resolver: &mut NameResolver) {
     self.condition.kind.declare(resolver);
-    self.then_value.kind.declare(resolver);
+    self.then_expr.kind.declare(resolver);
 
-    if let Some(else_block) = &self.else_value {
+    if let Some(else_block) = &self.else_expr {
       else_block.kind.declare(resolver);
     }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.condition.kind.resolve(resolver, cache);
-    self.then_value.kind.resolve(resolver, cache);
+    self.then_expr.kind.resolve(resolver, cache);
 
-    if let Some(else_block) = &mut self.else_value {
+    if let Some(else_block) = &mut self.else_expr {
       else_block.kind.resolve(resolver, cache);
     }
   }
 }
 
-impl Resolve for ast::VariableDefStmt {
+impl Resolve for ast::BindingStmt {
   fn declare(&self, resolver: &mut NameResolver) {
     resolver.declare_symbol(
       Symbol {
@@ -544,10 +548,9 @@ impl Resolve for ast::VariableDefStmt {
 
     // REVIEW: Annotated type is not being resolved.
 
-    cache.symbols.insert(
-      self.binding_id,
-      ast::NodeKind::VariableDefStmt(self.clone()),
-    );
+    cache
+      .symbols
+      .insert(self.binding_id, ast::NodeKind::BindingStmt(self.clone()));
   }
 }
 

@@ -1,7 +1,6 @@
 use crate::{
-  ast, cache,
+  ast, cache, dispatch,
   type_system::{Check, TypeContext},
-  dispatch,
 };
 
 use inkwell::{types::BasicType, values::BasicValue};
@@ -40,6 +39,10 @@ impl Lower for ast::NodeKind {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     dispatch!(&self, Lower::lower, generator, cache, access)
   }
+}
+
+impl Lower for ast::Range {
+  // TODO: ?
 }
 
 impl Lower for ast::SizeofIntrinsic {
@@ -894,7 +897,7 @@ impl Lower for ast::IfExpr {
     let mut llvm_else_block_value = None;
 
     // TODO: Simplify (use a buffer for the next block onto build the cond. br. to).
-    if let Some(else_block) = &self.else_value {
+    if let Some(else_block) = &self.else_expr {
       let llvm_else_block = generator
         .llvm_context
         .append_basic_block(llvm_current_function, "if.else");
@@ -928,7 +931,7 @@ impl Lower for ast::IfExpr {
 
     generator.llvm_builder.position_at_end(llvm_then_block);
 
-    let llvm_then_block_value = self.then_value.lower(generator, cache, false);
+    let llvm_then_block_value = self.then_expr.lower(generator, cache, false);
 
     // FIXME: Is this correct? Or should we be using `get_current_block()` here? Or maybe this is just a special case to not leave the `then` block without a terminator? Investigate.
     // Fallthrough if applicable.
@@ -943,8 +946,6 @@ impl Lower for ast::IfExpr {
       generator
         .llvm_builder
         .position_before(&llvm_then_block.get_last_instruction().unwrap());
-
-      println!("ten block value: {:?}", llvm_then_block_value);
 
       generator.llvm_builder.build_store(
         llvm_if_value.unwrap().into_pointer_value(),
@@ -1279,7 +1280,7 @@ impl Lower for ast::UnaryExpr {
   }
 }
 
-impl Lower for ast::VariableDefStmt {
+impl Lower for ast::BindingStmt {
   fn lower<'a, 'ctx>(
     &self,
     generator: &mut LlvmGenerator<'a, 'ctx>,
@@ -1969,64 +1970,65 @@ mod tests {
   }
 
   #[test]
-  fn lower_let_stmt_const_val() {
+  fn lower_binding_stmt_const_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(Mock::literal_int()),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: 0,
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&let_stmt, false)
+      .lower(&binding_stmt, false)
+      // TODO: Change name to `binding_stmt_const_val`, and the others.
       .compare_with_file("let_stmt_const_val");
   }
 
   #[test]
-  fn lower_let_stmt_ref_val() {
+  fn lower_binding_stmt_ref_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let a_binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(Mock::literal_int()),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: a_binding_id,
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
       value: Mock::reference(a_binding_id),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: a_binding_id + 1,
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(let_stmt_a, a_binding_id)
+      .cache(binding_stmt_a, a_binding_id)
       .function()
       .lower_cache(a_binding_id, false)
-      .lower(&let_stmt_b, false)
+      .lower(&binding_stmt_b, false)
       .compare_with_file("let_stmt_ref_val");
   }
 
   #[test]
-  fn lower_let_stmt_nullptr_val() {
+  fn lower_binding_stmt_nullptr_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
 
-    let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: 0,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
@@ -2034,54 +2036,54 @@ mod tests {
 
     Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&let_stmt, false)
+      .lower(&binding_stmt, false)
       .compare_with_file("let_stmt_nullptr_val");
   }
 
   #[test]
-  fn lower_let_stmt_ptr_ref_val() {
+  fn lower_binding_stmt_ptr_ref_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
     let a_binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: a_binding_id,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
       value: Mock::reference(a_binding_id),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: a_binding_id + 1,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(let_stmt_a, a_binding_id)
+      .cache(binding_stmt_a, a_binding_id)
       .function()
       .lower_cache(a_binding_id, false)
-      .lower(&let_stmt_b, false)
+      .lower(&binding_stmt_b, false)
       .compare_with_file("let_stmt_ptr_ref_val");
   }
 
   #[test]
-  fn lower_let_stmt_string_val() {
+  fn lower_binding_stmt_string_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let let_stmt = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
       ))),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: 0,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
@@ -2089,7 +2091,7 @@ mod tests {
 
     Mock::new(&llvm_context, &llvm_module)
       .function()
-      .lower(&let_stmt, false)
+      .lower(&binding_stmt, false)
       .compare_with_file("let_stmt_string_val");
   }
 
@@ -2097,19 +2099,19 @@ mod tests {
   fn lower_assign_const_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let a_binding_id: cache::BindingId = 0;
+    let binding_id: cache::BindingId = 0;
 
-    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(Mock::literal_int()),
-      is_mutable: true,
-      binding_id: a_binding_id,
+      modifier: ast::BindingModifier::Immutable,
+      binding_id,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
-      assignee_expr: Mock::reference(a_binding_id),
+      assignee_expr: Mock::reference(binding_id),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Int(
         2,
         ast::IntSize::I32,
@@ -2117,9 +2119,9 @@ mod tests {
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(let_stmt_a, a_binding_id)
+      .cache(binding_stmt, binding_id)
       .function()
-      .lower_cache(a_binding_id, false)
+      .lower_cache(binding_id, false)
       .lower(&assign_stmt, false)
       .compare_with_file("assign_stmt_const_val");
   }
@@ -2132,19 +2134,19 @@ mod tests {
     let a_binding_id: cache::BindingId = 0;
     let b_binding_id: cache::BindingId = a_binding_id + 1;
 
-    let let_stmt_a = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: a_binding_id,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
-    let let_stmt_b = ast::NodeKind::VariableDefStmt(ast::VariableDefStmt {
+    let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
       binding_id: b_binding_id,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
@@ -2156,8 +2158,8 @@ mod tests {
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(let_stmt_a, a_binding_id)
-      .cache(let_stmt_b, b_binding_id)
+      .cache(binding_stmt_a, a_binding_id)
+      .cache(binding_stmt_b, b_binding_id)
       .function()
       .lower_cache(a_binding_id, false)
       .lower(&assign_stmt, false)
@@ -2251,9 +2253,9 @@ mod tests {
 
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
       condition: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
-      then_value: Mock::boxed_node(Mock::literal_int()),
+      then_expr: Mock::boxed_node(Mock::literal_int()),
       alternative_branches: Vec::new(),
-      else_value: None,
+      else_expr: None,
     });
 
     Mock::new(&llvm_context, &llvm_module)

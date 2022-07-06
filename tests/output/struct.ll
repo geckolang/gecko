@@ -3,7 +3,7 @@ source_filename = "test"
 
 %.1.struct.A = type { i32 }
 
-define private i32 @.0.let_stmt_struct_value() {
+define private i32 @.0.binding_stmt_struct_value() {
 fn.entry:
   %var.a = alloca %.1.struct.A, align 8
   %struct.A.alloca = alloca %.1.struct.A, align 8

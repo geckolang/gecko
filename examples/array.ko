@@ -5,6 +5,7 @@ func main(argc: Int, argv: *Str):
   var i = 0
 
   loop i < 9:
-    unsafe: printf("%d\n", first_10_primes[i])
+    unsafe: printf("%d\n", first_10_primes[`U32 i])
+    i = i + 1
 
   return 0

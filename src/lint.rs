@@ -58,6 +58,10 @@ impl Lint for ast::Node {
   }
 }
 
+impl Lint for ast::Range {
+  //
+}
+
 impl Lint for ast::SizeofIntrinsic {
   //
 }
@@ -251,16 +255,16 @@ impl Lint for ast::IfExpr {
       )
     }
 
-    if let Some(else_block) = &self.else_value {
+    if let Some(else_block) = &self.else_expr {
       else_block.lint(cache, context);
     }
 
     self.condition.lint(cache, context);
-    self.then_value.lint(cache, context);
+    self.then_expr.lint(cache, context);
   }
 }
 
-impl Lint for ast::VariableDefStmt {
+impl Lint for ast::BindingStmt {
   fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
     context.lint_name_casing("variable", &self.name, convert_case::Case::Snake);
     self.value.lint(cache, context);

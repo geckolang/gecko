@@ -27,13 +27,21 @@ pub struct TypeContext {
 
 impl TypeContext {
   pub fn run(
-    ast: &Vec<std::rc::Rc<ast::Node>>,
+    ast: &Vec<ast::Node>,
     cache: &cache::Cache,
   ) -> (
     Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
     Vec<ast::Using>,
   ) {
     let mut type_context = TypeContext::new();
+
+    // TODO: What about constraint reports, and post-unification?
+
+    // for top_level_node in inner_ast.iter_mut() {
+    //   top_level_node
+    //     .kind
+    //     .post_unification(&mut type_context, &cache);
+    // }
 
     for node in ast {
       node.kind.check(&mut type_context, cache);
@@ -77,40 +85,24 @@ impl TypeContext {
       return body_type;
     }
 
-    if let Some(return_stmt) = body
-      .statements
-      .iter()
-      .find(|statement| matches!(statement.kind, ast::NodeKind::ReturnStmt(_)))
-    {
-      return match &return_stmt.kind {
-        ast::NodeKind::ReturnStmt(return_stmt) => {
-          if let Some(return_value) = &return_stmt.value {
-            return_value.kind.infer_type(cache)
-          } else {
-            ast::Type::Unit
-          }
-        }
-        _ => unreachable!(),
-      };
-    }
-
-    let mut final_type = ast::Type::Unit;
+    let mut ty = ast::Type::Unit;
 
     // REVISE: Cloning body. This may be a large AST.
     ast::NodeKind::BlockExpr(body.clone()).traverse(|child| {
       if let ast::NodeKind::ReturnStmt(return_stmt) = child {
         // REVIEW: What if the return statement's value is a block that contains a return statement?
         if let Some(return_value) = &return_stmt.value {
-          final_type = return_value.kind.infer_type(cache);
-
-          return false;
+          ty = return_value.kind.infer_type(cache);
         }
+
+        // If the return statement is empty, then the function's return type is unit.
+        return false;
       }
 
       true
     });
 
-    final_type
+    ty
   }
 
   // TODO: Make use-of, or get rid-of.
@@ -385,6 +377,34 @@ impl Check for ast::NodeKind {
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     dispatch!(&self, Check::check, context, cache);
+  }
+}
+
+impl Check for ast::Range {
+  fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
+    // NOTE: No need to check whether the range's bounds are constant
+    // ... expressions, this is ensured by the parser.
+
+    let start_literal = crate::force_match!(&self.start.kind, ast::NodeKind::Literal);
+    let end_literal = crate::force_match!(&self.end.kind, ast::NodeKind::Literal);
+
+    let start_int = match start_literal {
+      ast::Literal::Int(value, _) => value,
+      _ => unreachable!(),
+    };
+
+    let end_int = match end_literal {
+      ast::Literal::Int(value, _) => value,
+      _ => unreachable!(),
+    };
+
+    if start_int > end_int {
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(String::from(
+          "range start must be less than or equal to end",
+        )),
+      );
+    }
   }
 }
 
@@ -790,10 +810,12 @@ impl Check for ast::AssignStmt {
       // If the assignee is a variable reference, ensure that the variable is mutable.
       match &self.assignee_expr.kind {
         ast::NodeKind::Reference(variable_ref) => {
-          let declaration = cache.force_get(&variable_ref.pattern.target_id.unwrap());
+          let binding_node = cache.force_get(&variable_ref.pattern.target_id.unwrap());
 
-          match declaration {
-            ast::NodeKind::VariableDefStmt(let_stmt) if !let_stmt.is_mutable => {
+          match binding_node {
+            ast::NodeKind::BindingStmt(binding)
+              if binding.modifier != ast::BindingModifier::Mutable =>
+            {
               context.diagnostics.push(
                 codespan_reporting::diagnostic::Diagnostic::error()
                   .with_message("assignee is immutable"),
@@ -807,6 +829,7 @@ impl Check for ast::AssignStmt {
       };
     }
 
+    // REVIEW: should this checks be placed before or after?
     self.assignee_expr.kind.check(context, cache);
     self.value.kind.check(context, cache);
   }
@@ -825,45 +848,78 @@ impl Check for ast::ContinueStmt {
 
 impl Check for ast::IndexingExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_array_variable = cache.force_get(&self.target_id.unwrap());
+    let target_array = cache.force_get(&self.target_id.unwrap());
+    let array_type = target_array.infer_type(cache);
 
-    // REVISE: Unnecessary cloning.
-    let array_type = match target_array_variable {
-      ast::NodeKind::VariableDefStmt(let_stmt) => let_stmt.value.kind.infer_type(cache),
-      ast::NodeKind::Parameter(parameter) => parameter.ty.clone(),
-      _ => unreachable!(),
-    };
-
-    let array_element_type = match array_type {
+    // TODO: In the future, add support for when indexing strings.
+    let element_type = match array_type {
       ast::Type::Array(element_type, _) => element_type.as_ref().clone(),
       _ => unreachable!(),
     };
 
-    array_element_type
+    element_type
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    self.index_expr.kind.check(context, cache);
+
     let index_expr_type = self.index_expr.kind.infer_type(cache);
 
-    let is_unsigned_int_type =
-      // REVIEW: Should we be using `unify` here, instead?
-      if let ast::Type::Basic(ast::BasicType::Int(int_size)) = index_expr_type {
-        matches!(int_size, ast::IntSize::U8)
-          || matches!(int_size, ast::IntSize::U16)
-          || matches!(int_size, ast::IntSize::U32)
-          || matches!(int_size, ast::IntSize::U64)
-      } else {
-        false
-      };
+    let is_index_proper_type = TypeContext::compare(
+      &index_expr_type,
+      &ast::Type::Basic(ast::BasicType::Int(ast::IntSize::U32)),
+      cache,
+    );
 
-    if !is_unsigned_int_type {
+    if !is_index_proper_type {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("array index expression must evaluate to an unsigned integer"),
+          .with_message("array index expression must be of type `U32`"),
       );
+
+      // REVIEW: Should we actually not continue?
+      // Can't continue if the index expression is not of the proper type.
+      return;
     }
 
-    self.index_expr.kind.check(context, cache);
+    let target_array = cache.force_get(&self.target_id.unwrap());
+    let target_expr_type = target_array.infer_type(cache);
+
+    // REVIEW: Any way of avoiding nesting?
+    if let ast::Type::Array(_, length) = target_expr_type {
+      // If the index expression is not a constant expression, then
+      // this scope must fall under a bounds check for that index, and
+      // the length of the array.
+      if !self.index_expr.kind.is_constant_expr() {
+        // TODO: Support for dynamic index, but require a bounds check.
+
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message("array index expression must be a constant expression"),
+        );
+      } else {
+        let index_expr_literal = crate::force_match!(&self.index_expr.kind, ast::NodeKind::Literal);
+
+        let index_expr_value = match index_expr_literal {
+          // NOTE: Safe cast because we know that the literal is of type `U32` at this point.
+          ast::Literal::Int(value, _) => *value as u32,
+          _ => unreachable!(),
+        };
+
+        // NOTE: Because of its type, the index expression will never be lower than 0.
+        if index_expr_value >= length {
+          context.diagnostics.push(
+            codespan_reporting::diagnostic::Diagnostic::error()
+              .with_message("array index expression must be within the bounds of the array"),
+          );
+        }
+      }
+    } else {
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("can only index into arrays"),
+      );
+    }
   }
 }
 
@@ -986,14 +1042,14 @@ impl Check for ast::IfExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // Both branches must be present in order for a value
     // to possibly evaluate.
-    if self.else_value.is_none() {
+    if self.else_expr.is_none() {
       return ast::Type::Unit;
     }
 
     // TODO: Take into consideration newly-added alternative branches.
 
-    let else_block = self.else_value.as_ref().unwrap();
-    let then_block_type = self.then_value.kind.infer_type(cache);
+    let else_block = self.else_expr.as_ref().unwrap();
+    let then_block_type = self.then_expr.kind.infer_type(cache);
 
     // In case of a type-mismatch between branches, simply return the unit type.
     if !TypeContext::compare(&then_block_type, &else_block.kind.infer_type(cache), cache) {
@@ -1018,9 +1074,9 @@ impl Check for ast::IfExpr {
     // TODO: Check for type-mismatch between branches (they may yield).
 
     self.condition.kind.check(context, cache);
-    self.then_value.kind.check(context, cache);
+    self.then_expr.kind.check(context, cache);
 
-    if let Some(else_block) = &self.else_value {
+    if let Some(else_block) = &self.else_expr {
       else_block.kind.check(context, cache);
     }
   }
@@ -1104,7 +1160,7 @@ impl Check for ast::InlineExprStmt {
   }
 }
 
-impl Check for ast::VariableDefStmt {
+impl Check for ast::BindingStmt {
   // BUG: This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.value.kind.infer_type(cache)
@@ -1499,7 +1555,7 @@ mod tests {
     let cache = cache::Cache::new();
     let type_variable_id = 0;
 
-    let mut variable_def_stmt = ast::VariableDefStmt {
+    let mut binding_stmt = ast::BindingStmt {
       name: String::from("a"),
       ty: ast::Type::Variable(type_variable_id),
       // TODO: Use `Mock` scaffolding.
@@ -1508,16 +1564,16 @@ mod tests {
         cached_type: None,
       }),
       binding_id: 0,
-      is_mutable: false,
+      modifier: ast::BindingModifier::Immutable,
     };
 
     // TODO: Use the empty array type test.
     // TODO: Also, create a second test for inferring of parameter types.
 
-    variable_def_stmt.report_constraints(&mut type_context, &cache);
+    binding_stmt.report_constraints(&mut type_context, &cache);
     type_context.solve_constraints();
-    variable_def_stmt.post_unification(&mut type_context, &cache);
-    assert_eq!(variable_def_stmt.ty, ast::Type::Basic(ast::BasicType::Bool));
+    binding_stmt.post_unification(&mut type_context, &cache);
+    assert_eq!(binding_stmt.ty, ast::Type::Basic(ast::BasicType::Bool));
   }
 
   // TODO: Add tests for `compare()`, `infer_and_flatten_type()`, `flatten_type()`, and others.

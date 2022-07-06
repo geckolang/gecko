@@ -1,5 +1,18 @@
+use std::collections::VecDeque;
+
 use crate::{cache, name_resolution, type_system::Check, visitor};
 
+#[macro_export]
+macro_rules! force_match {
+  ($e:expr, $t:path) => {
+    match $e {
+      $t(inner) => inner,
+      _ => unreachable!(),
+    }
+  };
+}
+
+// TODO: We can simplify this with path type on the macro arguments.
 #[macro_export]
 macro_rules! dispatch {
   ($node:expr, $target_fn:expr $(, $($args:expr),* )? ) => {
@@ -10,7 +23,7 @@ macro_rules! dispatch {
       ast::NodeKind::Function(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::BlockExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::VariableDefStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::BindingStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::IfExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
@@ -39,6 +52,7 @@ macro_rules! dispatch {
       ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Import(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::Range(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -133,7 +147,7 @@ pub enum NodeKind {
   Function(Function),
   BlockExpr(BlockExpr),
   ReturnStmt(ReturnStmt),
-  VariableDefStmt(VariableDefStmt),
+  BindingStmt(BindingStmt),
   IfExpr(IfExpr),
   LoopStmt(LoopStmt),
   CallExpr(CallExpr),
@@ -162,43 +176,135 @@ pub enum NodeKind {
   ParenthesesExpr(ParenthesesExpr),
   Import(Using),
   SizeofIntrinsic(SizeofIntrinsic),
+  Range(Range),
 }
 
 impl NodeKind {
-  pub fn traverse<'a, F: FnMut(&'a NodeKind) -> bool>(&'a self, mut visitor: F) {
+  // TODO: Can this be made a Rust Iterator? This way we get all of Iterator's features.
+  pub fn traverse<'a>(&'a self, mut visitor: impl FnMut(&'a NodeKind) -> bool) {
+    let map_children = |children: &'a Vec<Node>| children.iter().map(|child_node| &child_node.kind);
+
     let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
       match node {
+        NodeKind::InlineExprStmt(inline_expr_stmt) => vec![&inline_expr_stmt.expr.kind],
         NodeKind::AssignStmt(assign_stmt) => vec![&assign_stmt.assignee_expr.kind],
         NodeKind::BinaryExpr(binary_expr) => {
           vec![&binary_expr.left.kind, &binary_expr.right.kind]
         }
-        NodeKind::BlockExpr(block_expr) => block_expr
-          .statements
-          .iter()
-          .map(|statement| &statement.kind)
+        NodeKind::BlockExpr(block_expr) => map_children(&block_expr.statements).collect(),
+        NodeKind::UnaryExpr(unary_expr) => vec![&unary_expr.expr.kind],
+        NodeKind::UnsafeExpr(unsafe_expr) => vec![&unsafe_expr.0.kind],
+        NodeKind::ParenthesesExpr(parentheses_expr) => vec![&parentheses_expr.expr.kind],
+        NodeKind::CallExpr(call_expr) => vec![&call_expr.callee_expr.kind]
+          .into_iter()
+          .chain(map_children(&call_expr.arguments))
           .collect(),
+        // TODO: Include `else` expression, and alternative branches.
+        NodeKind::IfExpr(if_expr) => vec![&if_expr.condition.kind, &if_expr.then_expr.kind],
+        // TODO: Missing condition.
+        NodeKind::LoopStmt(loop_stmt) => map_children(&loop_stmt.body.statements).collect(),
         // TODO: Implement all other nodes with visitable children.
+        // REVIEW: Not all nodes can be processed like this: What about prototype, externs, and functions?
         _ => vec![],
       }
     };
 
-    let mut queue = vec![self];
+    let mut queue = VecDeque::from([self]);
 
-    while let Some(node) = queue.pop() {
+    while let Some(node) = queue.pop_front() {
       if !visitor(node) {
         return;
       }
 
-      for child in dispatcher(node) {
-        queue.push(child);
+      let children = dispatcher(node);
+
+      queue.reserve(children.len());
+
+      for child in children {
+        queue.push_back(child);
       }
     }
+  }
+
+  /// Traverse the AST of the provided node until the provided
+  /// predicate returns `true`, at which point the last node is
+  /// returned.
+  ///
+  /// If the predicate returns `false` for all nodes, `None` is
+  /// returned instead, indicating that no node was found matching the
+  /// given predicate.
+  ///
+  /// The time complexity of this method is `O(n)`, where `n` is the number of
+  /// nodes in the AST.
+  pub fn find_node<'a>(
+    &'a self,
+    mut predicate: impl FnMut(&NodeKind) -> bool,
+  ) -> Option<&NodeKind> {
+    let mut result = None;
+
+    self.traverse(|node| {
+      if predicate(node) {
+        result = Some(node);
+
+        return false;
+      }
+
+      true
+    });
+
+    result
+  }
+
+  pub fn any(&self, mut predicate: impl FnMut(&NodeKind) -> bool) -> bool {
+    let mut contained = false;
+
+    self.traverse(|node| {
+      if predicate(&node) {
+        contained = true;
+
+        return false;
+      }
+
+      true
+    });
+
+    contained
+  }
+
+  pub fn all(&self, predicate: impl FnMut(&NodeKind) -> bool) -> bool {
+    !self.any(predicate)
+  }
+
+  pub fn is_constant_expr(&self) -> bool {
+    let is_const_node = |node: &NodeKind| {
+      matches!(
+        node,
+        NodeKind::Literal(_)
+          | NodeKind::ParenthesesExpr(_)
+          | NodeKind::UnaryExpr(_)
+          | NodeKind::SizeofIntrinsic(_)
+      )
+    };
+
+    self.all(is_const_node)
+  }
+
+  pub fn flatten<'a>(&'a self) -> &'a NodeKind {
+    let mut buffer = self;
+
+    // REVIEW: Anything else that may encapsulate a node? What about nested unary expressions?
+    while let NodeKind::ParenthesesExpr(parentheses_expr) = buffer {
+      buffer = &parentheses_expr.expr.kind;
+    }
+
+    buffer
   }
 }
 
 #[derive(Debug, Clone)]
 pub struct Node {
   pub kind: NodeKind,
+  // REVIEW: This might be problematic: What if the node was retrieved from the cache?
   pub cached_type: Option<Type>,
 }
 
@@ -215,6 +321,12 @@ impl Node {
 
     inferred_type
   }
+}
+
+#[derive(Debug, Clone)]
+pub struct Range {
+  pub start: Box<Node>,
+  pub end: Box<Node>,
 }
 
 #[derive(Debug, Clone)]
@@ -420,11 +532,18 @@ pub struct ReturnStmt {
   pub value: Option<Box<Node>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum BindingModifier {
+  ConstExpr,
+  Immutable,
+  Mutable,
+}
+
 #[derive(Debug, Clone)]
-pub struct VariableDefStmt {
+pub struct BindingStmt {
   pub name: String,
   pub value: Box<Node>,
-  pub is_mutable: bool,
+  pub modifier: BindingModifier,
   pub binding_id: cache::BindingId,
   pub ty: Type,
 }
@@ -432,9 +551,9 @@ pub struct VariableDefStmt {
 #[derive(Debug, Clone)]
 pub struct IfExpr {
   pub condition: Box<Node>,
-  pub then_value: Box<Node>,
+  pub then_expr: Box<Node>,
   pub alternative_branches: Vec<(Node, Node)>,
-  pub else_value: Option<Box<Node>>,
+  pub else_expr: Option<Box<Node>>,
 }
 
 #[derive(Debug, Clone)]
@@ -523,25 +642,6 @@ pub struct MemberAccess {
   pub member_name: String,
 }
 
-pub fn find_node<'a, F: FnMut(&'a NodeKind) -> bool>(
-  ast: &'a NodeKind,
-  mut predicate: F,
-) -> Option<&'a NodeKind> {
-  let mut result = None;
-
-  ast.traverse(|node| {
-    if predicate(node) {
-      result = Some(node);
-
-      return false;
-    }
-
-    true
-  });
-
-  result
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -578,7 +678,7 @@ mod tests {
       yields: None,
     });
 
-    let search_result = find_node(&block, |node| matches!(node, NodeKind::BreakStmt(_)));
+    let search_result = block.find_node(|node| matches!(node, NodeKind::BreakStmt(_)));
 
     assert!(matches!(search_result, Some(NodeKind::BreakStmt(_))));
   }

@@ -89,6 +89,7 @@ pub enum TokenKind {
   Var,
   Yield,
   Elif,
+  In,
 }
 
 pub struct Lexer {
@@ -521,6 +522,7 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "pass" => TokenKind::Pass,
     "yield" => TokenKind::Yield,
     "elif" => TokenKind::Elif,
+    "in" => TokenKind::In,
     _ => return None,
   })
 }
