@@ -136,7 +136,7 @@ impl Lower for ast::MemberAccess {
     // Otherwise, it must be a method.
     let impl_method_info = cache
       .struct_impls
-      .get(&llvm_struct_type.binding_id)
+      .get(&llvm_struct_type.cache_id)
       .unwrap()
       .iter()
       .find(|x| x.1 == self.member_name)
@@ -871,7 +871,10 @@ impl Lower for ast::IfExpr {
     let llvm_condition = self.condition.lower(generator, cache, false).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
     let ty = self.infer_type(cache);
-    let yields_expression = !ty.is_a_unit();
+
+    // REVIEW: What if it is never type? Should it be considered that it yields?
+    let yields_expression = ty.is_a_lowerable();
+
     let mut llvm_if_value = None;
 
     // Allocate the resulting if-value early on, if applicable.
@@ -1077,7 +1080,7 @@ impl Lower for ast::Function {
     // FIXME: Still getting stack-overflow errors when using recursive functions (specially multiple of them at the same time). Investigate whether that's caused here or elsewhere.
     // Manually cache the function now to allow for recursive function calls.
     generator.llvm_cached_values.insert(
-      self.binding_id,
+      self.cache_id,
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
@@ -1167,6 +1170,14 @@ impl Lower for ast::BlockExpr {
         break;
       }
     }
+
+    // REVIEW: This syntax may replace if/else expressions?
+    // self.yields.as_ref().map(|value| {
+    //   generator
+    //     .lower_with_access_rules(&value.kind, cache)
+    //     // TODO: Why doesn't the one below unwrap?
+    //     .unwrap()
+    // })
 
     if let Some(yields_value) = &self.yields {
       generator.lower_with_access_rules(&yields_value.kind, cache)
@@ -1301,7 +1312,7 @@ impl Lower for ast::BindingStmt {
       if let Some(llvm_value) = result {
         generator
           .llvm_cached_values
-          .insert(self.binding_id, llvm_value);
+          .insert(self.cache_id, llvm_value);
       }
 
       return result;
@@ -1319,7 +1330,7 @@ impl Lower for ast::BindingStmt {
 
     let result = llvm_alloca.as_basic_value_enum();
 
-    generator.llvm_cached_values.insert(self.binding_id, result);
+    generator.llvm_cached_values.insert(self.cache_id, result);
 
     // BUG: This needs to return `Some` for the value of the binding-statement to be memoized.
     // ... However, this also implies that the binding-statement itself yields a value!
@@ -1418,10 +1429,8 @@ pub struct LlvmGenerator<'a, 'ctx> {
   pub(super) llvm_builder: inkwell::builder::Builder<'ctx>,
   pub(super) llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   // TODO: Shouldn't this be a vector instead?
-  llvm_cached_values:
-    std::collections::HashMap<cache::BindingId, inkwell::values::BasicValueEnum<'ctx>>,
-  llvm_cached_types:
-    std::collections::HashMap<cache::BindingId, inkwell::types::BasicTypeEnum<'ctx>>,
+  llvm_cached_values: std::collections::HashMap<cache::Id, inkwell::values::BasicValueEnum<'ctx>>,
+  llvm_cached_types: std::collections::HashMap<cache::Id, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
   pub(super) current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
@@ -1659,9 +1668,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
   }
 
-  fn find_type_binding_id(&self, ty: &ast::Type, cache: &cache::Cache) -> Option<cache::BindingId> {
+  fn find_type_cache_id(&self, ty: &ast::Type, cache: &cache::Cache) -> Option<cache::Id> {
     Some(match ty.flatten(cache) {
-      ast::Type::Struct(struct_type) => struct_type.binding_id.clone(),
+      ast::Type::Struct(struct_type) => struct_type.cache_id.clone(),
       // REVIEW: Any more?
       _ => return None,
     })
@@ -1793,7 +1802,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       );
     }
 
-    if !return_type.is_a_unit() {
+    if return_type.is_a_lowerable() {
       self
         .memoize_or_retrieve_type(return_type, cache)
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
@@ -1818,9 +1827,9 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     ty: &ast::Type,
     cache: &cache::Cache,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
-    if let Some(binding_id) = self.find_type_binding_id(ty, cache) {
+    if let Some(cache_id) = self.find_type_cache_id(ty, cache) {
       // REVIEW: Isn't this indirectly recursive? Will it cause problems?
-      return self.memoize_or_retrieve_type_by_binding(binding_id, cache);
+      return self.memoize_or_retrieve_type_by_binding(cache_id, cache);
     }
 
     self.lower_type(ty, cache)
@@ -1828,16 +1837,16 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
   fn memoize_or_retrieve_type_by_binding(
     &mut self,
-    binding_id: cache::BindingId,
+    cache_id: cache::Id,
     cache: &cache::Cache,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
-    if let Some(existing_definition) = self.llvm_cached_types.get(&binding_id) {
+    if let Some(existing_definition) = self.llvm_cached_types.get(&cache_id) {
       return existing_definition.clone();
     }
 
     // REVIEW: Consider making a separate map for types in the cache.
 
-    let node = cache.force_get(&binding_id);
+    let node = cache.force_get(&cache_id);
 
     // REVIEW: Why not perform type-flattening here instead?
     let ty = match &node {
@@ -1849,7 +1858,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
 
     let llvm_type = self.lower_type(&ty, cache);
 
-    self.llvm_cached_types.insert(binding_id, llvm_type);
+    self.llvm_cached_types.insert(cache_id, llvm_type);
 
     llvm_type
   }
@@ -1878,19 +1887,19 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   /// otherwise they will all be restored.
   fn memoize_or_retrieve_value(
     &mut self,
-    binding_id: cache::BindingId,
+    cache_id: cache::Id,
     cache: &cache::Cache,
     forward_buffers: bool,
     apply_access_rules: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let node = cache.force_get(&binding_id);
+    let node = cache.force_get(&cache_id);
 
     // BUG: If a definition is lowered elsewhere without the use of this function,
     // ... there will not be any call to `lower_with_access_rules` for it. This means
     // ... that those definitions will be cached as `PointerValue`s instead of possibly
     // ... needing to be lowered.
     // If the definition has been cached previously, simply retrieve it.
-    if let Some(existing_definition) = self.llvm_cached_values.get(&binding_id) {
+    if let Some(existing_definition) = self.llvm_cached_values.get(&cache_id) {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
       let existing_value_cloned = existing_definition.clone();
 
@@ -1907,7 +1916,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let result = if let Some(llvm_value) = llvm_value_result {
       // Cache the value without applying access rules.
       // This way, access rules may be chosen to be applied upon cache retrieval.
-      self.llvm_cached_values.insert(binding_id, llvm_value);
+      self.llvm_cached_values.insert(cache_id, llvm_value);
 
       Some(if apply_access_rules {
         self.apply_access_rules(node, llvm_value, cache)
@@ -1973,7 +1982,7 @@ mod tests {
       name: "a".to_string(),
       value: Mock::boxed_node(Mock::literal_int()),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: 0,
+      cache_id: 0,
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
@@ -1988,28 +1997,28 @@ mod tests {
   fn lower_binding_stmt_ref_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let a_binding_id: cache::BindingId = 0;
+    let a_cache_id: cache::Id = 0;
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(Mock::literal_int()),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: a_binding_id,
+      cache_id: a_cache_id,
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
-      value: Mock::reference(a_binding_id),
+      value: Mock::reference(a_cache_id),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: a_binding_id + 1,
+      cache_id: a_cache_id + 1,
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt_a, a_binding_id)
+      .cache(binding_stmt_a, a_cache_id)
       .function()
-      .lower_cache(a_binding_id, false)
+      .lower_cache(a_cache_id, false)
       .lower(&binding_stmt_b, false)
       .compare_with_file("let_stmt_ref_val");
   }
@@ -2024,7 +2033,7 @@ mod tests {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: 0,
+      cache_id: 0,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
@@ -2040,30 +2049,30 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
-    let a_binding_id: cache::BindingId = 0;
+    let a_cache_id: cache::Id = 0;
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: a_binding_id,
+      cache_id: a_cache_id,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
-      value: Mock::reference(a_binding_id),
+      value: Mock::reference(a_cache_id),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: a_binding_id + 1,
+      cache_id: a_cache_id + 1,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt_a, a_binding_id)
+      .cache(binding_stmt_a, a_cache_id)
       .function()
-      .lower_cache(a_binding_id, false)
+      .lower_cache(a_cache_id, false)
       .lower(&binding_stmt_b, false)
       .compare_with_file("let_stmt_ptr_ref_val");
   }
@@ -2079,7 +2088,7 @@ mod tests {
         "hello".to_string(),
       ))),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: 0,
+      cache_id: 0,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
@@ -2094,19 +2103,19 @@ mod tests {
   fn lower_assign_const_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let binding_id: cache::BindingId = 0;
+    let cache_id: cache::Id = 0;
 
     let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(Mock::literal_int()),
       modifier: ast::BindingModifier::Immutable,
-      binding_id,
+      cache_id,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
-      assignee_expr: Mock::reference(binding_id),
+      assignee_expr: Mock::reference(cache_id),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Int(
         2,
         ast::IntSize::I32,
@@ -2114,9 +2123,9 @@ mod tests {
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt, binding_id)
+      .cache(binding_stmt, cache_id)
       .function()
-      .lower_cache(binding_id, false)
+      .lower_cache(cache_id, false)
       .lower(&assign_stmt, false)
       .compare_with_file("assign_stmt_const_val");
   }
@@ -2126,14 +2135,14 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
-    let a_binding_id: cache::BindingId = 0;
-    let b_binding_id: cache::BindingId = a_binding_id + 1;
+    let a_cache_id: cache::Id = 0;
+    let b_cache_id: cache::Id = a_cache_id + 1;
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: a_binding_id,
+      cache_id: a_cache_id,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
@@ -2142,21 +2151,21 @@ mod tests {
       name: "b".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       modifier: ast::BindingModifier::Immutable,
-      binding_id: b_binding_id,
+      cache_id: b_cache_id,
       // FIXME: Wrong type.
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
-      assignee_expr: Mock::reference(b_binding_id),
-      value: Mock::reference(a_binding_id),
+      assignee_expr: Mock::reference(b_cache_id),
+      value: Mock::reference(a_cache_id),
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt_a, a_binding_id)
-      .cache(binding_stmt_b, b_binding_id)
+      .cache(binding_stmt_a, a_cache_id)
+      .cache(binding_stmt_b, b_cache_id)
       .function()
-      .lower_cache(a_binding_id, false)
+      .lower_cache(a_cache_id, false)
       .lower(&assign_stmt, false)
       .compare_with_file("assign_stmt_ptr_to_ptr");
   }
@@ -2170,7 +2179,7 @@ mod tests {
       name: "a".to_string(),
       variants: vec![("b".to_string(), 0), ("c".to_string(), 1)],
       ty: ast::BasicType::Int(ast::IntSize::I32),
-      binding_id: 0,
+      cache_id: 0,
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -2215,7 +2224,7 @@ mod tests {
       name: "a".to_string(),
       prototype: Mock::prototype_simple(true),
       attributes: Vec::new(),
-      binding_id: 0,
+      cache_id: 0,
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -2232,7 +2241,7 @@ mod tests {
     let extern_static = ast::NodeKind::ExternStatic(ast::ExternStatic {
       name: "a".to_string(),
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
-      binding_id: 0,
+      cache_id: 0,
     });
 
     Mock::new(&llvm_context, &llvm_module)

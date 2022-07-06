@@ -2,7 +2,7 @@ use crate::{ast, cache};
 
 pub struct LintContext {
   pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
-  variable_references: std::collections::HashMap<cache::BindingId, bool>,
+  variable_references: std::collections::HashMap<cache::Id, bool>,
 }
 
 impl LintContext {

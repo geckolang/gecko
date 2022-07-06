@@ -1,2 +1,2 @@
-func main():
+func main(argc: Int, argv: *Str):
   return 0

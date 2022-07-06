@@ -84,7 +84,7 @@ pub struct Parameter {
   pub name: String,
   pub ty: Type,
   pub position: u32,
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
 }
 
 #[derive(PartialEq, PartialOrd, Clone, Debug)]
@@ -139,6 +139,10 @@ impl Type {
   /// This will not perform flattening.
   pub fn is_a_unit(&self) -> bool {
     matches!(self, Type::Unit)
+  }
+
+  pub fn is_a_lowerable(&self) -> bool {
+    !self.is_a_unit() && !matches!(self, Type::Never)
   }
 
   /// Determine whether the type is a stub type.
@@ -293,7 +297,7 @@ impl NodeKind {
         // TODO: Missing condition.
         NodeKind::LoopStmt(loop_stmt) => map_children(&loop_stmt.body.statements).collect(),
         // TODO: Missing prototype.
-        NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
+        // NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
         // TODO: Missing prototype.
         NodeKind::Function(function) => map_children(&function.body.statements).collect(),
         // TODO: Implement all other nodes with visitable children.
@@ -441,9 +445,10 @@ pub struct Using {
 
 #[derive(Debug, Clone)]
 pub struct Closure {
-  pub captures: Vec<(String, Option<cache::BindingId>)>,
+  pub captures: Vec<(String, Option<cache::Id>)>,
   pub prototype: Prototype,
   pub body: BlockExpr,
+  pub id: cache::Id,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -456,7 +461,7 @@ pub struct FunctionType {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct ThisType {
-  pub target_id: Option<cache::BindingId>,
+  pub target_id: Option<cache::Id>,
 }
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
@@ -467,7 +472,7 @@ pub struct Pattern {
   pub base_name: String,
   pub sub_name: Option<String>,
   pub symbol_kind: name_resolution::SymbolKind,
-  pub target_id: Option<cache::BindingId>,
+  pub target_id: Option<cache::Id>,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -481,7 +486,7 @@ pub struct StructValue {
   pub fields: Vec<Node>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
-  pub target_id: Option<cache::BindingId>,
+  pub target_id: Option<cache::Id>,
   pub ty: Option<Type>,
 }
 
@@ -498,14 +503,14 @@ pub struct StructImpl {
 pub struct Trait {
   pub name: String,
   pub methods: Vec<(String, Prototype)>,
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
 pub struct Enum {
   pub name: String,
-  pub variants: Vec<(String, cache::BindingId)>,
-  pub binding_id: cache::BindingId,
+  pub variants: Vec<(String, cache::Id)>,
+  pub cache_id: cache::Id,
   pub ty: BasicType,
 }
 
@@ -516,7 +521,7 @@ pub struct ContinueStmt;
 pub struct IndexingExpr {
   pub name: String,
   pub index_expr: Box<Node>,
-  pub target_id: Option<cache::BindingId>,
+  pub target_id: Option<cache::Id>,
 }
 
 #[derive(Debug, Clone)]
@@ -566,7 +571,7 @@ pub struct Prototype {
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
-  pub instance_type_id: Option<cache::BindingId>,
+  pub instance_type_id: Option<cache::Id>,
   pub this_parameter: Option<Parameter>,
 }
 
@@ -581,7 +586,7 @@ pub struct ExternFunction {
   pub name: String,
   pub prototype: Prototype,
   pub attributes: Vec<Attribute>,
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
 }
 
 impl visitor::Visitable for ExternFunction {
@@ -594,7 +599,7 @@ impl visitor::Visitable for ExternFunction {
 pub struct ExternStatic {
   pub name: String,
   pub ty: Type,
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
 }
 
 // TODO: Change this into a macro.
@@ -617,7 +622,7 @@ pub struct Function {
   pub prototype: Prototype,
   pub body: Box<BlockExpr>,
   pub attributes: Vec<Attribute>,
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
   pub generics: Option<Generics>,
 }
 
@@ -625,7 +630,7 @@ pub struct Function {
 pub struct BlockExpr {
   pub statements: Vec<Node>,
   pub yields: Option<Box<Node>>,
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
@@ -648,7 +653,7 @@ pub struct BindingStmt {
   pub name: String,
   pub value: Box<Node>,
   pub modifier: BindingModifier,
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
   pub ty: Type,
 }
 
@@ -690,7 +695,7 @@ pub struct IntrinsicCall {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct StructType {
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
   pub name: String,
   pub fields: Vec<(String, Type)>,
 }
@@ -699,7 +704,7 @@ pub struct StructType {
 pub struct TypeAlias {
   pub name: String,
   pub ty: Type,
-  pub binding_id: cache::BindingId,
+  pub cache_id: cache::Id,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -753,7 +758,7 @@ mod tests {
   #[test]
   fn traverse_ast() {
     let node = NodeKind::BlockExpr(BlockExpr {
-      binding_id: 0,
+      cache_id: 0,
       statements: Vec::new(),
       yields: None,
     });
@@ -774,7 +779,7 @@ mod tests {
     let target_node = NodeKind::BreakStmt(BreakStmt);
 
     let block = NodeKind::BlockExpr(BlockExpr {
-      binding_id: 0,
+      cache_id: 0,
       statements: vec![Node {
         cached_type: None,
         kind: target_node.clone(),

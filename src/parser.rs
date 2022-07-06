@@ -350,7 +350,7 @@ impl<'a> Parser<'a> {
     Ok(ast::BlockExpr {
       statements,
       yields,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
     })
   }
 
@@ -500,7 +500,7 @@ impl<'a> Parser<'a> {
       name,
       ty,
       position,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
     })
   }
 
@@ -523,7 +523,7 @@ impl<'a> Parser<'a> {
         name: THIS_IDENTIFIER.to_string(),
         ty: ast::Type::This(ast::ThisType { target_id: None }),
         position: 0,
-        binding_id: self.cache.create_binding_id(),
+        cache_id: self.cache.create_id(),
       });
 
       if !self.is(&lexer::TokenKind::ParenthesesR) {
@@ -600,7 +600,7 @@ impl<'a> Parser<'a> {
       prototype,
       body: Box::new(body_block),
       attributes,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
       generics,
     })
   }
@@ -622,7 +622,7 @@ impl<'a> Parser<'a> {
       name,
       prototype,
       attributes,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
     })
   }
 
@@ -640,7 +640,7 @@ impl<'a> Parser<'a> {
     Ok(ast::ExternStatic {
       name,
       ty,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
     })
   }
 
@@ -751,7 +751,7 @@ impl<'a> Parser<'a> {
     Ok(ast::TypeAlias {
       name,
       ty,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
     })
   }
 
@@ -802,7 +802,7 @@ impl<'a> Parser<'a> {
       name,
       value: Box::new(value),
       modifier,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
       ty,
     })
   }
@@ -1334,7 +1334,7 @@ impl<'a> Parser<'a> {
 
     // TODO: Support for different basic values/types.
     loop {
-      variants.push((self.parse_name()?, self.cache.create_binding_id()));
+      variants.push((self.parse_name()?, self.cache.create_id()));
       self.skip_past(&lexer::TokenKind::Comma)?;
 
       if self.is(&lexer::TokenKind::Dedent) {
@@ -1347,7 +1347,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Enum {
       name,
       variants,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
       // TODO: Infer the type from the value, or default to `I32` if values are omitted.
       // ... Issue an error diagnostic if the value is `nullptr`. Finally, verify that all
       // ... the values are of the same inferred type.
@@ -1387,7 +1387,7 @@ impl<'a> Parser<'a> {
     Ok(ast::StructType {
       name,
       fields,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
     })
   }
 
@@ -1449,6 +1449,7 @@ impl<'a> Parser<'a> {
       captures,
       prototype,
       body,
+      id: self.cache.create_id(),
     })
   }
 
@@ -1528,7 +1529,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Trait {
       name,
       methods,
-      binding_id: self.cache.create_binding_id(),
+      cache_id: self.cache.create_id(),
     })
   }
 

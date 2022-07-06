@@ -12,9 +12,9 @@ pub struct TypeContext {
   in_loop: bool,
   in_unsafe_block: bool,
   in_impl: bool,
-  current_function_key: Option<cache::BindingId>,
+  current_function_id: Option<cache::Id>,
   // REVISE: Make use-of or discard.
-  _types_cache: std::collections::HashMap<cache::BindingId, ast::Type>,
+  _types_cache: std::collections::HashMap<cache::Id, ast::Type>,
   usings: Vec<ast::Using>,
   constraints: Vec<TypeConstraint>,
   /// A map from a type variable's id to a type.
@@ -57,7 +57,7 @@ impl TypeContext {
       in_loop: false,
       in_unsafe_block: false,
       in_impl: false,
-      current_function_key: None,
+      current_function_id: None,
       _types_cache: std::collections::HashMap::new(),
       usings: Vec::new(),
       constraints: Vec::new(),
@@ -87,7 +87,7 @@ impl TypeContext {
   pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
     let body_type = body.infer_type(cache);
 
-    if !body_type.is_a_unit() {
+    if body_type.is_a_lowerable() {
       return body_type;
     }
 
@@ -95,13 +95,19 @@ impl TypeContext {
 
     // BUG: Finish re-implementing. This is essential.
     // REVISE: Cloning body. This may be a large AST.
-    // body.statements.iter().any(|statement| {
-    //   if let ast::NodeKind::ReturnStmt(return_stmt) = statement {
-    //     if let Some(return_value) = return_stmt.value {
+    ast::NodeKind::BlockExpr(body.clone()).traverse(|child| {
+      if let ast::NodeKind::ReturnStmt(return_stmt) = child {
+        // REVIEW: What if the return statement's value is a block that contains a return statement?
+        if let Some(return_value) = &return_stmt.value {
+          ty = return_value.kind.infer_type(cache);
+        }
 
-    //     }
-    //   }
-    // });
+        // If the return statement is empty, then the function's return type is unit.
+        return false;
+      }
+
+      true
+    });
 
     ty
   }
@@ -110,7 +116,7 @@ impl TypeContext {
   fn _fetch_type(
     &mut self,
     node_kind: &ast::NodeKind,
-    unique_key: &cache::BindingId,
+    unique_key: &cache::Id,
     cache: &cache::Cache,
   ) -> ast::Type {
     if let Some(cached_type) = self._types_cache.get(unique_key) {
@@ -471,10 +477,10 @@ impl Check for ast::MemberAccess {
 
     // REVIEW: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
     // TODO: Lookup implementation, and attempt to match a method.
-    if let Some(struct_impls) = cache.struct_impls.get(&struct_type.binding_id) {
-      for (method_binding_id, method_name) in struct_impls {
+    if let Some(struct_impls) = cache.struct_impls.get(&struct_type.cache_id) {
+      for (method_cache_id, method_name) in struct_impls {
         if method_name == &self.member_name {
-          return cache.force_get(&method_binding_id).infer_type(cache);
+          return cache.force_get(&method_cache_id).infer_type(cache);
         }
       }
     }
@@ -519,6 +525,9 @@ impl Check for ast::Closure {
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     // REVIEW: Might need to mirror `Function`'s type check.
+    let previous_function_id = context.current_function_id.clone();
+
+    context.current_function_id = Some(self.id);
 
     if self.prototype.accepts_instance {
       context.diagnostics.push(
@@ -529,6 +538,7 @@ impl Check for ast::Closure {
 
     self.prototype.check(context, cache);
     self.body.check(context, cache);
+    context.current_function_id = previous_function_id;
   }
 }
 
@@ -1151,7 +1161,7 @@ impl Check for ast::BindingStmt {
 
 impl Check for ast::ReturnStmt {
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    let current_function_node = cache.force_get(&context.current_function_key.unwrap());
+    let current_function_node = cache.force_get(&context.current_function_id.unwrap());
     let mut name = None;
 
     let return_type = TypeContext::infer_return_value_type(
@@ -1175,6 +1185,11 @@ impl Check for ast::ReturnStmt {
           .with_message("return statement must return a value"),
       );
     } else if return_type.is_a_unit() && self.value.is_some() {
+      println!(
+        "r is: {:?} | value is: {:?}",
+        return_type,
+        self.value.as_ref().unwrap()
+      );
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("return statement must not return a value"),
@@ -1216,7 +1231,9 @@ impl Check for ast::Function {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    context.current_function_key = Some(self.binding_id);
+    let previous_function_key = context.current_function_id.clone();
+
+    context.current_function_id = Some(self.cache_id);
 
     if self.prototype.accepts_instance && !context.in_impl {
       context.diagnostics.push(
@@ -1267,7 +1284,7 @@ impl Check for ast::Function {
 
     self.prototype.check(context, cache);
     self.body.check(context, cache);
-    context.current_function_key = None;
+    context.current_function_id = previous_function_key;
   }
 
   fn post_unification(&mut self, context: &mut TypeContext, _cache: &cache::Cache) {
@@ -1420,7 +1437,7 @@ mod tests {
     assert!(type_context.substitutions.is_empty());
     assert!(type_context.diagnostics.is_empty());
     assert!(type_context.usings.is_empty());
-    assert!(type_context.current_function_key.is_none());
+    assert!(type_context.current_function_id.is_none());
     assert!(!type_context.in_impl);
     assert!(!type_context.in_loop);
     assert!(!type_context.in_unsafe_block);
@@ -1498,7 +1515,7 @@ mod tests {
         kind: ast::NodeKind::Literal(ast::Literal::Bool(true)),
         cached_type: None,
       }),
-      binding_id: 0,
+      cache_id: 0,
       modifier: ast::BindingModifier::Immutable,
     };
 

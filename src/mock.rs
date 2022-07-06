@@ -46,8 +46,8 @@ pub mod tests {
       self
     }
 
-    pub fn lower_cache(&mut self, binding_id: cache::BindingId, access: bool) -> &mut Self {
-      self.mock.cache.force_get(&binding_id).lower(
+    pub fn lower_cache(&mut self, cache_id: cache::Id, access: bool) -> &mut Self {
+      self.mock.cache.force_get(&cache_id).lower(
         &mut self.mock.generator,
         &self.mock.cache,
         access,
@@ -88,8 +88,8 @@ pub mod tests {
       self
     }
 
-    pub fn _lower_cache(&mut self, binding_id: cache::BindingId, access: bool) -> &mut Self {
-      self.mock.cache.force_get(&binding_id).lower(
+    pub fn _lower_cache(&mut self, cache_id: cache::Id, access: bool) -> &mut Self {
+      self.mock.cache.force_get(&cache_id).lower(
         &mut self.mock.generator,
         &self.mock.cache,
         access,
@@ -121,14 +121,14 @@ pub mod tests {
       ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
     }
 
-    pub fn reference(binding_id: cache::BindingId) -> Box<ast::Node> {
+    pub fn reference(cache_id: cache::Id) -> Box<ast::Node> {
       Mock::boxed_node(ast::NodeKind::Reference(ast::Reference {
         pattern: ast::Pattern {
           qualifier: None,
           base_name: "test".to_string(),
           sub_name: None,
           symbol_kind: name_resolution::SymbolKind::Definition,
-          target_id: Some(binding_id),
+          target_id: Some(cache_id),
         },
       }))
     }
@@ -219,8 +219,8 @@ pub mod tests {
       self
     }
 
-    pub fn cache(&mut self, node: ast::NodeKind, binding_id: usize) -> &mut Self {
-      self.cache.symbols.insert(binding_id, node);
+    pub fn cache(&mut self, node: ast::NodeKind, cache_id: usize) -> &mut Self {
+      self.cache.symbols.insert(cache_id, node);
 
       self
     }
