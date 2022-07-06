@@ -78,29 +78,30 @@ impl TypeContext {
     })
   }
 
+  // pub fn test() -> i32 {
+  //   let a: &str = {
+  //     return 0;
+  //   };
+  // }
+
   pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
     let body_type = body.infer_type(cache);
 
-    if !body_type.is_unit() {
+    if !body_type.is_a_unit() {
       return body_type;
     }
 
     let mut ty = ast::Type::Unit;
 
+    // BUG: Finish re-implementing. This is essential.
     // REVISE: Cloning body. This may be a large AST.
-    ast::NodeKind::BlockExpr(body.clone()).traverse(|child| {
-      if let ast::NodeKind::ReturnStmt(return_stmt) = child {
-        // REVIEW: What if the return statement's value is a block that contains a return statement?
-        if let Some(return_value) = &return_stmt.value {
-          ty = return_value.kind.infer_type(cache);
-        }
+    // body.statements.iter().any(|statement| {
+    //   if let ast::NodeKind::ReturnStmt(return_stmt) = statement {
+    //     if let Some(return_value) = return_stmt.value {
 
-        // If the return statement is empty, then the function's return type is unit.
-        return false;
-      }
-
-      true
-    });
+    //     }
+    //   }
+    // });
 
     ty
   }
@@ -126,106 +127,42 @@ impl TypeContext {
     return inferred_type;
   }
 
-  // TODO: Find instances and replace old usages with this function.
-  pub fn infer_and_flatten_type(node: &ast::Node, cache: &cache::Cache) -> ast::Type {
-    TypeContext::flatten_type(&node.kind.infer_type(cache), cache)
-  }
-
   // TODO: Use an enum to specify error type instead of a string.
   // REVIEW: Consider using `Result` instead of `Option`.
-  pub fn compare_prototypes(
-    prototype_a: &ast::Prototype,
-    prototype_b: &ast::Prototype,
-    cache: &cache::Cache,
-  ) -> Option<String> {
-    if prototype_a.parameters.len() != prototype_b.parameters.len() {
-      return Some("parameter count".to_string());
-    }
+  // pub fn compare_prototypes(
+  //   prototype_a: &ast::Prototype,
+  //   prototype_b: &ast::Prototype,
+  //   cache: &cache::Cache,
+  // ) -> Option<String> {
+  //   if prototype_a.parameters.len() != prototype_b.parameters.len() {
+  //     return Some("parameter count".to_string());
+  //   }
 
-    let parameter_types = prototype_a
-      .parameters
-      .iter()
-      .zip(prototype_b.parameters.iter())
-      .map(|(param_def_a, param_def_b)| (param_def_a.ty.clone(), param_def_b.ty.clone()));
+  //   let parameter_types = prototype_a
+  //     .parameters
+  //     .iter()
+  //     .zip(prototype_b.parameters.iter())
+  //     .map(|(param_def_a, param_def_b)| (param_def_a.ty.clone(), param_def_b.ty.clone()));
 
-    for (param_type_a, param_type_b) in parameter_types {
-      if !Self::compare(&param_type_a, &param_type_b, cache) {
-        // TODO: Be more specific.
-        return Some("parameter type".to_string());
-      }
-    }
+  //   for (param_type_a, param_type_b) in parameter_types {
+  //     if !Self::compare(&param_type_a, &param_type_b, cache) {
+  //       // TODO: Be more specific.
+  //       return Some("parameter type".to_string());
+  //     }
+  //   }
 
-    if !Self::compare(
-      &prototype_a.return_type_annotation,
-      &prototype_b.return_type_annotation,
-      cache,
-    ) {
-      return Some("return type".to_string());
-    }
+  //   if !Self::compare(
+  //     &prototype_a.return_type_annotation,
+  //     &prototype_b.return_type_annotation,
+  //     cache,
+  //   ) {
+  //     return Some("return type".to_string());
+  //   }
 
-    None
-  }
+  //   None
+  // }
 
   // TODO: Create a `finalize` method step to ensure that the main function was defined.
-
-  // FIXME: Need to handle cyclic types. Currently, stack is overflown. One example would be cyclic type aliases.
-  // REVIEW: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
-  /// Resolve a possible user-defined type, so it can be used properly.
-  pub fn flatten_type(ty: &ast::Type, cache: &cache::Cache) -> ast::Type {
-    // REVISE: Cleanup.
-
-    // REVIEW: What if it's a pointer to a user-defined type?
-    if let ast::Type::Stub(stub_type) = ty {
-      let target_node = cache.force_get(&stub_type.pattern.target_id.unwrap());
-
-      // REVIEW: What about type aliases, and other types that might be encountered in the future?
-
-      // REVISE: Cleanup!
-      if let ast::NodeKind::TypeAlias(type_alias) = &target_node {
-        return Self::flatten_type(&type_alias.ty, cache);
-      } else if let ast::NodeKind::StructType(target_type) = &target_node {
-        // REVIEW: Why is `flatten_type` being called again with a struct type inside?
-        return Self::flatten_type(&ast::Type::Struct(target_type.clone()), cache);
-      }
-    } else if let ast::Type::This(this_type) = &ty {
-      // REVISE: No need to clone?
-      let target_struct_type = cache.force_get(&this_type.target_id.unwrap());
-
-      if let ast::NodeKind::StructType(struct_type) = &target_struct_type {
-        return ast::Type::Struct(struct_type.clone());
-      }
-    }
-
-    // REVISE: Do not clone by default. Find a better alternative.
-    ty.clone()
-  }
-
-  // TODO: Make use of this function throughout codebase.
-  /// Compare two types for equality.
-  ///
-  /// The types passed-in will be resolved if needed before
-  /// the comparison takes place.
-  pub fn compare(type_a: &ast::Type, type_b: &ast::Type, cache: &cache::Cache) -> bool {
-    let flat_type_a = Self::flatten_type(type_a, cache);
-    let flat_type_b = Self::flatten_type(type_b, cache);
-
-    // The error type does not unify with anything.
-    if matches!(flat_type_a, ast::Type::Error) || matches!(type_b, ast::Type::Error) {
-      return false;
-    }
-    // If both types are pointers, and at least one is a null pointer type, then always unify.
-    // This is because null pointers unify with any pointer type (any pointer can be null).
-    else if matches!(flat_type_a, ast::Type::Pointer(_))
-      && matches!(flat_type_a, ast::Type::Pointer(_))
-      && (Self::is_null_pointer_type(&flat_type_a) || Self::is_null_pointer_type(&type_b))
-    {
-      return true;
-    }
-
-    // BUG: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
-    // NOTE: Stub types will also work, because their target ids will be compared.
-    flat_type_a == flat_type_b
-  }
 
   fn create_type_variable(&mut self) -> ast::Type {
     let id = self.substitutions.len();
@@ -340,15 +277,6 @@ impl TypeContext {
 
     ty
   }
-
-  // REVIEW: Consider moving this to be part of `Type` itself.
-  fn is_null_pointer_type(ty: &ast::Type) -> bool {
-    if let ast::Type::Pointer(ty) = ty {
-      return matches!(ty.as_ref(), ast::Type::Basic(ast::BasicType::Null));
-    }
-
-    false
-  }
 }
 
 pub trait Check {
@@ -414,9 +342,7 @@ impl Check for ast::SizeofIntrinsic {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    let flattened_type = TypeContext::flatten_type(&self.ty, cache);
-
-    if matches!(flattened_type, ast::Type::Unit) {
+    if self.ty.flatten(cache).is(&ast::Type::Unit) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("cannot determine size of unit type"),
@@ -525,9 +451,9 @@ impl Check for ast::StructImpl {
 
 impl Check for ast::MemberAccess {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let resolved_base_expr_type = TypeContext::infer_and_flatten_type(&self.base_expr, cache);
+    let base_expr_type = self.base_expr.kind.infer_flatten_type(cache);
 
-    let struct_type = match resolved_base_expr_type {
+    let struct_type = match base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
       // REVIEW: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
       // ... But this point may be reachable from the user-side. Need to somehow properly
@@ -557,9 +483,9 @@ impl Check for ast::MemberAccess {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    let resolved_base_expr_type = TypeContext::infer_and_flatten_type(&self.base_expr, cache);
+    let base_expr_type = self.base_expr.kind.infer_flatten_type(cache);
 
-    let struct_type = match resolved_base_expr_type {
+    let struct_type = match base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
       // TODO: Implement.
       ast::Type::This(_) => return,
@@ -688,7 +614,7 @@ impl Check for ast::UnaryExpr {
     let expr_type = self.expr.kind.infer_type(cache);
 
     // Short-circuit if the expression's type is unit.
-    if expr_type.is_unit() {
+    if expr_type.is_a_unit() {
       return ast::Type::Unit;
     }
 
@@ -704,7 +630,7 @@ impl Check for ast::UnaryExpr {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    let expr_type = TypeContext::infer_and_flatten_type(&self.expr, cache);
+    let expr_type = &self.expr.kind.infer_flatten_type(cache);
 
     match self.operator {
       ast::OperatorKind::MultiplyOrDereference => {
@@ -723,7 +649,7 @@ impl Check for ast::UnaryExpr {
         }
       }
       ast::OperatorKind::Not => {
-        if !TypeContext::compare(&expr_type, &ast::Type::Basic(ast::BasicType::Bool), cache) {
+        if !expr_type.is(&ast::Type::Basic(ast::BasicType::Bool)) {
           context.diagnostics.push(
             codespan_reporting::diagnostic::Diagnostic::error()
               .with_message("can only negate boolean expressions"),
@@ -753,7 +679,7 @@ impl Check for ast::UnaryExpr {
             codespan_reporting::diagnostic::Diagnostic::error()
               .with_message("can only cast between primitive types"),
           );
-        } else if TypeContext::compare(&expr_type, self.cast_type.as_ref().unwrap(), cache) {
+        } else if expr_type.is(self.cast_type.as_ref().unwrap()) {
           context.diagnostics.push(
             codespan_reporting::diagnostic::Diagnostic::warning()
               .with_message("redundant cast to the same type"),
@@ -773,8 +699,7 @@ impl Check for ast::AssignStmt {
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     // TODO: Need to unify the value and the target's type.
 
-    // REVIEW: No need to flatten the type?
-    let assignee_type = TypeContext::infer_and_flatten_type(&self.assignee_expr, cache);
+    let assignee_type = self.assignee_expr.kind.infer_flatten_type(cache);
 
     if matches!(assignee_type, ast::Type::Reference(_)) {
       context.diagnostics.push(
@@ -849,7 +774,7 @@ impl Check for ast::ContinueStmt {
 impl Check for ast::IndexingExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let target_array = cache.force_get(&self.target_id.unwrap());
-    let array_type = target_array.infer_type(cache);
+    let array_type = target_array.infer_flatten_type(cache);
 
     // TODO: In the future, add support for when indexing strings.
     let element_type = match array_type {
@@ -863,13 +788,10 @@ impl Check for ast::IndexingExpr {
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     self.index_expr.kind.check(context, cache);
 
-    let index_expr_type = self.index_expr.kind.infer_type(cache);
+    let index_expr_type = self.index_expr.kind.infer_flatten_type(cache);
 
-    let is_index_proper_type = TypeContext::compare(
-      &index_expr_type,
-      &ast::Type::Basic(ast::BasicType::Int(ast::IntSize::U32)),
-      cache,
-    );
+    let is_index_proper_type =
+      index_expr_type.is(&ast::Type::Basic(ast::BasicType::Int(ast::IntSize::U32)));
 
     if !is_index_proper_type {
       context.diagnostics.push(
@@ -883,7 +805,7 @@ impl Check for ast::IndexingExpr {
     }
 
     let target_array = cache.force_get(&self.target_id.unwrap());
-    let target_expr_type = target_array.infer_type(cache);
+    let target_expr_type = target_array.infer_flatten_type(cache);
 
     // REVIEW: Any way of avoiding nesting?
     if let ast::Type::Array(_, length) = target_expr_type {
@@ -898,7 +820,15 @@ impl Check for ast::IndexingExpr {
             .with_message("array index expression must be a constant expression"),
         );
       } else {
-        let index_expr_literal = crate::force_match!(&self.index_expr.kind, ast::NodeKind::Literal);
+        // FIXME: Why we allow unary expressions on const expressions if we extract their value intact?
+        let index_expr_literal = crate::force_match!(
+          self
+            .index_expr
+            .kind
+            .find_node(|node| matches!(node, ast::NodeKind::Literal(..)))
+            .unwrap(),
+          ast::NodeKind::Literal
+        );
 
         let index_expr_value = match index_expr_literal {
           // NOTE: Safe cast because we know that the literal is of type `U32` at this point.
@@ -1006,6 +936,16 @@ impl Check for ast::BlockExpr {
     if let Some(yields_value) = &self.yields {
       return yields_value.kind.infer_type(cache);
     }
+    // FIXME: Ensure this logic is correct, and that it will work as expected.
+    // BUG: The function to infer return values uses this infer method, so function types would be never!
+    // If there is at least one return statement, this block will never yield.
+    else if self
+      .statements
+      .iter()
+      .any(|statement| matches!(statement.kind, ast::NodeKind::ReturnStmt(_)))
+    {
+      return ast::Type::Never;
+    }
 
     ast::Type::Unit
   }
@@ -1049,10 +989,11 @@ impl Check for ast::IfExpr {
     // TODO: Take into consideration newly-added alternative branches.
 
     let else_block = self.else_expr.as_ref().unwrap();
-    let then_block_type = self.then_expr.kind.infer_type(cache);
+    let then_block_type = self.then_expr.kind.infer_flatten_type(cache);
+    let else_block_type = else_block.kind.infer_flatten_type(cache);
 
     // In case of a type-mismatch between branches, simply return the unit type.
-    if !TypeContext::compare(&then_block_type, &else_block.kind.infer_type(cache), cache) {
+    if !then_block_type.is(&else_block_type) {
       return ast::Type::Unit;
     }
 
@@ -1060,11 +1001,9 @@ impl Check for ast::IfExpr {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    if !TypeContext::compare(
-      &self.condition.kind.infer_type(cache),
-      &ast::Type::Basic(ast::BasicType::Bool),
-      cache,
-    ) {
+    let condition_type = self.condition.kind.infer_flatten_type(cache);
+
+    if !condition_type.is(&ast::Type::Basic(ast::BasicType::Bool)) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("if statement condition must evaluate to a boolean"),
@@ -1098,12 +1037,12 @@ impl Check for ast::BinaryExpr {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    let left_type = self.left.kind.infer_type(cache);
-    let right_type = self.right.kind.infer_type(cache);
+    let left_type = self.left.kind.infer_flatten_type(cache);
+    let right_type = self.right.kind.infer_flatten_type(cache);
 
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
-    if !TypeContext::compare(&left_type, &right_type, cache) {
+    if !left_type.is(&right_type) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("binary expression operands must be the same type"),
@@ -1168,10 +1107,10 @@ impl Check for ast::BindingStmt {
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let value_type = self.value.kind.infer_type(cache);
-    let ty = &self.infer_type(cache);
+    let ty = self.infer_type(cache);
 
     // FIXME: This is redundant. The same type is being compared!
-    if !TypeContext::compare(&ty, &value_type, cache) {
+    if !ty.flat_is(&value_type, cache) {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "variable declaration of `{}` value and type mismatch",
@@ -1214,26 +1153,28 @@ impl Check for ast::ReturnStmt {
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let current_function_node = cache.force_get(&context.current_function_key.unwrap());
     let mut name = None;
-    let return_type;
 
-    match &current_function_node {
-      ast::NodeKind::Function(function) => {
-        name = Some(function.name.clone());
-        return_type = TypeContext::infer_return_value_type(&function.body, cache);
-      }
-      ast::NodeKind::Closure(closure) => {
-        return_type = TypeContext::infer_return_value_type(&closure.body, cache);
-      }
-      _ => unreachable!(),
-    };
+    let return_type = TypeContext::infer_return_value_type(
+      match &current_function_node {
+        ast::NodeKind::Function(function) => {
+          name = Some(function.name.clone());
+
+          &function.body
+        }
+        ast::NodeKind::Closure(closure) => &closure.body,
+        _ => unreachable!(),
+      },
+      cache,
+    )
+    .flatten(cache);
 
     // REVISE: Whether a function returns is already checked. Limit this to comparing the types only.
-    if !return_type.is_unit() && self.value.is_none() {
+    if !return_type.is_a_unit() && self.value.is_none() {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("return statement must return a value"),
       );
-    } else if return_type.is_unit() && self.value.is_some() {
+    } else if return_type.is_a_unit() && self.value.is_some() {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("return statement must not return a value"),
@@ -1244,12 +1185,13 @@ impl Check for ast::ReturnStmt {
     }
 
     if let Some(value) = &self.value {
-      let value_type = value.kind.infer_type(cache);
+      let value_type = value.kind.infer_flatten_type(cache);
 
-      if !TypeContext::compare(&return_type, &value_type, cache) {
+      if !return_type.is(&value_type) {
         context.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
             "return statement value and prototype return type mismatch for {}",
+            // REVISE: Change the actual name to this on its initialization.
             if let Some(name) = name {
               format!("function `{}`", name)
             } else {
@@ -1283,16 +1225,16 @@ impl Check for ast::Function {
       );
     }
 
-    let return_type = self.body.infer_type(cache);
+    // let return_type = self.body.infer_type(cache);
 
-    if !TypeContext::compare(&return_type, &self.body.infer_type(cache), cache) {
-      context.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-          "function body and prototype return type mismatch for function `{}`",
-          self.name
-        )),
-      );
-    }
+    // if !TypeContext::compare(&return_type, &self.body.infer_type(cache), cache) {
+    //   context.diagnostics.push(
+    //     codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+    //       "function body and prototype return type mismatch for function `{}`",
+    //       self.name
+    //     )),
+    //   );
+    // }
 
     if self.prototype.is_variadic {
       context.diagnostics.push(
@@ -1328,16 +1270,11 @@ impl Check for ast::Function {
     context.current_function_key = None;
   }
 
-  fn post_unification(&mut self, _context: &mut TypeContext, _cache: &cache::Cache) {
+  fn post_unification(&mut self, context: &mut TypeContext, _cache: &cache::Cache) {
     // TODO: Parameters, etc.
 
     self.prototype.return_type_annotation =
-      _context.substitute(self.prototype.return_type_annotation.clone());
-
-    println!(
-      "\n\n---> final type annotation: {:?}\n\n",
-      self.prototype.return_type_annotation
-    );
+      context.substitute(self.prototype.return_type_annotation.clone());
   }
 }
 
@@ -1420,10 +1357,9 @@ impl Check for ast::CallExpr {
       .iter()
       .zip(self.arguments.iter())
     {
-      let resolved_argument_type = TypeContext::infer_and_flatten_type(argument, cache);
-      let resolved_parameter_type = TypeContext::flatten_type(parameter_type, cache);
+      let argument_type = argument.kind.infer_type(cache);
 
-      if resolved_argument_type != resolved_parameter_type {
+      if !parameter_type.flat_is(&argument_type, cache) {
         // TODO: Include callee name in the error message.
         context.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
@@ -1444,11 +1380,9 @@ impl Check for ast::CallExpr {
 impl Check for ast::LoopStmt {
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     if let Some(condition) = &self.condition {
-      if !TypeContext::compare(
-        &condition.kind.infer_type(cache),
-        &ast::Type::Basic(ast::BasicType::Bool),
-        cache,
-      ) {
+      let condition_type = condition.kind.infer_flatten_type(cache);
+
+      if !condition_type.is(&ast::Type::Basic(ast::BasicType::Bool)) {
         context.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error()
             .with_message("loop condition must evaluate to a boolean"),
@@ -1469,13 +1403,14 @@ impl Check for ast::LoopStmt {
 mod tests {
   use super::*;
 
-  #[test]
-  fn is_null_pointer_type() {
-    let null_ptr_type = ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::Null)));
+  // TODO: Move this test to the `ast` file.
+  // #[test]
+  // fn is_null_pointer_type() {
+  //   let null_ptr_type = ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::Null)));
 
-    assert!(TypeContext::is_null_pointer_type(&null_ptr_type));
-    assert!(!TypeContext::is_null_pointer_type(&ast::Type::Unit));
-  }
+  //   assert!(TypeContext::is_null_pointer_type(&null_ptr_type));
+  //   assert!(!TypeContext::is_null_pointer_type(&ast::Type::Unit));
+  // }
 
   #[test]
   fn proper_initial_values() {

@@ -107,10 +107,10 @@ impl Lower for ast::MemberAccess {
       .into_pointer_value();
 
     // Flatten the type in case it is a `ThisType`.
-    let llvm_struct_type = match TypeContext::infer_and_flatten_type(&self.base_expr, cache) {
-      ast::Type::Struct(struct_type) => struct_type,
-      _ => unreachable!(),
-    };
+    let llvm_struct_type = crate::force_match!(
+      self.base_expr.kind.infer_flatten_type(cache),
+      ast::Type::Struct
+    );
 
     // TODO: Must disallow fields and methods with the same name on semantic check phase.
     // First, check if its a field.
@@ -871,7 +871,7 @@ impl Lower for ast::IfExpr {
     let llvm_condition = self.condition.lower(generator, cache, false).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
     let ty = self.infer_type(cache);
-    let yields_expression = !ty.is_unit();
+    let yields_expression = !ty.is_a_unit();
     let mut llvm_if_value = None;
 
     // Allocate the resulting if-value early on, if applicable.
@@ -1288,13 +1288,10 @@ impl Lower for ast::BindingStmt {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVISE: Optimize. The type for this construct may be cached.
-    let ty = self.value.kind.infer_type(cache);
+    let ty = self.value.kind.infer_flatten_type(cache);
 
     // Special cases. The allocation is done elsewhere.
-    if matches!(
-      TypeContext::flatten_type(&ty, cache),
-      ast::Type::Function(_)
-    ) {
+    if matches!(ty, ast::Type::Function(_)) {
       // REVISE: Cleanup the caching code.
       // REVIEW: Here create a definition for the closure, with the let statement as the name?
 
@@ -1324,8 +1321,8 @@ impl Lower for ast::BindingStmt {
 
     generator.llvm_cached_values.insert(self.binding_id, result);
 
-    // BUG: This needs to return `Some` for the value of the let-statement to be memoized.
-    // ... However, this also implies that the let-statement itself yields a value!
+    // BUG: This needs to return `Some` for the value of the binding-statement to be memoized.
+    // ... However, this also implies that the binding-statement itself yields a value!
     Some(result)
   }
 }
@@ -1663,9 +1660,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   }
 
   fn find_type_binding_id(&self, ty: &ast::Type, cache: &cache::Cache) -> Option<cache::BindingId> {
-    let resolved_type = TypeContext::flatten_type(ty, cache);
-
-    Some(match resolved_type {
+    Some(match ty.flatten(cache) {
       ast::Type::Struct(struct_type) => struct_type.binding_id.clone(),
       // REVIEW: Any more?
       _ => return None,
@@ -1749,7 +1744,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
         .bool_type()
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
-      ast::Type::Error | ast::Type::Variable(_) => unreachable!(),
+      ast::Type::Error | ast::Type::Variable(_) | ast::Type::Never => unreachable!(),
     }
   }
 
@@ -1798,7 +1793,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       );
     }
 
-    if !return_type.is_unit() {
+    if !return_type.is_a_unit() {
       self
         .memoize_or_retrieve_type(return_type, cache)
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)

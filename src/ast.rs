@@ -126,15 +126,104 @@ pub enum Type {
   Unit,
   // REVIEW: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
   Error,
+  // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where supertypes bind with subtypes?
+  /// Implies a computation that will never resolve to a value.
+  ///
+  /// This type is a subtype of all other types.
+  Never,
 }
 
 impl Type {
-  pub fn is_unit(&self) -> bool {
+  /// Determine whether the type is a unit type.
+  ///
+  /// This will not perform flattening.
+  pub fn is_a_unit(&self) -> bool {
     matches!(self, Type::Unit)
   }
 
-  pub fn is_stub(&self) -> bool {
+  /// Determine whether the type is a stub type.
+  ///
+  /// This will not perform flattening.
+  pub fn is_a_stub(&self) -> bool {
     matches!(self, Type::Stub(_))
+  }
+
+  // REVIEW: Consider moving this to be part of `Type` itself.
+  /// Determine whether the type is a null pointer type.
+  ///
+  /// This will not perform flattening.
+  fn is_a_null_pointer_type(&self) -> bool {
+    if let Type::Pointer(ty) = self {
+      return matches!(ty.as_ref(), Type::Basic(BasicType::Null));
+    }
+
+    false
+  }
+
+  pub fn flat_is(&self, other: &Type, cache: &cache::Cache) -> bool {
+    self.flatten(cache).is(&other.flatten(cache))
+  }
+
+  // FIXME: Every type comparison should be using this function.
+  /// Compare two types for compatibility.
+  ///
+  /// If one of the types is a subtype or supertype of another, this will
+  /// return `true`. This will not perform flattening.
+  pub fn is(&self, other: &Type) -> bool {
+    // The error type does not unify with anything.
+    if matches!(self, Type::Error) || matches!(other, Type::Error) {
+      return false;
+    }
+    // The never type is a supertype of everything.
+    else if matches!(self, Type::Never) || matches!(other, Type::Never) {
+      return true;
+    }
+    // If both types are pointers, and at least one is a null pointer type, then always unify.
+    // This is because null pointers unify with any pointer type (any pointer can be null).
+    else if matches!(self, Type::Pointer(_))
+      && matches!(self, Type::Pointer(_))
+      && (self.is_a_null_pointer_type() || other.is_a_null_pointer_type())
+    {
+      return true;
+    }
+
+    // BUG: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
+    // NOTE: Stub types will also work, because their target ids will be compared.
+    self == other
+  }
+
+  // FIXME: Need to handle cyclic types. Currently, stack is overflown. One example would be cyclic type aliases.
+  // REVIEW: Consider making this function recursive (in the case that the user-defined type points to another user-defined type).
+  /// Resolve a possible user-defined type, so it can be used properly.
+  ///
+  /// Should be used when the type is to be compared.
+  pub fn flatten(&self, cache: &cache::Cache) -> Type {
+    // REVISE: Cleanup.
+
+    // REVIEW: What if it's a pointer to a user-defined type?
+    if let Type::Stub(stub_type) = self {
+      let target_node = cache.force_get(&stub_type.pattern.target_id.unwrap());
+
+      // REVIEW: What about type aliases, and other types that might be encountered in the future?
+
+      // REVISE: Cleanup!
+      if let NodeKind::TypeAlias(type_alias) = &target_node {
+        return type_alias.ty.flatten(cache);
+      } else if let NodeKind::StructType(target_type) = &target_node {
+        // REVIEW: Why is `flatten_type` being called again with a struct type inside?
+        return Type::Struct(target_type.clone()).flatten(cache);
+      }
+    } else if let Type::This(this_type) = &self {
+      // REVISE: No need to clone?
+      let target_struct_type = cache.force_get(&this_type.target_id.unwrap());
+
+      if let NodeKind::StructType(struct_type) = &target_struct_type {
+        return Type::Struct(struct_type.clone());
+      }
+    }
+
+    // REVISE: Do not clone by default. Find a better alternative.
+    self.clone()
   }
 }
 
@@ -203,6 +292,10 @@ impl NodeKind {
         NodeKind::IfExpr(if_expr) => vec![&if_expr.condition.kind, &if_expr.then_expr.kind],
         // TODO: Missing condition.
         NodeKind::LoopStmt(loop_stmt) => map_children(&loop_stmt.body.statements).collect(),
+        // TODO: Missing prototype.
+        NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
+        // TODO: Missing prototype.
+        NodeKind::Function(function) => map_children(&function.body.statements).collect(),
         // TODO: Implement all other nodes with visitable children.
         // REVIEW: Not all nodes can be processed like this: What about prototype, externs, and functions?
         _ => vec![],
@@ -256,11 +349,11 @@ impl NodeKind {
   }
 
   pub fn any(&self, mut predicate: impl FnMut(&NodeKind) -> bool) -> bool {
-    let mut contained = false;
+    let mut result = false;
 
     self.traverse(|node| {
       if predicate(&node) {
-        contained = true;
+        result = true;
 
         return false;
       }
@@ -268,15 +361,19 @@ impl NodeKind {
       true
     });
 
-    contained
+    result
   }
 
-  pub fn all(&self, predicate: impl FnMut(&NodeKind) -> bool) -> bool {
-    !self.any(predicate)
+  pub fn all(&self, mut predicate: impl FnMut(&NodeKind) -> bool) -> bool {
+    !self.any(|node| !predicate(node))
   }
 
   pub fn is_constant_expr(&self) -> bool {
     let is_const_node = |node: &NodeKind| {
+      if let NodeKind::BindingStmt(binding_stmt) = node {
+        return binding_stmt.modifier == BindingModifier::ConstExpr;
+      }
+
       matches!(
         node,
         NodeKind::Literal(_)
@@ -298,6 +395,13 @@ impl NodeKind {
     }
 
     buffer
+  }
+
+  /// Infer and attempt to flatten this node's type.
+  ///
+  /// Should be used when the type is to be compared.
+  pub fn infer_flatten_type(&self, cache: &cache::Cache) -> Type {
+    self.infer_type(cache).flatten(cache)
   }
 }
 
