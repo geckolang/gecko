@@ -625,6 +625,21 @@ impl Resolve for ast::Function {
     // Parameter scope.
     resolver.push_scope();
 
+    // REVIEW: Perhaps make generics their own node?
+    if let Some(generics) = &self.generics {
+      for generic_parameter in &generics.parameters {
+        resolver.declare_symbol(
+          Symbol {
+            base_name: generic_parameter.clone(),
+            sub_name: None,
+            kind: SymbolKind::Type,
+          },
+          // FIXME: Temporary cache id.
+          100,
+        );
+      }
+    }
+
     self.prototype.declare(resolver);
     self.body.declare(resolver);
 

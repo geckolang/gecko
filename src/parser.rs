@@ -1574,11 +1574,13 @@ impl<'a> Parser<'a> {
 
     let mut parameters = Vec::new();
 
-    while self.until(&lexer::TokenKind::GreaterThan)? {
+    loop {
       parameters.push(self.parse_name()?);
 
       if !self.is(&lexer::TokenKind::GreaterThan) {
         self.skip_past(&lexer::TokenKind::Comma)?;
+      } else {
+        break;
       }
     }
 
