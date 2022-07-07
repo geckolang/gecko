@@ -1,5 +1,5 @@
-; ModuleID = 'test'
-source_filename = "test"
+; ModuleID = 'let'
+source_filename = "let"
 
 define private void @.0.let_test() {
 fn.entry:

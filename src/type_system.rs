@@ -85,7 +85,7 @@ impl TypeContext {
   // }
 
   pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
-    let body_type = body.infer_type(cache);
+    let body_type = body.infer_type(cache).flatten(cache);
 
     if body_type.is_a_lowerable() {
       return body_type;
@@ -947,12 +947,13 @@ impl Check for ast::BlockExpr {
       return yields_value.kind.infer_type(cache);
     }
     // FIXME: Ensure this logic is correct, and that it will work as expected.
-    // BUG: The function to infer return values uses this infer method, so function types would be never!
-    // If there is at least one return statement, this block will never yield.
+    // BUG: The function to infer return values uses this infer method, so function types CAN be never!
+    // If at least one statement evaluates to type never, the type of this
+    // block is also never.
     else if self
       .statements
       .iter()
-      .any(|statement| matches!(statement.kind, ast::NodeKind::ReturnStmt(_)))
+      .any(|statement| statement.kind.infer_flatten_type(cache).is_a_never())
     {
       return ast::Type::Never;
     }
@@ -990,7 +991,9 @@ impl Check for ast::Literal {
 
 impl Check for ast::IfExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // Both branches must be present in order for a value
+    let then_expr_type = self.then_expr.kind.infer_flatten_type(cache);
+
+    // At least the two main branches must be present in order for a value
     // to possibly evaluate.
     if self.else_expr.is_none() {
       return ast::Type::Unit;
@@ -998,16 +1001,13 @@ impl Check for ast::IfExpr {
 
     // TODO: Take into consideration newly-added alternative branches.
 
-    let else_block = self.else_expr.as_ref().unwrap();
-    let then_block_type = self.then_expr.kind.infer_flatten_type(cache);
-    let else_block_type = else_block.kind.infer_flatten_type(cache);
+    let else_expr = self.else_expr.as_ref().unwrap();
+    let else_expr_type = else_expr.kind.infer_flatten_type(cache);
 
-    // In case of a type-mismatch between branches, simply return the unit type.
-    if !then_block_type.is(&else_block_type) {
-      return ast::Type::Unit;
-    }
-
-    then_block_type
+    // Default to type unit if both branches are of incompatible types.
+    then_expr_type
+      .coercion(&else_expr_type)
+      .unwrap_or(ast::Type::Unit)
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
@@ -1160,6 +1160,13 @@ impl Check for ast::BindingStmt {
 }
 
 impl Check for ast::ReturnStmt {
+  // FIXME: This implies that the return statement may be used as an expression,
+  // ... but that's currently not possible. Instead, this type is currently solely
+  // ... used to determine if all paths return a value?
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    ast::Type::Never
+  }
+
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     let current_function_node = cache.force_get(&context.current_function_id.unwrap());
     let mut name = None;
@@ -1185,11 +1192,6 @@ impl Check for ast::ReturnStmt {
           .with_message("return statement must return a value"),
       );
     } else if return_type.is_a_unit() && self.value.is_some() {
-      println!(
-        "r is: {:?} | value is: {:?}",
-        return_type,
-        self.value.as_ref().unwrap()
-      );
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("return statement must not return a value"),
@@ -1278,6 +1280,27 @@ impl Check for ast::Function {
           codespan_reporting::diagnostic::Diagnostic::error()
             .with_message("the `main` function has an invalid signature")
             .with_notes(vec![String::from("should accept a first parameter of type `Int`, a second one of type `*Str`, and the return type should be `Int`"), String::from("cannot be marked as variadic or extern")]),
+        );
+      }
+    }
+
+    let return_type = TypeContext::infer_return_value_type(&self.body, cache);
+
+    if !return_type.is_a_unit() {
+      // If at least one statement's type evaluates to never, it
+      // means that all paths are covered, because code execution will
+      // always return at one point before reaching (or at) the end of the function.
+      let all_paths_covered = self
+        .body
+        .statements
+        .iter()
+        .any(|statement| statement.kind.infer_flatten_type(cache).is_a_never());
+
+      if !all_paths_covered {
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            // TODO: Function name.
+            .with_message("not all paths return a value"),
         );
       }
     }

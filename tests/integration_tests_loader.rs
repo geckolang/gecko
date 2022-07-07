@@ -34,14 +34,17 @@ mod tests {
       .collect()
   }
 
-  fn lower_file(source_file_path: &str, qualifier: gecko::name_resolution::Qualifier) -> String {
+  fn lower_file(
+    source_file_contents: &str,
+    qualifier: gecko::name_resolution::Qualifier,
+  ) -> String {
     let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
+    let llvm_module = llvm_context.create_module(&qualifier.module_name);
     let mut cache = gecko::cache::Cache::new();
     let mut lint_context = gecko::lint::LintContext::new();
     let mut llvm_generator = gecko::lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
     let mut ast_map = std::collections::BTreeMap::new();
-    let tokens = lex(source_file_path);
+    let tokens = lex(source_file_contents);
     let mut substitution = Vec::new();
     let mut parser = gecko::parser::Parser::new(tokens, &mut cache, &mut substitution);
     let top_level_nodes = parser.parse_all();

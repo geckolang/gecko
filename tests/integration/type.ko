@@ -1,0 +1,26 @@
+#type A = Int
+
+#type B = A
+
+func unit_binding():
+  let a = if true:
+    pass
+
+  let b = if true:
+    return 1
+
+  return 0
+
+func all_paths_covered():
+  if true:
+    return 0
+  else:
+    return 1
+
+func never():
+  let a = if true:
+    return 1
+  else:
+    return 2
+
+  return 0

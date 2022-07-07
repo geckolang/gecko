@@ -141,8 +141,20 @@ impl Type {
     matches!(self, Type::Unit)
   }
 
+  /// Determine whether the type is a never type.
+  ///
+  /// This will not perform flattening.
+  pub fn is_a_never(&self) -> bool {
+    matches!(self, Type::Never)
+  }
+
+  /// Determine whether the type is a unit or a never.
+  ///
+  /// The result of this computation also indicates whether
+  /// this type can be lowered or not. This will not perform
+  /// flattening.
   pub fn is_a_lowerable(&self) -> bool {
-    !self.is_a_unit() && !matches!(self, Type::Never)
+    !self.is_a_unit() && !self.is_a_never()
   }
 
   /// Determine whether the type is a stub type.
@@ -194,6 +206,32 @@ impl Type {
     // BUG: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
     // NOTE: Stub types will also work, because their target ids will be compared.
     self == other
+  }
+
+  // FIXME: Ensure this logic is correct.
+  /// Determine the type that takes precedence in a comparison.
+  ///
+  /// This can be used to determine which type takes precedence in a coercion.
+  pub fn coercion(&self, other: &Type) -> Option<Type> {
+    // If both types are the same, simply return.
+    if self == other {
+      return Some(self.clone());
+    }
+    // Unit type takes precedence over everything.
+    else if self.is_a_unit() || other.is_a_unit() {
+      return Some(Type::Unit);
+    }
+    // If exactly one type is a never, the other type takes precedence.
+    // This is because the never type can be coerced into anything except
+    // unit, implies it is a supertype of everything except unit.
+    else if self.is_a_never() && !other.is_a_never() {
+      return Some(other.clone());
+    } else if !self.is_a_never() && other.is_a_never() {
+      return Some(self.clone());
+    }
+
+    // Otherwise, the types are incompatible.
+    None
   }
 
   // FIXME: Need to handle cyclic types. Currently, stack is overflown. One example would be cyclic type aliases.
@@ -300,6 +338,7 @@ impl NodeKind {
         // NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
         // TODO: Missing prototype.
         NodeKind::Function(function) => map_children(&function.body.statements).collect(),
+        NodeKind::BindingStmt(binding_stmt) => vec![&binding_stmt.value.kind],
         // TODO: Implement all other nodes with visitable children.
         // REVIEW: Not all nodes can be processed like this: What about prototype, externs, and functions?
         _ => vec![],

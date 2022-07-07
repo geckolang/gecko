@@ -1,5 +1,5 @@
-; ModuleID = 'test'
-source_filename = "test"
+; ModuleID = 'if_expr'
+source_filename = "if_expr"
 
 define private i32 @.0.if_expr() {
 fn.entry:

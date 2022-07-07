@@ -1,10 +1,10 @@
-; ModuleID = 'test'
-source_filename = "test"
+; ModuleID = 'closure'
+source_filename = "closure"
 
 define private void @.0.closure() {
 fn.entry:
-  %var.doubled = alloca i32, align 4
   %call = call i32 @.1.closure(i32 2)
+  %var.doubled = alloca i32, align 4
   store i32 %call, i32* %var.doubled, align 4
   ret void
 }

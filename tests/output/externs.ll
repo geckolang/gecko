@@ -1,5 +1,5 @@
-; ModuleID = 'test'
-source_filename = "test"
+; ModuleID = 'externs'
+source_filename = "externs"
 
 @string_literal = private unnamed_addr constant [12 x i8] c"hello world\00", align 1
 

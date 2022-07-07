@@ -216,6 +216,8 @@ impl Lower for ast::Closure {
 
     generator.attempt_build_return(yielded_result);
 
+    // FIXME: Might be missing the same check for never type as function.
+
     let result = llvm_function.as_global_value().as_basic_value_enum();
 
     generator.restore_buffers(buffers);
@@ -859,6 +861,16 @@ impl Lower for ast::LoopStmt {
   }
 }
 
+// fn test() -> i32 {
+//   let a = if true {
+//     return 0;
+//   };
+
+//   let a = ();
+
+//   return 1;
+// }
+
 impl Lower for ast::IfExpr {
   fn lower<'a, 'ctx>(
     &self,
@@ -870,9 +882,10 @@ impl Lower for ast::IfExpr {
 
     let llvm_condition = self.condition.lower(generator, cache, false).unwrap();
     let llvm_current_function = generator.llvm_function_buffer.unwrap();
-    let ty = self.infer_type(cache);
+    let ty = self.infer_type(cache).flatten(cache);
 
-    // REVIEW: What if it is never type? Should it be considered that it yields?
+    // This if-expression will never yield a value if its type
+    // is unit or never.
     let yields_expression = ty.is_a_lowerable();
 
     let mut llvm_if_value = None;
@@ -892,6 +905,7 @@ impl Lower for ast::IfExpr {
       .llvm_context
       .append_basic_block(llvm_current_function, "if.then");
 
+    // FIXME: Only add the `after` block if the `then` block doesn't terminate.
     let llvm_after_block = generator
       .llvm_context
       .append_basic_block(llvm_current_function, "if.after");
@@ -969,6 +983,7 @@ impl Lower for ast::IfExpr {
       );
     }
 
+    // Leave the after block as current for further processing.
     generator.llvm_builder.position_at_end(llvm_after_block);
 
     // If an expression is to be yielded, it must be accessed. A pointer
@@ -1044,11 +1059,9 @@ impl Lower for ast::Function {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_function_type = generator.lower_prototype(
-      &self.prototype,
-      &TypeContext::infer_return_value_type(&self.body, cache),
-      cache,
-    );
+    let return_type = TypeContext::infer_return_value_type(&self.body, cache);
+
+    let llvm_function_type = generator.lower_prototype(&self.prototype, &return_type, cache);
 
     let is_main = self.name == MAIN_FUNCTION_NAME;
 
@@ -1115,7 +1128,17 @@ impl Lower for ast::Function {
 
     let yielded_result = self.body.lower(generator, cache, false);
 
-    generator.attempt_build_return(yielded_result);
+    // FIXME: Abstract this logic for use within `closure`, and possibly wherever else this is needed, guided by calls to `attempt_build_return`?
+    // If a block was left for further processing, and it has no terminator,
+    // complete it here.
+    if generator.get_current_block().get_terminator().is_none()
+      && self.body.infer_type(cache).flatten(cache).is_a_never()
+    {
+      generator.llvm_builder.build_unreachable();
+    } else {
+      generator.attempt_build_return(yielded_result);
+    }
+
     generator.llvm_function_buffer = None;
 
     Some(llvm_function.as_global_value().as_basic_value_enum())
@@ -1299,10 +1322,10 @@ impl Lower for ast::BindingStmt {
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVISE: Optimize. The type for this construct may be cached.
-    let ty = self.value.kind.infer_flatten_type(cache);
+    let value_type = self.value.kind.infer_flatten_type(cache);
 
     // Special cases. The allocation is done elsewhere.
-    if matches!(ty, ast::Type::Function(_)) {
+    if matches!(value_type, ast::Type::Function(_)) {
       // REVISE: Cleanup the caching code.
       // REVIEW: Here create a definition for the closure, with the let statement as the name?
 
@@ -1318,13 +1341,22 @@ impl Lower for ast::BindingStmt {
       return result;
     }
 
-    let llvm_type = generator.memoize_or_retrieve_type(&ty, cache);
+    let llvm_value_result = self.value.lower(generator, cache, true);
+
+    // FIXME: What about for other things that may be in the same situation (their values are unit)?
+    // Do not proceed if the value will never evaluate.
+    if !value_type.is_a_lowerable() {
+      // REVIEW: Returning `None` here but below we return `Some()`.
+      // ... What expects a value out of this, and would this decision affect that?
+      return None;
+    }
+
+    let llvm_value = llvm_value_result.unwrap();
+    let llvm_type = generator.memoize_or_retrieve_type(&value_type, cache);
 
     let llvm_alloca = generator
       .llvm_builder
       .build_alloca(llvm_type, format!("var.{}", self.name).as_str());
-
-    let llvm_value = self.value.lower(generator, cache, true).unwrap();
 
     generator.llvm_builder.build_store(llvm_alloca, llvm_value);
 

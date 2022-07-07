@@ -1,3 +1,4 @@
+# TODO: Two of the same extern is being lowered, with name wrongly mangled.
 func arrays():
   let empty_arr = [] Int
   let arr = [1]
