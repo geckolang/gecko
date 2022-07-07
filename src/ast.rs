@@ -53,9 +53,13 @@ macro_rules! dispatch {
       ast::NodeKind::Import(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Range(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::UnimplementedExpr(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
+
+#[derive(Debug, Clone)]
+pub struct UnimplementedExpr;
 
 #[derive(Debug, Clone)]
 pub enum GenericConstraintKind {
@@ -308,6 +312,7 @@ pub enum NodeKind {
   Import(Using),
   SizeofIntrinsic(SizeofIntrinsic),
   Range(Range),
+  UnimplementedExpr(UnimplementedExpr),
 }
 
 impl NodeKind {

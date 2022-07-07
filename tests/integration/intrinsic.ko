@@ -1,0 +1,14 @@
+struct Complex:
+  first: Str,
+  second: Int,
+
+func sizeof_():
+  let int_size = ?sizeof[Int]
+  let person_size = ?sizeof[Complex]
+
+func panic():
+  ?panic("literal")
+
+  let msg = "binding"
+
+  ?panic(msg)

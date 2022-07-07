@@ -997,7 +997,6 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_sizeof_intrinsic(&mut self) -> ParserResult<ast::SizeofIntrinsic> {
-    self.skip_past(&lexer::TokenKind::QuestionMark)?;
     self.skip_past(&lexer::TokenKind::Sizeof)?;
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
@@ -1068,6 +1067,17 @@ impl<'a> Parser<'a> {
     )
   }
 
+  /// '?' {%name | sizeof}
+  fn parse_intrinsic(&mut self) -> ParserResult<ast::NodeKind> {
+    self.skip_past(&lexer::TokenKind::QuestionMark)?;
+
+    Ok(match self.get_token()? {
+      lexer::TokenKind::Sizeof => ast::NodeKind::SizeofIntrinsic(self.parse_sizeof_intrinsic()?),
+      lexer::TokenKind::Identifier(_) => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
+      _ => return Err(self.expected("intrinsic")),
+    })
+  }
+
   fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
     let kind = match self.get_token()? {
       lexer::TokenKind::Int(_) if self.peek_is(&lexer::TokenKind::ShortEllipsis) => {
@@ -1081,7 +1091,6 @@ impl<'a> Parser<'a> {
         ast::NodeKind::Closure(self.parse_closure()?)
       }
       lexer::TokenKind::If => ast::NodeKind::IfExpr(self.parse_if_expr()?),
-      lexer::TokenKind::DollarSign => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       // REVISE: Change this syntax to the same treatment as call expressions (check afterwards).
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::BracketL) => {
         ast::NodeKind::IndexingExpr(self.parse_array_indexing()?)
@@ -1091,9 +1100,10 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
       lexer::TokenKind::Indent => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
-      lexer::TokenKind::QuestionMark => {
-        ast::NodeKind::SizeofIntrinsic(self.parse_sizeof_intrinsic()?)
+      lexer::TokenKind::QuestionMark if self.peek_is(&lexer::TokenKind::QuestionMark) => {
+        ast::NodeKind::UnimplementedExpr(self.parse_unimplemented_expr()?)
       }
+      lexer::TokenKind::QuestionMark => self.parse_intrinsic()?,
       lexer::TokenKind::ParenthesesL => {
         ast::NodeKind::ParenthesesExpr(self.parse_parentheses_expr()?)
       }
@@ -1273,10 +1283,8 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// '$' %name '(' (%expr (,))* ')'
+  /// %name '(' (%expr (,))* ')'
   fn parse_intrinsic_call(&mut self) -> ParserResult<ast::IntrinsicCall> {
-    self.skip_past(&lexer::TokenKind::DollarSign)?;
-
     let kind = match self.parse_name()?.as_str() {
       "panic" => ast::IntrinsicKind::Panic,
       _ => return Err(self.expected("a valid intrinsic name")),
@@ -1284,14 +1292,13 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
-    let mut arguments = vec![];
+    let mut arguments = Vec::new();
 
     while self.until(&lexer::TokenKind::ParenthesesR)? {
       arguments.push(self.parse_expr()?);
 
-      // REVIEW: What if the comma is omitted?
-      if self.is(&lexer::TokenKind::Comma) {
-        self.skip()?;
+      if !self.is(&lexer::TokenKind::ParenthesesR) {
+        self.skip_past(&lexer::TokenKind::Comma)?;
       }
     }
 
@@ -1561,21 +1568,21 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// '[' ()* ']'
+  /// '<' ()* '>'
   fn parse_generics(&mut self) -> ParserResult<ast::Generics> {
-    self.skip_past(&lexer::TokenKind::BracketL)?;
+    self.skip_past(&lexer::TokenKind::LessThan)?;
 
     let mut parameters = Vec::new();
 
-    while self.until(&lexer::TokenKind::BracketR)? {
+    while self.until(&lexer::TokenKind::GreaterThan)? {
       parameters.push(self.parse_name()?);
 
-      if !self.is(&lexer::TokenKind::BracketR) {
+      if !self.is(&lexer::TokenKind::GreaterThan) {
         self.skip_past(&lexer::TokenKind::Comma)?;
       }
     }
 
-    self.skip_past(&lexer::TokenKind::BracketR)?;
+    self.skip_past(&lexer::TokenKind::GreaterThan)?;
 
     Ok(ast::Generics {
       parameters,
@@ -1602,6 +1609,14 @@ impl<'a> Parser<'a> {
       start: Box::new(start),
       end: Box::new(end),
     })
+  }
+
+  fn parse_unimplemented_expr(&mut self) -> ParserResult<ast::UnimplementedExpr> {
+    self.skip_past(&lexer::TokenKind::QuestionMark)?;
+    self.skip_past(&lexer::TokenKind::QuestionMark)?;
+    self.skip_past(&lexer::TokenKind::QuestionMark)?;
+
+    Ok(ast::UnimplementedExpr)
   }
 }
 

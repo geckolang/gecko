@@ -41,6 +41,19 @@ impl Lower for ast::NodeKind {
   }
 }
 
+impl Lower for ast::UnimplementedExpr {
+  fn lower<'a, 'ctx>(
+    &self,
+    generator: &mut LlvmGenerator<'a, 'ctx>,
+    _cache: &cache::Cache,
+    _access: bool,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    generator.build_panic("unimplemented");
+
+    None
+  }
+}
+
 impl Lower for ast::Range {
   // TODO: ?
 }
@@ -241,25 +254,24 @@ impl Lower for ast::IntrinsicCall {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // REVIEW: No need to use the `access` parameter?
+
+    let llvm_arguments = self
+      .arguments
+      .iter()
+      .map(|node| node.kind.lower(generator, cache, true).unwrap().into())
+      .collect::<Vec<_>>();
+
     match self.kind {
       ast::IntrinsicKind::Panic => {
         let llvm_panic_function = generator.get_or_insert_panic_function();
-
-        // FIXME: Forcing to expect a first argument.
-        // FIXME: How would we prefix it with `panic:`? Maybe will have to use `printf` instead, as the print function.
-        let llvm_message_value = self
-          .arguments
-          .first()
-          .unwrap()
-          .lower(generator, cache, false)
-          .unwrap();
 
         // REVIEW: How about we merge this into a `panic` function?
         let print_function = generator.get_or_insert_print_function();
 
         generator
           .llvm_builder
-          .build_call(print_function, &[llvm_message_value.into()], "");
+          .build_call(print_function, llvm_arguments.as_slice(), "");
 
         generator
           .llvm_builder
@@ -1321,6 +1333,8 @@ impl Lower for ast::BindingStmt {
     cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // REVIEW: Should we be lowering const expressions as global constants? What benefits does that provide? What about scoping?
+
     // REVISE: Optimize. The type for this construct may be cached.
     let value_type = self.value.kind.infer_flatten_type(cache);
 
@@ -1625,6 +1639,25 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     libc_puts_function
   }
 
+  fn build_panic(&mut self, message: &str) {
+    let llvm_panic_message = self
+      .llvm_builder
+      .build_global_string_ptr(&format!("panic: {}", message), "panic.msg")
+      .as_basic_value_enum();
+
+    let print_function = self.get_or_insert_print_function();
+
+    self
+      .llvm_builder
+      .build_call(print_function, &[llvm_panic_message.into()], "");
+
+    let panic_function = self.get_or_insert_panic_function();
+
+    self
+      .llvm_builder
+      .build_call(panic_function, &[], "call.panic");
+  }
+
   fn build_panic_assertion(
     &mut self,
     predicate: inkwell::IntPredicate,
@@ -1634,6 +1667,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     ),
     message: String,
   ) {
+    // REVISE: Use abstracted logic from `build_panic`.
+
     let llvm_next_block = self
       .llvm_context
       .append_basic_block(self.llvm_function_buffer.unwrap(), "panic.next");

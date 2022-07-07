@@ -65,6 +65,50 @@ impl TypeContext {
     }
   }
 
+  /// Validate a call to ensure its arguments and callee type
+  /// are compatible. Any encountered diagnostics will be added to
+  /// the context's diagnostics.
+  ///
+  /// This function will automatically flatten both argument and
+  /// parameter types for comparison.
+  fn validate_fn_call(
+    &mut self,
+    argument_types: Vec<ast::Type>,
+    callee_type: ast::FunctionType,
+    cache: &cache::Cache,
+  ) {
+    let min_arg_count = callee_type.parameter_types.len();
+    let actual_arg_count = argument_types.len();
+
+    // Verify argument count.
+    if (!callee_type.is_variadic && actual_arg_count != min_arg_count)
+      || (callee_type.is_variadic && actual_arg_count < min_arg_count)
+    {
+      self.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("call expression has an invalid amount of arguments"),
+      );
+    }
+
+    // Compare argument and parameter types.
+    for (parameter_type, argument_type) in callee_type
+      .parameter_types
+      .iter()
+      .zip(argument_types.iter())
+    {
+      if !parameter_type.flat_is(&argument_type, cache) {
+        // TODO: Include callee name in the error message.
+        self.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+            "function call argument and parameter `{}` type mismatch",
+            // TODO: Parameter name.
+            "pending_name"
+          )),
+        );
+      }
+    }
+  }
+
   pub fn infer_prototype_type(prototype: &ast::Prototype, return_type: ast::Type) -> ast::Type {
     ast::Type::Function(ast::FunctionType {
       return_type: Box::new(return_type),
@@ -77,12 +121,6 @@ impl TypeContext {
       is_extern: prototype.is_extern,
     })
   }
-
-  // pub fn test() -> i32 {
-  //   let a: &str = {
-  //     return 0;
-  //   };
-  // }
 
   pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
     let body_type = body.infer_type(cache).flatten(cache);
@@ -311,6 +349,12 @@ impl Check for ast::NodeKind {
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     dispatch!(&self, Check::check, context, cache);
+  }
+}
+
+impl Check for ast::UnimplementedExpr {
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    ast::Type::Never
   }
 }
 
@@ -551,7 +595,32 @@ impl Check for ast::Pattern {
 }
 
 impl Check for ast::IntrinsicCall {
-  // TODO: Implement.
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    let target_prototype_sig: (Vec<ast::Type>, ast::Type) = match self.kind {
+      ast::IntrinsicKind::Panic => (
+        vec![ast::Type::Basic(ast::BasicType::String)],
+        ast::Type::Unit,
+      ),
+    };
+
+    let target_function_type = ast::FunctionType {
+      is_extern: false,
+      is_variadic: false,
+      parameter_types: target_prototype_sig.0,
+      return_type: Box::new(target_prototype_sig.1),
+    };
+
+    context.validate_fn_call(
+      self
+        .arguments
+        .iter()
+        // No need to flatten.
+        .map(|argument| argument.kind.infer_type(cache))
+        .collect(),
+      target_function_type,
+      cache,
+    )
+  }
 }
 
 impl Check for ast::ExternStatic {
@@ -1378,38 +1447,16 @@ impl Check for ast::CallExpr {
     //   };
     // }
 
-    let min_arg_count = callee_type.parameter_types.len();
-    let actual_arg_count = self.arguments.len();
-
-    // Verify argument count.
-    if (!callee_type.is_variadic && actual_arg_count != min_arg_count)
-      || (callee_type.is_variadic && actual_arg_count < min_arg_count)
-    {
-      context.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("call expression has an invalid amount of arguments"),
-      );
-    }
-
-    // Compare argument and parameter types.
-    for (parameter_type, argument) in callee_type
-      .parameter_types
-      .iter()
-      .zip(self.arguments.iter())
-    {
-      let argument_type = argument.kind.infer_type(cache);
-
-      if !parameter_type.flat_is(&argument_type, cache) {
-        // TODO: Include callee name in the error message.
-        context.diagnostics.push(
-          codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-            "function call argument and parameter `{}` type mismatch",
-            // TODO: Parameter name.
-            "pending_name"
-          )),
-        );
-      }
-    }
+    context.validate_fn_call(
+      self
+        .arguments
+        .iter()
+        // No need to flatten here.
+        .map(|argument| argument.kind.infer_type(cache))
+        .collect(),
+      callee_type,
+      cache,
+    );
 
     for argument in &self.arguments {
       argument.kind.check(context, cache);

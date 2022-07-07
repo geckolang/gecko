@@ -1,0 +1,2 @@
+func generics<T>():
+  pass
