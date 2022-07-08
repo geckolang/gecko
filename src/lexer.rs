@@ -90,6 +90,7 @@ pub enum TokenKind {
   Yield,
   Elif,
   In,
+  Indexof,
 }
 
 pub struct Lexer {
@@ -523,6 +524,7 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "yield" => TokenKind::Yield,
     "elif" => TokenKind::Elif,
     "in" => TokenKind::In,
+    "indexof" => TokenKind::Indexof,
     _ => return None,
   })
 }

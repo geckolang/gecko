@@ -116,6 +116,9 @@ pub enum BasicType {
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Type {
+  /// A static array type.
+  ///
+  /// Its type and length are always known at compile-time.
   Array(Box<Type>, u32),
   Basic(BasicType),
   Pointer(Box<Type>),
@@ -125,45 +128,62 @@ pub enum Type {
   Stub(StubType),
   Function(FunctionType),
   This(ThisType),
-  /// A type variable to be used during unification.
+  /// A meta type to be used during unification.
   Variable(usize),
+  /// A meta type that represents the lack of a value.
   Unit,
   // REVIEW: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
   Error,
   // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where supertypes bind with subtypes?
-  /// Implies a computation that will never resolve to a value.
+  /// A meta type that implies a computation that will
+  /// never evaluate to a value.
   ///
   /// This type is a subtype of all other types.
   Never,
+  /// A meta type that coerces to any type.
+  ///
+  /// To be used exclusively during type-checking for comparisons;
+  /// meta types may not be lowered.
+  Any,
 }
 
 impl Type {
   /// Determine whether the type is a unit type.
   ///
-  /// This will not perform flattening.
+  /// This determination will not perform flattening.
   pub fn is_a_unit(&self) -> bool {
     matches!(self, Type::Unit)
   }
 
   /// Determine whether the type is a never type.
   ///
-  /// This will not perform flattening.
+  /// This determination will not perform flattening.
   pub fn is_a_never(&self) -> bool {
     matches!(self, Type::Never)
   }
 
-  /// Determine whether the type is a unit or a never.
+  // TODO: Clarify comment.
+  /// Determine whether the type is a meta type, implying that
+  /// it is not lowerable.
   ///
   /// The result of this computation also indicates whether
-  /// this type can be lowered or not. This will not perform
-  /// flattening.
-  pub fn is_a_lowerable(&self) -> bool {
-    !self.is_a_unit() && !self.is_a_never()
+  /// this type can be lowered or not.
+  ///
+  /// In the case of the unit type, during lowering this may
+  /// indirectly lower to LLVM's `void` type if type is a return
+  /// type, and under certain conditions.
+  ///
+  /// This determination will not perform flattening.
+  pub fn is_a_meta(&self) -> bool {
+    self.is_a_unit()
+      || self.is_a_never()
+      || matches!(self, Type::Error)
+      || matches!(self, Type::Any)
   }
 
   /// Determine whether the type is a stub type.
   ///
-  /// This will not perform flattening.
+  /// This determination will not perform flattening.
   pub fn is_a_stub(&self) -> bool {
     matches!(self, Type::Stub(_))
   }
@@ -171,7 +191,7 @@ impl Type {
   // REVIEW: Consider moving this to be part of `Type` itself.
   /// Determine whether the type is a null pointer type.
   ///
-  /// This will not perform flattening.
+  /// This determination will not perform flattening.
   fn is_a_null_pointer_type(&self) -> bool {
     if let Type::Pointer(ty) = self {
       return matches!(ty.as_ref(), Type::Basic(BasicType::Null));
@@ -188,7 +208,7 @@ impl Type {
   /// Compare two types for compatibility.
   ///
   /// If one of the types is a subtype or supertype of another, this will
-  /// return `true`. This will not perform flattening.
+  /// return `true`. This determination will not perform flattening.
   pub fn is(&self, other: &Type) -> bool {
     // The error type does not unify with anything.
     if matches!(self, Type::Error) || matches!(other, Type::Error) {
@@ -198,10 +218,14 @@ impl Type {
     else if matches!(self, Type::Never) || matches!(other, Type::Never) {
       return true;
     }
-    // If both types are pointers, and at least one is a null pointer type, then always unify.
-    // This is because null pointers unify with any pointer type (any pointer can be null).
+    // At this point, any any type is a supertype of any other type.
+    else if matches!(self, Type::Any) || matches!(other, Type::Any) {
+      return true;
+    }
+    // If both types are pointers, and at least one is a null pointer type, then always coerce.
+    // This is because null pointers coerce into any pointer type (any pointer can be null).
     else if matches!(self, Type::Pointer(_))
-      && matches!(self, Type::Pointer(_))
+      && matches!(other, Type::Pointer(_))
       && (self.is_a_null_pointer_type() || other.is_a_null_pointer_type())
     {
       return true;
@@ -216,6 +240,7 @@ impl Type {
   /// Determine the type that takes precedence in a comparison.
   ///
   /// This can be used to determine which type takes precedence in a coercion.
+  /// This determination will not perform flattening.
   pub fn coercion(&self, other: &Type) -> Option<Type> {
     // If both types are the same, simply return.
     if self == other {
@@ -729,6 +754,7 @@ pub struct CallExpr {
 #[derive(Debug, Clone)]
 pub enum IntrinsicKind {
   Panic,
+  LengthOf,
 }
 
 #[derive(Debug, Clone)]
@@ -770,6 +796,7 @@ pub enum OperatorKind {
   GreaterThanOrEqual,
   Equality,
   Cast,
+  In,
 }
 
 #[derive(Debug, Clone)]

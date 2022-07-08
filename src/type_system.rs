@@ -23,6 +23,7 @@ pub struct TypeContext {
   /// populated during parsing phase, when type variables are created, and
   /// it also is scope-less/context-free.
   substitutions: std::collections::HashMap<usize, ast::Type>,
+  bound_checked_arrays: std::collections::HashSet<cache::Id>,
 }
 
 impl TypeContext {
@@ -62,6 +63,7 @@ impl TypeContext {
       usings: Vec::new(),
       constraints: Vec::new(),
       substitutions: std::collections::HashMap::new(),
+      bound_checked_arrays: std::collections::HashSet::new(),
     }
   }
 
@@ -125,7 +127,7 @@ impl TypeContext {
   pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
     let body_type = body.infer_type(cache).flatten(cache);
 
-    if body_type.is_a_lowerable() {
+    if !body_type.is_a_never() {
       return body_type;
     }
 
@@ -601,6 +603,11 @@ impl Check for ast::IntrinsicCall {
         vec![ast::Type::Basic(ast::BasicType::String)],
         ast::Type::Unit,
       ),
+      ast::IntrinsicKind::LengthOf => (
+        // Cannot define array type directly. Use the any type for comparison.
+        vec![ast::Type::Any],
+        ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ),
     };
 
     let target_function_type = ast::FunctionType {
@@ -619,7 +626,20 @@ impl Check for ast::IntrinsicCall {
         .collect(),
       target_function_type,
       cache,
-    )
+    );
+
+    // Special case because of the static array type.
+    if matches!(self.kind, ast::IntrinsicKind::LengthOf) && self.arguments.len() == 1 {
+      let target_array = self.arguments.first().unwrap();
+      let target_array_type = target_array.kind.infer_flatten_type(cache);
+
+      if !matches!(target_array_type, ast::Type::Array(..)) {
+        context.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message("cannot determine static length of non-array type"),
+        );
+      }
+    }
   }
 }
 
@@ -1080,6 +1100,61 @@ impl Check for ast::IfExpr {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    let mut bounded_array_buffer = None;
+
+    self.condition.kind.traverse(|node| {
+      // if let ast::NodeKind::BinaryExpr(ast::BinaryExpr {
+      //   left: _,
+      //   right:
+      //     ast::Node {kind: ast::NodeKind::IntrinsicCall(ast::IntrinsicCall {
+      //       arguments,
+      //       kind: ast::IntrinsicKind::LengthOf,
+      //     })), cached_type: _},
+      //   operator: ast::OperatorKind::In,
+      // }) = &node.flatten()
+      // {
+      //   //
+      // }
+
+      if let ast::NodeKind::BinaryExpr(ast::BinaryExpr {
+        left: _,
+        right,
+        operator: ast::OperatorKind::In,
+      }) = &node.flatten()
+      {
+        if let ast::NodeKind::IntrinsicCall(ast::IntrinsicCall {
+          arguments,
+          kind: ast::IntrinsicKind::LengthOf,
+        }) = &right.kind.flatten()
+        {
+          if arguments.len() == 1 {
+            let first_argument = arguments[0].kind.flatten();
+
+            if let ast::NodeKind::Reference(ast::Reference {
+              pattern:
+                ast::Pattern {
+                  target_id: Some(target_id),
+                  ..
+                },
+              ..
+            }) = &first_argument
+            {
+              if matches!(
+                first_argument.infer_flatten_type(cache),
+                ast::Type::Array(..)
+              ) {
+                bounded_array_buffer = Some(target_id);
+
+                return true;
+              }
+            }
+          }
+        }
+      }
+
+      false
+    });
+
     let condition_type = self.condition.kind.infer_flatten_type(cache);
 
     if !condition_type.is(&ast::Type::Basic(ast::BasicType::Bool)) {
@@ -1091,8 +1166,26 @@ impl Check for ast::IfExpr {
 
     // TODO: Check for type-mismatch between branches (they may yield).
 
+    // REVIEW: Should the children be checked first?
     self.condition.kind.check(context, cache);
+
+    // TODO: Simplify.
+    // If the condition provides bound checks for a static array,
+    // mark the subject array as checked within the `then` expression
+    // only.
+    if let Some(bounded_array_id) = bounded_array_buffer {
+      context
+        .bound_checked_arrays
+        .insert(bounded_array_id.to_owned());
+    }
+
     self.then_expr.kind.check(context, cache);
+
+    // If an array bound check was provided, remove it after the `then`
+    // expression has been checked.
+    if let Some(bounded_array_id) = bounded_array_buffer {
+      context.bound_checked_arrays.remove(bounded_array_id);
+    }
 
     if let Some(else_block) = &self.else_expr {
       else_block.kind.check(context, cache);
@@ -1110,7 +1203,8 @@ impl Check for ast::BinaryExpr {
       | ast::OperatorKind::Or
       | ast::OperatorKind::Nand
       | ast::OperatorKind::Nor
-      | ast::OperatorKind::Xor => ast::Type::Basic(ast::BasicType::Bool),
+      | ast::OperatorKind::Xor
+      | ast::OperatorKind::In => ast::Type::Basic(ast::BasicType::Bool),
       _ => self.left.kind.infer_type(cache),
     }
   }

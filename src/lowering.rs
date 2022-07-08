@@ -260,7 +260,7 @@ impl Lower for ast::IntrinsicCall {
       .arguments
       .iter()
       .map(|node| node.kind.lower(generator, cache, true).unwrap().into())
-      .collect::<Vec<_>>();
+      .collect::<Vec<inkwell::values::BasicMetadataValueEnum<'ctx>>>();
 
     match self.kind {
       ast::IntrinsicKind::Panic => {
@@ -271,13 +271,30 @@ impl Lower for ast::IntrinsicCall {
 
         generator
           .llvm_builder
-          .build_call(print_function, llvm_arguments.as_slice(), "");
+          // REVIEW: Is this dereference safe?
+          .build_call(print_function, &[*llvm_arguments.first().unwrap()], "");
 
         generator
           .llvm_builder
           .build_call(llvm_panic_function, &[], "intrinsic.call");
 
         None
+      }
+      ast::IntrinsicKind::LengthOf => {
+        let target_array = self.arguments.first().unwrap();
+
+        let array_static_length = match target_array.kind.infer_flatten_type(cache) {
+          ast::Type::Array(_, length) => length,
+          _ => unreachable!(),
+        };
+
+        Some(
+          generator
+            .llvm_context
+            .i32_type()
+            .const_int(array_static_length as u64, false)
+            .as_basic_value_enum(),
+        )
       }
     }
   }
@@ -898,7 +915,7 @@ impl Lower for ast::IfExpr {
 
     // This if-expression will never yield a value if its type
     // is unit or never.
-    let yields_expression = ty.is_a_lowerable();
+    let yields_expression = !ty.is_a_meta();
 
     let mut llvm_if_value = None;
 
@@ -1359,7 +1376,7 @@ impl Lower for ast::BindingStmt {
 
     // FIXME: What about for other things that may be in the same situation (their values are unit)?
     // Do not proceed if the value will never evaluate.
-    if !value_type.is_a_lowerable() {
+    if value_type.is_a_meta() {
       // REVIEW: Returning `None` here but below we return `Some()`.
       // ... What expects a value out of this, and would this decision affect that?
       return None;
@@ -1815,12 +1832,19 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       // FIXME: Should be lowering to the void type instead, but not allowed by return type!
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
       // REVIEW: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
-      ast::Type::Unit => self
-        .llvm_context
-        .bool_type()
-        .ptr_type(inkwell::AddressSpace::Generic)
-        .as_basic_type_enum(),
-      ast::Type::Error | ast::Type::Variable(_) | ast::Type::Never => unreachable!(),
+      // ast::Type::Unit => self
+      //   .llvm_context
+      //   .bool_type()
+      //   .ptr_type(inkwell::AddressSpace::Generic)
+      //   .as_basic_type_enum(),
+      // Meta types are never to be lowered.
+      ast::Type::Unit
+      | ast::Type::Error
+      | ast::Type::Variable(_)
+      | ast::Type::Never
+      | ast::Type::Any => {
+        unreachable!()
+      }
     }
   }
 
@@ -1843,7 +1867,8 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
   /// Returns a new LLVM function type based on the given prototype.
   ///
   /// The return value is required because the prototype's return type is
-  /// merely an annotation, and is unreliable.
+  /// merely an annotation, and is unreliable. Assumes the return type to be
+  /// flat.
   fn lower_prototype(
     &mut self,
     prototype: &ast::Prototype,
@@ -1869,7 +1894,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       );
     }
 
-    if return_type.is_a_lowerable() {
+    if !return_type.is_a_never() && !return_type.is_a_unit() {
       self
         .memoize_or_retrieve_type(return_type, cache)
         .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
