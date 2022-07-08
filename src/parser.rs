@@ -1288,6 +1288,7 @@ impl<'a> Parser<'a> {
   fn parse_intrinsic_call(&mut self) -> ParserResult<ast::IntrinsicCall> {
     let kind = match self.parse_name()?.as_str() {
       "length_of" => ast::IntrinsicKind::LengthOf,
+      // REVISE: This error message won't apply as expected, instead it would compare it with "parentheses" token.
       _ => return Err(self.expected("a valid intrinsic name")),
     };
 

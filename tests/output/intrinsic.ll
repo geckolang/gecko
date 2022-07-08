@@ -3,9 +3,6 @@ source_filename = "intrinsic"
 
 %.1.struct.Complex = type { i8*, i32 }
 
-@string_literal = private unnamed_addr constant [8 x i8] c"literal\00", align 1
-@string_literal.1 = private unnamed_addr constant [8 x i8] c"binding\00", align 1
-
 define private void @.0.size_of() {
 fn.entry:
   %var.int_size = alloca i64, align 8
@@ -32,27 +29,3 @@ fn.entry:
   store i32 3, i32* %var.arr_len, align 4
   ret void
 }
-
-define private void @.3.panic() {
-fn.entry:
-  %0 = call i32 @puts(i8* getelementptr inbounds ([8 x i8], [8 x i8]* @string_literal, i32 0, i32 0))
-  call void @intrinsic.panic()
-  %var.msg = alloca i8*, align 8
-  store i8* getelementptr inbounds ([8 x i8], [8 x i8]* @string_literal.1, i32 0, i32 0), i8** %var.msg, align 8
-  %access = load i8*, i8** %var.msg, align 8
-  %1 = call i32 @puts.2(i8* %access)
-  call void @intrinsic.panic()
-  unreachable
-}
-
-declare void @abort()
-
-define void @intrinsic.panic() {
-entry:
-  call void @abort()
-  unreachable
-}
-
-declare i32 @puts(i8*)
-
-declare i32 @puts.2(i8*)

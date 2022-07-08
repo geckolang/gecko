@@ -9,10 +9,3 @@ func size_of():
 func length_of():
   let arr = [1,2,3]
   let arr_len = ?length_of(arr)
-
-func panic():
-  ?panic("literal")
-
-  let msg = "binding"
-
-  ?panic(msg)

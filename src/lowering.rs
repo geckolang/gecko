@@ -44,14 +44,13 @@ impl Lower for ast::NodeKind {
 impl Lower for ast::UnimplementedExpr {
   fn lower<'a, 'ctx>(
     &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
+    _generator: &mut LlvmGenerator<'a, 'ctx>,
     _cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: Implement an alternative to panics, or remove.
-    todo!();
 
-    // None
+    None
   }
 }
 
@@ -620,7 +619,7 @@ impl Lower for ast::BinaryExpr {
           "float.multiply_op",
         )
         .as_basic_value_enum(),
-      // TODO: What if there's division by zero?
+      // BUG: Need to implement static checks for division by zero.
       // TODO: Support for unsgined division?
       ast::OperatorKind::Divide if is_int_values => generator
         .llvm_builder

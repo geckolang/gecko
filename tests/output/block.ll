@@ -1,5 +1,5 @@
-; ModuleID = 'blocks'
-source_filename = "blocks"
+; ModuleID = 'block'
+source_filename = "block"
 
 define private i32 @.0.blocks() {
 fn.entry:

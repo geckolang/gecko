@@ -1,8 +1,6 @@
 ; ModuleID = 'binding'
 source_filename = "binding"
 
-@panic.msg = private unnamed_addr constant [21 x i8] c"panic: unimplemented\00", align 1
-
 define private void @.0.binding() {
 fn.entry:
   %var.a = alloca i32, align 4
@@ -26,8 +24,6 @@ if.after:                                         ; preds = %if.then, %if.else
   %access4 = load i32, i32* %if.value, align 4
   %var.d = alloca i32, align 4
   store i32 %access4, i32* %var.d, align 4
-  %0 = call i32 @puts(i8* getelementptr inbounds ([21 x i8], [21 x i8]* @panic.msg, i32 0, i32 0))
-  call void @intrinsic.panic()
   %var.g = alloca i32, align 4
   store i32 1, i32* %var.g, align 4
   %var.h = alloca i32, align 4
@@ -44,14 +40,4 @@ if.else:                                          ; preds = %fn.entry
 define private i32 @.1.closure() {
 closure.entry:
   ret i32 0
-}
-
-declare i32 @puts(i8*)
-
-declare void @abort()
-
-define void @intrinsic.panic() {
-entry:
-  call void @abort()
-  unreachable
 }
