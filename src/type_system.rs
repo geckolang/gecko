@@ -597,11 +597,19 @@ impl Check for ast::Pattern {
 }
 
 impl Check for ast::IntrinsicCall {
+  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+    match self.kind {
+      ast::IntrinsicKind::Panic => ast::Type::Never,
+      ast::IntrinsicKind::LengthOf => ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+    }
+  }
+
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    // TODO: Redundant to have function return types.
     let target_prototype_sig: (Vec<ast::Type>, ast::Type) = match self.kind {
       ast::IntrinsicKind::Panic => (
         vec![ast::Type::Basic(ast::BasicType::String)],
-        ast::Type::Unit,
+        ast::Type::Never,
       ),
       ast::IntrinsicKind::LengthOf => (
         // Cannot define array type directly. Use the any type for comparison.
@@ -1063,6 +1071,20 @@ impl Check for ast::Reference {
     cache
       .force_get(&self.pattern.target_id.unwrap())
       .infer_type(cache)
+  }
+
+  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
+    let target_type = cache
+      .force_get(&self.pattern.target_id.unwrap())
+      .infer_type(cache);
+
+    // FIXME: Investigate how this affects.
+    if target_type.is_a_meta() {
+      context.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("cannot reference a binding that has a meta type; it cannot be evaluated"),
+      );
+    }
   }
 }
 

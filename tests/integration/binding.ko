@@ -1,0 +1,18 @@
+func binding():
+  let a = 1
+  let b: Int = 2
+  let c = a+b
+
+  let d: Int = if true:
+    yield a
+  else:
+    yield b
+
+  let e = func ():
+    return 0
+
+  let f = ???
+  const g = 1
+  var h = 2
+
+  h = 3

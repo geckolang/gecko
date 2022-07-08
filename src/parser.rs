@@ -271,7 +271,7 @@ impl<'a> Parser<'a> {
   fn parse_statement(&mut self) -> ParserResult<ast::Node> {
     let kind = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
-      lexer::TokenKind::Let | lexer::TokenKind::Var => {
+      lexer::TokenKind::Let | lexer::TokenKind::Var | lexer::TokenKind::Const => {
         ast::NodeKind::BindingStmt(self.parse_binding_stmt()?)
       }
       lexer::TokenKind::Loop => ast::NodeKind::LoopStmt(self.parse_loop_stmt()?),
@@ -776,7 +776,7 @@ impl<'a> Parser<'a> {
   fn parse_binding_stmt(&mut self) -> ParserResult<ast::BindingStmt> {
     let modifier = match self.get_token()? {
       lexer::TokenKind::Let => ast::BindingModifier::Immutable,
-      lexer::TokenKind::Mut => ast::BindingModifier::Mutable,
+      lexer::TokenKind::Var => ast::BindingModifier::Mutable,
       lexer::TokenKind::Const => ast::BindingModifier::ConstExpr,
       _ => return Err(self.expected("declaration modifier")),
     };

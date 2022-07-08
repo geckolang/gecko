@@ -594,6 +594,10 @@ impl Resolve for ast::BlockExpr {
       statement.kind.declare(resolver);
     }
 
+    if let Some(yield_value) = &self.yields {
+      yield_value.kind.declare(resolver);
+    }
+
     resolver.close_scope_tree(self.cache_id);
   }
 
@@ -606,6 +610,10 @@ impl Resolve for ast::BlockExpr {
 
     for statement in &mut self.statements {
       statement.kind.resolve(resolver, cache);
+    }
+
+    if let Some(yield_value) = &mut self.yields {
+      yield_value.kind.resolve(resolver, cache);
     }
 
     resolver.current_block_cache_id = previous_block_cache_id;

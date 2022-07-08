@@ -28,6 +28,8 @@ fn.entry:
   %var.arr = alloca [3 x i32], align 4
   store [3 x i32] %access, [3 x i32]* %var.arr, align 4
   %access3 = load [3 x i32], [3 x i32]* %var.arr, align 4
+  %var.arr_len = alloca i32, align 4
+  store i32 3, i32* %var.arr_len, align 4
   ret void
 }
 
@@ -40,7 +42,7 @@ fn.entry:
   %access = load i8*, i8** %var.msg, align 8
   %1 = call i32 @puts.2(i8* %access)
   call void @intrinsic.panic()
-  ret void
+  unreachable
 }
 
 declare void @abort()

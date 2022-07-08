@@ -1,2 +1,0 @@
-func let_test():
-  let a = 1
