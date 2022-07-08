@@ -753,7 +753,6 @@ pub struct CallExpr {
 
 #[derive(Debug, Clone)]
 pub enum IntrinsicKind {
-  Panic,
   LengthOf,
 }
 

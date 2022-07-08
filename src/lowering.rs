@@ -48,9 +48,10 @@ impl Lower for ast::UnimplementedExpr {
     _cache: &cache::Cache,
     _access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    generator.build_panic("unimplemented");
+    // TODO: Implement an alternative to panics, or remove.
+    todo!();
 
-    None
+    // None
   }
 }
 
@@ -263,23 +264,6 @@ impl Lower for ast::IntrinsicCall {
       .collect::<Vec<inkwell::values::BasicMetadataValueEnum<'ctx>>>();
 
     match self.kind {
-      ast::IntrinsicKind::Panic => {
-        let llvm_panic_function = generator.get_or_insert_panic_function();
-
-        // REVIEW: How about we merge this into a `panic` function?
-        let print_function = generator.get_or_insert_print_function();
-
-        generator
-          .llvm_builder
-          // REVIEW: Is this dereference safe?
-          .build_call(print_function, &[*llvm_arguments.first().unwrap()], "");
-
-        generator
-          .llvm_builder
-          .build_call(llvm_panic_function, &[], "intrinsic.call");
-
-        None
-      }
       ast::IntrinsicKind::LengthOf => {
         let target_array = self.arguments.first().unwrap();
 
@@ -468,19 +452,7 @@ impl Lower for ast::IndexingExpr {
         _ => unreachable!(),
       };
 
-      generator.build_panic_assertion(
-        inkwell::IntPredicate::ULT,
-        (
-          llvm_index,
-          generator
-            .llvm_context
-            .i32_type()
-            // TODO: Is this conversion safe? Should we make indexable types' sizes be `u64`?
-            .const_int(target_indexable_size as u64, false),
-        ),
-        // REVISE: Temporary, the `panic` prefix should be added automatically.
-        "panic: array index out of bounds".to_string(),
-      );
+      // FIXME: Need to verify proper static+dynamic indexing during type checking.
 
       // REVIEW: Should we actually be de-referencing the pointer here?
       Some(generator.access(llvm_gep_ptr))
@@ -1593,139 +1565,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     self.mangle_counter += 1;
 
     mangled_name
-  }
-
-  fn get_or_insert_panic_function(&mut self) -> inkwell::values::FunctionValue<'ctx> {
-    if let Some(cached_panic_function) = self.panic_function_cache {
-      return cached_panic_function;
-    }
-
-    // BUG: What if the `abort` function was already defined by the user?
-    let libc_abort_function = self.llvm_module.add_function(
-      "abort",
-      self.llvm_context.void_type().fn_type(&[], false),
-      Some(inkwell::module::Linkage::External),
-    );
-
-    let llvm_function_type = self
-      .llvm_context
-      .void_type()
-      // TODO: Accept a message to be displayed first (string).
-      .fn_type(&[], false);
-
-    let llvm_panic_function =
-      self
-        .llvm_module
-        .add_function("intrinsic.panic", llvm_function_type, None);
-
-    let llvm_entry_block = self
-      .llvm_context
-      .append_basic_block(llvm_panic_function, "entry");
-
-    let llvm_builder = self.llvm_context.create_builder();
-
-    llvm_builder.position_at_end(llvm_entry_block);
-    llvm_builder.build_call(libc_abort_function, &[], "");
-    llvm_builder.build_unreachable();
-    self.panic_function_cache = Some(llvm_panic_function);
-
-    llvm_panic_function
-  }
-
-  fn get_or_insert_print_function(&mut self) -> inkwell::values::FunctionValue<'ctx> {
-    if let Some(cached_print_function) = self.print_function_cache {
-      return cached_print_function;
-    }
-
-    let libc_puts_arguments = &[self
-      .llvm_context
-      .i8_type()
-      .ptr_type(inkwell::AddressSpace::Generic)
-      .into()];
-
-    // TODO: What if the `abort` function was already defined by the user?
-    let libc_puts_function = self.llvm_module.add_function(
-      "puts",
-      self
-        .llvm_context
-        .i32_type()
-        .fn_type(libc_puts_arguments, false),
-      Some(inkwell::module::Linkage::External),
-    );
-
-    libc_puts_function
-  }
-
-  fn build_panic(&mut self, message: &str) {
-    let llvm_panic_message = self
-      .llvm_builder
-      .build_global_string_ptr(&format!("panic: {}", message), "panic.msg")
-      .as_basic_value_enum();
-
-    let print_function = self.get_or_insert_print_function();
-
-    self
-      .llvm_builder
-      .build_call(print_function, &[llvm_panic_message.into()], "");
-
-    let panic_function = self.get_or_insert_panic_function();
-
-    self
-      .llvm_builder
-      .build_call(panic_function, &[], "call.panic");
-  }
-
-  fn build_panic_assertion(
-    &mut self,
-    predicate: inkwell::IntPredicate,
-    llvm_values: (
-      inkwell::values::IntValue<'ctx>,
-      inkwell::values::IntValue<'ctx>,
-    ),
-    message: String,
-  ) {
-    // REVISE: Use abstracted logic from `build_panic`.
-
-    let llvm_next_block = self
-      .llvm_context
-      .append_basic_block(self.llvm_function_buffer.unwrap(), "panic.next");
-
-    let llvm_panic_block = self
-      .llvm_context
-      .append_basic_block(self.llvm_function_buffer.unwrap(), "panic");
-
-    let llvm_builder = self.llvm_context.create_builder();
-
-    llvm_builder.position_at_end(llvm_panic_block);
-
-    let llvm_panic_message = self
-      .llvm_builder
-      .build_global_string_ptr(message.as_ref(), "panic.msg")
-      .as_basic_value_enum();
-
-    llvm_builder.build_call(
-      self.get_or_insert_print_function(),
-      &[llvm_panic_message.into()],
-      "",
-    );
-
-    llvm_builder.build_call(self.get_or_insert_panic_function(), &[], "call.panic");
-    llvm_builder.build_unreachable();
-
-    let llvm_assertion_comparison = self.llvm_builder.build_int_compare(
-      predicate,
-      llvm_values.0,
-      llvm_values.1,
-      "panic.assertion",
-    );
-
-    self.llvm_builder.build_conditional_branch(
-      llvm_assertion_comparison,
-      llvm_next_block,
-      llvm_panic_block,
-    );
-
-    self.llvm_builder.position_at_end(llvm_next_block);
   }
 
   /// Insert a `load` instruction for the given LLVM value.

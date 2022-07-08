@@ -599,7 +599,6 @@ impl Check for ast::Pattern {
 impl Check for ast::IntrinsicCall {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     match self.kind {
-      ast::IntrinsicKind::Panic => ast::Type::Never,
       ast::IntrinsicKind::LengthOf => ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     }
   }
@@ -607,10 +606,6 @@ impl Check for ast::IntrinsicCall {
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
     // TODO: Redundant to have function return types.
     let target_prototype_sig: (Vec<ast::Type>, ast::Type) = match self.kind {
-      ast::IntrinsicKind::Panic => (
-        vec![ast::Type::Basic(ast::BasicType::String)],
-        ast::Type::Never,
-      ),
       ast::IntrinsicKind::LengthOf => (
         // Cannot define array type directly. Use the any type for comparison.
         vec![ast::Type::Any],
