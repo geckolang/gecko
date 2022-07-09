@@ -1572,28 +1572,6 @@ impl Check for ast::CallExpr {
   }
 }
 
-impl Check for ast::LoopStmt {
-  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    if let Some(condition) = &self.condition {
-      let condition_type = condition.kind.infer_flatten_type(cache);
-
-      if !condition_type.is(&ast::Type::Basic(ast::BasicType::Bool)) {
-        context.diagnostics.push(
-          codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message("loop condition must evaluate to a boolean"),
-        );
-      }
-
-      condition.kind.check(context, cache);
-    }
-
-    // REVIEW: To avoid problems with nested cases, save a buffer here, then restore?
-    context.in_loop = true;
-    self.body.check(context, cache);
-    context.in_loop = false;
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;

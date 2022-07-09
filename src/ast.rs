@@ -25,14 +25,10 @@ macro_rules! dispatch {
       ast::NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::BindingStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::IfExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::LoopStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::BreakStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ContinueStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Reference(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::AssignStmt(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
@@ -305,14 +301,10 @@ pub enum NodeKind {
   ReturnStmt(ReturnStmt),
   BindingStmt(BindingStmt),
   IfExpr(IfExpr),
-  LoopStmt(LoopStmt),
   CallExpr(CallExpr),
   IntrinsicCall(IntrinsicCall),
-  BreakStmt(BreakStmt),
-  ContinueStmt(ContinueStmt),
   InlineExprStmt(InlineExprStmt),
   Reference(Reference),
-  AssignStmt(AssignStmt),
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
   Parameter(Parameter),
@@ -343,7 +335,6 @@ impl NodeKind {
     let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
       match node {
         NodeKind::InlineExprStmt(inline_expr_stmt) => vec![&inline_expr_stmt.expr.kind],
-        NodeKind::AssignStmt(assign_stmt) => vec![&assign_stmt.assignee_expr.kind],
         NodeKind::BinaryExpr(binary_expr) => {
           vec![&binary_expr.left.kind, &binary_expr.right.kind]
         }
@@ -357,8 +348,6 @@ impl NodeKind {
           .collect(),
         // TODO: Include `else` expression, and alternative branches.
         NodeKind::IfExpr(if_expr) => vec![&if_expr.condition.kind, &if_expr.then_expr.kind],
-        // TODO: Missing condition.
-        NodeKind::LoopStmt(loop_stmt) => map_children(&loop_stmt.body.statements).collect(),
         // TODO: Missing prototype.
         // NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
         // TODO: Missing prototype.
@@ -839,21 +828,22 @@ mod tests {
     assert_eq!(1, visitations);
   }
 
-  #[test]
-  fn find_node_in_ast() {
-    let target_node = NodeKind::BreakStmt(BreakStmt);
+  // TODO: Re-do.
+  // #[test]
+  // fn find_node_in_ast() {
+  //   let target_node = NodeKind::BreakStmt(BreakStmt);
 
-    let block = NodeKind::BlockExpr(BlockExpr {
-      cache_id: 0,
-      statements: vec![Node {
-        cached_type: None,
-        kind: target_node.clone(),
-      }],
-      yields: None,
-    });
+  //   let block = NodeKind::BlockExpr(BlockExpr {
+  //     cache_id: 0,
+  //     statements: vec![Node {
+  //       cached_type: None,
+  //       kind: target_node.clone(),
+  //     }],
+  //     yields: None,
+  //   });
 
-    let search_result = block.find_node(|node| matches!(node, NodeKind::BreakStmt(_)));
+  //   let search_result = block.find_node(|node| matches!(node, NodeKind::BreakStmt(_)));
 
-    assert!(matches!(search_result, Some(NodeKind::BreakStmt(_))));
-  }
+  //   assert!(matches!(search_result, Some(NodeKind::BreakStmt(_))));
+  // }
 }

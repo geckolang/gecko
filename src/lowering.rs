@@ -1870,31 +1870,6 @@ mod tests {
   }
 
   #[test]
-  fn lower_break_stmt() {
-    let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
-    let node = ast::NodeKind::BreakStmt(ast::BreakStmt {});
-
-    Mock::new(&llvm_context, &llvm_module)
-      .function()
-      .with_loop()
-      .lower(&node, false)
-      .compare_with_file("break_stmt");
-  }
-
-  #[test]
-  fn lower_continue_stmt() {
-    let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
-    let node = ast::NodeKind::ContinueStmt(ast::ContinueStmt {});
-
-    Mock::new(&llvm_context, &llvm_module)
-      .function()
-      .lower(&node, false)
-      .compare_with_file("continue_stmt");
-  }
-
-  #[test]
   fn lower_binding_stmt_const_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
@@ -2018,77 +1993,6 @@ mod tests {
       .function()
       .lower(&binding_stmt, false)
       .compare_with_file("let_stmt_string_val");
-  }
-
-  #[test]
-  fn lower_assign_const_val() {
-    let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
-    let cache_id: cache::Id = 0;
-
-    let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
-      name: "a".to_string(),
-      value: Mock::boxed_node(Mock::literal_int()),
-      modifier: ast::BindingModifier::Immutable,
-      cache_id,
-      // FIXME: Wrong type.
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    });
-
-    let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
-      assignee_expr: Mock::reference(cache_id),
-      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Int(
-        2,
-        ast::IntSize::I32,
-      ))),
-    });
-
-    Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt, cache_id)
-      .function()
-      .lower_cache(cache_id, false)
-      .lower(&assign_stmt, false)
-      .compare_with_file("assign_stmt_const_val");
-  }
-
-  #[test]
-  fn lower_assign_ptr_to_ptr() {
-    let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
-    let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
-    let a_cache_id: cache::Id = 0;
-    let b_cache_id: cache::Id = a_cache_id + 1;
-
-    let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
-      name: "a".to_string(),
-      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
-      modifier: ast::BindingModifier::Immutable,
-      cache_id: a_cache_id,
-      // FIXME: Wrong type.
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    });
-
-    let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
-      name: "b".to_string(),
-      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
-      modifier: ast::BindingModifier::Immutable,
-      cache_id: b_cache_id,
-      // FIXME: Wrong type.
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    });
-
-    let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
-      assignee_expr: Mock::reference(b_cache_id),
-      value: Mock::reference(a_cache_id),
-    });
-
-    Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt_a, a_cache_id)
-      .cache(binding_stmt_b, b_cache_id)
-      .function()
-      .lower_cache(a_cache_id, false)
-      .lower(&assign_stmt, false)
-      .compare_with_file("assign_stmt_ptr_to_ptr");
   }
 
   #[test]

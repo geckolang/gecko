@@ -257,29 +257,21 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Let | lexer::TokenKind::Var | lexer::TokenKind::Const => {
         ast::NodeKind::BindingStmt(self.parse_binding_stmt()?)
       }
-      lexer::TokenKind::Loop => ast::NodeKind::LoopStmt(self.parse_loop_stmt()?),
-      lexer::TokenKind::Break => ast::NodeKind::BreakStmt(self.parse_break_stmt()?),
-      lexer::TokenKind::Continue => ast::NodeKind::ContinueStmt(self.parse_continue_stmt()?),
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
       _ => {
         let expr = self.parse_expr()?;
 
-        // Promote the inline expression to an assignment statement, if applicable.
-        if self.is(&lexer::TokenKind::Equal) {
-          ast::NodeKind::AssignStmt(self.parse_assign_stmt(expr)?)
-        } else {
-          let inline_expr_stmt = ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
-            expr: Box::new(expr),
-          });
+        let inline_expr_stmt = ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
+          expr: Box::new(expr),
+        });
 
-          // FIXME: Temporary workaround for yield expressions.
-          // if self.is(&lexer::TokenKind::SemiColon) {
-          //   self.skip()?;
-          // }
-          // self.skip_past(&lexer::TokenKind::SemiColon)?;
+        // FIXME: Temporary workaround for yield expressions.
+        // if self.is(&lexer::TokenKind::SemiColon) {
+        //   self.skip()?;
+        // }
+        // self.skip_past(&lexer::TokenKind::SemiColon)?;
 
-          inline_expr_stmt
-        }
+        inline_expr_stmt
       }
     };
 
@@ -822,23 +814,6 @@ impl<'a> Parser<'a> {
       alternative_branches,
       else_expr: else_value,
     })
-  }
-
-  /// loop (%expr) %block
-  fn parse_loop_stmt(&mut self) -> ParserResult<ast::LoopStmt> {
-    self.skip_past(&lexer::TokenKind::Loop)?;
-
-    let condition = if self.is(&lexer::TokenKind::Colon) {
-      None
-    } else {
-      Some(Box::new(self.parse_expr()?))
-    };
-
-    self.skip_past(&lexer::TokenKind::Colon)?;
-
-    let body = self.parse_block_expr()?;
-
-    Ok(ast::LoopStmt { condition, body })
   }
 
   /// break
