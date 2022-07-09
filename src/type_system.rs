@@ -572,7 +572,6 @@ impl Check for ast::Closure {
     }
 
     self.prototype.check(context, cache);
-    self.body.check(context, cache);
     context.current_function_id = previous_function_id;
   }
 }
@@ -801,8 +800,6 @@ impl Check for ast::IndexingExpr {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    self.index_expr.kind.check(context, cache);
-
     let index_expr_type = self.index_expr.kind.infer_flatten_type(cache);
 
     let is_index_proper_type =
@@ -903,8 +900,6 @@ impl Check for ast::StaticArrayValue {
 
         mixed_elements_flag = true;
       }
-
-      element.kind.check(context, cache);
     }
   }
 }
@@ -1377,7 +1372,6 @@ impl Check for ast::Function {
     }
 
     self.prototype.check(context, cache);
-    self.body.check(context, cache);
     context.current_function_id = previous_function_key;
   }
 

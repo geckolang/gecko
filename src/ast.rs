@@ -122,7 +122,7 @@ pub enum Type {
   Variable(usize),
   /// A meta type that represents the lack of a value.
   Unit,
-  // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where supertypes bind with subtypes?
+  // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where super-types bind with subtypes?
   /// A meta type that implies a computation that will
   /// never evaluate to a value.
   ///
@@ -321,6 +321,9 @@ impl NodeKind {
   pub fn traverse<'a>(&'a self, mut visitor: impl FnMut(&'a NodeKind) -> bool) {
     let map_children = |children: &'a Vec<Node>| children.iter().map(|child_node| &child_node.kind);
 
+    // TODO: Prototype.
+    // let map_prototype = |prototype: &'a Prototype| map_children(&prototype.parameters);
+
     let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
       match node {
         NodeKind::InlineExprStmt(inline_expr_stmt) => vec![&inline_expr_stmt.expr.kind],
@@ -450,15 +453,13 @@ impl NodeKind {
     self.all(is_const_node)
   }
 
+  // REVIEW: Ensure this is tail-recursive.
   pub fn flatten<'a>(&'a self) -> &'a NodeKind {
-    let mut buffer = self;
-
-    // REVIEW: Anything else that may encapsulate a node? What about nested unary expressions?
-    while let NodeKind::ParenthesesExpr(parentheses_expr) = buffer {
-      buffer = &parentheses_expr.0.kind;
+    if let NodeKind::ParenthesesExpr(parentheses_expr) = self {
+      return &parentheses_expr.0.kind.flatten();
     }
 
-    buffer
+    self
   }
 
   /// Infer and attempt to flatten this node's type.

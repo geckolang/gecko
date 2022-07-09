@@ -3,7 +3,7 @@ extern crate inkwell;
 
 #[cfg(test)]
 mod tests {
-  use gecko::lint::Lint;
+  // use gecko::lint::Lint;
   use gecko::lowering::Lower;
   use std::{fs, io::Read};
 
@@ -41,7 +41,7 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module(&qualifier.module_name);
     let mut cache = gecko::cache::Cache::new();
-    let mut lint_context = gecko::lint::LintContext::new();
+    // let mut lint_context = gecko::lint::LintContext::new();
     let mut llvm_generator = gecko::lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
     let mut ast_map = std::collections::BTreeMap::new();
     let tokens = lex(source_file_contents);

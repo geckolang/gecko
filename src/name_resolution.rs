@@ -748,6 +748,8 @@ pub struct NameResolver {
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
   scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
+  // REVIEW: If we can get rid of these flags, we may possibly use the traverse method instead
+  // ... of manual visitation.
   /// The unique id of the current block's scope. Used in the resolve step.
   current_block_cache_id: Option<cache::Id>,
   current_struct_type_id: Option<cache::Id>,
