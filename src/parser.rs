@@ -742,11 +742,10 @@ impl<'a> Parser<'a> {
 
   /// {let | var | const} %name (':' %type) '=' %expr
   fn parse_binding_stmt(&mut self) -> ParserResult<ast::BindingStmt> {
-    let modifier = match self.get_token()? {
-      lexer::TokenKind::Let => ast::BindingModifier::Immutable,
-      lexer::TokenKind::Var => ast::BindingModifier::Mutable,
-      lexer::TokenKind::Const => ast::BindingModifier::ConstExpr,
-      _ => return Err(self.expected("declaration modifier")),
+    let is_const_expr = match self.get_token()? {
+      lexer::TokenKind::Let => false,
+      lexer::TokenKind::Const => true,
+      _ => return Err(self.expected("binding modifier")),
     };
 
     self.skip()?;
@@ -770,7 +769,7 @@ impl<'a> Parser<'a> {
     Ok(ast::BindingStmt {
       name,
       value: Box::new(value),
-      modifier,
+      is_const_expr,
       cache_id: self.cache.create_id(),
       ty,
     })
@@ -814,20 +813,6 @@ impl<'a> Parser<'a> {
       alternative_branches,
       else_expr: else_value,
     })
-  }
-
-  /// break
-  fn parse_break_stmt(&mut self) -> ParserResult<ast::BreakStmt> {
-    self.skip_past(&lexer::TokenKind::Break)?;
-
-    Ok(ast::BreakStmt {})
-  }
-
-  /// continue
-  fn parse_continue_stmt(&mut self) -> ParserResult<ast::ContinueStmt> {
-    self.skip_past(&lexer::TokenKind::Continue)?;
-
-    Ok(ast::ContinueStmt)
   }
 
   // unsafe %expr
@@ -1263,18 +1248,6 @@ impl<'a> Parser<'a> {
     let pattern = self.parse_pattern(name_resolution::SymbolKind::Definition)?;
 
     Ok(ast::Reference { pattern })
-  }
-
-  /// %expr '=' %expr
-  fn parse_assign_stmt(&mut self, assignee_expr: ast::Node) -> ParserResult<ast::AssignStmt> {
-    self.skip_past(&lexer::TokenKind::Equal)?;
-
-    let value = Box::new(self.parse_expr()?);
-
-    Ok(ast::AssignStmt {
-      assignee_expr: Box::new(assignee_expr),
-      value,
-    })
   }
 
   /// enum %name ':' %indent (%name ',')+ %dedent

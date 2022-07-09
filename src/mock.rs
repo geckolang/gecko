@@ -33,13 +33,6 @@ pub mod tests {
       }
     }
 
-    pub fn with_loop(&mut self) -> &mut Self {
-      self.mock.generator.current_loop_block =
-        Some(self.mock.generator.llvm_builder.get_insert_block().unwrap());
-
-      self
-    }
-
     pub fn lower(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
       node.lower(&mut self.mock.generator, &self.mock.cache, access);
 

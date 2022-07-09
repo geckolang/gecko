@@ -422,13 +422,6 @@ impl Resolve for ast::Enum {
   }
 }
 
-impl Resolve for ast::AssignStmt {
-  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.assignee_expr.kind.resolve(resolver, cache);
-    self.value.kind.resolve(resolver, cache);
-  }
-}
-
 impl Resolve for ast::ContinueStmt {
   //
 }
@@ -502,24 +495,6 @@ impl Resolve for ast::Reference {
 
 impl Resolve for ast::BreakStmt {
   //
-}
-
-impl Resolve for ast::LoopStmt {
-  fn declare(&self, resolver: &mut NameResolver) {
-    if let Some(condition) = &self.condition {
-      condition.kind.declare(resolver);
-    }
-
-    self.body.declare(resolver);
-  }
-
-  fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    if let Some(condition) = &mut self.condition {
-      condition.kind.resolve(resolver, cache);
-    }
-
-    self.body.resolve(resolver, cache);
-  }
 }
 
 impl Resolve for ast::IfExpr {

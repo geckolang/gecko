@@ -243,7 +243,8 @@ impl Lower for ast::IntrinsicCall {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: No need to use the `access` parameter?
 
-    let llvm_arguments = self
+    // TODO: Unused.
+    let _llvm_arguments = self
       .arguments
       .iter()
       .map(|node| node.kind.lower(generator, cache, true).unwrap().into())
@@ -357,29 +358,6 @@ impl Lower for ast::Enum {
           .const_int(index as u64, false),
       );
     }
-
-    None
-  }
-}
-
-impl Lower for ast::AssignStmt {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &cache::Cache,
-    _access: bool,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // REVIEW: Is the `access` parameter necessary here? Or default to `false` instead?
-    let llvm_value = self.value.lower(generator, cache, true).unwrap();
-
-    // NOTE: In the case that our target is a let-statement (through
-    // a reference), memoization or retrieval will occur on the lowering
-    // step of the reference. The assignee should also not be accessed here.
-    let llvm_assignee = self.assignee_expr.lower(generator, cache, false).unwrap();
-
-    generator
-      .llvm_builder
-      .build_store(llvm_assignee.into_pointer_value(), llvm_value);
 
     None
   }
@@ -781,82 +759,6 @@ impl Lower for ast::Reference {
     Some(llvm_target)
   }
 }
-
-impl Lower for ast::LoopStmt {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    cache: &cache::Cache,
-    _access: bool,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // FIXME: The condition needs to be re-lowered per iteration.
-    // ... It seems to be lowered per-iteration. Confirm this with unit tests.
-    // NOTE: At this point, the condition should be verified to be a boolean by the type-checker.
-    let llvm_condition = if let Some(condition) = &self.condition {
-      condition
-        .lower(generator, cache, false)
-        .unwrap()
-        .into_int_value()
-    } else {
-      generator.llvm_context.bool_type().const_int(1, false)
-    };
-
-    let llvm_current_function = generator.llvm_function_buffer.unwrap();
-
-    let llvm_then_block = generator
-      .llvm_context
-      .append_basic_block(llvm_current_function, "loop.then");
-
-    let llvm_after_block = generator
-      .llvm_context
-      .append_basic_block(llvm_current_function, "loop.after");
-
-    // Build the initial conditional jump to start the loop.
-    generator.llvm_builder.build_conditional_branch(
-      llvm_condition,
-      llvm_then_block,
-      llvm_after_block,
-    );
-
-    generator.llvm_builder.position_at_end(llvm_then_block);
-    generator.current_loop_block = Some(llvm_after_block);
-    self.body.lower(generator, cache, false);
-
-    // Fallthrough or loop if applicable.
-    if generator.get_current_block().get_terminator().is_none() {
-      let llvm_condition_iter = if let Some(condition) = &self.condition {
-        condition
-          .lower(generator, cache, false)
-          .unwrap()
-          .into_int_value()
-      } else {
-        generator.llvm_context.bool_type().const_int(1, false)
-      };
-
-      // FIXME: Ensure this logic is correct (investigate).
-      generator.llvm_builder.build_conditional_branch(
-        llvm_condition_iter,
-        llvm_then_block,
-        llvm_after_block,
-      );
-    }
-
-    generator.llvm_builder.position_at_end(llvm_after_block);
-    generator.current_loop_block = None;
-
-    None
-  }
-}
-
-// fn test() -> i32 {
-//   let a = if true {
-//     return 0;
-//   };
-
-//   let a = ();
-
-//   return 1;
-// }
 
 impl Lower for ast::IfExpr {
   fn lower<'a, 'ctx>(
@@ -1877,7 +1779,7 @@ mod tests {
     let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(Mock::literal_int()),
-      modifier: ast::BindingModifier::Immutable,
+      is_const_expr: false,
       cache_id: 0,
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
@@ -1898,7 +1800,7 @@ mod tests {
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(Mock::literal_int()),
-      modifier: ast::BindingModifier::Immutable,
+      is_const_expr: false,
       cache_id: a_cache_id,
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
@@ -1906,7 +1808,7 @@ mod tests {
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
       value: Mock::reference(a_cache_id),
-      modifier: ast::BindingModifier::Immutable,
+      is_const_expr: false,
       cache_id: a_cache_id + 1,
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
@@ -1928,7 +1830,7 @@ mod tests {
     let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
-      modifier: ast::BindingModifier::Immutable,
+      is_const_expr: false,
       cache_id: 0,
       // FIXME: Wrong type.
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
@@ -1950,7 +1852,7 @@ mod tests {
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
-      modifier: ast::BindingModifier::Immutable,
+      is_const_expr: false,
       cache_id: a_cache_id,
       // FIXME: Wrong type.
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
@@ -1959,7 +1861,7 @@ mod tests {
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
       value: Mock::reference(a_cache_id),
-      modifier: ast::BindingModifier::Immutable,
+      is_const_expr: false,
       cache_id: a_cache_id + 1,
       // FIXME: Wrong type.
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
@@ -1983,7 +1885,7 @@ mod tests {
       value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
       ))),
-      modifier: ast::BindingModifier::Immutable,
+      is_const_expr: false,
       cache_id: 0,
       // FIXME: Wrong type.
       ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),

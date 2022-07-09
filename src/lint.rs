@@ -25,21 +25,22 @@ impl LintContext {
   fn lint_name_casing(&mut self, subject: &str, name: &str, case: convert_case::Case) {
     use convert_case::Casing;
 
+    if name.starts_with("_") || name.is_case(case) {
+      return;
+    }
+
     let case_name = match case {
       convert_case::Case::Snake => "snake",
       convert_case::Case::Pascal => "pascal",
       _ => "unknown",
     };
 
-    if !name.is_case(case) {
-      // TODO: Temporarily disabled.
-      // self.diagnostics.push(
-      //   codespan_reporting::diagnostic::Diagnostic::warning().with_message(format!(
-      //     "{} name `{}` should be written in {} case",
-      //     subject, name, case_name
-      //   )),
-      // )
-    }
+    self.diagnostics.push(
+      codespan_reporting::diagnostic::Diagnostic::warning().with_message(format!(
+        "{} name `{}` should be written in {} case",
+        subject, name, case_name
+      )),
+    )
   }
 }
 
@@ -295,26 +296,10 @@ impl Lint for ast::UnsafeExpr {
   }
 }
 
-impl Lint for ast::AssignStmt {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    self.value.lint(cache, context);
-  }
-}
-
 impl Lint for ast::Reference {
   fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
     context
       .variable_references
       .insert(self.pattern.target_id.unwrap(), true);
-  }
-}
-
-impl Lint for ast::LoopStmt {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    if let Some(condition) = &self.condition {
-      condition.lint(cache, context);
-    }
-
-    self.body.lint(cache, context);
   }
 }

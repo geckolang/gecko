@@ -794,82 +794,6 @@ impl Check for ast::Enum {
   // REVIEW: Isn't there a need for its variants to be considered integer types?
 }
 
-impl Check for ast::AssignStmt {
-  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    // TODO: Need to unify the value and the target's type.
-
-    let assignee_type = self.assignee_expr.kind.infer_flatten_type(cache);
-
-    if matches!(assignee_type, ast::Type::Reference(_)) {
-      context.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("can't assign to a reference; references cannot be reseated"),
-      );
-
-      // REVIEW: We should continue gathering other diagnostics (ex. immutable)?
-      return;
-    }
-
-    // NOTE: References cannot be reseated/assigned-to, only pointers.
-    let is_pointer = matches!(assignee_type, ast::Type::Pointer(_));
-
-    // REVISE: This checks are superficial. They do not consider
-    // ... that expressions may be nested (ie. parentheses expr.).
-    let is_array_indexing = matches!(self.assignee_expr.kind, ast::NodeKind::IndexingExpr(_));
-    let is_variable_ref = matches!(self.assignee_expr.kind, ast::NodeKind::Reference(_));
-
-    // FIXME: What if the member accessed is a method? Is that even possible?
-    // ... Maybe to disambiguate that specific case we'd need to add a check below.
-    let is_member_access = matches!(self.assignee_expr.kind, ast::NodeKind::MemberAccess(_));
-
-    // TODO: Missing member access (struct fields) support.
-    // NOTE: The assignee expression may only be an expression of type `Pointer`
-    // or `Reference`, a variable reference, or an array indexing.
-    if !is_pointer && !is_variable_ref && !is_array_indexing && !is_member_access {
-      context.diagnostics.push(
-          codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message("assignee must be an expression of pointer or reference type, a member access expression, a variable reference, or an array indexing expression"),
-        );
-    } else if is_variable_ref {
-      // If the assignee is a variable reference, ensure that the variable is mutable.
-      match &self.assignee_expr.kind {
-        ast::NodeKind::Reference(variable_ref) => {
-          let binding_node = cache.force_get(&variable_ref.pattern.target_id.unwrap());
-
-          match binding_node {
-            ast::NodeKind::BindingStmt(binding)
-              if binding.modifier != ast::BindingModifier::Mutable =>
-            {
-              context.diagnostics.push(
-                codespan_reporting::diagnostic::Diagnostic::error()
-                  .with_message("assignee is immutable"),
-              );
-            }
-            // TODO: Parameters should be immutable by default.
-            _ => {}
-          };
-        }
-        _ => unreachable!(),
-      };
-    }
-
-    // REVIEW: should this checks be placed before or after?
-    self.assignee_expr.kind.check(context, cache);
-    self.value.kind.check(context, cache);
-  }
-}
-
-impl Check for ast::ContinueStmt {
-  fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
-    if !context.in_loop {
-      context.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("continue statement may only occur inside loops"),
-      );
-    }
-  }
-}
-
 impl Check for ast::IndexingExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let target_array = cache.force_get(&self.target_id.unwrap());
@@ -1672,7 +1596,7 @@ mod tests {
         cached_type: None,
       }),
       cache_id: 0,
-      modifier: ast::BindingModifier::Immutable,
+      is_const_expr: false,
     };
 
     // TODO: Use the empty array type test.

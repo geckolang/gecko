@@ -428,7 +428,7 @@ impl NodeKind {
   pub fn is_constant_expr(&self) -> bool {
     let is_const_node = |node: &NodeKind| {
       if let NodeKind::BindingStmt(binding_stmt) = node {
-        return binding_stmt.modifier == BindingModifier::ConstExpr;
+        return binding_stmt.is_const_expr;
       }
 
       matches!(
@@ -598,12 +598,6 @@ pub struct Reference {
 }
 
 #[derive(Debug, Clone)]
-pub struct AssignStmt {
-  pub assignee_expr: Box<Node>,
-  pub value: Box<Node>,
-}
-
-#[derive(Debug, Clone)]
 pub struct SizeofIntrinsic {
   pub ty: Type,
 }
@@ -694,18 +688,11 @@ pub struct ReturnStmt {
   pub value: Option<Box<Node>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum BindingModifier {
-  ConstExpr,
-  Immutable,
-  Mutable,
-}
-
 #[derive(Debug, Clone)]
 pub struct BindingStmt {
   pub name: String,
   pub value: Box<Node>,
-  pub modifier: BindingModifier,
+  pub is_const_expr: bool,
   pub cache_id: cache::Id,
   pub ty: Option<Type>,
 }
@@ -716,12 +703,6 @@ pub struct IfExpr {
   pub then_expr: Box<Node>,
   pub alternative_branches: Vec<(Node, Node)>,
   pub else_expr: Option<Box<Node>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct LoopStmt {
-  pub condition: Option<Box<Node>>,
-  pub body: BlockExpr,
 }
 
 #[derive(Debug, Clone)]
