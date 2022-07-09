@@ -45,21 +45,14 @@ pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
   index: usize,
   cache: &'a mut cache::Cache,
-  // TODO: This shouldn't be present here. Instantiate unspecified types to `None` or a special value.
-  substitutions: &'a mut Vec<ast::Type>,
 }
 
 impl<'a> Parser<'a> {
-  pub fn new(
-    tokens: Vec<lexer::Token>,
-    cache: &'a mut cache::Cache,
-    substitution: &'a mut Vec<ast::Type>,
-  ) -> Self {
+  pub fn new(tokens: Vec<lexer::Token>, cache: &'a mut cache::Cache) -> Self {
     Self {
       tokens,
       index: 0,
       cache,
-      substitutions: substitution,
     }
   }
 
@@ -95,16 +88,6 @@ impl<'a> Parser<'a> {
     }
 
     Ok(result)
-  }
-
-  // TODO: Migrate this to the `CheckContext` struct.
-  fn create_type_variable(&mut self) -> ast::Type {
-    let result = ast::Type::Variable(self.substitutions.len());
-
-    // TODO: Is there a need to clone the type?
-    self.substitutions.push(result.clone());
-
-    result
   }
 
   fn skip_past(&mut self, token_kind: &lexer::TokenKind) -> ParserResult<()> {
@@ -425,7 +408,6 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::TypeBool => self.parse_bool_type(),
       lexer::TokenKind::Identifier(_) => self.parse_stub_type(),
       lexer::TokenKind::BracketL => self.parse_array_type(),
-      lexer::TokenKind::TypeUnit => self.parse_unit_type(),
       lexer::TokenKind::Asterisk => {
         self.skip()?;
 
@@ -446,12 +428,6 @@ impl<'a> Parser<'a> {
     }
 
     Ok(ty)
-  }
-
-  fn parse_unit_type(&mut self) -> ParserResult<ast::Type> {
-    self.skip_past(&lexer::TokenKind::TypeUnit)?;
-
-    Ok(ast::Type::Unit)
   }
 
   /// fn '(' (%type (','))* ')' ('[' %type ']')
@@ -556,9 +532,9 @@ impl<'a> Parser<'a> {
     let return_type_annotation = if self.is(&lexer::TokenKind::Arrow) {
       self.skip()?;
 
-      self.parse_type()?
+      Some(self.parse_type()?)
     } else {
-      self.create_type_variable()
+      None
     };
 
     Ok(ast::Prototype {
@@ -788,9 +764,9 @@ impl<'a> Parser<'a> {
     let ty = if self.is(&lexer::TokenKind::Colon) {
       self.skip()?;
 
-      self.parse_type()?
+      Some(self.parse_type()?)
     } else {
-      self.create_type_variable()
+      None
     };
 
     self.skip_past(&lexer::TokenKind::Equal)?;
@@ -1628,24 +1604,15 @@ impl<'a> Parser<'a> {
 mod tests {
   use super::*;
 
-  fn create_parser<'a>(
-    tokens: Vec<lexer::TokenKind>,
-    cache: &'a mut cache::Cache,
-    substitution: &'a mut Vec<ast::Type>,
-  ) -> Parser<'a> {
+  fn create_parser<'a>(tokens: Vec<lexer::TokenKind>, cache: &'a mut cache::Cache) -> Parser<'a> {
     // TODO: Consider making the position incremental.
-    Parser::new(
-      tokens.into_iter().map(|token| (token, 0)).collect(),
-      cache,
-      substitution,
-    )
+    Parser::new(tokens.into_iter().map(|token| (token, 0)).collect(), cache)
   }
 
   #[test]
   fn proper_initial_values() {
     let mut cache = cache::Cache::new();
-    let mut substitution = Vec::new();
-    let parser = create_parser(Vec::new(), &mut cache, &mut substitution);
+    let parser = create_parser(Vec::new(), &mut cache);
 
     assert_eq!(0, parser.index);
   }
@@ -1653,8 +1620,7 @@ mod tests {
   #[test]
   fn is() {
     let mut cache = cache::Cache::new();
-    let mut substitution = Vec::new();
-    let mut parser = create_parser(Vec::new(), &mut cache, &mut substitution);
+    let mut parser = create_parser(Vec::new(), &mut cache);
 
     assert!(!parser.is(&lexer::TokenKind::EOF));
     parser.index = 1;
@@ -1667,8 +1633,7 @@ mod tests {
   #[test]
   fn is_empty() {
     let mut cache = cache::Cache::new();
-    let mut substitution = Vec::new();
-    let parser = create_parser(Vec::new(), &mut cache, &mut substitution);
+    let parser = create_parser(Vec::new(), &mut cache);
 
     assert_eq!(false, parser.is(&lexer::TokenKind::Func));
   }
@@ -1676,12 +1641,10 @@ mod tests {
   #[test]
   fn skip() {
     let mut cache = cache::Cache::new();
-    let mut substitution = Vec::new();
 
     let mut parser = create_parser(
       vec![lexer::TokenKind::Func, lexer::TokenKind::Func],
       &mut cache,
-      &mut substitution,
     );
 
     assert!(parser.skip().is_ok());
@@ -1691,8 +1654,7 @@ mod tests {
   #[test]
   fn skip_out_of_bounds() {
     let mut cache = cache::Cache::new();
-    let mut substitution = Vec::new();
-    let mut parser = create_parser(vec![lexer::TokenKind::Func], &mut cache, &mut substitution);
+    let mut parser = create_parser(vec![lexer::TokenKind::Func], &mut cache);
 
     assert!(parser.skip().is_ok());
     assert_eq!(1, parser.index);
@@ -1701,8 +1663,7 @@ mod tests {
   #[test]
   fn is_eof() {
     let mut cache = cache::Cache::new();
-    let mut substitution = Vec::new();
-    let mut parser = create_parser(Vec::new(), &mut cache, &mut substitution);
+    let mut parser = create_parser(Vec::new(), &mut cache);
 
     assert!(parser.is_eof());
     parser.tokens.push((lexer::TokenKind::Func, 0));
@@ -1716,12 +1677,10 @@ mod tests {
   #[test]
   fn after_pattern_is() {
     let mut cache = cache::Cache::new();
-    let mut substitution = Vec::new();
 
     let mut parser = create_parser(
       vec![lexer::TokenKind::Identifier("test".to_string())],
       &mut cache,
-      &mut substitution,
     );
 
     parser.tokens.push((lexer::TokenKind::BraceL, 0));
@@ -1751,8 +1710,7 @@ mod tests {
   #[test]
   fn peek_is() {
     let mut cache = cache::Cache::new();
-    let mut substitution = Vec::new();
-    let mut parser = create_parser(Vec::new(), &mut cache, &mut substitution);
+    let mut parser = create_parser(Vec::new(), &mut cache);
 
     assert!(!parser.peek_is(&lexer::TokenKind::BraceL));
     parser.tokens.push((lexer::TokenKind::BraceL, 0));

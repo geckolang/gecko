@@ -111,9 +111,12 @@ impl TypeContext {
     }
   }
 
-  pub fn infer_prototype_type(prototype: &ast::Prototype, return_type: ast::Type) -> ast::Type {
+  pub fn infer_prototype_type(
+    prototype: &ast::Prototype,
+    return_type: Option<ast::Type>,
+  ) -> ast::Type {
     ast::Type::Function(ast::FunctionType {
-      return_type: Box::new(return_type),
+      return_type: Box::new(return_type.unwrap_or(ast::Type::Unit)),
       parameter_types: prototype
         .parameters
         .iter()
@@ -565,7 +568,7 @@ impl Check for ast::Closure {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     TypeContext::infer_prototype_type(
       &self.prototype,
-      TypeContext::infer_return_value_type(&self.body, cache),
+      Some(TypeContext::infer_return_value_type(&self.body, cache)),
     )
   }
 
@@ -1315,27 +1318,27 @@ impl Check for ast::BindingStmt {
   fn report_constraints(&mut self, context: &mut TypeContext, cache: &cache::Cache) {
     // TODO: Abstract this to a method that accepts a type and a list of constraints.
     // ... This way it can be reused for other implementations.
-    if !matches!(self.ty, ast::Type::Variable(_)) {
-      return;
-    }
+    // if !matches!(self.ty, ast::Type::Variable(_)) {
+    //   return;
+    // }
 
-    context.constraints.push((
-      self.ty.clone(),
-      self.value.kind.infer_type(cache),
-      TypeConstrainKind::Equality,
-    ));
+    // context.constraints.push((
+    //   self.ty.clone(),
+    //   self.value.kind.infer_type(cache),
+    //   TypeConstrainKind::Equality,
+    // ));
   }
 
   fn post_unification(&mut self, context: &mut TypeContext, _cache: &cache::Cache) {
-    let variable_type_id = match self.ty {
-      ast::Type::Variable(ref id) => id,
-      _ => return,
-    };
+    // let variable_type_id = match self.ty {
+    //   ast::Type::Variable(ref id) => id,
+    //   _ => return,
+    // };
 
-    // REVIEW: What if there was no substitution defined? Unsafe unwrap?
-    // ... Or maybe this is the part where we report diagnostics in this implementation?
-    // ... Bingo! The `unify` method is where the diagnostics are reported.
-    self.ty = context.substitutions.get(variable_type_id).unwrap().clone();
+    // // REVIEW: What if there was no substitution defined? Unsafe unwrap?
+    // // ... Or maybe this is the part where we report diagnostics in this implementation?
+    // // ... Bingo! The `unify` method is where the diagnostics are reported.
+    // self.ty = context.substitutions.get(variable_type_id).unwrap().clone();
   }
 }
 
@@ -1408,7 +1411,7 @@ impl Check for ast::Function {
     // REVIEW: Why not use annotated return type if defined?
     TypeContext::infer_prototype_type(
       &self.prototype,
-      TypeContext::infer_return_value_type(&self.body, cache),
+      Some(TypeContext::infer_return_value_type(&self.body, cache)),
     )
   }
 
@@ -1493,8 +1496,8 @@ impl Check for ast::Function {
   fn post_unification(&mut self, context: &mut TypeContext, _cache: &cache::Cache) {
     // TODO: Parameters, etc.
 
-    self.prototype.return_type_annotation =
-      context.substitute(self.prototype.return_type_annotation.clone());
+    // self.prototype.return_type_annotation =
+    //   context.substitute(self.prototype.return_type_annotation.clone());
   }
 }
 
@@ -1690,7 +1693,7 @@ mod tests {
 
     let mut binding_stmt = ast::BindingStmt {
       name: String::from("a"),
-      ty: ast::Type::Variable(type_variable_id),
+      ty: Some(ast::Type::Variable(type_variable_id)),
       // TODO: Use `Mock` scaffolding.
       value: Box::new(ast::Node {
         kind: ast::NodeKind::Literal(ast::Literal::Bool(true)),
@@ -1706,7 +1709,11 @@ mod tests {
     binding_stmt.report_constraints(&mut type_context, &cache);
     type_context.solve_constraints();
     binding_stmt.post_unification(&mut type_context, &cache);
-    assert_eq!(binding_stmt.ty, ast::Type::Basic(ast::BasicType::Bool));
+
+    assert_eq!(
+      binding_stmt.ty,
+      Some(ast::Type::Basic(ast::BasicType::Bool))
+    );
   }
 
   // TODO: Add tests for `compare()`, `infer_and_flatten_type()`, `flatten_type()`, and others.

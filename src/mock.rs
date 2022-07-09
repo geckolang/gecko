@@ -136,7 +136,7 @@ pub mod tests {
     pub fn prototype_simple(is_extern: bool) -> ast::Prototype {
       ast::Prototype {
         parameters: Vec::new(),
-        return_type_annotation: ast::Type::Unit,
+        return_type_annotation: None,
         is_variadic: false,
         is_extern,
         accepts_instance: false,

@@ -351,7 +351,9 @@ impl Resolve for ast::Prototype {
         .resolve(resolver, cache);
     }
 
-    self.return_type_annotation.resolve(resolver, cache);
+    if let Some(return_type_annotation) = &mut self.return_type_annotation {
+      return_type_annotation.resolve(resolver, cache);
+    }
   }
 }
 

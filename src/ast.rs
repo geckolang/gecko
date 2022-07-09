@@ -636,7 +636,7 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
-  pub return_type_annotation: Type,
+  pub return_type_annotation: Option<Type>,
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
@@ -723,7 +723,7 @@ pub struct BindingStmt {
   pub value: Box<Node>,
   pub modifier: BindingModifier,
   pub cache_id: cache::Id,
-  pub ty: Type,
+  pub ty: Option<Type>,
 }
 
 #[derive(Debug, Clone)]

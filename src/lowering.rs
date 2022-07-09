@@ -1155,7 +1155,11 @@ impl Lower for ast::ExternFunction {
     // NOTE: The return type is always explicitly-given for extern functions.
     let llvm_function_type = generator.lower_prototype(
       &self.prototype,
-      &self.prototype.return_type_annotation,
+      self
+        .prototype
+        .return_type_annotation
+        .as_ref()
+        .unwrap_or(&ast::Type::Unit),
       cache,
     );
 
@@ -1913,7 +1917,7 @@ mod tests {
       value: Mock::boxed_node(Mock::literal_int()),
       modifier: ast::BindingModifier::Immutable,
       cache_id: 0,
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1934,7 +1938,7 @@ mod tests {
       value: Mock::boxed_node(Mock::literal_int()),
       modifier: ast::BindingModifier::Immutable,
       cache_id: a_cache_id,
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
@@ -1942,7 +1946,7 @@ mod tests {
       value: Mock::reference(a_cache_id),
       modifier: ast::BindingModifier::Immutable,
       cache_id: a_cache_id + 1,
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1965,7 +1969,7 @@ mod tests {
       modifier: ast::BindingModifier::Immutable,
       cache_id: 0,
       // FIXME: Wrong type.
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1987,7 +1991,7 @@ mod tests {
       modifier: ast::BindingModifier::Immutable,
       cache_id: a_cache_id,
       // FIXME: Wrong type.
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
@@ -1996,7 +2000,7 @@ mod tests {
       modifier: ast::BindingModifier::Immutable,
       cache_id: a_cache_id + 1,
       // FIXME: Wrong type.
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -2020,7 +2024,7 @@ mod tests {
       modifier: ast::BindingModifier::Immutable,
       cache_id: 0,
       // FIXME: Wrong type.
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -2041,7 +2045,7 @@ mod tests {
       modifier: ast::BindingModifier::Immutable,
       cache_id,
       // FIXME: Wrong type.
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {
@@ -2074,7 +2078,7 @@ mod tests {
       modifier: ast::BindingModifier::Immutable,
       cache_id: a_cache_id,
       // FIXME: Wrong type.
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
@@ -2083,7 +2087,7 @@ mod tests {
       modifier: ast::BindingModifier::Immutable,
       cache_id: b_cache_id,
       // FIXME: Wrong type.
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let assign_stmt = ast::NodeKind::AssignStmt(ast::AssignStmt {

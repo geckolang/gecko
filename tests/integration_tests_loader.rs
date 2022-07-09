@@ -45,8 +45,7 @@ mod tests {
     let mut llvm_generator = gecko::lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
     let mut ast_map = std::collections::BTreeMap::new();
     let tokens = lex(source_file_contents);
-    let mut substitution = Vec::new();
-    let mut parser = gecko::parser::Parser::new(tokens, &mut cache, &mut substitution);
+    let mut parser = gecko::parser::Parser::new(tokens, &mut cache);
     let top_level_nodes = parser.parse_all();
 
     assert!(top_level_nodes.is_ok());
