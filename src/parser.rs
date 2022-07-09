@@ -695,7 +695,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Type => ast::NodeKind::TypeAlias(self.parse_type_alias()?),
       lexer::TokenKind::Impl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
       lexer::TokenKind::Trait => ast::NodeKind::Trait(self.parse_trait()?),
-      lexer::TokenKind::Using => ast::NodeKind::Import(self.parse_using()?),
+      lexer::TokenKind::Using => ast::NodeKind::Using(self.parse_using()?),
       _ => return Err(self.expected("top-level construct")),
     };
 

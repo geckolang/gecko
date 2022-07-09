@@ -46,7 +46,7 @@ macro_rules! dispatch {
       ast::NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Import(inner) => $target_fn(inner $(, $($args),* )?),
+      ast::NodeKind::Using(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
       ast::NodeKind::Range(inner) => $target_fn(inner $(, $($args),* )?),
     }
@@ -311,7 +311,7 @@ pub enum NodeKind {
   StructImpl(StructImpl),
   Trait(Trait),
   ParenthesesExpr(ParenthesesExpr),
-  Import(Using),
+  Using(Using),
   SizeofIntrinsic(SizeofIntrinsic),
   Range(Range),
 }
@@ -627,12 +627,6 @@ pub struct Prototype {
   pub this_parameter: Option<Parameter>,
 }
 
-impl visitor::Visitable for Prototype {
-  fn accept<T>(&mut self, visitor: &mut impl visitor::Visitor<T>) -> T {
-    visitor.visit_prototype(self)
-  }
-}
-
 #[derive(Debug, Clone)]
 pub struct ExternFunction {
   pub name: String,
@@ -641,24 +635,11 @@ pub struct ExternFunction {
   pub cache_id: cache::Id,
 }
 
-impl visitor::Visitable for ExternFunction {
-  fn accept<T>(&mut self, visitor: &mut impl visitor::Visitor<T>) -> T {
-    visitor.visit_extern_function(self)
-  }
-}
-
 #[derive(Debug, Clone)]
 pub struct ExternStatic {
   pub name: String,
   pub ty: Type,
   pub cache_id: cache::Id,
-}
-
-// TODO: Change this into a macro.
-impl visitor::Visitable for ExternStatic {
-  fn accept<T>(&mut self, visitor: &mut impl visitor::Visitor<T>) -> T {
-    visitor.visit_extern_static(self)
-  }
 }
 
 #[derive(Debug, Clone)]
