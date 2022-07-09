@@ -13,4 +13,3 @@ func binding():
 
   let f = ???
   const g = 1
-  var h = 2

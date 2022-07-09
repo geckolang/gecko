@@ -9,7 +9,6 @@ type TypeConstraint = (ast::Type, ast::Type, TypeConstrainKind);
 
 pub struct TypeContext {
   diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
-  in_loop: bool,
   in_unsafe_block: bool,
   in_impl: bool,
   current_function_id: Option<cache::Id>,
@@ -55,7 +54,6 @@ impl TypeContext {
   pub fn new() -> Self {
     Self {
       diagnostics: Vec::new(),
-      in_loop: false,
       in_unsafe_block: false,
       in_impl: false,
       current_function_id: None,
@@ -408,13 +406,7 @@ impl Check for ast::Using {
 }
 
 impl Check for ast::ParenthesesExpr {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.expr.kind.infer_type(cache)
-  }
-
-  fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    self.expr.kind.check(context, cache);
-  }
+  //
 }
 
 impl Check for ast::Trait {
@@ -507,7 +499,7 @@ impl Check for ast::MemberAccess {
       // REVIEW: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
       // ... But this point may be reachable from the user-side. Need to somehow properly
       // ... handle this case.
-      _ => return ast::Type::Error,
+      _ => todo!(),
     };
 
     if let Some(struct_field) = struct_type
@@ -528,7 +520,7 @@ impl Check for ast::MemberAccess {
       }
     }
 
-    return ast::Type::Error;
+    todo!();
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
@@ -1189,17 +1181,6 @@ impl Check for ast::BinaryExpr {
   }
 }
 
-impl Check for ast::BreakStmt {
-  fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
-    if !context.in_loop {
-      context.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("break statement may only occur inside loops"),
-      );
-    }
-  }
-}
-
 impl Check for ast::InlineExprStmt {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     self.expr.kind.infer_type(cache)
@@ -1345,17 +1326,6 @@ impl Check for ast::Function {
       );
     }
 
-    // let return_type = self.body.infer_type(cache);
-
-    // if !TypeContext::compare(&return_type, &self.body.infer_type(cache), cache) {
-    //   context.diagnostics.push(
-    //     codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-    //       "function body and prototype return type mismatch for function `{}`",
-    //       self.name
-    //     )),
-    //   );
-    // }
-
     if self.prototype.is_variadic {
       context.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
@@ -1425,7 +1395,7 @@ impl Check for ast::CallExpr {
 
     match callee_expr_type {
       ast::Type::Function(callable_type) => callable_type.return_type.as_ref().clone(),
-      _ => ast::Type::Error,
+      _ => todo!(),
     }
   }
 
@@ -1519,7 +1489,6 @@ mod tests {
     assert!(type_context.usings.is_empty());
     assert!(type_context.current_function_id.is_none());
     assert!(!type_context.in_impl);
-    assert!(!type_context.in_loop);
     assert!(!type_context.in_unsafe_block);
   }
 

@@ -254,7 +254,7 @@ impl<'a> Parser<'a> {
   fn parse_statement(&mut self) -> ParserResult<ast::Node> {
     let kind = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
-      lexer::TokenKind::Let | lexer::TokenKind::Var | lexer::TokenKind::Const => {
+      lexer::TokenKind::Let | lexer::TokenKind::Const => {
         ast::NodeKind::BindingStmt(self.parse_binding_stmt()?)
       }
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
@@ -1470,9 +1470,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
-    Ok(ast::ParenthesesExpr {
-      expr: Box::new(expr),
-    })
+    Ok(ast::ParenthesesExpr(Box::new(expr)))
   }
 
   /// using %pattern ('::' '{' (%name ',')+ '}')

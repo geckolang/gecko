@@ -3,8 +3,6 @@ use crate::{ast, cache, lowering};
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
   Definition,
-  // REVISE: Can be more than that. Do not lie.
-  /// A global type. Can be a struct, or enum.
   Type,
 }
 
@@ -71,11 +69,11 @@ impl Resolve for ast::Using {
 
 impl Resolve for ast::ParenthesesExpr {
   fn declare(&self, resolver: &mut NameResolver) {
-    self.expr.kind.declare(resolver);
+    self.0.kind.declare(resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.expr.kind.resolve(resolver, cache);
+    self.0.kind.resolve(resolver, cache);
   }
 }
 
@@ -422,10 +420,6 @@ impl Resolve for ast::Enum {
   }
 }
 
-impl Resolve for ast::ContinueStmt {
-  //
-}
-
 impl Resolve for ast::IndexingExpr {
   fn declare(&self, resolver: &mut NameResolver) {
     self.index_expr.kind.declare(resolver);
@@ -491,10 +485,6 @@ impl Resolve for ast::Reference {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     self.pattern.resolve(resolver, cache);
   }
-}
-
-impl Resolve for ast::BreakStmt {
-  //
 }
 
 impl Resolve for ast::IfExpr {

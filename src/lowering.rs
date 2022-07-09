@@ -70,7 +70,7 @@ impl Lower for ast::ParenthesesExpr {
     access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // NOTE: The `access` flag is passed down, since this is a transient construct.
-    self.expr.lower(generator, cache, access)
+    self.0.lower(generator, cache, access)
   }
 }
 
@@ -358,21 +358,6 @@ impl Lower for ast::Enum {
           .const_int(index as u64, false),
       );
     }
-
-    None
-  }
-}
-
-impl Lower for ast::ContinueStmt {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &cache::Cache,
-    _access: bool,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    generator
-      .llvm_builder
-      .build_unconditional_branch(generator.get_current_block());
 
     None
   }
@@ -1315,22 +1300,6 @@ impl Lower for ast::CallExpr {
   }
 }
 
-impl Lower for ast::BreakStmt {
-  fn lower<'a, 'ctx>(
-    &self,
-    generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &cache::Cache,
-    _access: bool,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // NOTE: By this point, we assume that whether we're actually in a loop was handled by the type-checker.
-    generator
-      .llvm_builder
-      .build_unconditional_branch(generator.current_loop_block.unwrap());
-
-    None
-  }
-}
-
 impl Lower for ast::InlineExprStmt {
   fn lower<'a, 'ctx>(
     &self,
@@ -1360,8 +1329,6 @@ pub struct LlvmGenerator<'a, 'ctx> {
   llvm_cached_types: std::collections::HashMap<cache::Id, inkwell::types::BasicTypeEnum<'ctx>>,
   /// The next fall-through block (if any).
   pub(super) current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
-  panic_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
-  print_function_cache: Option<inkwell::values::FunctionValue<'ctx>>,
   mangle_counter: usize,
 }
 
@@ -1379,8 +1346,6 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       llvm_cached_values: std::collections::HashMap::new(),
       llvm_cached_types: std::collections::HashMap::new(),
       current_loop_block: None,
-      panic_function_cache: None,
-      print_function_cache: None,
       mangle_counter: 0,
     }
   }
@@ -1569,11 +1534,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       //   .ptr_type(inkwell::AddressSpace::Generic)
       //   .as_basic_type_enum(),
       // Meta types are never to be lowered.
-      ast::Type::Unit
-      | ast::Type::Error
-      | ast::Type::Variable(_)
-      | ast::Type::Never
-      | ast::Type::Any => {
+      ast::Type::Unit | ast::Type::Variable(_) | ast::Type::Never | ast::Type::Any => {
         unreachable!()
       }
     }

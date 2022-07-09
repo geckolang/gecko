@@ -1,10 +1,15 @@
 use crate::{ast, cache};
 
+// REVIEW: Why not abstract the error reporting to the lint methods themselves? This is more functional.
+// ... Perhaps we can also get rid of variable reference counting, in favor of functional programming.
 pub struct LintContext {
   pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   variable_references: std::collections::HashMap<cache::Id, bool>,
 }
 
+// REVISE: Use the `traverse` method to walk the AST and invoke these
+// ... methods in conjunction with the other read-only semantic checks.
+// ... This will improve performance because we'd be using less passes.
 impl LintContext {
   pub fn new() -> Self {
     Self {
@@ -45,17 +50,17 @@ impl LintContext {
 }
 
 pub trait Lint {
-  fn lint(&self, _cache: &cache::Cache, _context: &mut LintContext) {
+  fn lint(&self, _context: &mut LintContext) {
     //
   }
 }
 
 // REVISE: Redundant, implement for `NodeKind` instead?
-impl Lint for ast::Node {
-  fn lint(&self, cache: &cache::Cache, lint_context: &mut LintContext) {
+impl Lint for ast::NodeKind {
+  fn lint(&self, lint_context: &mut LintContext) {
     // TODO: Here we have access to the node's metadata.
     // ... Consider using some system to provide it to whatever needs it.
-    crate::dispatch!(&self.kind, Lint::lint, cache, lint_context);
+    crate::dispatch!(&self, Lint::lint, lint_context);
   }
 }
 
@@ -72,9 +77,7 @@ impl Lint for ast::Using {
 }
 
 impl Lint for ast::ParenthesesExpr {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    self.expr.lint(cache, context);
-  }
+  //
 }
 
 impl Lint for ast::Trait {
@@ -98,7 +101,7 @@ impl Lint for ast::TypeAlias {
 }
 
 impl Lint for ast::Pattern {
-  fn lint(&self, _cache: &cache::Cache, _lint_context: &mut LintContext) {
+  fn lint(&self, _lint_context: &mut LintContext) {
     // TODO: Lint name(s).
   }
 }
@@ -108,9 +111,7 @@ impl Lint for ast::IntrinsicCall {
 }
 
 impl Lint for ast::ExternStatic {
-  fn lint(&self, _cache: &cache::Cache, _context: &mut LintContext) {
-    //
-  }
+  //
 }
 
 impl Lint for ast::StructValue {
@@ -122,7 +123,7 @@ impl Lint for ast::Prototype {
 }
 
 impl Lint for ast::StructType {
-  fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     context.lint_name_casing("struct", &self.name, convert_case::Case::Pascal);
 
     // REVIEW: Any more linting needed?
@@ -130,38 +131,27 @@ impl Lint for ast::StructType {
 }
 
 impl Lint for ast::UnaryExpr {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    self.expr.lint(cache, context);
-  }
+  //
 }
 
 impl Lint for ast::IndexingExpr {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     context
       .variable_references
       .insert(self.target_id.unwrap(), true);
-
-    self.index_expr.lint(cache, context);
   }
 }
 
 impl Lint for ast::StaticArrayValue {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    for element in &self.elements {
-      element.lint(cache, context);
-    }
-  }
+  //
 }
 
 impl Lint for ast::BinaryExpr {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    self.left.lint(cache, context);
-    self.right.lint(cache, context);
-  }
+  //
 }
 
 impl Lint for ast::BlockExpr {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     let mut did_return = false;
 
     for statement in &self.statements {
@@ -177,22 +167,12 @@ impl Lint for ast::BlockExpr {
       if matches!(statement.kind, ast::NodeKind::ReturnStmt(_)) {
         did_return = true;
       }
-
-      statement.lint(cache, context);
     }
   }
 }
 
-impl Lint for ast::BreakStmt {
-  //
-}
-
-impl Lint for ast::ContinueStmt {
-  //
-}
-
 impl Lint for ast::Enum {
-  fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     context.lint_name_casing("enum", &self.name, convert_case::Case::Pascal);
 
     if self.variants.is_empty() {
@@ -212,9 +192,7 @@ impl Lint for ast::Enum {
 }
 
 impl Lint for ast::InlineExprStmt {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    self.expr.lint(cache, context);
-  }
+  //
 }
 
 impl Lint for ast::ExternFunction {
@@ -222,7 +200,7 @@ impl Lint for ast::ExternFunction {
 }
 
 impl Lint for ast::Function {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     context.lint_name_casing("function", &self.name, convert_case::Case::Snake);
 
     if self.prototype.parameters.len() > 4 {
@@ -231,13 +209,11 @@ impl Lint for ast::Function {
           .with_message("function has more than 4 parameters"),
       );
     }
-
-    self.body.lint(cache, context);
   }
 }
 
 impl Lint for ast::CallExpr {
-  fn lint(&self, _cache: &cache::Cache, _context: &mut LintContext) {
+  fn lint(&self, _context: &mut LintContext) {
     // TODO:
     // context
     //   .function_references
@@ -246,7 +222,7 @@ impl Lint for ast::CallExpr {
 }
 
 impl Lint for ast::IfExpr {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     // TODO: Add a helper method to "unbox" expressions? (e.g. case for `(true)`).
     if matches!(self.condition.kind, ast::NodeKind::Literal(_)) {
@@ -255,20 +231,12 @@ impl Lint for ast::IfExpr {
           .with_message("if expression's condition is a constant expression"),
       )
     }
-
-    if let Some(else_block) = &self.else_expr {
-      else_block.lint(cache, context);
-    }
-
-    self.condition.lint(cache, context);
-    self.then_expr.lint(cache, context);
   }
 }
 
 impl Lint for ast::BindingStmt {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     context.lint_name_casing("variable", &self.name, convert_case::Case::Snake);
-    self.value.lint(cache, context);
   }
 }
 
@@ -277,27 +245,21 @@ impl Lint for ast::Literal {
 }
 
 impl Lint for ast::Parameter {
-  fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     context.lint_name_casing("parameter", &self.name, convert_case::Case::Snake);
   }
 }
 
 impl Lint for ast::ReturnStmt {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    if let Some(value) = &self.value {
-      value.lint(cache, context);
-    }
-  }
+  //
 }
 
 impl Lint for ast::UnsafeExpr {
-  fn lint(&self, cache: &cache::Cache, context: &mut LintContext) {
-    self.0.lint(cache, context);
-  }
+  //
 }
 
 impl Lint for ast::Reference {
-  fn lint(&self, _cache: &cache::Cache, context: &mut LintContext) {
+  fn lint(&self, context: &mut LintContext) {
     context
       .variable_references
       .insert(self.pattern.target_id.unwrap(), true);

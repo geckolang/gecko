@@ -71,9 +71,7 @@ pub struct Generics {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParenthesesExpr {
-  pub expr: Box<Node>,
-}
+pub struct ParenthesesExpr(pub Box<Node>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
@@ -124,8 +122,6 @@ pub enum Type {
   Variable(usize),
   /// A meta type that represents the lack of a value.
   Unit,
-  // REVIEW: Is this actually needed? It's only used in the infer methods, but doesn't that mean that there's simply a hole in our type-checking?
-  Error,
   // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where supertypes bind with subtypes?
   /// A meta type that implies a computation that will
   /// never evaluate to a value.
@@ -167,10 +163,7 @@ impl Type {
   ///
   /// This determination will not perform flattening.
   pub fn is_a_meta(&self) -> bool {
-    self.is_a_unit()
-      || self.is_a_never()
-      || matches!(self, Type::Error)
-      || matches!(self, Type::Any)
+    self.is_a_unit() || self.is_a_never() || matches!(self, Type::Any)
   }
 
   /// Determine whether the type is a stub type.
@@ -202,12 +195,8 @@ impl Type {
   /// If one of the types is a subtype or supertype of another, this will
   /// return `true`. This determination will not perform flattening.
   pub fn is(&self, other: &Type) -> bool {
-    // The error type does not unify with anything.
-    if matches!(self, Type::Error) || matches!(other, Type::Error) {
-      return false;
-    }
     // The never type is a supertype of everything.
-    else if matches!(self, Type::Never) || matches!(other, Type::Never) {
+    if matches!(self, Type::Never) || matches!(other, Type::Never) {
       return true;
     }
     // At this point, any any type is a supertype of any other type.
@@ -341,7 +330,7 @@ impl NodeKind {
         NodeKind::BlockExpr(block_expr) => map_children(&block_expr.statements).collect(),
         NodeKind::UnaryExpr(unary_expr) => vec![&unary_expr.expr.kind],
         NodeKind::UnsafeExpr(unsafe_expr) => vec![&unsafe_expr.0.kind],
-        NodeKind::ParenthesesExpr(parentheses_expr) => vec![&parentheses_expr.expr.kind],
+        NodeKind::ParenthesesExpr(parentheses_expr) => vec![&parentheses_expr.0.kind],
         NodeKind::CallExpr(call_expr) => vec![&call_expr.callee_expr.kind]
           .into_iter()
           .chain(map_children(&call_expr.arguments))
@@ -353,8 +342,26 @@ impl NodeKind {
         // TODO: Missing prototype.
         NodeKind::Function(function) => map_children(&function.body.statements).collect(),
         NodeKind::BindingStmt(binding_stmt) => vec![&binding_stmt.value.kind],
-        // TODO: Implement all other nodes with visitable children.
-        // REVIEW: Not all nodes can be processed like this: What about prototype, externs, and functions?
+        NodeKind::ReturnStmt(ReturnStmt { value: Some(value) }) => vec![&value.kind],
+        NodeKind::IndexingExpr(indexing_expr) => {
+          vec![&indexing_expr.index_expr.kind]
+        }
+        NodeKind::IntrinsicCall(intrinsic_call) => {
+          map_children(&intrinsic_call.arguments).collect()
+        }
+        NodeKind::MemberAccess(member_access) => vec![&member_access.base_expr.kind],
+        NodeKind::Range(range) => vec![&range.start.kind, &range.end.kind],
+        NodeKind::StaticArrayValue(static_array_value) => {
+          map_children(&static_array_value.elements).collect()
+        }
+        // NodeKind::StructImpl(struct_impl) => {
+        //   vec![struct_impl.static_methods, struct_impl.member_methods].into_iter().flatten().collect::<Vec<_>>()
+        // }
+        NodeKind::StructValue(struct_value) => map_children(&struct_value.fields).collect(),
+        // NodeKind::Trait(trait_) => {
+        //   map_children(&trait_.methods).collect()
+        // }
+        // REVIEW: Not all nodes can be processed like this: What about prototypes?
         _ => vec![],
       }
     };
@@ -448,7 +455,7 @@ impl NodeKind {
 
     // REVIEW: Anything else that may encapsulate a node? What about nested unary expressions?
     while let NodeKind::ParenthesesExpr(parentheses_expr) = buffer {
-      buffer = &parentheses_expr.expr.kind;
+      buffer = &parentheses_expr.0.kind;
     }
 
     buffer
@@ -568,9 +575,6 @@ pub struct Enum {
 }
 
 #[derive(Debug, Clone)]
-pub struct ContinueStmt;
-
-#[derive(Debug, Clone)]
 pub struct IndexingExpr {
   pub name: String,
   pub index_expr: Box<Node>,
@@ -679,9 +683,6 @@ pub struct BlockExpr {
   pub yields: Option<Box<Node>>,
   pub cache_id: cache::Id,
 }
-
-#[derive(Debug, Clone)]
-pub struct BreakStmt;
 
 #[derive(Debug, Clone)]
 pub struct ReturnStmt {

@@ -60,10 +60,11 @@ mod tests {
 
     // Once symbols are resolved, we can proceed to the other phases.
     for inner_ast in ast_map.values() {
+      // FIXME: Linting disabled temporarily.
       // REVIEW: Can we mix linting with type-checking without any problems?
-      for top_level_node in inner_ast {
-        top_level_node.lint(&cache, &mut lint_context);
-      }
+      // for top_level_node in inner_ast {
+      //   top_level_node.lint(&mut lint_context);
+      // }
 
       let check_result = gecko::type_system::TypeContext::run(inner_ast, &cache);
 
