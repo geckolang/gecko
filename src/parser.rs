@@ -1077,9 +1077,6 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
       lexer::TokenKind::Indent => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
-      lexer::TokenKind::QuestionMark if self.peek_is(&lexer::TokenKind::QuestionMark) => {
-        ast::NodeKind::UnimplementedExpr(self.parse_unimplemented_expr()?)
-      }
       lexer::TokenKind::QuestionMark => self.parse_intrinsic()?,
       lexer::TokenKind::ParenthesesL => {
         ast::NodeKind::ParenthesesExpr(self.parse_parentheses_expr()?)
@@ -1589,14 +1586,6 @@ impl<'a> Parser<'a> {
       start: Box::new(start),
       end: Box::new(end),
     })
-  }
-
-  fn parse_unimplemented_expr(&mut self) -> ParserResult<ast::UnimplementedExpr> {
-    self.skip_past(&lexer::TokenKind::QuestionMark)?;
-    self.skip_past(&lexer::TokenKind::QuestionMark)?;
-    self.skip_past(&lexer::TokenKind::QuestionMark)?;
-
-    Ok(ast::UnimplementedExpr)
   }
 }
 

@@ -58,10 +58,6 @@ impl Lint for ast::Node {
   }
 }
 
-impl Lint for ast::UnimplementedExpr {
-  //
-}
-
 impl Lint for ast::Range {
   //
 }

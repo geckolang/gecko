@@ -55,10 +55,6 @@ impl Resolve for ast::NodeKind {
   }
 }
 
-impl Resolve for ast::UnimplementedExpr {
-  //
-}
-
 impl Resolve for ast::Range {
   // REVIEW: Will the constant expressions ever need to declare or resolve?
 }

@@ -41,19 +41,6 @@ impl Lower for ast::NodeKind {
   }
 }
 
-impl Lower for ast::UnimplementedExpr {
-  fn lower<'a, 'ctx>(
-    &self,
-    _generator: &mut LlvmGenerator<'a, 'ctx>,
-    _cache: &cache::Cache,
-    _access: bool,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // TODO: Implement an alternative to panics, or remove.
-
-    None
-  }
-}
-
 impl Lower for ast::Range {
   // TODO: ?
 }

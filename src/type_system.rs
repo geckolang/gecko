@@ -357,12 +357,6 @@ impl Check for ast::NodeKind {
   }
 }
 
-impl Check for ast::UnimplementedExpr {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    ast::Type::Never
-  }
-}
-
 impl Check for ast::Range {
   fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
     // NOTE: No need to check whether the range's bounds are constant
