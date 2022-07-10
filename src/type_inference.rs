@@ -11,6 +11,9 @@ struct TypeInferenceVisitor<'a> {
   /// it also is scope-less/context-free.
   substitutions: std::collections::HashMap<usize, ast::Type>,
   cache: &'a cache::Cache,
+  /// A mapping from a node to its most recent type.
+  ///
+  /// This is needed because analysis passes cannot mutate nodes.
   type_cache: &'a mut TypeCache,
   constraints: Vec<TypeConstraint>,
 }
