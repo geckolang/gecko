@@ -473,6 +473,8 @@ impl NodeKind {
 #[derive(Debug, Clone)]
 pub struct Node {
   pub kind: NodeKind,
+  // TODO: In the future, we may be able to use node location as its id.
+  pub id: cache::Id,
   // REVIEW: This might be problematic: What if the node was retrieved from the cache?
   pub cached_type: Option<Type>,
 }

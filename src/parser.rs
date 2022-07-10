@@ -278,6 +278,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Node {
       kind,
       cached_type: None,
+      id: self.cache.create_id(),
     })
   }
 
@@ -702,6 +703,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Node {
       kind,
       cached_type: None,
+      id: self.cache.create_id(),
     })
   }
 
@@ -1049,6 +1051,7 @@ impl<'a> Parser<'a> {
     let mut node = ast::Node {
       kind,
       cached_type: None,
+      id: self.cache.create_id(),
     };
 
     // Promote the node to a chain, if applicable.
@@ -1063,6 +1066,7 @@ impl<'a> Parser<'a> {
       node = ast::Node {
         kind,
         cached_type: None,
+        id: self.cache.create_id(),
       };
     }
 
@@ -1124,6 +1128,7 @@ impl<'a> Parser<'a> {
     let mut buffer = left;
 
     while Parser::is_binary_operator(&token_buffer) && (precedence > min_precedence) {
+      let id = self.cache.create_id();
       let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
 
@@ -1147,6 +1152,7 @@ impl<'a> Parser<'a> {
       buffer = ast::Node {
         kind,
         cached_type: None,
+        id,
       };
     }
 
@@ -1519,6 +1525,7 @@ impl<'a> Parser<'a> {
     let start = ast::Node {
       kind: ast::NodeKind::Literal(self.parse_int_literal()?),
       cached_type: None,
+      id: self.cache.create_id(),
     };
 
     self.skip_past(&lexer::TokenKind::ShortEllipsis)?;
@@ -1526,6 +1533,7 @@ impl<'a> Parser<'a> {
     let end = ast::Node {
       kind: ast::NodeKind::Literal(self.parse_int_literal()?),
       cached_type: None,
+      id: self.cache.create_id(),
     };
 
     Ok(ast::Range {

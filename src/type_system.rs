@@ -174,41 +174,6 @@ impl TypeContext {
     return inferred_type;
   }
 
-  // TODO: Use an enum to specify error type instead of a string.
-  // REVIEW: Consider using `Result` instead of `Option`.
-  // pub fn compare_prototypes(
-  //   prototype_a: &ast::Prototype,
-  //   prototype_b: &ast::Prototype,
-  //   cache: &cache::Cache,
-  // ) -> Option<String> {
-  //   if prototype_a.parameters.len() != prototype_b.parameters.len() {
-  //     return Some("parameter count".to_string());
-  //   }
-
-  //   let parameter_types = prototype_a
-  //     .parameters
-  //     .iter()
-  //     .zip(prototype_b.parameters.iter())
-  //     .map(|(param_def_a, param_def_b)| (param_def_a.ty.clone(), param_def_b.ty.clone()));
-
-  //   for (param_type_a, param_type_b) in parameter_types {
-  //     if !Self::compare(&param_type_a, &param_type_b, cache) {
-  //       // TODO: Be more specific.
-  //       return Some("parameter type".to_string());
-  //     }
-  //   }
-
-  //   if !Self::compare(
-  //     &prototype_a.return_type_annotation,
-  //     &prototype_b.return_type_annotation,
-  //     cache,
-  //   ) {
-  //     return Some("return type".to_string());
-  //   }
-
-  //   None
-  // }
-
   // TODO: Create a `finalize` method step to ensure that the main function was defined.
 
   fn create_type_variable(&mut self) -> ast::Type {
@@ -1557,6 +1522,7 @@ mod tests {
       value: Box::new(ast::Node {
         kind: ast::NodeKind::Literal(ast::Literal::Bool(true)),
         cached_type: None,
+        id: 0,
       }),
       cache_id: 0,
       is_const_expr: false,

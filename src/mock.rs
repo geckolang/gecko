@@ -163,10 +163,12 @@ pub mod tests {
       Mock::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
     }
 
+    // TODO: Take in id to avoid conflicts.
     pub fn boxed_node(kind: ast::NodeKind) -> Box<ast::Node> {
       Box::new(ast::Node {
         kind,
         cached_type: None,
+        id: 0,
       })
     }
 

@@ -1,4 +1,4 @@
-use crate::{ast, cache};
+use crate::{ast, cache, visitor::AnalysisVisitor};
 
 // REVIEW: Why not abstract the error reporting to the lint methods themselves? This is more functional.
 // ... Perhaps we can also get rid of variable reference counting, in favor of functional programming.
@@ -49,114 +49,23 @@ impl LintContext {
   }
 }
 
-pub trait Lint {
-  fn lint(&self, _context: &mut LintContext) {
-    //
-  }
-}
-
-// REVISE: Redundant, implement for `NodeKind` instead?
-impl Lint for ast::NodeKind {
-  fn lint(&self, lint_context: &mut LintContext) {
-    // TODO: Here we have access to the node's metadata.
-    // ... Consider using some system to provide it to whatever needs it.
-    crate::dispatch!(&self, Lint::lint, lint_context);
-  }
-}
-
-impl Lint for ast::Range {
-  //
-}
-
-impl Lint for ast::SizeofIntrinsic {
-  //
-}
-
-impl Lint for ast::Using {
-  //
-}
-
-impl Lint for ast::ParenthesesExpr {
-  //
-}
-
-impl Lint for ast::Trait {
-  //
-}
-
-impl Lint for ast::StructImpl {
-  //
-}
-
-impl Lint for ast::MemberAccess {
-  //
-}
-
-impl Lint for ast::Closure {
-  //
-}
-
-impl Lint for ast::TypeAlias {
-  //
-}
-
-impl Lint for ast::Pattern {
-  fn lint(&self, _lint_context: &mut LintContext) {
+impl AnalysisVisitor for LintContext {
+  fn visit_pattern(&mut self, _node: &ast::Pattern) {
     // TODO: Lint name(s).
   }
-}
 
-impl Lint for ast::IntrinsicCall {
-  //
-}
-
-impl Lint for ast::ExternStatic {
-  //
-}
-
-impl Lint for ast::StructValue {
-  //
-}
-
-impl Lint for ast::Prototype {
-  //
-}
-
-impl Lint for ast::StructType {
-  fn lint(&self, context: &mut LintContext) {
-    context.lint_name_casing("struct", &self.name, convert_case::Case::Pascal);
+  fn visit_struct_type(&mut self, node: &ast::StructType) {
+    self.lint_name_casing("struct", &node.name, convert_case::Case::Pascal);
 
     // REVIEW: Any more linting needed?
   }
-}
 
-impl Lint for ast::UnaryExpr {
-  //
-}
-
-impl Lint for ast::IndexingExpr {
-  fn lint(&self, context: &mut LintContext) {
-    context
-      .variable_references
-      .insert(self.target_id.unwrap(), true);
-  }
-}
-
-impl Lint for ast::StaticArrayValue {
-  //
-}
-
-impl Lint for ast::BinaryExpr {
-  //
-}
-
-impl Lint for ast::BlockExpr {
-  fn lint(&self, context: &mut LintContext) {
+  fn visit_block_expr(&mut self, node: &ast::BlockExpr) {
     let mut did_return = false;
 
-    for statement in &self.statements {
+    for statement in &node.statements {
       if did_return {
-        context.diagnostics.push(
+        self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::warning()
             .with_message("unreachable code after return statement"),
         );
@@ -169,99 +78,71 @@ impl Lint for ast::BlockExpr {
       }
     }
   }
-}
 
-impl Lint for ast::Enum {
-  fn lint(&self, context: &mut LintContext) {
-    context.lint_name_casing("enum", &self.name, convert_case::Case::Pascal);
+  fn visit_enum(&mut self, node: &ast::Enum) {
+    self.lint_name_casing("enum", &node.name, convert_case::Case::Pascal);
 
-    if self.variants.is_empty() {
-      context
+    if node.variants.is_empty() {
+      self
         .diagnostics
         .push(codespan_reporting::diagnostic::Diagnostic::warning().with_message("empty enum"));
     }
 
-    for variant in &self.variants {
-      context.lint_name_casing(
-        format!("enum `{}` variant", &self.name).as_str(),
+    for variant in &node.variants {
+      self.lint_name_casing(
+        format!("enum `{}` variant", &node.name).as_str(),
         &variant.0,
         convert_case::Case::Pascal,
       );
     }
   }
-}
 
-impl Lint for ast::InlineExprStmt {
-  //
-}
-
-impl Lint for ast::ExternFunction {
-  // NOTE: There are no naming rules for externs.
-}
-
-impl Lint for ast::Function {
-  fn lint(&self, context: &mut LintContext) {
-    context.lint_name_casing("function", &self.name, convert_case::Case::Snake);
-
-    if self.prototype.parameters.len() > 4 {
-      context.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::warning()
-          .with_message("function has more than 4 parameters"),
-      );
-    }
+  fn visit_parameter(&mut self, node: &ast::Parameter) {
+    self.lint_name_casing("parameter", &node.name, convert_case::Case::Snake);
   }
-}
 
-impl Lint for ast::CallExpr {
-  fn lint(&self, _context: &mut LintContext) {
-    // TODO:
-    // context
-    //   .function_references
-    //   .insert(self.callee_expr.target_key.unwrap(), true);
+  fn visit_reference(&mut self, node: &ast::Reference) {
+    self
+      .variable_references
+      .insert(node.pattern.target_id.unwrap(), true);
   }
-}
 
-impl Lint for ast::IfExpr {
-  fn lint(&self, context: &mut LintContext) {
+  fn visit_binding_stmt(&mut self, node: &ast::BindingStmt) {
+    self.lint_name_casing("variable", &node.name, convert_case::Case::Snake);
+  }
+
+  fn visit_if_expr(&mut self, node: &ast::IfExpr) {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     // TODO: Add a helper method to "unbox" expressions? (e.g. case for `(true)`).
-    if matches!(self.condition.kind, ast::NodeKind::Literal(_)) {
-      context.diagnostics.push(
+    if matches!(node.condition.kind, ast::NodeKind::Literal(_)) {
+      self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::warning()
           .with_message("if expression's condition is a constant expression"),
       )
     }
   }
-}
 
-impl Lint for ast::BindingStmt {
-  fn lint(&self, context: &mut LintContext) {
-    context.lint_name_casing("variable", &self.name, convert_case::Case::Snake);
+  fn visit_call_expr(&mut self, _node: &ast::CallExpr) {
+    // TODO:
+    // context
+    //   .function_references
+    //   .insert(self.callee_expr.target_key.unwrap(), true);
   }
-}
 
-impl Lint for ast::Literal {
-  //
-}
+  fn visit_function(&mut self, node: &ast::Function) {
+    self.lint_name_casing("function", &node.name, convert_case::Case::Snake);
 
-impl Lint for ast::Parameter {
-  fn lint(&self, context: &mut LintContext) {
-    context.lint_name_casing("parameter", &self.name, convert_case::Case::Snake);
+    if node.prototype.parameters.len() > 4 {
+      self.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::warning()
+          .with_message("function has more than 4 parameters"),
+      );
+    }
   }
-}
 
-impl Lint for ast::ReturnStmt {
-  //
-}
-
-impl Lint for ast::UnsafeExpr {
-  //
-}
-
-impl Lint for ast::Reference {
-  fn lint(&self, context: &mut LintContext) {
-    context
+  fn visit_indexing_expr(&mut self, node: &ast::IndexingExpr) {
+    self
       .variable_references
-      .insert(self.pattern.target_id.unwrap(), true);
+      .insert(node.target_id.unwrap(), true);
   }
 }
