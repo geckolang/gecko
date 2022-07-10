@@ -462,13 +462,17 @@ impl<'a> Parser<'a> {
   fn parse_parameter(&mut self, position: u32) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
-    self.skip_past(&lexer::TokenKind::Colon)?;
+    let type_hint = if self.is(&&lexer::TokenKind::Colon) {
+      self.skip()?;
 
-    let ty = self.parse_type()?;
+      Some(self.parse_type()?)
+    } else {
+      None
+    };
 
     Ok(ast::Parameter {
       name,
-      ty,
+      type_hint,
       position,
       cache_id: self.cache.create_id(),
     })
@@ -491,7 +495,7 @@ impl<'a> Parser<'a> {
 
       this_parameter = Some(ast::Parameter {
         name: THIS_IDENTIFIER.to_string(),
-        ty: ast::Type::This(ast::ThisType { target_id: None }),
+        type_hint: Some(ast::Type::This(ast::ThisType { target_id: None })),
         position: 0,
         cache_id: self.cache.create_id(),
       });
@@ -522,7 +526,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
-    let return_type_annotation = if self.is(&lexer::TokenKind::Arrow) {
+    let return_type_hint = if self.is(&lexer::TokenKind::Arrow) {
       self.skip()?;
 
       Some(self.parse_type()?)
@@ -532,7 +536,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Prototype {
       parameters,
-      return_type_annotation,
+      return_type_hint,
       is_variadic,
       accepts_instance,
       instance_type_id: None,
@@ -773,7 +777,7 @@ impl<'a> Parser<'a> {
       value: Box::new(value),
       is_const_expr,
       cache_id: self.cache.create_id(),
-      ty,
+      type_hint: ty,
     })
   }
 

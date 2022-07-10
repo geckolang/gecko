@@ -1031,7 +1031,7 @@ impl Lower for ast::ExternFunction {
       &self.prototype,
       self
         .prototype
-        .return_type_annotation
+        .return_type_hint
         .as_ref()
         .unwrap_or(&ast::Type::Unit),
       cache,
@@ -1534,7 +1534,11 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       //   .ptr_type(inkwell::AddressSpace::Generic)
       //   .as_basic_type_enum(),
       // Meta types are never to be lowered.
-      ast::Type::Unit | ast::Type::Variable(_) | ast::Type::Never | ast::Type::Any => {
+      ast::Type::Unit
+      | ast::Type::Variable(_)
+      | ast::Type::MetaInteger
+      | ast::Type::Never
+      | ast::Type::Any => {
         unreachable!()
       }
     }
@@ -1570,7 +1574,11 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     let mut llvm_parameter_types = prototype
       .parameters
       .iter()
-      .map(|parameter| self.memoize_or_retrieve_type(&parameter.ty, cache).into())
+      .map(|parameter| {
+        self
+          .memoize_or_retrieve_type(&parameter.type_hint.as_ref().unwrap(), cache)
+          .into()
+      })
       .collect::<Vec<_>>();
 
     if prototype.accepts_instance {
@@ -1742,7 +1750,7 @@ mod tests {
       value: Mock::boxed_node(Mock::literal_int()),
       is_const_expr: false,
       cache_id: 0,
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1763,7 +1771,7 @@ mod tests {
       value: Mock::boxed_node(Mock::literal_int()),
       is_const_expr: false,
       cache_id: a_cache_id,
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
@@ -1771,7 +1779,7 @@ mod tests {
       value: Mock::reference(a_cache_id),
       is_const_expr: false,
       cache_id: a_cache_id + 1,
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1794,7 +1802,7 @@ mod tests {
       is_const_expr: false,
       cache_id: 0,
       // FIXME: Wrong type.
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1816,7 +1824,7 @@ mod tests {
       is_const_expr: false,
       cache_id: a_cache_id,
       // FIXME: Wrong type.
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
@@ -1825,7 +1833,7 @@ mod tests {
       is_const_expr: false,
       cache_id: a_cache_id + 1,
       // FIXME: Wrong type.
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1849,7 +1857,7 @@ mod tests {
       is_const_expr: false,
       cache_id: 0,
       // FIXME: Wrong type.
-      ty: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)

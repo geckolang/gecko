@@ -76,7 +76,7 @@ pub struct ParenthesesExpr(pub Box<Node>);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
   pub name: String,
-  pub ty: Type,
+  pub type_hint: Option<Type>,
   pub position: u32,
   pub cache_id: cache::Id,
 }
@@ -120,6 +120,8 @@ pub enum Type {
   This(ThisType),
   /// A meta type to be used during unification.
   Variable(usize),
+  /// A super-type of all integer types.
+  MetaInteger,
   /// A meta type that represents the lack of a value.
   Unit,
   // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where super-types bind with subtypes?
@@ -621,7 +623,7 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub struct Prototype {
   pub parameters: Vec<Parameter>,
-  pub return_type_annotation: Option<Type>,
+  pub return_type_hint: Option<Type>,
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
@@ -679,7 +681,7 @@ pub struct BindingStmt {
   pub value: Box<Node>,
   pub is_const_expr: bool,
   pub cache_id: cache::Id,
-  pub ty: Option<Type>,
+  pub type_hint: Option<Type>,
 }
 
 #[derive(Debug, Clone)]

@@ -345,7 +345,7 @@ impl Resolve for ast::Prototype {
         .resolve(resolver, cache);
     }
 
-    if let Some(return_type_annotation) = &mut self.return_type_annotation {
+    if let Some(return_type_annotation) = &mut self.return_type_hint {
       return_type_annotation.resolve(resolver, cache);
     }
   }
@@ -473,7 +473,7 @@ impl Resolve for ast::Parameter {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.ty.resolve(resolver, cache);
+    self.type_hint.as_mut().unwrap().resolve(resolver, cache);
 
     cache
       .symbols

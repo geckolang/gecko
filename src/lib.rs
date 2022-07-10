@@ -10,5 +10,6 @@ mod mock;
 pub mod name_resolution;
 pub mod parser;
 pub mod type_check;
+pub mod type_inference;
 pub mod type_system;
 pub mod visitor;

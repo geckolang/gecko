@@ -118,7 +118,7 @@ impl TypeContext {
       parameter_types: prototype
         .parameters
         .iter()
-        .map(|parameter| parameter.ty.clone())
+        .map(|parameter| parameter.type_hint.as_ref().unwrap().clone())
         .collect(),
       is_variadic: prototype.is_variadic,
       is_extern: prototype.is_extern,
@@ -884,10 +884,7 @@ impl Check for ast::UnsafeExpr {
 
 impl Check for ast::ExternFunction {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    TypeContext::infer_prototype_type(
-      &self.prototype,
-      self.prototype.return_type_annotation.clone(),
-    )
+    TypeContext::infer_prototype_type(&self.prototype, self.prototype.return_type_hint.clone())
   }
 
   fn check(&self, context: &mut TypeContext, _cache: &cache::Cache) {
@@ -902,7 +899,7 @@ impl Check for ast::ExternFunction {
 
 impl Check for ast::Parameter {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    self.ty.clone()
+    self.type_hint.as_ref().unwrap().clone()
   }
 }
 
@@ -1517,7 +1514,7 @@ mod tests {
 
     let mut binding_stmt = ast::BindingStmt {
       name: String::from("a"),
-      ty: Some(ast::Type::Variable(type_variable_id)),
+      type_hint: Some(ast::Type::Variable(type_variable_id)),
       // TODO: Use `Mock` scaffolding.
       value: Box::new(ast::Node {
         kind: ast::NodeKind::Literal(ast::Literal::Bool(true)),
@@ -1536,7 +1533,7 @@ mod tests {
     binding_stmt.post_unification(&mut type_context, &cache);
 
     assert_eq!(
-      binding_stmt.ty,
+      binding_stmt.type_hint,
       Some(ast::Type::Basic(ast::BasicType::Bool))
     );
   }

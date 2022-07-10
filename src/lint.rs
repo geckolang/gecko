@@ -50,20 +50,20 @@ impl LintContext {
 }
 
 impl AnalysisVisitor for LintContext {
-  fn visit_pattern(&mut self, _node: &ast::Pattern) {
+  fn visit_pattern(&mut self, _pattern: &ast::Pattern, _node: &ast::Node) {
     // TODO: Lint name(s).
   }
 
-  fn visit_struct_type(&mut self, node: &ast::StructType) {
-    self.lint_name_casing("struct", &node.name, convert_case::Case::Pascal);
+  fn visit_struct_type(&mut self, struct_type: &ast::StructType, _node: &ast::Node) {
+    self.lint_name_casing("struct", &struct_type.name, convert_case::Case::Pascal);
 
     // REVIEW: Any more linting needed?
   }
 
-  fn visit_block_expr(&mut self, node: &ast::BlockExpr) {
+  fn visit_block_expr(&mut self, block: &ast::BlockExpr, _node: &ast::Node) {
     let mut did_return = false;
 
-    for statement in &node.statements {
+    for statement in &block.statements {
       if did_return {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::warning()
@@ -79,42 +79,42 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_enum(&mut self, node: &ast::Enum) {
-    self.lint_name_casing("enum", &node.name, convert_case::Case::Pascal);
+  fn visit_enum(&mut self, enum_: &ast::Enum, _node: &ast::Node) {
+    self.lint_name_casing("enum", &enum_.name, convert_case::Case::Pascal);
 
-    if node.variants.is_empty() {
+    if enum_.variants.is_empty() {
       self
         .diagnostics
         .push(codespan_reporting::diagnostic::Diagnostic::warning().with_message("empty enum"));
     }
 
-    for variant in &node.variants {
+    for variant in &enum_.variants {
       self.lint_name_casing(
-        format!("enum `{}` variant", &node.name).as_str(),
+        format!("enum `{}` variant", &enum_.name).as_str(),
         &variant.0,
         convert_case::Case::Pascal,
       );
     }
   }
 
-  fn visit_parameter(&mut self, node: &ast::Parameter) {
-    self.lint_name_casing("parameter", &node.name, convert_case::Case::Snake);
+  fn visit_parameter(&mut self, parameter: &ast::Parameter, _node: &ast::Node) {
+    self.lint_name_casing("parameter", &parameter.name, convert_case::Case::Snake);
   }
 
-  fn visit_reference(&mut self, node: &ast::Reference) {
+  fn visit_reference(&mut self, reference: &ast::Reference, _node: &ast::Node) {
     self
       .variable_references
-      .insert(node.pattern.target_id.unwrap(), true);
+      .insert(reference.pattern.target_id.unwrap(), true);
   }
 
-  fn visit_binding_stmt(&mut self, node: &ast::BindingStmt) {
-    self.lint_name_casing("variable", &node.name, convert_case::Case::Snake);
+  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, _node: &ast::Node) {
+    self.lint_name_casing("variable", &binding_stmt.name, convert_case::Case::Snake);
   }
 
-  fn visit_if_expr(&mut self, node: &ast::IfExpr) {
+  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr, _node: &ast::Node) {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     // TODO: Add a helper method to "unbox" expressions? (e.g. case for `(true)`).
-    if matches!(node.condition.kind, ast::NodeKind::Literal(_)) {
+    if matches!(if_expr.condition.kind, ast::NodeKind::Literal(_)) {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::warning()
           .with_message("if expression's condition is a constant expression"),
@@ -122,17 +122,17 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_call_expr(&mut self, _node: &ast::CallExpr) {
+  fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr, _node: &ast::Node) {
     // TODO:
     // context
     //   .function_references
     //   .insert(self.callee_expr.target_key.unwrap(), true);
   }
 
-  fn visit_function(&mut self, node: &ast::Function) {
-    self.lint_name_casing("function", &node.name, convert_case::Case::Snake);
+  fn visit_function(&mut self, function: &ast::Function, _node: &ast::Node) {
+    self.lint_name_casing("function", &function.name, convert_case::Case::Snake);
 
-    if node.prototype.parameters.len() > 4 {
+    if function.prototype.parameters.len() > 4 {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::warning()
           .with_message("function has more than 4 parameters"),
@@ -140,9 +140,9 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_indexing_expr(&mut self, node: &ast::IndexingExpr) {
+  fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr, _node: &ast::Node) {
     self
       .variable_references
-      .insert(node.target_id.unwrap(), true);
+      .insert(indexing_expr.target_id.unwrap(), true);
   }
 }
