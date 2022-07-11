@@ -1,4 +1,4 @@
-use crate::{ast, cache, lowering};
+use crate::{ast, cache, lowering, visitor::AnalysisVisitor};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
@@ -965,6 +965,14 @@ impl NameResolver {
   fn current_scope_contains(&mut self, key: &Symbol) -> bool {
     self.get_current_scope().contains_key(key)
   }
+}
+
+struct NameResContext {
+
+}
+
+impl AnalysisVisitor for NameResContext {
+  
 }
 
 // TODO: Add essential tests.
