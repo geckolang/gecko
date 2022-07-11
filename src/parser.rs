@@ -263,7 +263,7 @@ impl<'a> Parser<'a> {
         let expr = self.parse_expr()?;
 
         let inline_expr_stmt = ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
-          expr: Box::new(expr),
+          expr: std::rc::Rc::new(expr),
         });
 
         // FIXME: Temporary workaround for yield expressions.
@@ -305,7 +305,7 @@ impl<'a> Parser<'a> {
       // REVIEW: Is it okay to have exclusive syntax here, and instead not treat it as a statement?
       if self.is(&lexer::TokenKind::Yield) {
         self.skip()?;
-        yields = Some(Box::new(self.parse_expr()?));
+        yields = Some(std::rc::Rc::new(self.parse_expr()?));
 
         break;
       } else if self.is(&lexer::TokenKind::Pass) {
@@ -314,9 +314,7 @@ impl<'a> Parser<'a> {
         break;
       }
 
-      let statement = self.parse_statement()?;
-
-      statements.push(statement);
+      statements.push(std::rc::Rc::new(self.parse_statement()?));
 
       if self.is(&lexer::TokenKind::Dedent) {
         break;
@@ -737,7 +735,7 @@ impl<'a> Parser<'a> {
 
     // TODO: New line or EOF.
     let value = if !self.is(&lexer::TokenKind::Whitespace('\n')) {
-      Some(Box::new(self.parse_expr()?))
+      Some(std::rc::Rc::new(self.parse_expr()?))
     } else {
       self.skip()?;
 
@@ -775,7 +773,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::BindingStmt {
       name,
-      value: Box::new(value),
+      value: std::rc::Rc::new(value),
       is_const_expr,
       cache_id: self.cache.create_id(),
       type_hint: ty,
@@ -802,23 +800,26 @@ impl<'a> Parser<'a> {
 
       let alternative_value = self.parse_expr()?;
 
-      alternative_branches.push((alternative_condition, alternative_value));
+      alternative_branches.push((
+        std::rc::Rc::new(alternative_condition),
+        std::rc::Rc::new(alternative_value),
+      ));
     }
 
     let else_value = if self.is(&lexer::TokenKind::Else) {
       self.skip()?;
       self.skip_past(&lexer::TokenKind::Colon)?;
 
-      Some(Box::new(self.parse_expr()?))
+      Some(std::rc::Rc::new(self.parse_expr()?))
     } else {
       None
     };
 
     Ok(ast::IfExpr {
-      condition: Box::new(condition),
-      then_expr: Box::new(then_value),
+      condition: std::rc::Rc::new(condition),
+      then_value: std::rc::Rc::new(then_value),
       alternative_branches,
-      else_expr: else_value,
+      else_value,
     })
   }
 
@@ -829,7 +830,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Unsafe)?;
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    Ok(ast::UnsafeExpr(Box::new(self.parse_expr()?)))
+    Ok(ast::UnsafeExpr(std::rc::Rc::new(self.parse_expr()?)))
   }
 
   /// {true | false}
@@ -887,7 +888,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
     while self.until(&lexer::TokenKind::BracketR)? {
-      elements.push(self.parse_expr()?);
+      elements.push(std::rc::Rc::new(self.parse_expr()?));
 
       // REVIEW: What if the comma isn't provided?
       if self.is(&lexer::TokenKind::Comma) {
@@ -918,13 +919,13 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
-    let index = Box::new(self.parse_expr()?);
+    let index_expr = std::rc::Rc::new(self.parse_expr()?);
 
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::IndexingExpr {
       name,
-      index_expr: index,
+      index_expr,
       target_id: None,
     })
   }
@@ -1083,7 +1084,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Dot)?;
 
     Ok(ast::MemberAccess {
-      base_expr: Box::new(base_expr),
+      base_expr: std::rc::Rc::new(base_expr),
       member_name: self.parse_name()?,
     })
   }
@@ -1149,8 +1150,8 @@ impl<'a> Parser<'a> {
       }
 
       let kind = ast::NodeKind::BinaryExpr(ast::BinaryExpr {
-        left: Box::new(buffer),
-        right: Box::new(right),
+        left: std::rc::Rc::new(buffer),
+        right: std::rc::Rc::new(right),
         operator,
       });
 
@@ -1178,7 +1179,7 @@ impl<'a> Parser<'a> {
       None
     };
 
-    let expr = Box::new(self.parse_expr()?);
+    let expr = std::rc::Rc::new(self.parse_expr()?);
 
     // TODO:
     // if !matches!(operator, ast::OperatorKind::AddressOf) {
@@ -1212,7 +1213,7 @@ impl<'a> Parser<'a> {
     let mut arguments = vec![];
 
     while self.until(&lexer::TokenKind::ParenthesesR)? {
-      arguments.push(self.parse_expr()?);
+      arguments.push(std::rc::Rc::new(self.parse_expr()?));
 
       // REVIEW: What if the comma is omitted?
       if self.is(&lexer::TokenKind::Comma) {
@@ -1223,7 +1224,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
     Ok(ast::CallExpr {
-      callee_expr: Box::new(callee_expr),
+      callee_expr: std::rc::Rc::new(callee_expr),
       arguments,
     })
   }
@@ -1241,7 +1242,7 @@ impl<'a> Parser<'a> {
     let mut arguments = Vec::new();
 
     while self.until(&lexer::TokenKind::ParenthesesR)? {
-      arguments.push(self.parse_expr()?);
+      arguments.push(std::rc::Rc::new(self.parse_expr()?));
 
       if !self.is(&lexer::TokenKind::ParenthesesR) {
         self.skip_past(&lexer::TokenKind::Comma)?;
@@ -1344,7 +1345,7 @@ impl<'a> Parser<'a> {
     let mut fields = Vec::new();
 
     while self.until(&lexer::TokenKind::BraceR)? {
-      fields.push(self.parse_expr()?);
+      fields.push(std::rc::Rc::new(self.parse_expr()?));
 
       // TODO: Disallow trailing comma.
       if self.is(&lexer::TokenKind::Comma) {
@@ -1481,7 +1482,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
-    Ok(ast::ParenthesesExpr(Box::new(expr)))
+    Ok(ast::ParenthesesExpr(std::rc::Rc::new(expr)))
   }
 
   /// using %pattern ('::' '{' (%name ',')+ '}')
@@ -1542,8 +1543,8 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::Range {
-      start: Box::new(start),
-      end: Box::new(end),
+      start: std::rc::Rc::new(start),
+      end: std::rc::Rc::new(end),
     })
   }
 }

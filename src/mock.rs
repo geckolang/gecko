@@ -114,8 +114,8 @@ pub mod tests {
       ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
     }
 
-    pub fn reference(cache_id: cache::Id) -> Box<ast::Node> {
-      Mock::boxed_node(ast::NodeKind::Reference(ast::Reference {
+    pub fn reference(cache_id: cache::Id) -> std::rc::Rc<ast::Node> {
+      Mock::rc_node(ast::NodeKind::Reference(ast::Reference {
         pattern: ast::Pattern {
           // BUG: Made up id. See how this affects tests.
           id: 0,
@@ -165,9 +165,9 @@ pub mod tests {
       Mock::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
     }
 
-    // TODO: Take in id to avoid conflicts.
-    pub fn boxed_node(kind: ast::NodeKind) -> Box<ast::Node> {
-      Box::new(ast::Node {
+    // TODO: Take in id to avoid conflicts?
+    pub fn rc_node(kind: ast::NodeKind) -> std::rc::Rc<ast::Node> {
+      std::rc::Rc::new(ast::Node {
         kind,
         cached_type: None,
         id: 0,

@@ -17,38 +17,38 @@ macro_rules! force_match {
 macro_rules! dispatch {
   ($node:expr, $target_fn:expr $(, $($args:expr),* )? ) => {
     match $node {
-      ast::NodeKind::Literal(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ExternFunction(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ExternStatic(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Function(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::BlockExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::BindingStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::IfExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Reference(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::UnsafeExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::StaticArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::IndexingExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Enum(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::StructType(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Using(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
-      ast::NodeKind::Range(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Literal(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::ExternFunction(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::ExternStatic(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Function(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::BlockExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::BindingStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::IfExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Reference(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::UnsafeExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::StaticArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::IndexingExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Enum(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::StructType(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Using(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
+      NodeKind::Range(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }
@@ -71,7 +71,7 @@ pub struct Generics {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParenthesesExpr(pub Box<Node>);
+pub struct ParenthesesExpr(pub std::rc::Rc<Node>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
@@ -321,71 +321,72 @@ pub enum NodeKind {
 impl NodeKind {
   // TODO: Can this be made a Rust Iterator? This way we get all of Iterator's features.
   pub fn traverse<'a>(&'a self, mut visitor: impl FnMut(&'a NodeKind) -> bool) {
-    let map_children = |children: &'a Vec<Node>| children.iter().map(|child_node| &child_node.kind);
+    todo!();
+    // let map_children = |children: &'a Vec<Node>| children.iter().map(|child_node| &child_node.kind);
 
-    // TODO: Prototype.
-    // let map_prototype = |prototype: &'a Prototype| map_children(&prototype.parameters);
+    // // TODO: Prototype.
+    // // let map_prototype = |prototype: &'a Prototype| map_children(&prototype.parameters);
 
-    let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
-      match node {
-        NodeKind::InlineExprStmt(inline_expr_stmt) => vec![&inline_expr_stmt.expr.kind],
-        NodeKind::BinaryExpr(binary_expr) => {
-          vec![&binary_expr.left.kind, &binary_expr.right.kind]
-        }
-        NodeKind::BlockExpr(block_expr) => map_children(&block_expr.statements).collect(),
-        NodeKind::UnaryExpr(unary_expr) => vec![&unary_expr.expr.kind],
-        NodeKind::UnsafeExpr(unsafe_expr) => vec![&unsafe_expr.0.kind],
-        NodeKind::ParenthesesExpr(parentheses_expr) => vec![&parentheses_expr.0.kind],
-        NodeKind::CallExpr(call_expr) => vec![&call_expr.callee_expr.kind]
-          .into_iter()
-          .chain(map_children(&call_expr.arguments))
-          .collect(),
-        // TODO: Include `else` expression, and alternative branches.
-        NodeKind::IfExpr(if_expr) => vec![&if_expr.condition.kind, &if_expr.then_expr.kind],
-        // TODO: Missing prototype.
-        // NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
-        // TODO: Missing prototype.
-        NodeKind::Function(function) => map_children(&function.body.statements).collect(),
-        NodeKind::BindingStmt(binding_stmt) => vec![&binding_stmt.value.kind],
-        NodeKind::ReturnStmt(ReturnStmt { value: Some(value) }) => vec![&value.kind],
-        NodeKind::IndexingExpr(indexing_expr) => {
-          vec![&indexing_expr.index_expr.kind]
-        }
-        NodeKind::IntrinsicCall(intrinsic_call) => {
-          map_children(&intrinsic_call.arguments).collect()
-        }
-        NodeKind::MemberAccess(member_access) => vec![&member_access.base_expr.kind],
-        NodeKind::Range(range) => vec![&range.start.kind, &range.end.kind],
-        NodeKind::StaticArrayValue(static_array_value) => {
-          map_children(&static_array_value.elements).collect()
-        }
-        // NodeKind::StructImpl(struct_impl) => {
-        //   vec![struct_impl.static_methods, struct_impl.member_methods].into_iter().flatten().collect::<Vec<_>>()
-        // }
-        NodeKind::StructValue(struct_value) => map_children(&struct_value.fields).collect(),
-        // NodeKind::Trait(trait_) => {
-        //   map_children(&trait_.methods).collect()
-        // }
-        // REVIEW: Not all nodes can be processed like this: What about prototypes?
-        _ => vec![],
-      }
-    };
+    // let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
+    //   match node {
+    //     NodeKind::InlineExprStmt(inline_expr_stmt) => vec![&inline_expr_stmt.expr.kind],
+    //     NodeKind::BinaryExpr(binary_expr) => {
+    //       vec![&binary_expr.left.kind, &binary_expr.right.kind]
+    //     }
+    //     NodeKind::BlockExpr(block_expr) => map_children(block_expr.statements).collect(),
+    //     NodeKind::UnaryExpr(unary_expr) => vec![&unary_expr.expr.kind],
+    //     NodeKind::UnsafeExpr(unsafe_expr) => vec![&unsafe_expr.0.kind],
+    //     NodeKind::ParenthesesExpr(parentheses_expr) => vec![&parentheses_expr.0.kind],
+    //     NodeKind::CallExpr(call_expr) => vec![&call_expr.callee_expr.kind]
+    //       .into_iter()
+    //       .chain(map_children(call_expr.arguments))
+    //       .collect(),
+    //     // TODO: Include `else` expression, and alternative branches.
+    //     NodeKind::IfExpr(if_expr) => vec![&if_expr.condition.kind, &if_expr.then_value.kind],
+    //     // TODO: Missing prototype.
+    //     // NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
+    //     // TODO: Missing prototype.
+    //     NodeKind::Function(function) => map_children(function.body.statements).collect(),
+    //     NodeKind::BindingStmt(binding_stmt) => vec![&binding_stmt.value.kind],
+    //     NodeKind::ReturnStmt(ReturnStmt { value: Some(value) }) => vec![&value.kind],
+    //     NodeKind::IndexingExpr(indexing_expr) => {
+    //       vec![&indexing_expr.index_expr.kind]
+    //     }
+    //     NodeKind::IntrinsicCall(intrinsic_call) => {
+    //       map_children(intrinsic_call.arguments).collect()
+    //     }
+    //     NodeKind::MemberAccess(member_access) => vec![&member_access.base_expr.kind],
+    //     NodeKind::Range(range) => vec![&range.start.kind, &range.end.kind],
+    //     NodeKind::StaticArrayValue(static_array_value) => {
+    //       map_children(static_array_value.elements).collect()
+    //     }
+    //     // NodeKind::StructImpl(struct_impl) => {
+    //     //   vec![struct_impl.static_methods, struct_impl.member_methods].into_iter().flatten().collect::<Vec<_>>()
+    //     // }
+    //     NodeKind::StructValue(struct_value) => map_children(struct_value.fields).collect(),
+    //     // NodeKind::Trait(trait_) => {
+    //     //   map_children(&trait_.methods).collect()
+    //     // }
+    //     // REVIEW: Not all nodes can be processed like this: What about prototypes?
+    //     _ => vec![],
+    //   }
+    // };
 
-    let mut queue = VecDeque::from([self]);
+    // let mut queue = VecDeque::from([self]);
 
-    while let Some(node) = queue.pop_front() {
-      if !visitor(node) {
-        return;
-      }
+    // while let Some(node) = queue.pop_front() {
+    //   if !visitor(node) {
+    //     return;
+    //   }
 
-      let children = dispatcher(node);
+    //   let children = dispatcher(node);
 
-      queue.reserve(children.len());
+    //   queue.reserve(children.len());
 
-      for child in children {
-        queue.push_back(child);
-      }
-    }
+    //   for child in children {
+    //     queue.push_back(child);
+    //   }
+    // }
   }
 
   /// Traverse the AST of the provided node until the provided
@@ -498,8 +499,8 @@ impl Node {
 
 #[derive(Debug, Clone)]
 pub struct Range {
-  pub start: Box<Node>,
-  pub end: Box<Node>,
+  pub start: std::rc::Rc<Node>,
+  pub end: std::rc::Rc<Node>,
 }
 
 #[derive(Debug, Clone)]
@@ -530,7 +531,7 @@ pub struct ThisType {
 }
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
-// TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
+// TODO: If it's never boxed under `Node`, then there might not be a need for it to be included under `Node`?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
   pub id: cache::Id,
@@ -549,7 +550,7 @@ pub struct StubType {
 #[derive(Debug, Clone)]
 pub struct StructValue {
   pub struct_name: String,
-  pub fields: Vec<Node>,
+  pub fields: Vec<std::rc::Rc<Node>>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
   pub target_id: Option<cache::Id>,
@@ -583,19 +584,19 @@ pub struct Enum {
 #[derive(Debug, Clone)]
 pub struct IndexingExpr {
   pub name: String,
-  pub index_expr: Box<Node>,
+  pub index_expr: std::rc::Rc<Node>,
   pub target_id: Option<cache::Id>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StaticArrayValue {
-  pub elements: Vec<Node>,
+  pub elements: Vec<std::rc::Rc<Node>>,
   /// Holds the type of the array, in case it is an empty array.
   pub explicit_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
-pub struct UnsafeExpr(pub Box<Node>);
+pub struct UnsafeExpr(pub std::rc::Rc<Node>);
 
 #[derive(Debug, Clone)]
 pub struct Reference {
@@ -666,20 +667,20 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub struct BlockExpr {
-  pub statements: Vec<Node>,
-  pub yields: Option<Box<Node>>,
+  pub statements: Vec<std::rc::Rc<Node>>,
+  pub yields: Option<std::rc::Rc<Node>>,
   pub cache_id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
 pub struct ReturnStmt {
-  pub value: Option<Box<Node>>,
+  pub value: Option<std::rc::Rc<Node>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct BindingStmt {
   pub name: String,
-  pub value: Box<Node>,
+  pub value: std::rc::Rc<Node>,
   pub is_const_expr: bool,
   pub cache_id: cache::Id,
   pub type_hint: Option<Type>,
@@ -687,21 +688,21 @@ pub struct BindingStmt {
 
 #[derive(Debug, Clone)]
 pub struct IfExpr {
-  pub condition: Box<Node>,
-  pub then_expr: Box<Node>,
-  pub alternative_branches: Vec<(Node, Node)>,
-  pub else_expr: Option<Box<Node>>,
+  pub condition: std::rc::Rc<Node>,
+  pub then_value: std::rc::Rc<Node>,
+  pub alternative_branches: Vec<(std::rc::Rc<Node>, std::rc::Rc<Node>)>,
+  pub else_value: Option<std::rc::Rc<Node>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct InlineExprStmt {
-  pub expr: Box<Node>,
+  pub expr: std::rc::Rc<Node>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CallExpr {
-  pub callee_expr: Box<Node>,
-  pub arguments: Vec<Node>,
+  pub callee_expr: std::rc::Rc<Node>,
+  pub arguments: Vec<std::rc::Rc<Node>>,
 }
 
 #[derive(Debug, Clone)]
@@ -712,7 +713,7 @@ pub enum IntrinsicKind {
 #[derive(Debug, Clone)]
 pub struct IntrinsicCall {
   pub kind: IntrinsicKind,
-  pub arguments: Vec<Node>,
+  pub arguments: Vec<std::rc::Rc<Node>>,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -753,14 +754,14 @@ pub enum OperatorKind {
 
 #[derive(Debug, Clone)]
 pub struct BinaryExpr {
-  pub left: Box<Node>,
-  pub right: Box<Node>,
+  pub left: std::rc::Rc<Node>,
+  pub right: std::rc::Rc<Node>,
   pub operator: OperatorKind,
 }
 
 #[derive(Debug, Clone)]
 pub struct UnaryExpr {
-  pub expr: Box<Node>,
+  pub expr: std::rc::Rc<Node>,
   pub operator: OperatorKind,
   /// Represents the type being casted to.
   ///
@@ -770,7 +771,7 @@ pub struct UnaryExpr {
 
 #[derive(Debug, Clone)]
 pub struct MemberAccess {
-  pub base_expr: Box<Node>,
+  pub base_expr: std::rc::Rc<Node>,
   pub member_name: String,
 }
 

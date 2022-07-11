@@ -1,4 +1,4 @@
-use crate::{ast, cache, dispatch, lowering};
+use crate::{ast, cache, lowering};
 
 #[derive(Clone)]
 enum TypeConstrainKind {
@@ -312,11 +312,13 @@ pub trait Check {
 
 impl Check for ast::NodeKind {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    dispatch!(&self, Check::infer_type, cache)
+    // dispatch!(&self, Check::infer_type, cache)
+    // TODO: Temporary.
+    ast::Type::Unit
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    dispatch!(&self, Check::check, context, cache);
+    // dispatch!(&self, Check::check, context, cache);
   }
 }
 
@@ -967,17 +969,17 @@ impl Check for ast::Literal {
 
 impl Check for ast::IfExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let then_expr_type = self.then_expr.kind.infer_flatten_type(cache);
+    let then_expr_type = self.then_value.kind.infer_flatten_type(cache);
 
     // At least the two main branches must be present in order for a value
     // to possibly evaluate.
-    if self.else_expr.is_none() {
+    if self.else_value.is_none() {
       return ast::Type::Unit;
     }
 
     // TODO: Take into consideration newly-added alternative branches.
 
-    let else_expr = self.else_expr.as_ref().unwrap();
+    let else_expr = self.else_value.as_ref().unwrap();
     let else_expr_type = else_expr.kind.infer_flatten_type(cache);
 
     // Default to type unit if both branches are of incompatible types.
@@ -1066,7 +1068,7 @@ impl Check for ast::IfExpr {
         .insert(bounded_array_id.to_owned());
     }
 
-    self.then_expr.kind.check(context, cache);
+    self.then_value.kind.check(context, cache);
 
     // If an array bound check was provided, remove it after the `then`
     // expression has been checked.
@@ -1074,7 +1076,7 @@ impl Check for ast::IfExpr {
       context.bound_checked_arrays.remove(bounded_array_id);
     }
 
-    if let Some(else_block) = &self.else_expr {
+    if let Some(else_block) = &self.else_value {
       else_block.kind.check(context, cache);
     }
   }
@@ -1516,7 +1518,7 @@ mod tests {
       name: String::from("a"),
       type_hint: Some(ast::Type::Variable(type_variable_id)),
       // TODO: Use `Mock` scaffolding.
-      value: Box::new(ast::Node {
+      value: std::rc::Rc::new(ast::Node {
         kind: ast::NodeKind::Literal(ast::Literal::Bool(true)),
         cached_type: None,
         id: 0,

@@ -45,11 +45,11 @@ impl Resolve for ast::NodeKind {
   // REVIEW: This `dispatch` may actually only apply for top-level nodes, so there might be room for simplification.
 
   fn declare(&self, resolver: &mut NameResolver) {
-    crate::dispatch!(self, Resolve::declare, resolver);
+    // crate::dispatch!(self, Resolve::declare, resolver);
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    crate::dispatch!(self, Resolve::resolve, resolver, cache);
+    // crate::dispatch!(self, Resolve::resolve, resolver, cache);
   }
 }
 
@@ -73,7 +73,7 @@ impl Resolve for ast::ParenthesesExpr {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.0.kind.resolve(resolver, cache);
+    // self.0.kind.resolve(resolver, cache);
   }
 }
 
@@ -159,7 +159,7 @@ impl Resolve for ast::StructImpl {
 
 impl Resolve for ast::MemberAccess {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.base_expr.kind.resolve(resolver, cache);
+    // self.base_expr.kind.resolve(resolver, cache);
   }
 }
 
@@ -267,7 +267,7 @@ impl Resolve for ast::IntrinsicCall {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for argument in &mut self.arguments {
-      argument.kind.resolve(resolver, cache);
+      // argument.kind.resolve(resolver, cache);
     }
   }
 }
@@ -314,7 +314,7 @@ impl Resolve for ast::StructValue {
     }
 
     for field in &mut self.fields {
-      field.kind.resolve(resolver, cache);
+      // field.kind.resolve(resolver, cache);
     }
   }
 }
@@ -386,7 +386,7 @@ impl Resolve for ast::FunctionType {
 
 impl Resolve for ast::UnaryExpr {
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.expr.kind.resolve(resolver, cache);
+    // self.expr.kind.resolve(resolver, cache);
   }
 }
 
@@ -426,7 +426,7 @@ impl Resolve for ast::IndexingExpr {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.index_expr.kind.resolve(resolver, cache);
+    // self.index_expr.kind.resolve(resolver, cache);
 
     self.target_id = resolver.local_lookup_or_error(&Symbol {
       base_name: self.name.clone(),
@@ -441,7 +441,7 @@ impl Resolve for ast::StaticArrayValue {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     for element in &mut self.elements {
-      element.kind.resolve(resolver, cache);
+      // element.kind.resolve(resolver, cache);
     }
   }
 }
@@ -452,7 +452,7 @@ impl Resolve for ast::UnsafeExpr {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.0.kind.resolve(resolver, cache);
+    // self.0.kind.resolve(resolver, cache);
   }
 }
 
@@ -490,19 +490,19 @@ impl Resolve for ast::Reference {
 impl Resolve for ast::IfExpr {
   fn declare(&self, resolver: &mut NameResolver) {
     self.condition.kind.declare(resolver);
-    self.then_expr.kind.declare(resolver);
+    self.then_value.kind.declare(resolver);
 
-    if let Some(else_block) = &self.else_expr {
+    if let Some(else_block) = &self.else_value {
       else_block.kind.declare(resolver);
     }
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.condition.kind.resolve(resolver, cache);
-    self.then_expr.kind.resolve(resolver, cache);
+    // self.condition.kind.resolve(resolver, cache);
+    // self.then_value.kind.resolve(resolver, cache);
 
-    if let Some(else_block) = &mut self.else_expr {
-      else_block.kind.resolve(resolver, cache);
+    if let Some(else_block) = &mut self.else_value {
+      // else_block.kind.resolve(resolver, cache);
     }
   }
 }
@@ -525,7 +525,7 @@ impl Resolve for ast::BindingStmt {
     // BUG: The problem seems to be occurring only when using let-statements. Investigate.
     // ... On the second iteration of the resolve step only! During cached nodes resolution.
 
-    self.value.kind.resolve(resolver, cache);
+    // self.value.kind.resolve(resolver, cache);
 
     // REVIEW: Annotated type is not being resolved.
 
@@ -544,7 +544,7 @@ impl Resolve for ast::ReturnStmt {
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
     if let Some(value) = &mut self.value {
-      value.kind.resolve(resolver, cache);
+      // value.kind.resolve(resolver, cache);
     }
   }
 }
@@ -572,11 +572,11 @@ impl Resolve for ast::BlockExpr {
     resolver.current_block_cache_id = Some(self.cache_id);
 
     for statement in &mut self.statements {
-      statement.kind.resolve(resolver, cache);
+      // statement.kind.resolve(resolver, cache);
     }
 
     if let Some(yield_value) = &mut self.yields {
-      yield_value.kind.resolve(resolver, cache);
+      // yield_value.kind.resolve(resolver, cache);
     }
 
     resolver.current_block_cache_id = previous_block_cache_id;
@@ -698,10 +698,10 @@ impl Resolve for ast::CallExpr {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.callee_expr.kind.resolve(resolver, cache);
+    // self.callee_expr.kind.resolve(resolver, cache);
 
     for argument in &mut self.arguments {
-      argument.kind.resolve(resolver, cache);
+      // argument.kind.resolve(resolver, cache);
     }
   }
 }
@@ -712,7 +712,7 @@ impl Resolve for ast::InlineExprStmt {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.expr.kind.resolve(resolver, cache);
+    // self.expr.kind.resolve(resolver, cache);
   }
 }
 
@@ -723,8 +723,8 @@ impl Resolve for ast::BinaryExpr {
   }
 
   fn resolve(&mut self, resolver: &mut NameResolver, cache: &mut cache::Cache) {
-    self.left.kind.resolve(resolver, cache);
-    self.right.kind.resolve(resolver, cache);
+    // self.left.kind.resolve(resolver, cache);
+    // self.right.kind.resolve(resolver, cache);
   }
 }
 
@@ -1202,7 +1202,7 @@ impl<'a> NameResContext<'a> {
 }
 
 impl<'a> AnalysisVisitor for NameResContext<'a> {
-  fn visit_pattern(&mut self, pattern: &ast::Pattern, _node: &ast::Node) -> () {
+  fn visit_pattern(&mut self, pattern: &ast::Pattern, _node: std::rc::Rc<ast::Node>) -> () {
     let symbol = Symbol {
       base_name: pattern.base_name.clone(),
       sub_name: pattern.sub_name.clone(),

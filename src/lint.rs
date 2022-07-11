@@ -50,17 +50,17 @@ impl LintContext {
 }
 
 impl AnalysisVisitor for LintContext {
-  fn visit_pattern(&mut self, _pattern: &ast::Pattern, _node: &ast::Node) {
+  fn visit_pattern(&mut self, _pattern: &ast::Pattern, _node: std::rc::Rc<ast::Node>) {
     // TODO: Lint name(s).
   }
 
-  fn visit_struct_type(&mut self, struct_type: &ast::StructType, _node: &ast::Node) {
+  fn visit_struct_type(&mut self, struct_type: &ast::StructType, _node: std::rc::Rc<ast::Node>) {
     self.lint_name_casing("struct", &struct_type.name, convert_case::Case::Pascal);
 
     // REVIEW: Any more linting needed?
   }
 
-  fn visit_block_expr(&mut self, block: &ast::BlockExpr, _node: &ast::Node) {
+  fn visit_block_expr(&mut self, block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) {
     let mut did_return = false;
 
     for statement in &block.statements {
@@ -79,7 +79,7 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_enum(&mut self, enum_: &ast::Enum, _node: &ast::Node) {
+  fn visit_enum(&mut self, enum_: &ast::Enum, _node: std::rc::Rc<ast::Node>) {
     self.lint_name_casing("enum", &enum_.name, convert_case::Case::Pascal);
 
     if enum_.variants.is_empty() {
@@ -97,21 +97,21 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_parameter(&mut self, parameter: &ast::Parameter, _node: &ast::Node) {
+  fn visit_parameter(&mut self, parameter: &ast::Parameter, _node: std::rc::Rc<ast::Node>) {
     self.lint_name_casing("parameter", &parameter.name, convert_case::Case::Snake);
   }
 
-  fn visit_reference(&mut self, reference: &ast::Reference, _node: &ast::Node) {
+  fn visit_reference(&mut self, reference: &ast::Reference, _node: std::rc::Rc<ast::Node>) {
     self
       .variable_references
       .insert(reference.pattern.target_id.unwrap(), true);
   }
 
-  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, _node: &ast::Node) {
+  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, _node: std::rc::Rc<ast::Node>) {
     self.lint_name_casing("variable", &binding_stmt.name, convert_case::Case::Snake);
   }
 
-  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr, _node: &ast::Node) {
+  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr, _node: std::rc::Rc<ast::Node>) {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     // TODO: Add a helper method to "unbox" expressions? (e.g. case for `(true)`).
     if matches!(if_expr.condition.kind, ast::NodeKind::Literal(_)) {
@@ -122,14 +122,14 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr, _node: &ast::Node) {
+  fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr, _node: std::rc::Rc<ast::Node>) {
     // TODO:
     // context
     //   .function_references
     //   .insert(self.callee_expr.target_key.unwrap(), true);
   }
 
-  fn visit_function(&mut self, function: &ast::Function, _node: &ast::Node) {
+  fn visit_function(&mut self, function: &ast::Function, _node: std::rc::Rc<ast::Node>) {
     self.lint_name_casing("function", &function.name, convert_case::Case::Snake);
 
     if function.prototype.parameters.len() > 4 {
@@ -140,7 +140,11 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr, _node: &ast::Node) {
+  fn visit_indexing_expr(
+    &mut self,
+    indexing_expr: &ast::IndexingExpr,
+    _node: std::rc::Rc<ast::Node>,
+  ) {
     self
       .variable_references
       .insert(indexing_expr.target_id.unwrap(), true);

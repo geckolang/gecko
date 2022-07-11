@@ -27,7 +27,8 @@ impl Lower for ast::Node {
     cache: &cache::Cache,
     access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    dispatch!(&self.kind, Lower::lower, generator, cache, access)
+    // dispatch!(&self.kind, Lower::lower, generator, cache, access)
+    None
   }
 }
 
@@ -38,7 +39,8 @@ impl Lower for ast::NodeKind {
     cache: &cache::Cache,
     access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    dispatch!(&self, Lower::lower, generator, cache, access)
+    // dispatch!(&self, Lower::lower, generator, cache, access)
+    None
   }
 }
 
@@ -789,7 +791,7 @@ impl Lower for ast::IfExpr {
     let mut llvm_else_block_value = None;
 
     // TODO: Simplify (use a buffer for the next block onto build the cond. br. to).
-    if let Some(else_block) = &self.else_expr {
+    if let Some(else_block) = &self.else_value {
       let llvm_else_block = generator
         .llvm_context
         .append_basic_block(llvm_current_function, "if.else");
@@ -823,7 +825,7 @@ impl Lower for ast::IfExpr {
 
     generator.llvm_builder.position_at_end(llvm_then_block);
 
-    let llvm_then_block_value = self.then_expr.lower(generator, cache, false);
+    let llvm_then_block_value = self.then_value.lower(generator, cache, false);
 
     // FIXME: Is this correct? Or should we be using `get_current_block()` here? Or maybe this is just a special case to not leave the `then` block without a terminator? Investigate.
     // Fallthrough if applicable.
@@ -1748,7 +1750,7 @@ mod tests {
 
     let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::boxed_node(Mock::literal_int()),
+      value: Mock::rc_node(Mock::literal_int()),
       is_const_expr: false,
       cache_id: 0,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
@@ -1769,7 +1771,7 @@ mod tests {
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::boxed_node(Mock::literal_int()),
+      value: Mock::rc_node(Mock::literal_int()),
       is_const_expr: false,
       cache_id: a_cache_id,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
@@ -1799,7 +1801,7 @@ mod tests {
 
     let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
+      value: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_const_expr: false,
       cache_id: 0,
       // FIXME: Wrong type.
@@ -1821,7 +1823,7 @@ mod tests {
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_const_expr: false,
       cache_id: a_cache_id,
       // FIXME: Wrong type.
@@ -1852,7 +1854,7 @@ mod tests {
 
     let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::String(
+      value: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::String(
         "hello".to_string(),
       ))),
       is_const_expr: false,
@@ -1903,7 +1905,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
-      value: Some(Mock::boxed_node(Mock::literal_int())),
+      value: Some(Mock::rc_node(Mock::literal_int())),
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1953,10 +1955,10 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
-      condition: Mock::boxed_node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
-      then_expr: Mock::boxed_node(Mock::literal_int()),
+      condition: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
+      then_value: Mock::rc_node(Mock::literal_int()),
       alternative_branches: Vec::new(),
-      else_expr: None,
+      else_value: None,
     });
 
     Mock::new(&llvm_context, &llvm_module)
