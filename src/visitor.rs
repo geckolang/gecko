@@ -253,7 +253,9 @@ define_visitor!(AnalysisVisitor, (), ());
 struct FooVisitor {}
 
 // FIXME: How do we specify the transform type? :(
-impl<'a> TransformVisitor<'a> for FooVisitor {}
+impl<'a> TransformVisitor<'a> for FooVisitor {
+  //
+}
 
 /// Used to perform various AST traversals at the same time, while
 /// invoking all the registered visitors per node.

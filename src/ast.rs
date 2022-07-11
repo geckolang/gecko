@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::{cache, name_resolution, type_system::Check, visitor};
+use crate::{cache, name_resolution, type_system::Check};
 
 #[macro_export]
 macro_rules! force_match {
