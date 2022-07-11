@@ -230,6 +230,7 @@ impl<'a> Parser<'a> {
     // TODO: Add support for static sub-entities.
 
     Ok(ast::Pattern {
+      id: self.cache.create_id(),
       qualifier,
       base_name,
       sub_name,

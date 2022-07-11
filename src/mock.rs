@@ -117,6 +117,8 @@ pub mod tests {
     pub fn reference(cache_id: cache::Id) -> Box<ast::Node> {
       Mock::boxed_node(ast::NodeKind::Reference(ast::Reference {
         pattern: ast::Pattern {
+          // BUG: Made up id. See how this affects tests.
+          id: 0,
           qualifier: None,
           base_name: "test".to_string(),
           sub_name: None,

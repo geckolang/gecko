@@ -967,12 +967,270 @@ impl NameResolver {
   }
 }
 
-struct NameResContext {
-
+struct NameResContext<'a> {
+  cache: &'a mut cache::Cache,
+  diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+  current_scope_qualifier: Option<Qualifier>,
+  /// Contains the modules with their respective top-level definitions.
+  global_scopes: std::collections::HashMap<Qualifier, Scope>,
+  /// Contains volatile, relative scopes.
+  ///
+  /// Only used during the declare step. This is reset when the module changes,
+  /// although by that time, all the relative scopes should have been popped automatically.
+  relative_scopes: Vec<Scope>,
+  /// A mapping of a scope's unique key to its own scope, and all visible parent
+  /// relative scopes, excluding the global scope.
+  scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
+  // REVIEW: If we can get rid of these flags, we may possibly use the traverse method instead
+  // ... of manual visitation.
+  /// The unique id of the current block's scope. Used in the resolve step.
+  current_block_cache_id: Option<cache::Id>,
+  current_struct_type_id: Option<cache::Id>,
 }
 
-impl AnalysisVisitor for NameResContext {
-  
+impl<'a> NameResContext<'a> {
+  pub fn new(initial_module_qualifier: Qualifier, cache: &'a mut cache::Cache) -> Self {
+    let mut result = Self {
+      cache,
+      diagnostics: Vec::new(),
+      current_scope_qualifier: None,
+      global_scopes: std::collections::HashMap::new(),
+      relative_scopes: Vec::new(),
+      scope_map: std::collections::HashMap::new(),
+      current_block_cache_id: None,
+      current_struct_type_id: None,
+    };
+
+    result.create_module(initial_module_qualifier);
+
+    result
+  }
+
+  pub fn run(
+    &mut self,
+    ast_map: &mut std::collections::BTreeMap<Qualifier, Vec<ast::Node>>,
+    cache: &mut cache::Cache,
+  ) -> Vec<codespan_reporting::diagnostic::Diagnostic<usize>> {
+    if ast_map.is_empty() {
+      return Vec::new();
+    }
+
+    let mut name_resolver = NameResolver::new(ast_map.keys().next().unwrap().clone());
+
+    // BUG: Cannot be processed linearly. Once an import is used, the whole corresponding
+    // ... module must be recursively processed first!
+
+    for (qualifier, ast) in ast_map.iter() {
+      // REVIEW: Shouldn't the module be created before, on the Driver?
+      name_resolver.create_module(qualifier.clone());
+      name_resolver.current_scope_qualifier = Some(qualifier.clone());
+
+      for node in ast.iter() {
+        node.kind.declare(&mut name_resolver);
+      }
+    }
+
+    for (qualifier, ast) in ast_map {
+      name_resolver.current_scope_qualifier = Some(qualifier.clone());
+
+      for node in ast {
+        // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
+        // ... an auxiliary map must be accepted in the parameters.
+        node.kind.resolve(&mut name_resolver, cache);
+      }
+    }
+
+    name_resolver.diagnostics
+  }
+
+  /// Set per-file. A new global scope is created per-module.
+  ///
+  /// Return `false` if a module associated with the given global qualifier was
+  /// already previously defined, or `true` if it was created.
+  pub fn create_module(&mut self, qualifier: Qualifier) -> bool {
+    if self.global_scopes.contains_key(&qualifier) {
+      return false;
+    }
+
+    self.current_scope_qualifier = Some(qualifier.clone());
+
+    self
+      .global_scopes
+      .insert(qualifier, std::collections::HashMap::new());
+
+    self.relative_scopes.clear();
+
+    true
+  }
+
+  // FIXME: What about registering on the cache? If this is implemented, there is no longer a need to register
+  // ... the root nodes on the cache.
+  /// Register a local symbol to a binding id in the current scope.
+  ///
+  /// Returns `false`, and creates an error diagnostic in the local diagnostic builder, if
+  /// the symbol was already defined in the current scope, or `true` if it was successfully
+  /// registered.
+  fn declare_symbol(&mut self, symbol: Symbol, cache_id: cache::Id) -> bool {
+    // Check for existing definitions.
+    if self.current_scope_contains(&symbol) {
+      self.diagnostics.push(
+        // TODO: Include sub-name if available.
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message(format!("re-definition of `{}`", symbol.base_name)),
+      );
+
+      // REVIEW: What about calling the child's declare function?
+      return false;
+    }
+
+    // Bind the symbol to the current scope for name resolution lookup.
+    self.bind(symbol.clone(), cache_id);
+
+    true
+  }
+
+  /// Retrieve the last pushed relative scope, or if there are none,
+  /// the global scope of the current module.
+  ///
+  /// This function assumes that the current scope qualifier has been set,
+  /// which occurs when a module is created.
+  fn get_current_scope(&mut self) -> &mut Scope {
+    if self.relative_scopes.is_empty() {
+      // REVISE: Relying on the assumption that at least a single module was created.
+      return self
+        .global_scopes
+        .get_mut(self.current_scope_qualifier.as_ref().unwrap())
+        .unwrap();
+    }
+
+    self.relative_scopes.last_mut().unwrap()
+  }
+
+  fn push_scope(&mut self) {
+    self.relative_scopes.push(std::collections::HashMap::new());
+  }
+
+  /// Pop the last scope off the relatives scopes stack, and return it.
+  ///
+  /// Will panic if there are no relative scopes.
+  fn force_pop_scope(&mut self) -> Scope {
+    self.relative_scopes.pop().unwrap()
+  }
+
+  /// Force-pop the last scope off the relatives scopes stack, and create
+  /// a scope tree. This tree will then be inserted into the scope map.
+  ///
+  /// If an entry with the same unique id already exists, the scope tree will
+  /// be appended onto the existing definition.
+  fn close_scope_tree(&mut self, cache_id: cache::Id) {
+    let mut scope_tree = vec![self.force_pop_scope()];
+
+    // Clone the relative scope tree.
+    scope_tree.extend(self.relative_scopes.iter().rev().cloned());
+
+    // Append to the existing definition, if applicable.
+    if self.scope_map.contains_key(&cache_id) {
+      scope_tree.extend(self.scope_map.remove(&cache_id).unwrap());
+    }
+
+    self.scope_map.insert(cache_id, scope_tree);
+  }
+
+  /// Register a name on the last scope for name resolution lookups.
+  ///
+  /// If there are no relative scopes, the symbol is registered in the global scope.
+  fn bind(&mut self, symbol: Symbol, cache_id: cache::Id) {
+    self.get_current_scope().insert(symbol, cache_id);
+  }
+
+  /// Lookup a symbol in the global scope of a specific package and module.
+  fn lookup(&mut self, qualifier: Qualifier, symbol: &Symbol) -> Option<cache::Id> {
+    if !self.global_scopes.contains_key(&qualifier) {
+      return None;
+    }
+
+    let global_scope = self.global_scopes.get(&qualifier).unwrap();
+
+    if let Some(cache_id) = global_scope.get(&symbol) {
+      return Some(cache_id.clone());
+    }
+
+    None
+  }
+
+  /// Lookup a symbol starting from the nearest scope, all the way to the global scope
+  /// of the current module.
+  fn local_lookup(&mut self, symbol: &Symbol) -> Option<cache::Id> {
+    // If applicable, lookup on the relative scopes. This may not
+    // be the case for when resolving global entities such as struct
+    // types that reference other structs in their fields (in such case,
+    // the relative scopes will be empty and the `current_block_cache_id`
+    // buffer would be `None`).
+    if let Some(current_block_cache_id) = self.current_block_cache_id {
+      let scope_tree = self.scope_map.get(&current_block_cache_id).unwrap();
+
+      // First, attempt to find the symbol in the relative scopes.
+      for scope in scope_tree {
+        if let Some(cache_id) = scope.get(&symbol) {
+          return Some(cache_id.clone());
+        }
+      }
+    }
+
+    // REVISE: Unsafe unwrap.
+    // Otherwise, attempt to find the symbol in the current module's global scope.
+    self.lookup(self.current_scope_qualifier.clone().unwrap(), symbol)
+  }
+
+  fn local_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::Id> {
+    if let Some(cache_id) = self.local_lookup(symbol) {
+      return Some(cache_id.clone());
+    }
+
+    // TODO: Include sub-name if available.
+    self.diagnostics.push(
+      codespan_reporting::diagnostic::Diagnostic::error()
+        .with_message(format!("undefined reference to `{}`", symbol.base_name)),
+    );
+
+    None
+  }
+
+  fn current_scope_contains(&mut self, key: &Symbol) -> bool {
+    self.get_current_scope().contains_key(key)
+  }
+}
+
+impl<'a> AnalysisVisitor for NameResContext<'a> {
+  fn visit_pattern(&mut self, pattern: &ast::Pattern, _node: &ast::Node) -> () {
+    let symbol = Symbol {
+      base_name: pattern.base_name.clone(),
+      sub_name: pattern.sub_name.clone(),
+      kind: pattern.symbol_kind.clone(),
+    };
+
+    if let Some(qualifier) = &pattern.qualifier {
+      // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
+      let target_id = self.lookup(qualifier.clone(), &symbol);
+
+      // TODO: Abstract and reuse error handling.
+      if target_id.is_none() {
+        self.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+            "qualified symbol does not exist: {}::{}::{}",
+            qualifier.package_name, qualifier.module_name, pattern.base_name
+          )),
+        );
+      }
+
+      return;
+    }
+
+    // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
+    self.local_lookup_or_error(&symbol).map(|target_id| {
+      self.cache.links.insert(pattern.id, target_id);
+    });
+  }
 }
 
 // TODO: Add essential tests.

@@ -533,6 +533,7 @@ pub struct ThisType {
 // TODO: If it's never boxed under `ast::Node`, then there might not be a need for it to be included under `ast::Node`?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
+  pub id: cache::Id,
   pub qualifier: Option<name_resolution::Qualifier>,
   pub base_name: String,
   pub sub_name: Option<String>,
