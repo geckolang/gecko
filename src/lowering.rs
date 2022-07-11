@@ -1,6 +1,7 @@
 use crate::{
   ast, cache, dispatch,
   type_system::{Check, TypeContext},
+  visitor::LoweringVisitor,
 };
 
 use inkwell::{types::BasicType, values::BasicValue};
