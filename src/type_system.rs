@@ -529,7 +529,7 @@ impl Check for ast::Closure {
     // REVIEW: Might need to mirror `Function`'s type check.
     let previous_function_id = context.current_function_id.clone();
 
-    context.current_function_id = Some(self.id);
+    // context.current_function_id = Some(self.id);
 
     if self.prototype.accepts_instance {
       context.diagnostics.push(

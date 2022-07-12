@@ -514,7 +514,6 @@ pub struct Closure {
   pub captures: Vec<(String, Option<cache::Id>)>,
   pub prototype: Prototype,
   pub body: BlockExpr,
-  pub id: cache::Id,
 }
 
 #[derive(PartialEq, Clone, Debug)]

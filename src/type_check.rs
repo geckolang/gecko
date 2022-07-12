@@ -284,12 +284,12 @@ impl<'a> TypeCheckVisitor<'a> {
 }
 
 impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
-  fn visit_call_expr(&mut self, node: &ast::CallExpr, node2: std::rc::Rc<ast::Node>) {
+  fn visit_call_expr(&mut self, call_expr: &ast::CallExpr, _node: std::rc::Rc<ast::Node>) {
     // REVIEW: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
     // REVIEW: Need access to the current function?
 
     // TODO: Isn't there a need to flatten this type?
-    let callee_expr_type = node.callee_expr.kind.infer_type(self.cache);
+    let callee_expr_type = call_expr.callee_expr.kind.infer_type(self.cache);
 
     if !matches!(callee_expr_type, ast::Type::Function(_)) {
       self.diagnostics.push(
@@ -333,7 +333,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     // }
 
     self.validate_fn_call(
-      node
+      call_expr
         .arguments
         .iter()
         // No need to flatten here.
@@ -344,7 +344,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     );
   }
 
-  fn enter_struct_impl(&mut self, node: &ast::StructImpl, node2: std::rc::Rc<ast::Node>) {
+  fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl, _node: std::rc::Rc<ast::Node>) {
     // FIXME: We can solve this reliance on flags simply by filling a special flag on the
     // ... constructs that perform these checks during parsing. There aren't many cases and
     // ... this also prevents flag repetition between pass states. Not only that, but also it
@@ -352,7 +352,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     // ... flags during later phases of semantic check passes.
     self.in_struct_impl = true;
 
-    for method in &node.member_methods {
+    for method in &struct_impl.member_methods {
       if !method.prototype.accepts_instance {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
@@ -365,16 +365,16 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
 
     let target_node = self
       .cache
-      .force_get(&node.target_struct_pattern.target_id.unwrap());
+      .force_get(&struct_impl.target_struct_pattern.target_id.unwrap());
 
     // REVISE: Cleanup.
     if let ast::NodeKind::StructType(_target_struct_type) = &target_node {
-      if let Some(trait_pattern) = &node.trait_pattern {
+      if let Some(trait_pattern) = &struct_impl.trait_pattern {
         let trait_node = self.cache.force_get(&trait_pattern.target_id.unwrap());
 
         if let ast::NodeKind::Trait(trait_type) = &trait_node {
           for trait_method in &trait_type.methods {
-            let impl_method_result = node
+            let impl_method_result = struct_impl
               .member_methods
               .iter()
               .find(|impl_method| impl_method.name == trait_method.0);
@@ -416,23 +416,27 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "cannot implement for a non-struct type `{}`",
-          node.target_struct_pattern.base_name
+          struct_impl.target_struct_pattern.base_name
         )),
       );
     }
   }
 
-  fn exit_struct_impl(&mut self, _node: &ast::StructImpl, node2: std::rc::Rc<ast::Node>) {
+  fn exit_struct_impl(&mut self, _struct_impl: &ast::StructImpl, node: std::rc::Rc<ast::Node>) {
     self.in_struct_impl = true;
   }
 
-  fn visit_using(&mut self, node: &ast::Using, node2: std::rc::Rc<ast::Node>) {
+  fn visit_using(&mut self, using: &ast::Using, _node: std::rc::Rc<ast::Node>) {
     // FIXME: Can't just push the import once encountered; only when it's actually used.
-    self.usings.push(node.clone());
+    self.usings.push(using.clone());
   }
 
-  fn visit_sizeof_intrinsic(&mut self, node: &ast::SizeofIntrinsic, node2: std::rc::Rc<ast::Node>) {
-    if node.ty.flatten(self.cache).is(&ast::Type::Unit) {
+  fn visit_sizeof_intrinsic(
+    &mut self,
+    sizeof_intrinsic: &ast::SizeofIntrinsic,
+    _node: std::rc::Rc<ast::Node>,
+  ) {
+    if sizeof_intrinsic.ty.flatten(self.cache).is(&ast::Type::Unit) {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("cannot determine size of unit type"),
@@ -440,8 +444,12 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_member_access(&mut self, node: &ast::MemberAccess, node2: std::rc::Rc<ast::Node>) {
-    let base_expr_type = node.base_expr.kind.infer_flatten_type(self.cache);
+  fn visit_member_access(
+    &mut self,
+    member_access: &ast::MemberAccess,
+    _node: std::rc::Rc<ast::Node>,
+  ) {
+    let base_expr_type = member_access.base_expr.kind.infer_flatten_type(self.cache);
 
     let struct_type = match base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
@@ -458,7 +466,11 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       }
     };
 
-    if !struct_type.fields.iter().any(|x| x.0 == node.member_name) {
+    if !struct_type
+      .fields
+      .iter()
+      .any(|x| x.0 == member_access.member_name)
+    {
       // TODO:
       // context.diagnostic_builder.error(format!(
       //   "struct type `{}` does not contain a field named `{}`",
@@ -467,13 +479,13 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_closure(&mut self, node: &ast::Closure, node2: std::rc::Rc<ast::Node>) {
+  fn visit_closure(&mut self, closure: &ast::Closure, node: std::rc::Rc<ast::Node>) {
     // REVIEW: Might need to mirror `Function`'s type check.
     let previous_function_id = self.current_function_id.clone();
 
     self.current_function_id = Some(node.id);
 
-    if node.prototype.accepts_instance {
+    if closure.prototype.accepts_instance {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("closures cannot accept instances"),
@@ -483,9 +495,13 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     self.current_function_id = previous_function_id;
   }
 
-  fn visit_intrinsic_call(&mut self, node: &ast::IntrinsicCall, node2: std::rc::Rc<ast::Node>) {
+  fn visit_intrinsic_call(
+    &mut self,
+    intrinsic_call: &ast::IntrinsicCall,
+    _node: std::rc::Rc<ast::Node>,
+  ) {
     // TODO: Redundant to have function return types.
-    let target_prototype_sig: (Vec<ast::Type>, ast::Type) = match node.kind {
+    let target_prototype_sig: (Vec<ast::Type>, ast::Type) = match intrinsic_call.kind {
       ast::IntrinsicKind::LengthOf => (
         // Cannot define array type directly. Use the any type for comparison.
         vec![ast::Type::Any],
@@ -501,7 +517,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     };
 
     self.validate_fn_call(
-      node
+      intrinsic_call
         .arguments
         .iter()
         // No need to flatten.
@@ -512,8 +528,10 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     );
 
     // Special case because of the static array type.
-    if matches!(node.kind, ast::IntrinsicKind::LengthOf) && node.arguments.len() == 1 {
-      let target_array = node.arguments.first().unwrap();
+    if matches!(intrinsic_call.kind, ast::IntrinsicKind::LengthOf)
+      && intrinsic_call.arguments.len() == 1
+    {
+      let target_array = intrinsic_call.arguments.first().unwrap();
       let target_array_type = target_array.kind.infer_flatten_type(self.cache);
 
       if !matches!(target_array_type, ast::Type::Array(..)) {
@@ -616,7 +634,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     self.current_function_id = previous_function_key;
   }
 
-  fn visit_return_stmt(&mut self, node: &ast::ReturnStmt, node2: std::rc::Rc<ast::Node>) {
+  fn visit_return_stmt(&mut self, return_stmt: &ast::ReturnStmt, _node: std::rc::Rc<ast::Node>) {
     let current_function_node = self.cache.force_get(&self.current_function_id.unwrap());
     let mut name = None;
 
@@ -635,12 +653,12 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     .flatten(self.cache);
 
     // REVISE: Whether a function returns is already checked. Limit this to comparing the types only.
-    if !return_type.is_a_unit() && node.value.is_none() {
+    if !return_type.is_a_unit() && return_stmt.value.is_none() {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("return statement must return a value"),
       );
-    } else if return_type.is_a_unit() && node.value.is_some() {
+    } else if return_type.is_a_unit() && return_stmt.value.is_some() {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("return statement must not return a value"),
@@ -650,7 +668,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       return;
     }
 
-    if let Some(value) = &node.value {
+    if let Some(value) = &return_stmt.value {
       let value_type = value.kind.infer_flatten_type(self.cache);
 
       if !return_type.is(&value_type) {
@@ -669,16 +687,16 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_binding_stmt(&mut self, node: &ast::BindingStmt, node2: std::rc::Rc<ast::Node>) {
-    let value_type = node.value.kind.infer_type(self.cache);
-    let ty = node.infer_type(self.cache);
+  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, _node: std::rc::Rc<ast::Node>) {
+    let value_type = binding_stmt.value.kind.infer_type(self.cache);
+    let ty = binding_stmt.infer_type(self.cache);
 
     // FIXME: This is redundant. The same type is being compared!
     if !ty.flat_is(&value_type, self.cache) {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "variable declaration of `{}` value and type mismatch",
-          node.name
+          binding_stmt.name
         )),
       );
     }
@@ -722,10 +740,10 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     };
   }
 
-  fn visit_if_expr(&mut self, node: &ast::IfExpr, node2: std::rc::Rc<ast::Node>) {
+  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr, _node: std::rc::Rc<ast::Node>) {
     let mut bounded_array_buffer = None;
 
-    node.condition.kind.traverse(|node| {
+    if_expr.condition.kind.traverse(|node| {
       // if let ast::NodeKind::BinaryExpr(ast::BinaryExpr {
       //   left: _,
       //   right:
@@ -778,7 +796,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       false
     });
 
-    let condition_type = node.condition.kind.infer_flatten_type(self.cache);
+    let condition_type = if_expr.condition.kind.infer_flatten_type(self.cache);
 
     if !condition_type.is(&ast::Type::Basic(ast::BasicType::Bool)) {
       self.diagnostics.push(
@@ -806,10 +824,10 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_reference(&mut self, node: &ast::Reference, node2: std::rc::Rc<ast::Node>) {
+  fn visit_reference(&mut self, reference: &ast::Reference, _node: std::rc::Rc<ast::Node>) {
     let target_type = self
       .cache
-      .force_get(&node.pattern.target_id.unwrap())
+      .force_get(&reference.pattern.target_id.unwrap())
       .infer_type(self.cache);
 
     // FIXME: Investigate how this affects.
@@ -821,7 +839,11 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_extern_function(&mut self, extern_fn: &ast::ExternFunction, _node: std::rc::Rc<ast::Node>) {
+  fn visit_extern_function(
+    &mut self,
+    extern_fn: &ast::ExternFunction,
+    _node: std::rc::Rc<ast::Node>,
+  ) {
     if extern_fn.prototype.accepts_instance {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
@@ -830,27 +852,36 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn enter_unsafe_expr(&mut self, _node: &ast::UnsafeExpr, node2: std::rc::Rc<ast::Node>) {
+  fn enter_unsafe_expr(&mut self, _unsafe_expr: &ast::UnsafeExpr, _node: std::rc::Rc<ast::Node>) {
     // REVIEW: To avoid problems with nested cases, save a buffer here, then restore?
     // ... Maybe there's no need to restore the flag with its previous buffer in this specific case.
     self.in_unsafe_block = true;
   }
 
-  fn exit_unsafe_expr(&mut self, _node: &ast::UnsafeExpr, node2: std::rc::Rc<ast::Node>) {
+  fn exit_unsafe_expr(&mut self, _unsafe_expr: &ast::UnsafeExpr, _node: std::rc::Rc<ast::Node>) {
     self.in_unsafe_block = false;
   }
 
-  fn visit_static_array_value(&mut self, node: &ast::StaticArrayValue, node2: std::rc::Rc<ast::Node>) {
+  fn visit_static_array_value(
+    &mut self,
+    static_array_value: &ast::StaticArrayValue,
+    _node: std::rc::Rc<ast::Node>,
+  ) {
     let mut mixed_elements_flag = false;
 
-    let expected_element_type = if let Some(explicit_type) = &node.explicit_type {
+    let expected_element_type = if let Some(explicit_type) = &static_array_value.explicit_type {
       explicit_type.clone()
     } else {
-      node.elements.first().unwrap().kind.infer_type(self.cache)
+      static_array_value
+        .elements
+        .first()
+        .unwrap()
+        .kind
+        .infer_type(self.cache)
     };
 
     // TODO: Skip the first element during iteration, as it is redundant.
-    for element in &node.elements {
+    for element in &static_array_value.elements {
       // Report this error only once.
       // FIXME: Use type comparison function? And also flatten?
       if !mixed_elements_flag && element.kind.infer_type(self.cache) != expected_element_type {
@@ -864,8 +895,12 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_indexing_expr(&mut self, node: &ast::IndexingExpr, node2: std::rc::Rc<ast::Node>) {
-    let index_expr_type = node.index_expr.kind.infer_flatten_type(self.cache);
+  fn visit_indexing_expr(
+    &mut self,
+    indexing_expr: &ast::IndexingExpr,
+    _node: std::rc::Rc<ast::Node>,
+  ) {
+    let index_expr_type = indexing_expr.index_expr.kind.infer_flatten_type(self.cache);
 
     let is_index_proper_type =
       index_expr_type.is(&ast::Type::Basic(ast::BasicType::Int(ast::IntSize::U32)));
@@ -881,7 +916,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       return;
     }
 
-    let target_array = self.cache.force_get(&node.target_id.unwrap());
+    let target_array = self.cache.force_get(&indexing_expr.target_id.unwrap());
     let target_expr_type = target_array.infer_flatten_type(self.cache);
 
     // REVIEW: Any way of avoiding nesting?
@@ -889,7 +924,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       // If the index expression is not a constant expression, then
       // this scope must fall under a bounds check for that index, and
       // the length of the array.
-      if !node.index_expr.kind.is_constant_expr() {
+      if !indexing_expr.index_expr.kind.is_constant_expr() {
         // TODO: Support for dynamic index, but require a bounds check.
 
         self.diagnostics.push(
@@ -899,7 +934,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       } else {
         // FIXME: Why we allow unary expressions on const expressions if we extract their value intact?
         let index_expr_literal = crate::force_match!(
-          node
+          indexing_expr
             .index_expr
             .kind
             .find_node(|node| matches!(node, ast::NodeKind::Literal(..)))
@@ -929,7 +964,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr, node: std::rc::Rc<ast::Node>) {
+  fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr, _node: std::rc::Rc<ast::Node>) {
     let expr_type = &unary_expr.expr.kind.infer_flatten_type(self.cache);
 
     match unary_expr.operator {
@@ -990,15 +1025,15 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     };
   }
 
-  fn visit_struct_value(&mut self, node: &ast::StructValue, node2: std::rc::Rc<ast::Node>) {
-    let struct_type_node = self.cache.force_get(&node.target_id.unwrap());
+  fn visit_struct_value(&mut self, struct_value: &ast::StructValue, _node: std::rc::Rc<ast::Node>) {
+    let struct_type_node = self.cache.force_get(&struct_value.target_id.unwrap());
 
     let struct_type = match struct_type_node {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
 
-    if node.fields.len() != struct_type.fields.len() {
+    if struct_value.fields.len() != struct_type.fields.len() {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("invalid amount of fields in struct value"),
@@ -1007,7 +1042,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       return;
     }
 
-    for (index, (value_field, struct_field)) in node
+    for (index, (value_field, struct_field)) in struct_value
       .fields
       .iter()
       .zip(struct_type.fields.iter())

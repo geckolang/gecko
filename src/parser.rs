@@ -1391,7 +1391,6 @@ impl<'a> Parser<'a> {
       captures,
       prototype,
       body,
-      id: self.cache.create_id(),
     })
   }
 

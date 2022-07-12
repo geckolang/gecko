@@ -200,9 +200,9 @@ impl Resolve for ast::Closure {
 
     self.prototype.resolve(resolver, cache);
 
-    cache
-      .symbols
-      .insert(self.id, ast::NodeKind::Closure(self.clone()));
+    // cache
+    //   .symbols
+    //   .insert(self.id, ast::NodeKind::Closure(self.clone()));
   }
 }
 
@@ -850,7 +850,7 @@ impl NameResolver {
     }
 
     // Bind the symbol to the current scope for name resolution lookup.
-    self.bind(symbol.clone(), cache_id);
+    self.bind(symbol, cache_id);
 
     true
   }
@@ -967,28 +967,23 @@ impl NameResolver {
   }
 }
 
-struct NameResContext<'a> {
+struct NameResDeclContext<'a> {
+  /// A mapping of a scope's unique key to its own scope, and all visible parent
+  /// relative scopes, excluding the global scope.
+  pub scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
+  /// Contains the modules with their respective top-level definitions.
+  pub global_scopes: std::collections::HashMap<Qualifier, Scope>,
   cache: &'a mut cache::Cache,
   diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   current_scope_qualifier: Option<Qualifier>,
-  /// Contains the modules with their respective top-level definitions.
-  global_scopes: std::collections::HashMap<Qualifier, Scope>,
   /// Contains volatile, relative scopes.
   ///
   /// Only used during the declare step. This is reset when the module changes,
   /// although by that time, all the relative scopes should have been popped automatically.
   relative_scopes: Vec<Scope>,
-  /// A mapping of a scope's unique key to its own scope, and all visible parent
-  /// relative scopes, excluding the global scope.
-  scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
-  // REVIEW: If we can get rid of these flags, we may possibly use the traverse method instead
-  // ... of manual visitation.
-  /// The unique id of the current block's scope. Used in the resolve step.
-  current_block_cache_id: Option<cache::Id>,
-  current_struct_type_id: Option<cache::Id>,
 }
 
-impl<'a> NameResContext<'a> {
+impl<'a> NameResDeclContext<'a> {
   pub fn new(initial_module_qualifier: Qualifier, cache: &'a mut cache::Cache) -> Self {
     let mut result = Self {
       cache,
@@ -997,8 +992,6 @@ impl<'a> NameResContext<'a> {
       global_scopes: std::collections::HashMap::new(),
       relative_scopes: Vec::new(),
       scope_map: std::collections::HashMap::new(),
-      current_block_cache_id: None,
-      current_struct_type_id: None,
     };
 
     result.create_module(initial_module_qualifier);
@@ -1084,7 +1077,7 @@ impl<'a> NameResContext<'a> {
     }
 
     // Bind the symbol to the current scope for name resolution lookup.
-    self.bind(symbol.clone(), cache_id);
+    self.bind(symbol, cache_id);
 
     true
   }
@@ -1122,7 +1115,7 @@ impl<'a> NameResContext<'a> {
   ///
   /// If an entry with the same unique id already exists, the scope tree will
   /// be appended onto the existing definition.
-  fn close_scope_tree(&mut self, cache_id: cache::Id) {
+  fn finish_scope_tree(&mut self, cache_id: cache::Id) {
     let mut scope_tree = vec![self.force_pop_scope()];
 
     // Clone the relative scope tree.
@@ -1143,6 +1136,68 @@ impl<'a> NameResContext<'a> {
     self.get_current_scope().insert(symbol, cache_id);
   }
 
+  fn current_scope_contains(&mut self, key: &Symbol) -> bool {
+    self.get_current_scope().contains_key(key)
+  }
+}
+
+impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
+  fn visit_extern_function(
+    &mut self,
+    extern_fn: &ast::ExternFunction,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    self.declare_symbol(
+      Symbol {
+        base_name: extern_fn.name.clone(),
+        sub_name: None,
+        kind: SymbolKind::Definition,
+      },
+      node.id,
+    );
+
+    self
+      .cache
+      .cached_nodes
+      .insert(node.id, std::rc::Rc::clone(&node));
+  }
+}
+
+struct NameResLinkContext<'a> {
+  /// A mapping of a scope's unique key to its own scope, and all visible parent
+  /// relative scopes, excluding the global scope.
+  scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
+  cache: &'a mut cache::Cache,
+  current_scope_qualifier: Option<Qualifier>,
+  // REVIEW: If we can get rid of these flags, we may possibly use the traverse method instead
+  // ... of manual visitation.
+  /// The unique id of the current block's scope. Used in the resolve step.
+  current_block_cache_id: Option<cache::Id>,
+  current_struct_type_id: Option<cache::Id>,
+  /// Contains the modules with their respective top-level definitions.
+  global_scopes: std::collections::HashMap<Qualifier, Scope>,
+  diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+}
+
+impl<'a> NameResLinkContext<'a> {
+  fn new(
+    scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
+    global_scopes: std::collections::HashMap<Qualifier, Scope>,
+    cache: &'a mut cache::Cache,
+  ) -> Self {
+    Self {
+      scope_map,
+      cache,
+      current_scope_qualifier: None,
+      current_block_cache_id: None,
+      current_struct_type_id: None,
+      global_scopes,
+      diagnostics: vec![],
+    }
+  }
+}
+
+impl<'a> NameResLinkContext<'a> {
   /// Lookup a symbol in the global scope of a specific package and module.
   fn lookup(&mut self, qualifier: Qualifier, symbol: &Symbol) -> Option<cache::Id> {
     if !self.global_scopes.contains_key(&qualifier) {
@@ -1195,13 +1250,9 @@ impl<'a> NameResContext<'a> {
 
     None
   }
-
-  fn current_scope_contains(&mut self, key: &Symbol) -> bool {
-    self.get_current_scope().contains_key(key)
-  }
 }
 
-impl<'a> AnalysisVisitor for NameResContext<'a> {
+impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
   fn visit_pattern(&mut self, pattern: &ast::Pattern, _node: std::rc::Rc<ast::Node>) -> () {
     let symbol = Symbol {
       base_name: pattern.base_name.clone(),
