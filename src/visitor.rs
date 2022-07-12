@@ -39,7 +39,11 @@ macro_rules! define_visitor {
         $default_value
       }
 
-      fn visit_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn enter_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) -> $return_type {
+        $default_value
+      }
+
+      fn exit_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) -> $return_type {
         $default_value
       }
 
@@ -215,7 +219,11 @@ macro_rules! define_visitor {
         $default_value
       }
 
-      fn visit_function(&mut self, _function: &ast::Function, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn enter_function(&mut self, _function: &ast::Function, _node: std::rc::Rc<ast::Node>) -> $return_type {
+        $default_value
+      }
+
+      fn exit_function(&mut self, _function: &ast::Function, _node: std::rc::Rc<ast::Node>) -> $return_type {
         $default_value
       }
 
@@ -270,11 +278,13 @@ fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
       traverse(std::rc::Rc::clone(&binding_stmt.value), visitor);
     }
     ast::NodeKind::BlockExpr(block_expr) => {
-      visitor.visit_block_expr(block_expr, std::rc::Rc::clone(&node));
+      visitor.enter_block_expr(block_expr, std::rc::Rc::clone(&node));
 
       for statement in &block_expr.statements {
         traverse(std::rc::Rc::clone(&statement), visitor);
       }
+
+      visitor.exit_block_expr(block_expr, std::rc::Rc::clone(&node));
     }
     ast::NodeKind::CallExpr(call_expr) => {
       visitor.visit_call_expr(call_expr, std::rc::Rc::clone(&node));
@@ -287,7 +297,8 @@ fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
     ast::NodeKind::Closure(closure) => {
       visitor.visit_closure(closure, std::rc::Rc::clone(&node));
       visitor.visit_prototype(&closure.prototype, std::rc::Rc::clone(&node));
-      visitor.visit_block_expr(&closure.body, std::rc::Rc::clone(&node));
+      visitor.enter_block_expr(&closure.body, std::rc::Rc::clone(&node));
+      visitor.exit_block_expr(&closure.body, std::rc::Rc::clone(&node));
     }
     ast::NodeKind::Enum(enum_) => {
       visitor.visit_enum(enum_, std::rc::Rc::clone(&node));
@@ -299,9 +310,10 @@ fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
       visitor.visit_extern_static(extern_static, std::rc::Rc::clone(&node));
     }
     ast::NodeKind::Function(function) => {
-      visitor.visit_function(function, std::rc::Rc::clone(&node));
+      visitor.enter_function(function, std::rc::Rc::clone(&node));
       visitor.visit_prototype(&function.prototype, std::rc::Rc::clone(&node));
-      visitor.visit_block_expr(&function.body, std::rc::Rc::clone(&node));
+      visitor.enter_block_expr(&function.body, std::rc::Rc::clone(&node));
+      visitor.exit_block_expr(&function.body, std::rc::Rc::clone(&node));
     }
     ast::NodeKind::IfExpr(if_expr) => {
       visitor.visit_if_expr(if_expr, std::rc::Rc::clone(&node));
@@ -362,11 +374,11 @@ fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
       visitor.enter_struct_impl(struct_impl, std::rc::Rc::clone(&node));
 
       for static_method in &struct_impl.static_methods {
-        visitor.visit_function(static_method, std::rc::Rc::clone(&node));
+        visitor.enter_function(static_method, std::rc::Rc::clone(&node));
       }
 
       for member_method in &struct_impl.member_methods {
-        visitor.visit_function(member_method, std::rc::Rc::clone(&node));
+        visitor.enter_function(member_method, std::rc::Rc::clone(&node));
       }
 
       visitor.exit_struct_impl(struct_impl, std::rc::Rc::clone(&node));
@@ -472,9 +484,10 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
     }
   }
 
-  fn visit_block_expr(&mut self, block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) {
+  fn enter_block_expr(&mut self, block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) {
     for visitor in &mut self.visitors {
-      visitor.visit_block_expr(block, std::rc::Rc::clone(&node));
+      visitor.enter_block_expr(block, std::rc::Rc::clone(&node));
+      visitor.exit_block_expr(block, std::rc::Rc::clone(&node));
     }
   }
 

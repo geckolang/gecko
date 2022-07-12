@@ -118,12 +118,11 @@ pub mod tests {
       Mock::rc_node(ast::NodeKind::Reference(ast::Reference {
         pattern: ast::Pattern {
           // BUG: Made up id. See how this affects tests.
-          id: 0,
+          id: cache_id,
           qualifier: None,
           base_name: "test".to_string(),
           sub_name: None,
           symbol_kind: name_resolution::SymbolKind::Definition,
-          target_id: Some(cache_id),
         },
       }))
     }

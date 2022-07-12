@@ -740,7 +740,7 @@ impl Lower for ast::Reference {
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let llvm_target = generator
-      .memoize_or_retrieve_value(self.pattern.target_id.unwrap(), cache, false, access)
+      .memoize_or_retrieve_value(self.pattern.id, cache, false, access)
       .unwrap();
 
     Some(llvm_target)
@@ -1381,10 +1381,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
     }
 
     if let ast::NodeKind::Reference(reference) = &node {
-      let target = cache
-        .symbols
-        .get(&reference.pattern.target_id.unwrap())
-        .unwrap();
+      let target = cache.symbols.get(&reference.pattern.id).unwrap();
 
       // TODO: Ensure this recursive nature doesn't cause stack overflow.
       return self.apply_access_rules(target, llvm_value, cache);
@@ -1514,7 +1511,7 @@ impl<'a, 'ctx> LlvmGenerator<'a, 'ctx> {
       }
       // REVIEW: Why not resolve the type if it is a stub type, then proceed to lower it?
       ast::Type::Stub(stub_type) => {
-        self.memoize_or_retrieve_type_by_binding(stub_type.pattern.target_id.unwrap(), cache)
+        self.memoize_or_retrieve_type_by_binding(stub_type.pattern.id, cache)
       }
       ast::Type::Function(callable_type) => self
         .lower_callable_type(callable_type, cache)

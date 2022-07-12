@@ -137,6 +137,15 @@ impl<'a> NameResDeclContext<'a> {
     true
   }
 
+  fn declare_node(&mut self, symbol: Symbol, node: std::rc::Rc<ast::Node>) {
+    self
+      .cache
+      .cached_nodes
+      .insert(node.id, std::rc::Rc::clone(&node));
+
+    self.declare_symbol(symbol, node.id);
+  }
+
   /// Retrieve the last pushed relative scope, or if there are none,
   /// the global scope of the current module.
   ///
@@ -201,39 +210,29 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     &mut self,
     extern_fn: &ast::ExternFunction,
     node: std::rc::Rc<ast::Node>,
-  ) -> () {
-    self.declare_symbol(
+  ) {
+    self.declare_node(
       Symbol {
         base_name: extern_fn.name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       },
-      node.id,
+      node,
     );
-
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
   }
 
-  fn visit_parameter(&mut self, parameter: &ast::Parameter, node: std::rc::Rc<ast::Node>) -> () {
-    self.declare_symbol(
+  fn visit_parameter(&mut self, parameter: &ast::Parameter, node: std::rc::Rc<ast::Node>) {
+    self.declare_node(
       Symbol {
         base_name: parameter.name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       },
-      parameter.cache_id,
+      node,
     );
-
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
   }
 
-  fn visit_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
+  fn enter_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) {
     // BUG: Something is wrong with this scope tree. Consider adding tests for this API.
     // ... The `push_scope()` and `close_scope_tree()` lines where commented out. Once uncommented,
     // ... everything SEEMS to be working fine, but still need tests if there aren't any already, and
@@ -256,11 +255,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
       }
     }
 
-    // NOTE: The scope tree won't be overwritten by the block's, nor the
-    // prototype's scope tree, instead they will be merged, as expected.
-    self.finish_scope_tree(node.id);
-
-    self.declare_symbol(
+    self.declare_node(
       // TODO: Cleanup.
       Symbol {
         base_name: if let Some(static_owner_name) = &function.static_owner_name {
@@ -275,44 +270,43 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
         },
         kind: SymbolKind::Definition,
       },
-      node.id,
+      node,
     );
   }
 
-  fn visit_block_expr(&mut self, _block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) -> () {
-    self.push_scope();
-
+  fn exit_function(&mut self, _function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
+    // NOTE: The scope tree won't be overwritten by the block's, nor the
+    // prototype's scope tree, instead they will be merged, as expected.
     self.finish_scope_tree(node.id);
   }
 
-  fn visit_binding_stmt(
-    &mut self,
-    binding_stmt: &ast::BindingStmt,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
-    self.declare_symbol(
+  fn enter_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) {
+    self.push_scope();
+  }
+
+  fn exit_block_expr(&mut self, _block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) -> () {
+    self.finish_scope_tree(node.id);
+  }
+
+  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, node: std::rc::Rc<ast::Node>) {
+    self.declare_node(
       Symbol {
         base_name: binding_stmt.name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       },
-      node.id,
+      node,
     );
-
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
   }
 
-  fn visit_enum(&mut self, enum_: &ast::Enum, node: std::rc::Rc<ast::Node>) -> () {
-    self.declare_symbol(
+  fn visit_enum(&mut self, enum_: &ast::Enum, node: std::rc::Rc<ast::Node>) {
+    self.declare_node(
       Symbol {
         base_name: enum_.name.clone(),
         sub_name: None,
         kind: SymbolKind::Type,
       },
-      node.id,
+      node,
     );
 
     for variant in &enum_.variants {
@@ -322,87 +316,56 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
           sub_name: Some(variant.0.clone()),
           kind: SymbolKind::Definition,
         },
-        variant.1.clone(),
+        variant.1.to_owned(),
       );
     }
-
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
   }
 
-  fn visit_struct_type(
-    &mut self,
-    struct_type: &ast::StructType,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
-    self.declare_symbol(
+  fn visit_struct_type(&mut self, struct_type: &ast::StructType, node: std::rc::Rc<ast::Node>) {
+    self.declare_node(
       Symbol {
         base_name: struct_type.name.clone(),
         sub_name: None,
         kind: SymbolKind::Type,
       },
-      node.id,
+      node,
     );
-
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
   }
 
   fn visit_extern_static(
     &mut self,
     extern_static: &ast::ExternStatic,
     node: std::rc::Rc<ast::Node>,
-  ) -> () {
-    self.declare_symbol(
+  ) {
+    self.declare_node(
       Symbol {
         base_name: extern_static.name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       },
-      node.id,
+      node,
     );
-
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
   }
 
-  fn visit_type_alias(&mut self, type_alias: &ast::TypeAlias, node: std::rc::Rc<ast::Node>) -> () {
-    self.declare_symbol(
+  fn visit_type_alias(&mut self, type_alias: &ast::TypeAlias, node: std::rc::Rc<ast::Node>) {
+    self.declare_node(
       Symbol {
         base_name: type_alias.name.clone(),
         sub_name: None,
         kind: SymbolKind::Type,
       },
-      node.id,
+      node,
     );
-
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
   }
 
-  fn enter_struct_impl(
-    &mut self,
-    _struct_impl: &ast::StructImpl,
-    _node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn enter_struct_impl(&mut self, _struct_impl: &ast::StructImpl, _node: std::rc::Rc<ast::Node>) {
     // REVIEW: Is there a need to bind this on the cache?
 
-    self.push_scope();
+    // self.push_scope();
 
     // for method in &_struct_impl.member_methods {
     //   method.declare(resolver);
     // }
-
-    // FIXME: Doesn't this just simply invalidate all previous methods' declarations?
-    self.force_pop_scope();
 
     // REVIEW: Is this scope the correct one to declare the static methods?
     // ... What about inside the `impl`'s scope itself, so that member methods can
@@ -412,7 +375,16 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     // }
   }
 
-  fn visit_trait(&mut self, _trait: &ast::Trait, _node: std::rc::Rc<ast::Node>) -> () {
+  fn exit_struct_impl(
+    &mut self,
+    _struct_impl: &ast::StructImpl,
+    _node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    // FIXME: Doesn't this just simply invalidate all previous methods' declarations?
+    // self.force_pop_scope();
+  }
+
+  fn visit_trait(&mut self, _trait: &ast::Trait, _node: std::rc::Rc<ast::Node>) {
     // REVIEW: Is there a need to declare symbol here?
     // resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.cache_id);
   }
@@ -424,11 +396,11 @@ struct NameResLinkContext<'a> {
   scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
   cache: &'a mut cache::Cache,
   current_scope_qualifier: Option<Qualifier>,
+  current_struct_type_id: Option<cache::Id>,
   // REVIEW: If we can get rid of these flags, we may possibly use the traverse method instead
   // ... of manual visitation.
   /// The unique id of the current block's scope. Used in the resolve step.
-  current_block_cache_id: Option<cache::Id>,
-  current_struct_type_id: Option<cache::Id>,
+  block_id_stack: Vec<cache::Id>,
   /// Contains the modules with their respective top-level definitions.
   global_scopes: std::collections::HashMap<Qualifier, Scope>,
   diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
@@ -444,8 +416,8 @@ impl<'a> NameResLinkContext<'a> {
       scope_map,
       cache,
       current_scope_qualifier: None,
-      current_block_cache_id: None,
       current_struct_type_id: None,
+      block_id_stack: Vec::new(),
       global_scopes,
       diagnostics: vec![],
     }
@@ -476,7 +448,7 @@ impl<'a> NameResLinkContext<'a> {
     // types that reference other structs in their fields (in such case,
     // the relative scopes will be empty and the `current_block_cache_id`
     // buffer would be `None`).
-    if let Some(current_block_cache_id) = self.current_block_cache_id {
+    if let Some(current_block_cache_id) = self.block_id_stack.last() {
       let scope_tree = self.scope_map.get(&current_block_cache_id).unwrap();
 
       // First, attempt to find the symbol in the relative scopes.
@@ -508,7 +480,7 @@ impl<'a> NameResLinkContext<'a> {
 }
 
 impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
-  fn visit_pattern(&mut self, pattern: &ast::Pattern, _node: std::rc::Rc<ast::Node>) -> () {
+  fn visit_pattern(&mut self, pattern: &ast::Pattern, _node: std::rc::Rc<ast::Node>) {
     let symbol = Symbol {
       base_name: pattern.base_name.clone(),
       sub_name: pattern.sub_name.clone(),
@@ -516,11 +488,8 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     };
 
     if let Some(qualifier) = &pattern.qualifier {
-      // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
-      let target_id = self.lookup(qualifier.clone(), &symbol);
-
       // TODO: Abstract and reuse error handling.
-      if target_id.is_none() {
+      if self.lookup(qualifier.clone(), &symbol).is_none() {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
             "qualified symbol does not exist: {}::{}::{}",
@@ -538,23 +507,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     });
   }
 
-  fn visit_extern_function(
-    &mut self,
-    _extern_fn: &ast::ExternFunction,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
-  }
-
-  fn visit_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
-    self
-      .cache
-      .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
-
+  fn enter_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) {
     // BUG: This must be checked only within the initial package. Currently, the main function
     // ... can be defined elsewhere on its dependencies (even if they're libraries).
     // REVIEW: Should we have this check positioned here? Or should it be placed elsewhere?
@@ -571,21 +524,20 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     }
   }
 
-  fn visit_block_expr(&mut self, _block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) -> () {
+  fn enter_block_expr(&mut self, _block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) {
     // BUG: Something's wrong when an if-expression is present, with a block as its `then` value. It won't resolve declarations.
-    // BUG: Will this work as expected, or we might need to use a stack?
-    let previous_block_cache_id = self.current_block_cache_id;
+    self.block_id_stack.push(node.id);
+  }
 
-    self.current_block_cache_id = Some(node.id);
-
-    self.current_block_cache_id = previous_block_cache_id;
+  fn exit_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) -> () {
+    self.block_id_stack.pop();
   }
 
   fn visit_indexing_expr(
     &mut self,
     indexing_expr: &ast::IndexingExpr,
     _node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  ) {
     self
       .local_lookup_or_error(&Symbol {
         base_name: indexing_expr.name.clone(),
@@ -597,7 +549,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
       });
   }
 
-  fn visit_prototype(&mut self, prototype: &ast::Prototype, _node: std::rc::Rc<ast::Node>) -> () {
+  fn visit_prototype(&mut self, prototype: &ast::Prototype, _node: std::rc::Rc<ast::Node>) {
     if let Some(instance_type_id) = &prototype.instance_type_id {
       self.cache.links.insert(
         instance_type_id.to_owned(),
@@ -606,11 +558,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     }
   }
 
-  fn visit_struct_value(
-    &mut self,
-    struct_value: &ast::StructValue,
-    _node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn visit_struct_value(&mut self, struct_value: &ast::StructValue, _node: std::rc::Rc<ast::Node>) {
     self
       .local_lookup_or_error(&Symbol {
         base_name: struct_value.struct_name.clone(),
@@ -622,7 +570,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
       });
   }
 
-  fn visit_closure(&mut self, closure: &ast::Closure, _node: std::rc::Rc<ast::Node>) -> () {
+  fn visit_closure(&mut self, _closure: &ast::Closure, _node: std::rc::Rc<ast::Node>) {
     // FIXME: Continue implementation.
 
     // for (_index, capture) in closure.captures.iter().enumerate() {
@@ -655,36 +603,21 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     //   .insert(self.id, ast::NodeKind::Closure(self.clone()));
   }
 
-  fn enter_struct_impl(
-    &mut self,
-    struct_impl: &ast::StructImpl,
-    _node: std::rc::Rc<ast::Node>,
-  ) -> () {
-    // REVIEW: We can't unwrap here because the lookup might have failed.
-    // ... Is this done in other parts? Certain resolve methods depend on
-    // ... other things being resolved already, this could be dangerous.
-    let struct_type_id_result = struct_impl.target_struct_pattern.target_id;
+  fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl, _node: std::rc::Rc<ast::Node>) {
+    self.current_struct_type_id = Some(struct_impl.target_struct_pattern.id);
 
-    if let Some(struct_type_id) = struct_type_id_result {
-      self.cache.add_struct_impl(
-        struct_type_id,
-        struct_impl
-          .member_methods
-          .iter()
-          .map(|method| (method.cache_id, method.name.clone()))
-          .collect::<Vec<_>>(),
-      );
+    self.cache.add_struct_impl(
+      struct_impl.target_struct_pattern.id,
+      struct_impl
+        .member_methods
+        .iter()
+        .map(|method| (method.cache_id, method.name.clone()))
+        .collect::<Vec<_>>(),
+    );
+  }
 
-      self.current_struct_type_id = Some(struct_type_id);
-
-      // REVIEW: Is it okay to export it to the current struct type id?
-      // ... If so, what purpose does it serve?
-      // for static_method in &mut self.static_methods {
-      //   static_method.resolve(resolver, cache);
-      // }
-
-      self.current_struct_type_id = None;
-    }
+  fn exit_struct_impl(&mut self, _struct_impl: &ast::StructImpl, _node: std::rc::Rc<ast::Node>) {
+    self.current_struct_type_id = None;
   }
 
   // fn visit_this_type() {

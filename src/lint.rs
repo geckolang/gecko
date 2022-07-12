@@ -60,7 +60,7 @@ impl AnalysisVisitor for LintContext {
     // REVIEW: Any more linting needed?
   }
 
-  fn visit_block_expr(&mut self, block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) {
+  fn enter_block_expr(&mut self, block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) {
     let mut did_return = false;
 
     for statement in &block.statements {
@@ -102,9 +102,7 @@ impl AnalysisVisitor for LintContext {
   }
 
   fn visit_reference(&mut self, reference: &ast::Reference, _node: std::rc::Rc<ast::Node>) {
-    self
-      .variable_references
-      .insert(reference.pattern.target_id.unwrap(), true);
+    self.variable_references.insert(reference.pattern.id, true);
   }
 
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, _node: std::rc::Rc<ast::Node>) {
@@ -129,7 +127,7 @@ impl AnalysisVisitor for LintContext {
     //   .insert(self.callee_expr.target_key.unwrap(), true);
   }
 
-  fn visit_function(&mut self, function: &ast::Function, _node: std::rc::Rc<ast::Node>) {
+  fn enter_function(&mut self, function: &ast::Function, _node: std::rc::Rc<ast::Node>) {
     self.lint_name_casing("function", &function.name, convert_case::Case::Snake);
 
     if function.prototype.parameters.len() > 4 {

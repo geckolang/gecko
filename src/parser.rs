@@ -235,7 +235,6 @@ impl<'a> Parser<'a> {
       base_name,
       sub_name,
       symbol_kind,
-      target_id: None,
     })
   }
 

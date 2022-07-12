@@ -256,7 +256,7 @@ impl Type {
 
     // REVIEW: What if it's a pointer to a user-defined type?
     if let Type::Stub(stub_type) = self {
-      let target_node = cache.force_get(&stub_type.pattern.target_id.unwrap());
+      let target_node = cache.force_get(&stub_type.pattern.id);
 
       // REVIEW: What about type aliases, and other types that might be encountered in the future?
 
@@ -538,7 +538,6 @@ pub struct Pattern {
   pub base_name: String,
   pub sub_name: Option<String>,
   pub symbol_kind: name_resolution::SymbolKind,
-  pub target_id: Option<cache::Id>,
 }
 
 #[derive(PartialEq, Clone, Debug)]

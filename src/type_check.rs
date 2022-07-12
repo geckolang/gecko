@@ -4,12 +4,6 @@ use crate::{
   visitor::AnalysisVisitor,
 };
 
-trait TypeInferrable {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    ast::Type::Unit
-  }
-}
-
 struct TypeCheckVisitor<'a> {
   diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   in_unsafe_block: bool,
@@ -363,14 +357,12 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       }
     }
 
-    let target_node = self
-      .cache
-      .force_get(&struct_impl.target_struct_pattern.target_id.unwrap());
+    let target_node = self.cache.force_get(&struct_impl.target_struct_pattern.id);
 
     // REVISE: Cleanup.
     if let ast::NodeKind::StructType(_target_struct_type) = &target_node {
       if let Some(trait_pattern) = &struct_impl.trait_pattern {
-        let trait_node = self.cache.force_get(&trait_pattern.target_id.unwrap());
+        let trait_node = self.cache.force_get(&trait_pattern.id);
 
         if let ast::NodeKind::Trait(trait_type) = &trait_node {
           for trait_method in &trait_type.methods {
@@ -422,8 +414,8 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn exit_struct_impl(&mut self, _struct_impl: &ast::StructImpl, node: std::rc::Rc<ast::Node>) {
-    self.in_struct_impl = true;
+  fn exit_struct_impl(&mut self, _struct_impl: &ast::StructImpl, _node: std::rc::Rc<ast::Node>) {
+    self.in_struct_impl = false;
   }
 
   fn visit_using(&mut self, using: &ast::Using, _node: std::rc::Rc<ast::Node>) {
@@ -543,12 +535,12 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_range(&mut self, node: &ast::Range, node2: std::rc::Rc<ast::Node>) {
+  fn visit_range(&mut self, range: &ast::Range, _node: std::rc::Rc<ast::Node>) {
     // NOTE: No need to check whether the range's bounds are constant
     // ... expressions, this is ensured by the parser.
 
-    let start_literal = crate::force_match!(&node.start.kind, ast::NodeKind::Literal);
-    let end_literal = crate::force_match!(&node.end.kind, ast::NodeKind::Literal);
+    let start_literal = crate::force_match!(&range.start.kind, ast::NodeKind::Literal);
+    let end_literal = crate::force_match!(&range.end.kind, ast::NodeKind::Literal);
 
     let start_int = match start_literal {
       ast::Literal::Int(value, _) => value,
@@ -569,28 +561,28 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
     }
   }
 
-  fn visit_function(&mut self, node: &ast::Function, node2: std::rc::Rc<ast::Node>) {
+  fn enter_function(&mut self, function: &ast::Function, _node: std::rc::Rc<ast::Node>) {
     let previous_function_key = self.current_function_id.clone();
 
-    self.current_function_id = Some(node.cache_id);
+    self.current_function_id = Some(function.cache_id);
 
-    if node.prototype.accepts_instance && !self.in_struct_impl {
+    if function.prototype.accepts_instance && !self.in_struct_impl {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("cannot accept instance in a non-impl function"),
       );
     }
 
-    if node.prototype.is_variadic {
+    if function.prototype.is_variadic {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "function `{}` cannot be variadic; only externs are allowed to be variadic",
-          node.name
+          function.name
         )),
       );
     }
 
-    if node.name == lowering::MAIN_FUNCTION_NAME {
+    if function.name == lowering::MAIN_FUNCTION_NAME {
       let main_function_type = ast::Type::Function(ast::FunctionType {
         parameter_types: vec![
           ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
@@ -601,7 +593,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
         is_extern: false,
       });
 
-      if node.infer_type(self.cache) != main_function_type {
+      if function.infer_type(self.cache) != main_function_type {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error()
             .with_message("the `main` function has an invalid signature")
@@ -610,13 +602,13 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       }
     }
 
-    let return_type = TypeContext::infer_return_value_type(&node.body, self.cache);
+    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
 
     if !return_type.is_a_unit() {
       // If at least one statement's type evaluates to never, it
       // means that all paths are covered, because code execution will
       // always return at one point before reaching (or at) the end of the function.
-      let all_paths_covered = node
+      let all_paths_covered = function
         .body
         .statements
         .iter()
@@ -772,11 +764,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
             let first_argument = arguments[0].kind.flatten();
 
             if let ast::NodeKind::Reference(ast::Reference {
-              pattern:
-                ast::Pattern {
-                  target_id: Some(target_id),
-                  ..
-                },
+              pattern: ast::Pattern { id: target_id, .. },
               ..
             }) = &first_argument
             {
@@ -827,7 +815,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
   fn visit_reference(&mut self, reference: &ast::Reference, _node: std::rc::Rc<ast::Node>) {
     let target_type = self
       .cache
-      .force_get(&reference.pattern.target_id.unwrap())
+      .force_get(&reference.pattern.id)
       .infer_type(self.cache);
 
     // FIXME: Investigate how this affects.
