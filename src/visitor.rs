@@ -591,4 +591,6 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
       visitor.visit_static_array_value(static_array_value, std::rc::Rc::clone(&node));
     }
   }
+
+  // TODO: Add missing visit methods.
 }

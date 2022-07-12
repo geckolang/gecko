@@ -1,7 +1,6 @@
 use crate::{
-  ast, cache, dispatch,
+  ast, cache,
   type_system::{Check, TypeContext},
-  visitor::LoweringVisitor,
 };
 
 use inkwell::{types::BasicType, values::BasicValue};
@@ -299,7 +298,7 @@ impl Lower for ast::StructValue {
     access: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct_type = generator
-      .memoize_or_retrieve_type_by_binding(self.target_id.unwrap(), cache)
+      .memoize_or_retrieve_type_by_binding(self.target_id, cache)
       .into_struct_type();
 
     let llvm_struct_alloca = generator.llvm_builder.build_alloca(
@@ -383,7 +382,7 @@ impl Lower for ast::IndexingExpr {
 
     // REVIEW: Opted not to use access rules. Ensure this is correct.
     let llvm_target_array = generator
-      .memoize_or_retrieve_value(self.target_id.unwrap(), cache, false, false)
+      .memoize_or_retrieve_value(self.target_id, cache, false, false)
       .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
@@ -397,7 +396,7 @@ impl Lower for ast::IndexingExpr {
         "array.index.gep",
       );
 
-      let target_indexable_type = cache.force_get(&self.target_id.unwrap()).infer_type(cache);
+      let target_indexable_type = cache.force_get(&self.target_id).infer_type(cache);
 
       let target_indexable_size = match target_indexable_type {
         ast::Type::Array(_, size) => size,

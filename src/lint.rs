@@ -147,6 +147,6 @@ impl AnalysisVisitor for LintContext {
   ) {
     self
       .variable_references
-      .insert(indexing_expr.target_id.unwrap(), true);
+      .insert(indexing_expr.target_id, true);
   }
 }

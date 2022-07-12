@@ -926,7 +926,7 @@ impl<'a> Parser<'a> {
     Ok(ast::IndexingExpr {
       name,
       index_expr,
-      target_id: None,
+      target_id: self.cache.create_id(),
     })
   }
 
@@ -1360,7 +1360,7 @@ impl<'a> Parser<'a> {
     Ok(ast::StructValue {
       struct_name,
       fields,
-      target_id: None,
+      target_id: self.cache.create_id(),
       ty: None,
     })
   }

@@ -916,7 +916,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
       return;
     }
 
-    let target_array = self.cache.force_get(&indexing_expr.target_id.unwrap());
+    let target_array = self.cache.force_get(&indexing_expr.target_id);
     let target_expr_type = target_array.infer_flatten_type(self.cache);
 
     // REVIEW: Any way of avoiding nesting?
@@ -1026,7 +1026,7 @@ impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
   }
 
   fn visit_struct_value(&mut self, struct_value: &ast::StructValue, _node: std::rc::Rc<ast::Node>) {
-    let struct_type_node = self.cache.force_get(&struct_value.target_id.unwrap());
+    let struct_type_node = self.cache.force_get(&struct_value.target_id);
 
     let struct_type = match struct_type_node {
       ast::NodeKind::StructType(struct_type) => struct_type,

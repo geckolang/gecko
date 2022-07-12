@@ -552,7 +552,7 @@ pub struct StructValue {
   pub fields: Vec<std::rc::Rc<Node>>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
-  pub target_id: Option<cache::Id>,
+  pub target_id: cache::Id,
   pub ty: Option<Type>,
 }
 
@@ -584,7 +584,7 @@ pub struct Enum {
 pub struct IndexingExpr {
   pub name: String,
   pub index_expr: std::rc::Rc<Node>,
-  pub target_id: Option<cache::Id>,
+  pub target_id: cache::Id,
 }
 
 #[derive(Debug, Clone)]

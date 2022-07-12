@@ -609,7 +609,7 @@ impl Check for ast::ExternStatic {
 
 impl Check for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type = match cache.force_get(&self.target_id.unwrap()) {
+    let struct_type = match cache.force_get(&self.target_id) {
       ast::NodeKind::StructType(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -619,7 +619,7 @@ impl Check for ast::StructValue {
   }
 
   fn check(&self, context: &mut TypeContext, cache: &cache::Cache) {
-    let struct_type_node = cache.force_get(&self.target_id.unwrap());
+    let struct_type_node = cache.force_get(&self.target_id);
 
     let struct_type = match struct_type_node {
       ast::NodeKind::StructType(struct_type) => struct_type,
@@ -754,7 +754,7 @@ impl Check for ast::Enum {
 
 impl Check for ast::IndexingExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_array = cache.force_get(&self.target_id.unwrap());
+    let target_array = cache.force_get(&self.target_id);
     let array_type = target_array.infer_flatten_type(cache);
 
     // TODO: In the future, add support for when indexing strings.
@@ -783,7 +783,7 @@ impl Check for ast::IndexingExpr {
       return;
     }
 
-    let target_array = cache.force_get(&self.target_id.unwrap());
+    let target_array = cache.force_get(&self.target_id);
     let target_expr_type = target_array.infer_flatten_type(cache);
 
     // REVIEW: Any way of avoiding nesting?

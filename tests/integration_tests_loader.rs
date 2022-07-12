@@ -43,60 +43,62 @@ mod tests {
     let mut cache = gecko::cache::Cache::new();
     // let mut lint_context = gecko::lint::LintContext::new();
     let mut llvm_generator = gecko::lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
-    let mut ast_map = std::collections::BTreeMap::new();
+    // let mut ast_map = std::collections::BTreeMap::new();
     let tokens = lex(source_file_contents);
     let mut parser = gecko::parser::Parser::new(tokens, &mut cache);
     let top_level_nodes = parser.parse_all();
 
     assert!(top_level_nodes.is_ok());
 
+    todo!();
+
     // REVIEW: Is this the correct qualifier to pass it?
-    let mut name_resolver = gecko::name_resolution::NameResolver::new(qualifier.clone());
+    // let mut name_resolver = gecko::name_resolution::NameResolver::new(qualifier.clone());
 
-    ast_map.insert(qualifier, top_level_nodes.unwrap());
+    // ast_map.insert(qualifier, top_level_nodes.unwrap());
 
-    // After all the ASTs have been collected, perform name resolution step.
-    assert!(name_resolver.run(&mut ast_map, &mut cache).is_empty());
+    // // After all the ASTs have been collected, perform name resolution step.
+    // assert!(name_resolver.run(&mut ast_map, &mut cache).is_empty());
 
-    // Once symbols are resolved, we can proceed to the other phases.
-    for inner_ast in ast_map.values() {
-      // FIXME: Linting disabled temporarily.
-      // REVIEW: Can we mix linting with type-checking without any problems?
-      // for top_level_node in inner_ast {
-      //   top_level_node.lint(&mut lint_context);
-      // }
+    // // Once symbols are resolved, we can proceed to the other phases.
+    // for inner_ast in ast_map.values() {
+    //   // FIXME: Linting disabled temporarily.
+    //   // REVIEW: Can we mix linting with type-checking without any problems?
+    //   // for top_level_node in inner_ast {
+    //   //   top_level_node.lint(&mut lint_context);
+    //   // }
 
-      let check_result = gecko::type_system::TypeContext::run(inner_ast, &cache);
+    //   let check_result = gecko::type_system::TypeContext::run(inner_ast, &cache);
 
-      assert!(check_result.0.is_empty());
-    }
+    //   assert!(check_result.0.is_empty());
+    // }
 
-    // FIXME: Temporarily commented out.
-    // assert!(lint_context.diagnostics.is_empty());
+    // // FIXME: Temporarily commented out.
+    // // assert!(lint_context.diagnostics.is_empty());
 
-    // REVISE: Any way for better efficiency (less loops)?
-    // Once symbols are resolved, we can proceed to the other phases.
-    for (qualifier, inner_ast) in &mut ast_map {
-      // REVIEW: Must join package and module name for uniqueness?
-      llvm_generator.module_name = qualifier.module_name.clone();
+    // // REVISE: Any way for better efficiency (less loops)?
+    // // Once symbols are resolved, we can proceed to the other phases.
+    // for (qualifier, inner_ast) in &mut ast_map {
+    //   // REVIEW: Must join package and module name for uniqueness?
+    //   llvm_generator.module_name = qualifier.module_name.clone();
 
-      for top_level_node in inner_ast {
-        top_level_node.lower(&mut llvm_generator, &mut cache, false);
-      }
-    }
+    //   for top_level_node in inner_ast {
+    //     top_level_node.lower(&mut llvm_generator, &mut cache, false);
+    //   }
+    // }
 
-    let llvm_module_string = llvm_module.print_to_string().to_string();
+    // let llvm_module_string = llvm_module.print_to_string().to_string();
 
-    if let Err(e) = llvm_module.verify() {
-      println!("\nIn:\n======\n{}======", llvm_module_string);
+    // if let Err(e) = llvm_module.verify() {
+    //   println!("\nIn:\n======\n{}======", llvm_module_string);
 
-      panic!(
-        "... LLVM module verification failed: \n======\n{}\n======",
-        e.to_string()
-      );
-    }
+    //   panic!(
+    //     "... LLVM module verification failed: \n======\n{}\n======",
+    //     e.to_string()
+    //   );
+    // }
 
-    llvm_module_string
+    // llvm_module_string
   }
 
   #[test]
