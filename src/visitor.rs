@@ -3,6 +3,45 @@ use crate::ast;
 macro_rules! define_visitor {
   (@ $name:ident $(<$lt:lifetime>)?, $return_type:ty, $default_value:expr) => {
     pub trait $name $(<$lt>)? {
+      fn dispatch(&mut self, node: &std::rc::Rc<ast::Node>) -> $return_type {
+        let cloned_rc_node = std::rc::Rc::clone(node);
+
+        match &node.kind {
+          ast::NodeKind::Literal(literal) => self.visit_literal(&literal, cloned_rc_node),
+          ast::NodeKind::ExternFunction(extern_fn) => self.visit_extern_function(&extern_fn, cloned_rc_node),
+          ast::NodeKind::ExternStatic(extern_static) => self.visit_extern_static(&extern_static, cloned_rc_node),
+          ast::NodeKind::Function(function) => self.enter_function(&function, cloned_rc_node),
+          ast::NodeKind::BlockExpr(block_expr) => self.enter_block_expr(&block_expr, cloned_rc_node),
+          ast::NodeKind::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt, cloned_rc_node),
+          ast::NodeKind::BindingStmt(binding_stmt) => self.visit_binding_stmt(&binding_stmt, cloned_rc_node),
+          ast::NodeKind::IfExpr(if_expr) => self.visit_if_expr(&if_expr, cloned_rc_node),
+          ast::NodeKind::CallExpr(call_expr) => self.visit_call_expr(&call_expr, cloned_rc_node),
+          ast::NodeKind::IntrinsicCall(intrinsic_call) => self.visit_intrinsic_call(&intrinsic_call, cloned_rc_node),
+          ast::NodeKind::InlineExprStmt(inline_expr_stmt) => self.visit_inline_expr_stmt(&inline_expr_stmt, cloned_rc_node),
+          ast::NodeKind::Reference(reference) => self.visit_reference(&reference, cloned_rc_node),
+          ast::NodeKind::BinaryExpr(binary_expr) => self.visit_binary_expr(&binary_expr, cloned_rc_node),
+          ast::NodeKind::UnaryExpr(unary_expr) => self.visit_unary_expr(&unary_expr, cloned_rc_node),
+          ast::NodeKind::Parameter(parameter) => self.visit_parameter(&parameter, cloned_rc_node),
+          ast::NodeKind::UnsafeExpr(unsafe_expr) => self.enter_unsafe_expr(&unsafe_expr, cloned_rc_node),
+          ast::NodeKind::StaticArrayValue(static_array_value) => self.visit_static_array_value(&static_array_value, cloned_rc_node),
+          ast::NodeKind::IndexingExpr(indexing_expr) => self.visit_indexing_expr(&indexing_expr, cloned_rc_node),
+          ast::NodeKind::Enum(enum_) => self.visit_enum(&enum_, cloned_rc_node),
+          ast::NodeKind::StructType(struct_type) => self.visit_struct_type(&struct_type, cloned_rc_node),
+          ast::NodeKind::Prototype(prototype) => self.visit_prototype(&prototype, cloned_rc_node),
+          ast::NodeKind::StructValue(struct_value) => self.visit_struct_value(&struct_value, cloned_rc_node),
+          ast::NodeKind::Pattern(pattern) => self.visit_pattern(&pattern, cloned_rc_node),
+          ast::NodeKind::TypeAlias(type_alias) => self.visit_type_alias(&type_alias, cloned_rc_node),
+          ast::NodeKind::Closure(closure) => self.visit_closure(&closure, cloned_rc_node),
+          ast::NodeKind::MemberAccess(member_access) => self.visit_member_access(&member_access, cloned_rc_node),
+          ast::NodeKind::StructImpl(struct_impl) => self.enter_struct_impl(&struct_impl, cloned_rc_node),
+          ast::NodeKind::Trait(trait_) => self.visit_trait(&trait_, cloned_rc_node),
+          ast::NodeKind::ParenthesesExpr(parentheses_expr) => self.visit_parentheses_expr(&parentheses_expr, cloned_rc_node),
+          ast::NodeKind::Using(using) => self.visit_using(&using, cloned_rc_node),
+          ast::NodeKind::SizeofIntrinsic(sizeof_intrinsic) => self.visit_sizeof_intrinsic(&sizeof_intrinsic, cloned_rc_node),
+          ast::NodeKind::Range(range) => self.visit_range(&range, cloned_rc_node)
+        }
+      }
+
       fn visit_literal(&mut self, _literal: &ast::Literal, _node: std::rc::Rc<ast::Node>) -> $return_type {
         $default_value
       }
@@ -263,6 +302,7 @@ trait Visitor {
 }
 
 fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
+  // TODO: Simplify with the addition of the dispatch method.
   match &node.kind {
     ast::NodeKind::InlineExprStmt(inline_expr_stmt) => {
       visitor.visit_inline_expr_stmt(inline_expr_stmt, std::rc::Rc::clone(&node));

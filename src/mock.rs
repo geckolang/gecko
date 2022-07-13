@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub mod tests {
-  use crate::{ast, cache, lowering::LlvmGenerator};
-  use crate::{lowering::Lower, name_resolution};
+  use crate::name_resolution;
+  use crate::{ast, cache};
 
   pub trait ComparableMock: ToString {
     fn compare_with(&self, expected: &str) {
@@ -34,17 +34,19 @@ pub mod tests {
     }
 
     pub fn lower(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
-      node.lower(&mut self.mock.generator, &self.mock.cache, access);
+      // TODO:
+      // node.lower(&mut self.mock.generator, &self.mock.cache, access);
 
       self
     }
 
     pub fn lower_cache(&mut self, cache_id: cache::Id, access: bool) -> &mut Self {
-      self.mock.cache.force_get(&cache_id).lower(
-        &mut self.mock.generator,
-        &self.mock.cache,
-        access,
-      );
+      // TODO:
+      // self.mock.cache.force_get(&cache_id).lower(
+      //   &mut self.mock.generator,
+      //   &self.mock.cache,
+      //   access,
+      // );
 
       self
     }
@@ -76,17 +78,19 @@ pub mod tests {
 
   impl ModuleMock<'_, '_> {
     pub fn lower(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
-      node.lower(&mut self.mock.generator, &self.mock.cache, access);
+      // TODO:
+      // node.lower(&mut self.mock.generator, &self.mock.cache, access);
 
       self
     }
 
     pub fn _lower_cache(&mut self, cache_id: cache::Id, access: bool) -> &mut Self {
-      self.mock.cache.force_get(&cache_id).lower(
-        &mut self.mock.generator,
-        &self.mock.cache,
-        access,
-      );
+      // TODO:
+      // self.mock.cache.force_get(&cache_id).lower(
+      //   &mut self.mock.generator,
+      //   &self.mock.cache,
+      //   access,
+      // );
 
       self
     }
@@ -105,7 +109,7 @@ pub mod tests {
   pub struct Mock<'a, 'ctx> {
     context: &'ctx inkwell::context::Context,
     module: &'a inkwell::module::Module<'ctx>,
-    generator: LlvmGenerator<'a, 'ctx>,
+    // generator: LlvmGenerator<'a, 'ctx>,
     cache: cache::Cache,
   }
 
@@ -180,7 +184,7 @@ pub mod tests {
       Self {
         context,
         module,
-        generator: LlvmGenerator::new(context, module),
+        // generator: LlvmGenerator::new(context, module),
         cache: cache::Cache::new(),
       }
     }
@@ -193,8 +197,9 @@ pub mod tests {
 
       let entry_block = self.context.append_basic_block(function, "entry");
 
-      self.generator.llvm_builder.position_at_end(entry_block);
-      self.generator.llvm_function_buffer = Some(function);
+      // TODO:
+      // self.generator.llvm_builder.position_at_end(entry_block);
+      // self.generator.llvm_function_buffer = Some(function);
 
       FunctionMock::new(self, function)
     }
@@ -210,7 +215,8 @@ pub mod tests {
     }
 
     pub fn _lower_without_context(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
-      node.lower(&mut self.generator, &self.cache, access);
+      // TODO:
+      // node.lower(&mut self.generator, &self.cache, access);
 
       self
     }
