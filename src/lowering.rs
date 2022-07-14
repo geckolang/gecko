@@ -15,17 +15,17 @@ pub struct LlvmGeneratorBuffers<'ctx> {
 }
 
 pub struct LoweringContext<'a, 'ctx> {
-  cache: &'a cache::Cache,
-  pub module_name: String,
-  llvm_context: &'ctx inkwell::context::Context,
-  llvm_module: &'a inkwell::module::Module<'ctx>,
+  /// The next fall-through block (if any).
+  pub(super) current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   pub(super) llvm_builder: inkwell::builder::Builder<'ctx>,
   pub(super) llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
+  pub module_name: String,
+  cache: &'a cache::Cache,
+  llvm_context: &'ctx inkwell::context::Context,
+  llvm_module: &'a inkwell::module::Module<'ctx>,
   // TODO: Shouldn't this be a vector instead?
   llvm_cached_values: std::collections::HashMap<cache::Id, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_cached_types: std::collections::HashMap<cache::Id, inkwell::types::BasicTypeEnum<'ctx>>,
-  /// The next fall-through block (if any).
-  pub(super) current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   mangle_counter: usize,
 }
 

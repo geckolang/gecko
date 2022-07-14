@@ -301,7 +301,7 @@ trait Visitor {
   type VisitResult;
 }
 
-fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
+pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
   // TODO: Simplify with the addition of the dispatch method.
   match &node.kind {
     ast::NodeKind::InlineExprStmt(inline_expr_stmt) => {
@@ -477,10 +477,11 @@ fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
 ///
 /// This is more performant than traversing the AST per visitor, since
 /// with this visitor we can invoke multiple others at the cost of a single pass.
-struct AggregateVisitor<'a> {
-  visitors: Vec<&'a mut dyn AnalysisVisitor>,
+pub struct AggregateVisitor<'a> {
+  pub visitors: Vec<&'a mut dyn AnalysisVisitor>,
 }
 
+// REVIEW: Can we eliminate this with the use of `dispatch`?
 impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
   fn visit_literal(&mut self, literal: &ast::Literal, node: std::rc::Rc<ast::Node>) {
     for visitor in &mut self.visitors {
@@ -527,6 +528,12 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
   fn enter_block_expr(&mut self, block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) {
     for visitor in &mut self.visitors {
       visitor.enter_block_expr(block, std::rc::Rc::clone(&node));
+      visitor.exit_block_expr(block, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn exit_block_expr(&mut self, block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) -> () {
+    for visitor in &mut self.visitors {
       visitor.exit_block_expr(block, std::rc::Rc::clone(&node));
     }
   }
@@ -645,5 +652,107 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
     }
   }
 
-  // TODO: Add missing visit methods.
+  fn enter_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
+    for visitor in &mut self.visitors {
+      visitor.enter_function(function, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn exit_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
+    for visitor in &mut self.visitors {
+      visitor.exit_function(function, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn enter_unsafe_expr(
+    &mut self,
+    unsafe_expr: &ast::UnsafeExpr,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    for visitor in &mut self.visitors {
+      visitor.enter_unsafe_expr(unsafe_expr, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn exit_unsafe_expr(
+    &mut self,
+    unsafe_expr: &ast::UnsafeExpr,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    for visitor in &mut self.visitors {
+      visitor.exit_unsafe_expr(unsafe_expr, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn visit_binary_expr(
+    &mut self,
+    binary_expr: &ast::BinaryExpr,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    for visitor in &mut self.visitors {
+      visitor.visit_binary_expr(binary_expr, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn visit_binding_stmt(
+    &mut self,
+    binding_stmt: &ast::BindingStmt,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    for visitor in &mut self.visitors {
+      visitor.visit_binding_stmt(binding_stmt, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn visit_call_expr(&mut self, call_expr: &ast::CallExpr, node: std::rc::Rc<ast::Node>) -> () {
+    for visitor in &mut self.visitors {
+      visitor.visit_call_expr(call_expr, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr, node: std::rc::Rc<ast::Node>) -> () {
+    for visitor in &mut self.visitors {
+      visitor.visit_if_expr(if_expr, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn visit_indexing_expr(
+    &mut self,
+    indexing_expr: &ast::IndexingExpr,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    for visitor in &mut self.visitors {
+      visitor.visit_indexing_expr(indexing_expr, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn visit_member_access(
+    &mut self,
+    member_access: &ast::MemberAccess,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    for visitor in &mut self.visitors {
+      visitor.visit_member_access(member_access, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn visit_parentheses_expr(
+    &mut self,
+    parentheses_expr: &ast::ParenthesesExpr,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    for visitor in &mut self.visitors {
+      visitor.visit_parentheses_expr(parentheses_expr, std::rc::Rc::clone(&node));
+    }
+  }
+
+  fn visit_return_stmt(
+    &mut self,
+    return_stmt: &ast::ReturnStmt,
+    node: std::rc::Rc<ast::Node>,
+  ) -> () {
+    for visitor in &mut self.visitors {
+      visitor.visit_return_stmt(return_stmt, std::rc::Rc::clone(&node));
+    }
+  }
 }

@@ -13,7 +13,7 @@ pub struct Symbol {
   pub kind: SymbolKind,
 }
 
-type Scope = std::collections::HashMap<Symbol, cache::Id>;
+pub type Scope = std::collections::HashMap<Symbol, cache::Id>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct Qualifier {
@@ -21,14 +21,14 @@ pub struct Qualifier {
   pub module_name: String,
 }
 
-struct NameResDeclContext<'a> {
+pub struct NameResDeclContext<'a> {
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
   pub scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
   /// Contains the modules with their respective top-level definitions.
   pub global_scopes: std::collections::HashMap<Qualifier, Scope>,
+  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   cache: &'a mut cache::Cache,
-  diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   current_scope_qualifier: Option<Qualifier>,
   /// Contains volatile, relative scopes.
   ///
@@ -390,7 +390,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
   }
 }
 
-struct NameResLinkContext<'a> {
+pub struct NameResLinkContext<'a> {
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
   scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
@@ -402,18 +402,17 @@ struct NameResLinkContext<'a> {
   /// The unique id of the current block's scope. Used in the resolve step.
   block_id_stack: Vec<cache::Id>,
   /// Contains the modules with their respective top-level definitions.
-  global_scopes: std::collections::HashMap<Qualifier, Scope>,
-  diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+  global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
+  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
 }
 
 impl<'a> NameResLinkContext<'a> {
-  fn new(
-    scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
-    global_scopes: std::collections::HashMap<Qualifier, Scope>,
+  pub fn new(
+    global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
     cache: &'a mut cache::Cache,
   ) -> Self {
     Self {
-      scope_map,
+      scope_map: std::collections::HashMap::new(),
       cache,
       current_scope_qualifier: None,
       current_struct_type_id: None,

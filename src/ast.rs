@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use crate::{cache, name_resolution, type_system::Check};
 
 #[macro_export]
@@ -8,47 +6,6 @@ macro_rules! force_match {
     match $subject {
       $path(inner) => inner,
       _ => unreachable!(),
-    }
-  };
-}
-
-// TODO: We can simplify this with path type on the macro arguments.
-#[macro_export]
-macro_rules! dispatch {
-  ($node:expr, $target_fn:expr $(, $($args:expr),* )? ) => {
-    match $node {
-      NodeKind::Literal(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::ExternFunction(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::ExternStatic(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Function(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::BlockExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::ReturnStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::BindingStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::IfExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::CallExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::IntrinsicCall(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::InlineExprStmt(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Reference(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::BinaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::UnaryExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Parameter(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::UnsafeExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::StaticArrayValue(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::IndexingExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Enum(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::StructType(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Prototype(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::StructValue(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Pattern(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::TypeAlias(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Closure(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::MemberAccess(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::StructImpl(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Trait(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::ParenthesesExpr(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Using(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::SizeofIntrinsic(inner) => $target_fn(inner $(, $($args),* )?),
-      NodeKind::Range(inner) => $target_fn(inner $(, $($args),* )?),
     }
   };
 }

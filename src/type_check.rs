@@ -4,8 +4,8 @@ use crate::{
   visitor::AnalysisVisitor,
 };
 
-struct TypeCheckVisitor<'a> {
-  diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+pub struct TypeCheckContext<'a> {
+  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   in_unsafe_block: bool,
   in_struct_impl: bool,
   current_function_id: Option<cache::Id>,
@@ -21,7 +21,7 @@ struct TypeCheckVisitor<'a> {
   cache: &'a cache::Cache,
 }
 
-impl<'a> TypeCheckVisitor<'a> {
+impl<'a> TypeCheckContext<'a> {
   pub fn new(cache: &'a cache::Cache) -> Self {
     Self {
       cache,
@@ -277,7 +277,7 @@ impl<'a> TypeCheckVisitor<'a> {
   }
 }
 
-impl<'a> AnalysisVisitor for TypeCheckVisitor<'a> {
+impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   fn visit_call_expr(&mut self, call_expr: &ast::CallExpr, _node: std::rc::Rc<ast::Node>) {
     // REVIEW: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
     // REVIEW: Need access to the current function?

@@ -3,7 +3,8 @@ use crate::{ast, cache, visitor::AnalysisVisitor};
 pub type TypeCache = std::collections::HashMap<cache::Id, ast::Type>;
 type TypeConstraint = (ast::Type, ast::Type);
 
-struct TypeInferenceVisitor<'a> {
+pub struct TypeInferenceContext<'a> {
+  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
   /// A map from a type variable's id to a type.
   ///
   /// This serves as a buffer for type inference to occur. It is
@@ -18,8 +19,22 @@ struct TypeInferenceVisitor<'a> {
   constraints: Vec<TypeConstraint>,
 }
 
-impl<'a> TypeInferenceVisitor<'a> {
-  pub fn infer_type_of(&mut self, node: std::rc::Rc<ast::Node>) -> ast::Type {
+impl<'a> TypeInferenceContext<'a> {
+  pub fn new(cache: &'a cache::Cache, type_cache: &'a mut TypeCache) -> Self {
+    Self {
+      diagnostics: Vec::new(),
+      substitutions: std::collections::HashMap::new(),
+      cache,
+      type_cache,
+      constraints: Vec::new(),
+    }
+  }
+
+  pub fn solve_constrains(&mut self) {
+    // TODO: Implement.
+  }
+
+  fn infer_type_of(&mut self, node: std::rc::Rc<ast::Node>) -> ast::Type {
     if let Some(cached_type) = self.type_cache.get(&node.id) {
       return cached_type.clone();
     }
@@ -70,7 +85,7 @@ impl<'a> TypeInferenceVisitor<'a> {
   }
 }
 
-impl<'a> AnalysisVisitor for TypeInferenceVisitor<'a> {
+impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, node: std::rc::Rc<ast::Node>) {
     if binding_stmt.type_hint.is_some() {
       return;
