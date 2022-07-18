@@ -248,29 +248,36 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     llvm_return_type.fn_type(llvm_parameter_types.as_slice(), function_type.is_variadic)
   }
 
-  /// Returns a new LLVM function type based on the given prototype.
+  /// Returns a new LLVM function type based on the given signature.
   ///
-  /// The return value is required because the prototype's return type is
+  /// The return value is required because the signature's return type is
   /// merely an annotation, and is unreliable. Assumes the return type to be
   /// flat.
-  fn lower_prototype(
+  fn lower_signature(
     &mut self,
-    prototype: &ast::Prototype,
+    signature: &ast::Signature,
     return_type: &ast::Type,
   ) -> inkwell::types::FunctionType<'ctx> {
-    let mut llvm_parameter_types = prototype
+    let mut llvm_parameter_types = signature
       .parameters
       .iter()
       .map(|parameter| {
         self
-          .memoize_or_retrieve_type(&parameter.type_hint.as_ref().unwrap())
+          .memoize_or_retrieve_type(
+            &parameter
+              .as_parameter()
+              .type_hint
+              .map(|type_hint| type_hint.as_type())
+              .as_ref()
+              .unwrap(),
+          )
           .into()
       })
       .collect::<Vec<_>>();
 
-    if prototype.accepts_instance {
+    if signature.accepts_instance {
       let llvm_instance_type =
-        self.memoize_or_retrieve_type_by_binding(prototype.instance_type_id.unwrap());
+        self.memoize_or_retrieve_type_by_binding(signature.instance_type_id.unwrap());
 
       // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
       llvm_parameter_types.insert(
@@ -284,14 +291,14 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     if !return_type.is_a_never() && !return_type.is_a_unit() {
       self
         .memoize_or_retrieve_type(return_type)
-        .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
+        .fn_type(llvm_parameter_types.as_slice(), signature.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)
         .into()
     } else {
       self
         .llvm_context
         .void_type()
-        .fn_type(llvm_parameter_types.as_slice(), prototype.is_variadic)
+        .fn_type(llvm_parameter_types.as_slice(), signature.is_variadic)
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum()
     }
@@ -324,7 +331,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
     // REVIEW: Why not perform type-flattening here instead?
     let ty = match &node {
-      ast::NodeKind::StructType(struct_type) => ast::Type::Struct(struct_type.clone()),
+      ast::NodeKind::Struct(struct_type) => ast::Type::Struct(struct_type.clone()),
       ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
       // REVIEW: Any more?
       _ => unreachable!(),
@@ -656,13 +663,13 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // NOTE: The return type is always explicitly-given for extern functions.
-    let llvm_function_type = self.lower_prototype(
-      &extern_fn.prototype,
+    let llvm_function_type = self.lower_signature(
+      &extern_fn.signature,
       extern_fn
-        .prototype
+        .signature
         .return_type_hint
         .as_ref()
-        .unwrap_or(&ast::Type::Unit),
+        .map_or(&ast::Type::Unit, |return_type| return_type.as_type()),
     );
 
     // TODO: Need to handle if the function already exists.
@@ -685,8 +692,10 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     function: &ast::Function,
     node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
-    let llvm_function_type = self.lower_prototype(&function.prototype, &return_type);
+    let return_type =
+      TypeContext::infer_return_value_type(&function.body.as_block_expr(), self.cache);
+
+    let llvm_function_type = self.lower_signature(&function.signature.as_signature(), &return_type);
     let is_main = function.name == MAIN_FUNCTION_NAME;
 
     // TODO: Prepend `fn` to the name.
@@ -721,12 +730,14 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
+    let signature = function.signature.as_signature();
+
     // REVIEW: Is this conversion safe?
-    let expected_param_count = function.prototype.parameters.len() as u32;
+    let expected_param_count = signature.parameters.len() as u32;
 
     assert_eq!(
       llvm_function.count_params(),
-      if function.prototype.accepts_instance {
+      if signature.accepts_instance {
         expected_param_count + 1
       } else {
         expected_param_count
@@ -734,14 +745,14 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     );
 
     // REVISE: The parameter counts aren't always guaranteed to be the same, given
-    // ... if the prototype accepts an instance. This zip might cause unexpected problems.
+    // ... if the signature accepts an instance. This zip might cause unexpected problems.
     llvm_function
       .get_param_iter()
-      .zip(function.prototype.parameters.iter())
+      .zip(signature.parameters.iter())
       .for_each(|params| {
         params
           .0
-          .set_name(format!("param.{}", params.1.name).as_str());
+          .set_name(format!("param.{}", params.1.as_parameter().name).as_str());
       });
 
     let llvm_entry_block = self
@@ -752,7 +763,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     // let yielded_result = function.body.lower(generator, cache, false);
     // let yielded_result = self.dispatch(&function.body);
-    let yielded_result = todo!();
+    let yielded_result = self.dispatch(&function.body);
 
     // FIXME: Abstract this logic for use within `closure`, and possibly wherever else this is needed, guided by calls to `attempt_build_return`?
     // If a block was left for further processing, and it has no terminator,
@@ -760,6 +771,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     if self.get_current_block().get_terminator().is_none()
       && function
         .body
+        .kind
         .infer_type(self.cache)
         .flatten(self.cache)
         .is_a_never()
@@ -1384,7 +1396,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_global_value = self.llvm_module.add_global(
-      self.memoize_or_retrieve_type(&extern_static.ty),
+      self.memoize_or_retrieve_type(&extern_static.ty.as_type()),
       None,
       extern_static.name.as_str(),
     );
@@ -1436,25 +1448,25 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // ... Don't we need to set the buffer unique id for closures as well?
 
     let buffers = self.copy_buffers();
-    // let mut modified_prototype = self.prototype.clone();
+    // let mut modified_signature = self.signature.clone();
 
     for (_index, _capture) in closure.captures.iter().enumerate() {
       // let capture_node = cache.force_get(&capture.1.unwrap());
       // let capture_node_type = (&*capture_node).infer_type(cache);
-      // let computed_parameter_index = self.prototype.parameters.len() as usize + index;
+      // let computed_parameter_index = self.signature.parameters.len() as usize + index;
 
       // REVIEW: Is the parameter position correct?
       // TODO: Re-implement, after parameters were made definitions.
-      // modified_prototype.parameters.push((
+      // modified_signature.parameters.push((
       //   format!("capture.{}", capture.0),
       //   capture_node_type,
       //   computed_parameter_index as u32,
       // ))
     }
 
-    // FIXME: Use the modified prototype.
-    let llvm_function_type = self.lower_prototype(
-      &closure.prototype,
+    // FIXME: Use the modified signature.
+    let llvm_function_type = self.lower_signature(
+      &closure.signature,
       &TypeContext::infer_return_value_type(&closure.body, self.cache),
     );
 
@@ -1474,8 +1486,8 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // TODO: Use a zipper, along with a chain.
     // for (i, llvm_parameter) in llvm_function.get_param_iter().enumerate() {
     //   // TODO: Ensure safe access.
-    //   // FIXME: The llvm function's parameter count is longer than that of the prototypes. This is because of inserted captures. Fix this bug.
-    //   let parameter = &self.prototype.parameters[i];
+    //   // FIXME: The llvm function's parameter count is longer than that of the signatures. This is because of inserted captures. Fix this bug.
+    //   let parameter = &self.signature.parameters[i];
 
     //   parameter.lower(generator, cache);
     //   llvm_parameter.set_name(format!("param.{}", parameter.0).as_str());
@@ -1594,7 +1606,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     sizeof_intrinsic: &ast::SizeofIntrinsic,
     _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let ty = self.memoize_or_retrieve_type(&sizeof_intrinsic.ty);
+    let ty = self.memoize_or_retrieve_type(&sizeof_intrinsic.ty.as_type());
 
     Some(ty.size_of().unwrap().as_basic_value_enum())
   }
@@ -1746,7 +1758,9 @@ mod tests {
     let enum_ = ast::NodeKind::Enum(ast::Enum {
       name: "a".to_string(),
       variants: vec![("b".to_string(), 0), ("c".to_string(), 1)],
-      ty: ast::BasicType::Int(ast::IntSize::I32),
+      ty: Mock::rc_node(ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::Int(
+        ast::IntSize::I32,
+      )))),
       cache_id: 0,
     });
 
@@ -1790,7 +1804,7 @@ mod tests {
 
     let extern_fn = ast::NodeKind::ExternFunction(ast::ExternFunction {
       name: "a".to_string(),
-      prototype: Mock::prototype_simple(true),
+      signature: Mock::signature_simple(true),
       attributes: Vec::new(),
       cache_id: 0,
     });
@@ -1808,7 +1822,9 @@ mod tests {
 
     let extern_static = ast::NodeKind::ExternStatic(ast::ExternStatic {
       name: "a".to_string(),
-      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      ty: Mock::rc_node(ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::Int(
+        ast::IntSize::I32,
+      )))),
       cache_id: 0,
     });
 

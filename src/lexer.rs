@@ -86,6 +86,7 @@ pub enum TokenKind {
   Elif,
   In,
   Indexof,
+  This,
 }
 
 pub struct Lexer {
@@ -515,6 +516,7 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "elif" => TokenKind::Elif,
     "in" => TokenKind::In,
     "indexof" => TokenKind::Indexof,
+    "this" => TokenKind::This,
     _ => return None,
   })
 }

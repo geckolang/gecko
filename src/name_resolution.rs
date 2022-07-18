@@ -276,7 +276,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
 
   fn exit_function(&mut self, _function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
     // NOTE: The scope tree won't be overwritten by the block's, nor the
-    // prototype's scope tree, instead they will be merged, as expected.
+    // signature's scope tree, instead they will be merged, as expected.
     self.finish_scope_tree(node.id);
   }
 
@@ -321,7 +321,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     }
   }
 
-  fn visit_struct_type(&mut self, struct_type: &ast::StructType, node: std::rc::Rc<ast::Node>) {
+  fn visit_struct(&mut self, struct_type: &ast::Struct, node: std::rc::Rc<ast::Node>) {
     self.declare_node(
       Symbol {
         base_name: struct_type.name.clone(),
@@ -548,8 +548,8 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
       });
   }
 
-  fn visit_prototype(&mut self, prototype: &ast::Prototype, _node: std::rc::Rc<ast::Node>) {
-    if let Some(instance_type_id) = &prototype.instance_type_id {
+  fn visit_signature(&mut self, signature: &ast::Signature, _node: std::rc::Rc<ast::Node>) {
+    if let Some(instance_type_id) = &signature.instance_type_id {
       self.cache.links.insert(
         instance_type_id.to_owned(),
         self.current_struct_type_id.unwrap(),
@@ -595,7 +595,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     // ... before or after the return type is possibly inferred?
     // resolver.relative_scopes = relative_scopes_buffer;
 
-    // _closure.prototype.resolve(resolver, cache);
+    // _closure.signature.resolve(resolver, cache);
 
     // cache
     //   .symbols

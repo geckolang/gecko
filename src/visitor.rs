@@ -26,8 +26,8 @@ macro_rules! define_visitor {
           ast::NodeKind::StaticArrayValue(static_array_value) => self.visit_static_array_value(&static_array_value, cloned_rc_node),
           ast::NodeKind::IndexingExpr(indexing_expr) => self.visit_indexing_expr(&indexing_expr, cloned_rc_node),
           ast::NodeKind::Enum(enum_) => self.visit_enum(&enum_, cloned_rc_node),
-          ast::NodeKind::StructType(struct_type) => self.visit_struct_type(&struct_type, cloned_rc_node),
-          ast::NodeKind::Prototype(prototype) => self.visit_prototype(&prototype, cloned_rc_node),
+          ast::NodeKind::Struct(struct_) => self.visit_struct(&struct_, cloned_rc_node),
+          ast::NodeKind::Signature(signature) => self.visit_signature(&signature, cloned_rc_node),
           ast::NodeKind::StructValue(struct_value) => self.visit_struct_value(&struct_value, cloned_rc_node),
           ast::NodeKind::Pattern(pattern) => self.visit_pattern(&pattern, cloned_rc_node),
           ast::NodeKind::TypeAlias(type_alias) => self.visit_type_alias(&type_alias, cloned_rc_node),
@@ -38,7 +38,8 @@ macro_rules! define_visitor {
           ast::NodeKind::ParenthesesExpr(parentheses_expr) => self.visit_parentheses_expr(&parentheses_expr, cloned_rc_node),
           ast::NodeKind::Using(using) => self.visit_using(&using, cloned_rc_node),
           ast::NodeKind::SizeofIntrinsic(sizeof_intrinsic) => self.visit_sizeof_intrinsic(&sizeof_intrinsic, cloned_rc_node),
-          ast::NodeKind::Range(range) => self.visit_range(&range, cloned_rc_node)
+          ast::NodeKind::Range(range) => self.visit_range(&range, cloned_rc_node),
+          ast::NodeKind::Type(ty) => self.visit_type(&ty, cloned_rc_node)
         }
       }
 
@@ -54,9 +55,9 @@ macro_rules! define_visitor {
         $default_value
       }
 
-      fn visit_prototype(
+      fn visit_signature(
         &mut self,
-        _prototype: &ast::Prototype,
+        _signature: &ast::Signature,
         _node: std::rc::Rc<ast::Node>,
       ) -> $return_type {
         $default_value
@@ -142,9 +143,9 @@ macro_rules! define_visitor {
         $default_value
       }
 
-      fn visit_struct_type(
+      fn visit_struct(
         &mut self,
-        _struct_type: &ast::StructType,
+        _struct: &ast::Struct,
         _node: std::rc::Rc<ast::Node>,
       ) -> $return_type {
         $default_value
@@ -277,6 +278,10 @@ macro_rules! define_visitor {
       ) -> $return_type {
         $default_value
       }
+
+      fn visit_type(&mut self, _ty: &ast::Type, _node: std::rc::Rc<ast::Node>) -> $return_type {
+        $default_value
+      }
     }
   };
 
@@ -301,25 +306,23 @@ trait Visitor {
   type VisitResult;
 }
 
+// TODO: Accept `&std::rc::Rc<ast::Node>` instead.
 pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
+  visitor.dispatch(&node);
+
   // TODO: Simplify with the addition of the dispatch method.
   match &node.kind {
     ast::NodeKind::InlineExprStmt(inline_expr_stmt) => {
-      visitor.visit_inline_expr_stmt(inline_expr_stmt, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&inline_expr_stmt.expr), visitor);
     }
     ast::NodeKind::BinaryExpr(binary_expr) => {
-      visitor.visit_binary_expr(binary_expr, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&binary_expr.left), visitor);
       traverse(std::rc::Rc::clone(&binary_expr.right), visitor);
     }
     ast::NodeKind::BindingStmt(binding_stmt) => {
-      visitor.visit_binding_stmt(binding_stmt, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&binding_stmt.value), visitor);
     }
     ast::NodeKind::BlockExpr(block_expr) => {
-      visitor.enter_block_expr(block_expr, std::rc::Rc::clone(&node));
-
       for statement in &block_expr.statements {
         traverse(std::rc::Rc::clone(&statement), visitor);
       }
@@ -327,7 +330,6 @@ pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor
       visitor.exit_block_expr(block_expr, std::rc::Rc::clone(&node));
     }
     ast::NodeKind::CallExpr(call_expr) => {
-      visitor.visit_call_expr(call_expr, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&call_expr.callee_expr), visitor);
 
       for argument in &call_expr.arguments {
@@ -335,28 +337,15 @@ pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor
       }
     }
     ast::NodeKind::Closure(closure) => {
-      visitor.visit_closure(closure, std::rc::Rc::clone(&node));
-      visitor.visit_prototype(&closure.prototype, std::rc::Rc::clone(&node));
+      visitor.visit_signature(&closure.signature, std::rc::Rc::clone(&node));
       visitor.enter_block_expr(&closure.body, std::rc::Rc::clone(&node));
       visitor.exit_block_expr(&closure.body, std::rc::Rc::clone(&node));
     }
-    ast::NodeKind::Enum(enum_) => {
-      visitor.visit_enum(enum_, std::rc::Rc::clone(&node));
-    }
-    ast::NodeKind::ExternFunction(extern_function) => {
-      visitor.visit_extern_function(extern_function, std::rc::Rc::clone(&node));
-    }
-    ast::NodeKind::ExternStatic(extern_static) => {
-      visitor.visit_extern_static(extern_static, std::rc::Rc::clone(&node));
-    }
     ast::NodeKind::Function(function) => {
-      visitor.enter_function(function, std::rc::Rc::clone(&node));
-      visitor.visit_prototype(&function.prototype, std::rc::Rc::clone(&node));
-      visitor.enter_block_expr(&function.body, std::rc::Rc::clone(&node));
-      visitor.exit_block_expr(&function.body, std::rc::Rc::clone(&node));
+      traverse(std::rc::Rc::clone(&function.signature), visitor);
+      traverse(std::rc::Rc::clone(&function.body), visitor);
     }
     ast::NodeKind::IfExpr(if_expr) => {
-      visitor.visit_if_expr(if_expr, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&if_expr.condition), visitor);
       traverse(std::rc::Rc::clone(&if_expr.then_value), visitor);
 
@@ -372,47 +361,28 @@ pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor
     ast::NodeKind::IndexingExpr(indexing_expr) => {
       traverse(std::rc::Rc::clone(&indexing_expr.index_expr), visitor);
     }
-    ast::NodeKind::Literal(literal) => {
-      visitor.visit_literal(literal, std::rc::Rc::clone(&node));
-    }
     ast::NodeKind::MemberAccess(member_expr) => {
-      visitor.visit_member_access(member_expr, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&member_expr.base_expr), visitor);
     }
-    ast::NodeKind::Parameter(parameter) => {
-      visitor.visit_parameter(parameter, std::rc::Rc::clone(&node));
-    }
     ast::NodeKind::ParenthesesExpr(parentheses_expr) => {
-      visitor.visit_parentheses_expr(parentheses_expr, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&parentheses_expr.0), visitor);
     }
-    ast::NodeKind::Prototype(prototype) => {
-      visitor.visit_prototype(prototype, std::rc::Rc::clone(&node));
-
-      for parameter in &prototype.parameters {
-        visitor.visit_parameter(parameter, std::rc::Rc::clone(&node));
+    ast::NodeKind::Signature(signature) => {
+      for parameter in &signature.parameters {
+        visitor.visit_parameter(parameter.as_parameter(), std::rc::Rc::clone(&node));
       }
     }
     ast::NodeKind::ReturnStmt(return_expr) => {
-      visitor.visit_return_stmt(return_expr, std::rc::Rc::clone(&node));
-
       if let Some(return_value) = &return_expr.value {
         traverse(std::rc::Rc::clone(&return_value), visitor);
       }
     }
     ast::NodeKind::IntrinsicCall(intrinsic_call) => {
-      visitor.visit_intrinsic_call(intrinsic_call, std::rc::Rc::clone(&node));
-
       for argument in &intrinsic_call.arguments {
         traverse(std::rc::Rc::clone(&argument), visitor);
       }
     }
-    ast::NodeKind::Reference(reference) => {
-      visitor.visit_reference(reference, std::rc::Rc::clone(&node));
-    }
     ast::NodeKind::StructImpl(struct_impl) => {
-      visitor.enter_struct_impl(struct_impl, std::rc::Rc::clone(&node));
-
       for static_method in &struct_impl.static_methods {
         visitor.enter_function(static_method, std::rc::Rc::clone(&node));
       }
@@ -424,50 +394,40 @@ pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor
       visitor.exit_struct_impl(struct_impl, std::rc::Rc::clone(&node));
     }
     ast::NodeKind::UnaryExpr(unary_expr) => {
-      visitor.visit_unary_expr(unary_expr, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&unary_expr.expr), visitor);
     }
     ast::NodeKind::UnsafeExpr(unsafe_expr) => {
-      visitor.enter_unsafe_expr(unsafe_expr, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&unsafe_expr.0), visitor);
       visitor.exit_unsafe_expr(unsafe_expr, std::rc::Rc::clone(&node));
     }
     ast::NodeKind::StaticArrayValue(static_array_value) => {
-      visitor.visit_static_array_value(static_array_value, std::rc::Rc::clone(&node));
-
       for element in &static_array_value.elements {
         traverse(std::rc::Rc::clone(&element), visitor);
       }
     }
-    ast::NodeKind::StructType(struct_type) => {
-      visitor.visit_struct_type(struct_type, std::rc::Rc::clone(&node));
-    }
     ast::NodeKind::StructValue(struct_value) => {
-      visitor.visit_struct_value(struct_value, std::rc::Rc::clone(&node));
-
       for field in &struct_value.fields {
         traverse(std::rc::Rc::clone(&field), visitor);
       }
     }
-    ast::NodeKind::Pattern(pattern) => {
-      visitor.visit_pattern(pattern, std::rc::Rc::clone(&node));
-    }
-    ast::NodeKind::Using(using) => {
-      visitor.visit_using(using, std::rc::Rc::clone(&node));
-    }
-    ast::NodeKind::TypeAlias(type_alias) => {
-      visitor.visit_type_alias(type_alias, std::rc::Rc::clone(&node));
-    }
-    ast::NodeKind::Trait(trait_) => {
-      visitor.visit_trait(trait_, std::rc::Rc::clone(&node));
-    }
-    ast::NodeKind::SizeofIntrinsic(sizeof_intrinsic) => {
-      visitor.visit_sizeof_intrinsic(sizeof_intrinsic, std::rc::Rc::clone(&node));
-    }
     ast::NodeKind::Range(range) => {
-      visitor.visit_range(range, std::rc::Rc::clone(&node));
       traverse(std::rc::Rc::clone(&range.start), visitor);
       traverse(std::rc::Rc::clone(&range.end), visitor);
+    }
+    ast::NodeKind::Enum(_)
+    | ast::NodeKind::ExternFunction(_)
+    | ast::NodeKind::ExternStatic(_)
+    | ast::NodeKind::Literal(_)
+    | ast::NodeKind::Parameter(_)
+    | ast::NodeKind::Reference(_)
+    | ast::NodeKind::Struct(_)
+    | ast::NodeKind::Pattern(_)
+    | ast::NodeKind::Using(_)
+    | ast::NodeKind::SizeofIntrinsic(_)
+    | ast::NodeKind::Trait(_)
+    | ast::NodeKind::TypeAlias(_)
+    | ast::NodeKind::Type(_) => {
+      //
     }
   };
 }
@@ -499,9 +459,9 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
     }
   }
 
-  fn visit_prototype(&mut self, prototype: &ast::Prototype, node: std::rc::Rc<ast::Node>) {
+  fn visit_signature(&mut self, signature: &ast::Signature, node: std::rc::Rc<ast::Node>) {
     for visitor in &mut self.visitors {
-      visitor.visit_prototype(prototype, std::rc::Rc::clone(&node));
+      visitor.visit_signature(signature, std::rc::Rc::clone(&node));
     }
   }
 
@@ -590,9 +550,9 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
     }
   }
 
-  fn visit_struct_type(&mut self, struct_type: &ast::StructType, node: std::rc::Rc<ast::Node>) {
+  fn visit_struct(&mut self, struct_type: &ast::Struct, node: std::rc::Rc<ast::Node>) {
     for visitor in &mut self.visitors {
-      visitor.visit_struct_type(struct_type, std::rc::Rc::clone(&node));
+      visitor.visit_struct(struct_type, std::rc::Rc::clone(&node));
     }
   }
 

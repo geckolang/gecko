@@ -33,7 +33,7 @@ pub struct ParenthesesExpr(pub std::rc::Rc<Node>);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
   pub name: String,
-  pub type_hint: Option<Type>,
+  pub type_hint: Option<std::rc::Rc<Node>>,
   pub position: u32,
   pub cache_id: cache::Id,
 }
@@ -70,7 +70,7 @@ pub enum Type {
   Basic(BasicType),
   Pointer(Box<Type>),
   Reference(Box<Type>),
-  Struct(StructType),
+  Struct(Struct),
   /// A type that needs to be resolved.
   Stub(StubType),
   Function(FunctionType),
@@ -219,8 +219,8 @@ impl Type {
 
       // REVISE: Cleanup!
       if let NodeKind::TypeAlias(type_alias) = &target_node {
-        return type_alias.ty.flatten(cache);
-      } else if let NodeKind::StructType(target_type) = &target_node {
+        return type_alias.ty.as_type().flatten(cache);
+      } else if let NodeKind::Struct(target_type) = &target_node {
         // REVIEW: Why is `flatten_type` being called again with a struct type inside?
         return Type::Struct(target_type.clone()).flatten(cache);
       }
@@ -228,7 +228,7 @@ impl Type {
       // REVISE: No need to clone?
       let target_struct_type = cache.force_get(&this_type.target_id.unwrap());
 
-      if let NodeKind::StructType(struct_type) = &target_struct_type {
+      if let NodeKind::Struct(struct_type) = &target_struct_type {
         return Type::Struct(struct_type.clone());
       }
     }
@@ -260,8 +260,8 @@ pub enum NodeKind {
   StaticArrayValue(StaticArrayValue),
   IndexingExpr(IndexingExpr),
   Enum(Enum),
-  StructType(StructType),
-  Prototype(Prototype),
+  Struct(Struct),
+  Signature(Signature),
   StructValue(StructValue),
   Pattern(Pattern),
   TypeAlias(TypeAlias),
@@ -273,6 +273,7 @@ pub enum NodeKind {
   Using(Using),
   SizeofIntrinsic(SizeofIntrinsic),
   Range(Range),
+  Type(Type),
 }
 
 impl NodeKind {
@@ -281,8 +282,8 @@ impl NodeKind {
     todo!();
     // let map_children = |children: &'a Vec<Node>| children.iter().map(|child_node| &child_node.kind);
 
-    // // TODO: Prototype.
-    // // let map_prototype = |prototype: &'a Prototype| map_children(&prototype.parameters);
+    // // TODO: signature.
+    // // let map_signature = |signature: &'a signature| map_children(&signature.parameters);
 
     // let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
     //   match node {
@@ -300,9 +301,9 @@ impl NodeKind {
     //       .collect(),
     //     // TODO: Include `else` expression, and alternative branches.
     //     NodeKind::IfExpr(if_expr) => vec![&if_expr.condition.kind, &if_expr.then_value.kind],
-    //     // TODO: Missing prototype.
+    //     // TODO: Missing signature.
     //     // NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
-    //     // TODO: Missing prototype.
+    //     // TODO: Missing signature.
     //     NodeKind::Function(function) => map_children(function.body.statements).collect(),
     //     NodeKind::BindingStmt(binding_stmt) => vec![&binding_stmt.value.kind],
     //     NodeKind::ReturnStmt(ReturnStmt { value: Some(value) }) => vec![&value.kind],
@@ -324,7 +325,7 @@ impl NodeKind {
     //     // NodeKind::Trait(trait_) => {
     //     //   map_children(&trait_.methods).collect()
     //     // }
-    //     // REVIEW: Not all nodes can be processed like this: What about prototypes?
+    //     // REVIEW: Not all nodes can be processed like this: What about signatures?
     //     _ => vec![],
     //   }
     // };
@@ -435,22 +436,36 @@ pub struct Node {
   pub kind: NodeKind,
   // TODO: In the future, we may be able to use node location as its id.
   pub id: cache::Id,
-  // REVIEW: This might be problematic: What if the node was retrieved from the cache?
-  pub cached_type: Option<Type>,
+  pub location: (usize, usize),
 }
 
 impl Node {
-  // TODO: Since this mutates the instance, it cannot be used anywhere pretty much.
-  pub fn mem_infer_type(&mut self, cache: &cache::Cache) -> Type {
-    if let Some(cached_type) = &self.cached_type {
-      return cached_type.clone();
-    }
+  pub fn into_signature(self) -> Signature {
+    crate::force_match!(self.kind, NodeKind::Signature)
+  }
 
-    let inferred_type = self.kind.infer_type(cache);
+  pub fn as_signature(&self) -> &Signature {
+    crate::force_match!(&self.kind, NodeKind::Signature)
+  }
 
-    self.cached_type = Some(inferred_type.clone());
+  pub fn into_type(self) -> Type {
+    crate::force_match!(self.kind, NodeKind::Type)
+  }
 
-    inferred_type
+  pub fn as_type(&self) -> &Type {
+    crate::force_match!(&self.kind, NodeKind::Type)
+  }
+
+  pub fn into_block_expr(self) -> BlockExpr {
+    crate::force_match!(self.kind, NodeKind::BlockExpr)
+  }
+
+  pub fn as_block_expr(&self) -> &BlockExpr {
+    crate::force_match!(&self.kind, NodeKind::BlockExpr)
+  }
+
+  pub fn as_parameter(&self) -> &Parameter {
+    crate::force_match!(&self.kind, NodeKind::Parameter)
   }
 }
 
@@ -469,7 +484,7 @@ pub struct Using {
 #[derive(Debug, Clone)]
 pub struct Closure {
   pub captures: Vec<(String, Option<cache::Id>)>,
-  pub prototype: Prototype,
+  pub signature: Signature,
   pub body: BlockExpr,
 }
 
@@ -524,7 +539,7 @@ pub struct StructImpl {
 #[derive(Debug, Clone)]
 pub struct Trait {
   pub name: String,
-  pub methods: Vec<(String, Prototype)>,
+  pub methods: Vec<(String, Signature)>,
   pub cache_id: cache::Id,
 }
 
@@ -533,7 +548,7 @@ pub struct Enum {
   pub name: String,
   pub variants: Vec<(String, cache::Id)>,
   pub cache_id: cache::Id,
-  pub ty: BasicType,
+  pub ty: std::rc::Rc<Node>,
 }
 
 #[derive(Debug, Clone)]
@@ -565,7 +580,7 @@ pub struct Reference {
 
 #[derive(Debug, Clone)]
 pub struct SizeofIntrinsic {
-  pub ty: Type,
+  pub ty: std::rc::Rc<Node>,
 }
 
 #[derive(Debug, Clone)]
@@ -578,20 +593,20 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone)]
-pub struct Prototype {
-  pub parameters: Vec<Parameter>,
-  pub return_type_hint: Option<Type>,
+pub struct Signature {
+  pub parameters: Vec<std::rc::Rc<Node>>,
+  pub return_type_hint: Option<std::rc::Rc<Node>>,
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
   pub instance_type_id: Option<cache::Id>,
-  pub this_parameter: Option<Parameter>,
+  pub this_parameter: Option<std::rc::Rc<Node>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExternFunction {
   pub name: String,
-  pub prototype: Prototype,
+  pub signature: Signature,
   pub attributes: Vec<Attribute>,
   pub cache_id: cache::Id,
 }
@@ -599,7 +614,7 @@ pub struct ExternFunction {
 #[derive(Debug, Clone)]
 pub struct ExternStatic {
   pub name: String,
-  pub ty: Type,
+  pub ty: std::rc::Rc<Node>,
   pub cache_id: cache::Id,
 }
 
@@ -613,8 +628,8 @@ pub struct Attribute {
 pub struct Function {
   pub static_owner_name: Option<String>,
   pub name: String,
-  pub prototype: Prototype,
-  pub body: Box<BlockExpr>,
+  pub signature: std::rc::Rc<Node>,
+  pub body: std::rc::Rc<Node>,
   pub attributes: Vec<Attribute>,
   pub cache_id: cache::Id,
   pub generics: Option<Generics>,
@@ -638,7 +653,7 @@ pub struct BindingStmt {
   pub value: std::rc::Rc<Node>,
   pub is_const_expr: bool,
   pub cache_id: cache::Id,
-  pub type_hint: Option<Type>,
+  pub type_hint: Option<std::rc::Rc<Node>>,
 }
 
 #[derive(Debug, Clone)]
@@ -672,7 +687,7 @@ pub struct IntrinsicCall {
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct StructType {
+pub struct Struct {
   pub cache_id: cache::Id,
   pub name: String,
   pub fields: Vec<(String, Type)>,
@@ -681,7 +696,7 @@ pub struct StructType {
 #[derive(Debug, Clone)]
 pub struct TypeAlias {
   pub name: String,
-  pub ty: Type,
+  pub ty: std::rc::Rc<Node>,
   pub cache_id: cache::Id,
 }
 
@@ -721,7 +736,7 @@ pub struct UnaryExpr {
   /// Represents the type being casted to.
   ///
   /// Only available when the unary expression is a cast.
-  pub cast_type: Option<Type>,
+  pub cast_type: Option<std::rc::Rc<Node>>,
 }
 
 #[derive(Debug, Clone)]

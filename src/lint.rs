@@ -54,7 +54,7 @@ impl AnalysisVisitor for LintContext {
     // TODO: Lint name(s).
   }
 
-  fn visit_struct_type(&mut self, struct_type: &ast::StructType, _node: std::rc::Rc<ast::Node>) {
+  fn visit_struct(&mut self, struct_type: &ast::Struct, _node: std::rc::Rc<ast::Node>) {
     self.lint_name_casing("struct", &struct_type.name, convert_case::Case::Pascal);
 
     // REVIEW: Any more linting needed?
@@ -130,7 +130,7 @@ impl AnalysisVisitor for LintContext {
   fn enter_function(&mut self, function: &ast::Function, _node: std::rc::Rc<ast::Node>) {
     self.lint_name_casing("function", &function.name, convert_case::Case::Snake);
 
-    if function.prototype.parameters.len() > 4 {
+    if function.signature.as_signature().parameters.len() > 4 {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::warning()
           .with_message("function has more than 4 parameters"),

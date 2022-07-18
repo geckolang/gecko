@@ -131,8 +131,8 @@ pub mod tests {
       }))
     }
 
-    pub fn prototype_simple(is_extern: bool) -> ast::Prototype {
-      ast::Prototype {
+    pub fn signature_simple(is_extern: bool) -> ast::Signature {
+      ast::Signature {
         parameters: Vec::new(),
         return_type_hint: None,
         is_variadic: false,
@@ -172,8 +172,8 @@ pub mod tests {
     pub fn rc_node(kind: ast::NodeKind) -> std::rc::Rc<ast::Node> {
       std::rc::Rc::new(ast::Node {
         kind,
-        cached_type: None,
         id: 0,
+        location: (0, 0),
       })
     }
 

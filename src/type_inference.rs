@@ -118,6 +118,6 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
   }
 
   fn visit_return_stmt(&mut self, _return_stmt: &ast::ReturnStmt, _node: std::rc::Rc<ast::Node>) {
-    // TODO: Where is prototype return type type variable created?
+    // TODO: Where is signature return type type variable created?
   }
 }

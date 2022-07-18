@@ -33,19 +33,19 @@ impl TypeContext {
     }
   }
 
-  pub fn infer_prototype_type(
-    prototype: &ast::Prototype,
+  pub fn infer_signature_type(
+    signature: &ast::Signature,
     return_type: Option<ast::Type>,
   ) -> ast::Type {
     ast::Type::Function(ast::FunctionType {
       return_type: Box::new(return_type.unwrap_or(ast::Type::Unit)),
-      parameter_types: prototype
+      parameter_types: signature
         .parameters
         .iter()
         .map(|parameter| parameter.type_hint.as_ref().unwrap().clone())
         .collect(),
-      is_variadic: prototype.is_variadic,
-      is_extern: prototype.is_extern,
+      is_variadic: signature.is_variadic,
+      is_extern: signature.is_extern,
     })
   }
 
@@ -139,8 +139,8 @@ impl Check for ast::MemberAccess {
 
 impl Check for ast::Closure {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    TypeContext::infer_prototype_type(
-      &self.prototype,
+    TypeContext::infer_signature_type(
+      &self.signature,
       Some(TypeContext::infer_return_value_type(&self.body, cache)),
     )
   }
@@ -171,7 +171,7 @@ impl Check for ast::ExternStatic {
 impl Check for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     let struct_type = match cache.force_get(&self.target_id) {
-      ast::NodeKind::StructType(struct_type) => struct_type,
+      ast::NodeKind::Struct(struct_type) => struct_type,
       _ => unreachable!(),
     };
 
@@ -180,11 +180,11 @@ impl Check for ast::StructValue {
   }
 }
 
-impl Check for ast::Prototype {
+impl Check for ast::Signature {
   //
 }
 
-impl Check for ast::StructType {
+impl Check for ast::Struct {
   // REVIEW: Implement? This is already a type on itself.
 }
 
@@ -252,7 +252,7 @@ impl Check for ast::UnsafeExpr {
 
 impl Check for ast::ExternFunction {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    TypeContext::infer_prototype_type(&self.prototype, self.prototype.return_type_hint.clone())
+    TypeContext::infer_signature_type(&self.signature, self.signature.return_type_hint.clone())
   }
 }
 
@@ -366,10 +366,11 @@ impl Check for ast::ReturnStmt {
 impl Check for ast::Function {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // REVIEW: Why not use annotated return type if defined?
-    TypeContext::infer_prototype_type(
-      &self.prototype,
-      Some(TypeContext::infer_return_value_type(&self.body, cache)),
-    )
+    todo!()
+    // TypeContext::infer_signature_type(
+    //   &self.signature,
+    //   Some(TypeContext::infer_return_value_type(&self.body, cache)),
+    // )
   }
 }
 

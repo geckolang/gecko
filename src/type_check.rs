@@ -81,19 +81,19 @@ impl<'a> TypeCheckContext<'a> {
     }
   }
 
-  pub fn infer_prototype_type(
-    prototype: &ast::Prototype,
+  pub fn infer_signature_type(
+    signature: &ast::Signature,
     return_type: Option<ast::Type>,
   ) -> ast::Type {
     ast::Type::Function(ast::FunctionType {
       return_type: Box::new(return_type.unwrap_or(ast::Type::Unit)),
-      parameter_types: prototype
+      parameter_types: signature
         .parameters
         .iter()
         .map(|parameter| parameter.type_hint.as_ref().unwrap().clone())
         .collect(),
-      is_variadic: prototype.is_variadic,
-      is_extern: prototype.is_extern,
+      is_variadic: signature.is_variadic,
+      is_extern: signature.is_extern,
     })
   }
 
@@ -127,19 +127,19 @@ impl<'a> TypeCheckContext<'a> {
 
   // TODO: Use an enum to specify error type instead of a string.
   // REVIEW: Consider using `Result` instead of `Option`.
-  // pub fn compare_prototypes(
-  //   prototype_a: &ast::Prototype,
-  //   prototype_b: &ast::Prototype,
+  // pub fn compare_signatures(
+  //   signature_a: &ast::signature,
+  //   signature_b: &ast::signature,
   //   cache: &cache::Cache,
   // ) -> Option<String> {
-  //   if prototype_a.parameters.len() != prototype_b.parameters.len() {
+  //   if signature_a.parameters.len() != signature_b.parameters.len() {
   //     return Some("parameter count".to_string());
   //   }
 
-  //   let parameter_types = prototype_a
+  //   let parameter_types = signature_a
   //     .parameters
   //     .iter()
-  //     .zip(prototype_b.parameters.iter())
+  //     .zip(signature_b.parameters.iter())
   //     .map(|(param_def_a, param_def_b)| (param_def_a.ty.clone(), param_def_b.ty.clone()));
 
   //   for (param_type_a, param_type_b) in parameter_types {
@@ -150,8 +150,8 @@ impl<'a> TypeCheckContext<'a> {
   //   }
 
   //   if !Self::compare(
-  //     &prototype_a.return_type_annotation,
-  //     &prototype_b.return_type_annotation,
+  //     &signature_a.return_type_annotation,
+  //     &signature_b.return_type_annotation,
   //     cache,
   //   ) {
   //     return Some("return type".to_string());
@@ -347,7 +347,8 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     self.in_struct_impl = true;
 
     for method in &struct_impl.member_methods {
-      if !method.prototype.accepts_instance {
+      // TODO: Abstract this check to contain the for loop.
+      if !method.signature.as_signature().accepts_instance {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
             "implementation method `{}` is missing the instance parameter `this`",
@@ -360,7 +361,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     let target_node = self.cache.force_get(&struct_impl.target_struct_pattern.id);
 
     // REVISE: Cleanup.
-    if let ast::NodeKind::StructType(_target_struct_type) = &target_node {
+    if let ast::NodeKind::Struct(_target_struct_type) = &target_node {
       if let Some(trait_pattern) = &struct_impl.trait_pattern {
         let trait_node = self.cache.force_get(&trait_pattern.id);
 
@@ -373,15 +374,15 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
 
             if let Some(_impl_method) = impl_method_result {
               // TODO: Finish implementing.
-              let prototype_unification_result =
-                // TypeCheckContext::unify_prototypes(&trait_method.1, impl_method, cache);
+              let signature_unification_result =
+                // TypeCheckContext::unify_signatures(&trait_method.1, impl_method, cache);
                 Some("pending error".to_string());
 
-              if let Some(error) = prototype_unification_result {
+              if let Some(error) = signature_unification_result {
                 // REVISE: Use expected/got system.
                 self.diagnostics.push(
                   codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-                    "prototype of implementation method `{}` for trait `{}` mismatch in {}",
+                    "signature of implementation method `{}` for trait `{}` mismatch in {}",
                     "pending impl method name", trait_type.name, error
                   )),
                 )
@@ -428,7 +429,12 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     sizeof_intrinsic: &ast::SizeofIntrinsic,
     _node: std::rc::Rc<ast::Node>,
   ) {
-    if sizeof_intrinsic.ty.flatten(self.cache).is(&ast::Type::Unit) {
+    if sizeof_intrinsic
+      .ty
+      .as_type()
+      .flatten(self.cache)
+      .is(&ast::Type::Unit)
+    {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("cannot determine size of unit type"),
@@ -477,7 +483,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
 
     self.current_function_id = Some(node.id);
 
-    if closure.prototype.accepts_instance {
+    if closure.signature.accepts_instance {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("closures cannot accept instances"),
@@ -493,7 +499,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     _node: std::rc::Rc<ast::Node>,
   ) {
     // TODO: Redundant to have function return types.
-    let target_prototype_sig: (Vec<ast::Type>, ast::Type) = match intrinsic_call.kind {
+    let target_signature: (Vec<ast::Type>, ast::Type) = match intrinsic_call.kind {
       ast::IntrinsicKind::LengthOf => (
         // Cannot define array type directly. Use the any type for comparison.
         vec![ast::Type::Any],
@@ -504,8 +510,8 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     let target_function_type = ast::FunctionType {
       is_extern: false,
       is_variadic: false,
-      parameter_types: target_prototype_sig.0,
-      return_type: Box::new(target_prototype_sig.1),
+      parameter_types: target_signature.0,
+      return_type: Box::new(target_signature.1),
     };
 
     self.validate_fn_call(
@@ -566,14 +572,16 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
 
     self.current_function_id = Some(function.cache_id);
 
-    if function.prototype.accepts_instance && !self.in_struct_impl {
+    let signature = function.signature.as_signature();
+
+    if signature.accepts_instance && !self.in_struct_impl {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("cannot accept instance in a non-impl function"),
       );
     }
 
-    if function.prototype.is_variadic {
+    if signature.is_variadic {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "function `{}` cannot be variadic; only externs are allowed to be variadic",
@@ -602,14 +610,14 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       }
     }
 
-    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
+    let body = function.body.as_block_expr();
+    let return_type = TypeContext::infer_return_value_type(&body, self.cache);
 
     if !return_type.is_a_unit() {
       // If at least one statement's type evaluates to never, it
       // means that all paths are covered, because code execution will
       // always return at one point before reaching (or at) the end of the function.
-      let all_paths_covered = function
-        .body
+      let all_paths_covered = body
         .statements
         .iter()
         .any(|statement| statement.kind.infer_flatten_type(self.cache).is_a_never());
@@ -635,7 +643,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
         ast::NodeKind::Function(function) => {
           name = Some(function.name.clone());
 
-          &function.body
+          function.body.as_block_expr()
         }
         ast::NodeKind::Closure(closure) => &closure.body,
         _ => unreachable!(),
@@ -666,7 +674,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       if !return_type.is(&value_type) {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-            "return statement value and prototype return type mismatch for {}",
+            "return statement value and signature return type mismatch for {}",
             // REVISE: Change the actual name to this on its initialization.
             if let Some(name) = name {
               format!("function `{}`", name)
@@ -832,7 +840,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     extern_fn: &ast::ExternFunction,
     _node: std::rc::Rc<ast::Node>,
   ) {
-    if extern_fn.prototype.accepts_instance {
+    if extern_fn.signature.accepts_instance {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("extern functions cannot accept instances"),
@@ -1017,7 +1025,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     let struct_type_node = self.cache.force_get(&struct_value.target_id);
 
     let struct_type = match struct_type_node {
-      ast::NodeKind::StructType(struct_type) => struct_type,
+      ast::NodeKind::Struct(struct_type) => struct_type,
       _ => unreachable!(),
     };
 

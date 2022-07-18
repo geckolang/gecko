@@ -1,7 +1,5 @@
 use crate::{ast, cache, lexer, name_resolution};
 
-pub const THIS_IDENTIFIER: &str = "this";
-
 // TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
 /// Determine the minimum bit-size in which a number can fit.
 fn minimum_int_size_of(number: &u64) -> ast::IntSize {
@@ -88,6 +86,18 @@ impl<'a> Parser<'a> {
     }
 
     Ok(result)
+  }
+
+  fn current_location(&self) -> usize {
+    // TODO: Handle EOF or out of bounds errors.
+    let token = &self.tokens[self.index];
+
+    token.1
+  }
+
+  fn seal_location(&self, start_location: usize) -> (usize, usize) {
+    // TODO: Missing end-location?
+    (start_location, self.current_location())
   }
 
   fn skip_past(&mut self, token_kind: &lexer::TokenKind) -> ParserResult<()> {
@@ -252,6 +262,8 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_statement(&mut self) -> ParserResult<ast::Node> {
+    let start_location = self.current_location();
+
     let kind = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
       lexer::TokenKind::Let | lexer::TokenKind::Const => {
@@ -277,8 +289,8 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Node {
       kind,
-      cached_type: None,
       id: self.cache.create_id(),
+      location: self.seal_location(start_location),
     })
   }
 
@@ -382,7 +394,9 @@ impl<'a> Parser<'a> {
     Ok(ast::Type::Array(Box::new(element_type), size))
   }
 
-  fn parse_type(&mut self) -> ParserResult<ast::Type> {
+  fn parse_type(&mut self) -> ParserResult<std::rc::Rc<ast::Node>> {
+    let start_location = self.current_location();
+
     // TODO: Support for more types.
     let mut ty = match self.get_token()? {
       // TODO: Other types as well.
@@ -418,7 +432,11 @@ impl<'a> Parser<'a> {
       ty = self.parse_function_type(ty)?;
     }
 
-    Ok(ty)
+    Ok(std::rc::Rc::new(ast::Node {
+      kind: ast::NodeKind::Type(ty),
+      location: self.seal_location(start_location),
+      id: self.cache.create_id(),
+    }))
   }
 
   /// fn '(' (%type (','))* ')' ('[' %type ']')
@@ -476,31 +494,48 @@ impl<'a> Parser<'a> {
     })
   }
 
+  fn parse_this_parameter(&mut self) -> ParserResult<ast::Parameter> {
+    let start_location = self.current_location();
+
+    self.skip_past(&lexer::TokenKind::This)?;
+
+    let ty = ast::Type::This(ast::ThisType { target_id: None });
+
+    let type_node = std::rc::Rc::new(ast::Node {
+      id: self.cache.create_id(),
+      kind: ast::NodeKind::Type(ty),
+      location: self.seal_location(start_location),
+    });
+
+    Ok(ast::Parameter {
+      name: THIS_IDENTIFIER.to_string(),
+      type_hint: Some(type_node),
+      position: 0,
+      cache_id: self.cache.create_id(),
+    })
+  }
+
   /// '(' {%parameter* (,)} (+) ')' ':' %type
-  fn parse_prototype(&mut self, is_extern: bool) -> ParserResult<ast::Prototype> {
+  fn parse_signature(&mut self, is_extern: bool) -> ParserResult<ast::Signature> {
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
     let mut parameters = vec![];
     let mut is_variadic = false;
     let mut parameter_index_counter = 0;
     let mut accepts_instance = false;
-    let mut this_parameter = None;
 
-    if self.is(&lexer::TokenKind::Identifier(THIS_IDENTIFIER.to_string())) {
+    let this_parameter = if self.is(&lexer::TokenKind::This) {
       self.skip()?;
       parameter_index_counter += 1;
       accepts_instance = true;
 
-      this_parameter = Some(ast::Parameter {
-        name: THIS_IDENTIFIER.to_string(),
-        type_hint: Some(ast::Type::This(ast::ThisType { target_id: None })),
-        position: 0,
-        cache_id: self.cache.create_id(),
-      });
+      Some(self.parse_this_parameter()?)
+    } else {
+      None
+    };
 
-      if !self.is(&lexer::TokenKind::ParenthesesR) {
-        self.skip_past(&lexer::TokenKind::Comma)?;
-      }
+    if this_parameter.is_some() && !self.is(&lexer::TokenKind::ParenthesesR) {
+      self.skip_past(&lexer::TokenKind::Comma)?;
     }
 
     // REVISE: Analyze, and remove possibility of lonely comma.
@@ -532,7 +567,7 @@ impl<'a> Parser<'a> {
       None
     };
 
-    Ok(ast::Prototype {
+    Ok(ast::Signature {
       parameters,
       return_type_hint,
       is_variadic,
@@ -543,12 +578,14 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// fn %prototype %block
+  /// fn %signature %block
   fn parse_function(
     &mut self,
     static_owner_name: Option<String>,
     attributes: Vec<ast::Attribute>,
   ) -> ParserResult<ast::Function> {
+    let location_start = self.current_location();
+
     // TODO: Support for visibility.
     self.skip_past(&lexer::TokenKind::Func)?;
 
@@ -560,24 +597,31 @@ impl<'a> Parser<'a> {
       None
     };
 
-    let prototype = self.parse_prototype(false)?;
+    let signature = std::rc::Rc::new(ast::Node {
+      kind: ast::NodeKind::Signature(self.parse_signature(false)?),
+      id: self.cache.create_id(),
+      location: self.seal_location(location_start),
+    });
 
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    let body_block = self.parse_block_expr()?;
+    let body = std::rc::Rc::new(ast::Node {
+      kind: ast::NodeKind::BlockExpr(self.parse_block_expr()?),
+      id: self.cache.create_id(),
+    });
 
     Ok(ast::Function {
       name,
       static_owner_name,
-      prototype,
-      body: Box::new(body_block),
+      signature,
+      body,
       attributes,
       cache_id: self.cache.create_id(),
       generics,
     })
   }
 
-  /// extern fn %prototype
+  /// extern fn %signature
   fn parse_extern_function(
     &mut self,
     attributes: Vec<ast::Attribute>,
@@ -588,11 +632,11 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Func)?;
 
     let name = self.parse_name()?;
-    let prototype = self.parse_prototype(true)?;
+    let signature = self.parse_signature(true)?;
 
     Ok(ast::ExternFunction {
       name,
-      prototype,
+      signature,
       attributes,
       cache_id: self.cache.create_id(),
     })
@@ -694,7 +738,7 @@ impl<'a> Parser<'a> {
         ast::NodeKind::ExternStatic(self.parse_extern_static()?)
       }
       lexer::TokenKind::Enum => ast::NodeKind::Enum(self.parse_enum()?),
-      lexer::TokenKind::Struct => ast::NodeKind::StructType(self.parse_struct_type()?),
+      lexer::TokenKind::Struct => ast::NodeKind::Struct(self.parse_struct()?),
       lexer::TokenKind::Type => ast::NodeKind::TypeAlias(self.parse_type_alias()?),
       lexer::TokenKind::Impl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
       lexer::TokenKind::Trait => ast::NodeKind::Trait(self.parse_trait()?),
@@ -704,7 +748,6 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Node {
       kind,
-      cached_type: None,
       id: self.cache.create_id(),
     })
   }
@@ -1055,7 +1098,6 @@ impl<'a> Parser<'a> {
 
     let mut node = ast::Node {
       kind,
-      cached_type: None,
       id: self.cache.create_id(),
     };
 
@@ -1070,7 +1112,6 @@ impl<'a> Parser<'a> {
       // REVIEW: Simplify (DRY)?
       node = ast::Node {
         kind,
-        cached_type: None,
         id: self.cache.create_id(),
       };
     }
@@ -1154,11 +1195,7 @@ impl<'a> Parser<'a> {
         operator,
       });
 
-      buffer = ast::Node {
-        kind,
-        cached_type: None,
-        id,
-      };
+      buffer = ast::Node { kind, id };
     }
 
     Ok(buffer)
@@ -1297,7 +1334,7 @@ impl<'a> Parser<'a> {
   }
 
   /// struct %name ':' %indent (%name ':' %type ',')+ %dedent
-  fn parse_struct_type(&mut self) -> ParserResult<ast::StructType> {
+  fn parse_struct(&mut self) -> ParserResult<ast::Struct> {
     self.skip_past(&lexer::TokenKind::Struct)?;
 
     let name = self.parse_name()?;
@@ -1325,7 +1362,7 @@ impl<'a> Parser<'a> {
 
     self.parse_dedent()?;
 
-    Ok(ast::StructType {
+    Ok(ast::Struct {
       name,
       fields,
       cache_id: self.cache.create_id(),
@@ -1364,7 +1401,7 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// func '[' (%name (','))* ']' %prototype ':' %block
+  /// func '[' (%name (','))* ']' %signature ':' %block
   fn parse_closure(&mut self) -> ParserResult<ast::Closure> {
     self.skip_past(&lexer::TokenKind::Func)?;
 
@@ -1380,7 +1417,7 @@ impl<'a> Parser<'a> {
       self.skip()?;
     }
 
-    let prototype = self.parse_prototype(false)?;
+    let signature = self.parse_signature(false)?;
 
     self.skip_past(&lexer::TokenKind::Colon)?;
 
@@ -1388,7 +1425,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Closure {
       captures,
-      prototype,
+      signature,
       body,
     })
   }
@@ -1455,9 +1492,9 @@ impl<'a> Parser<'a> {
       self.skip_past(&lexer::TokenKind::Func)?;
 
       let method_name = self.parse_name()?;
-      let prototype = self.parse_prototype(false)?;
+      let signature = self.parse_signature(false)?;
 
-      methods.push((method_name, prototype));
+      methods.push((method_name, signature));
 
       if self.is(&lexer::TokenKind::Dedent) {
         break;
@@ -1528,7 +1565,6 @@ impl<'a> Parser<'a> {
   fn parse_range(&mut self) -> ParserResult<ast::Range> {
     let start = ast::Node {
       kind: ast::NodeKind::Literal(self.parse_int_literal()?),
-      cached_type: None,
       id: self.cache.create_id(),
     };
 
@@ -1536,7 +1572,6 @@ impl<'a> Parser<'a> {
 
     let end = ast::Node {
       kind: ast::NodeKind::Literal(self.parse_int_literal()?),
-      cached_type: None,
       id: self.cache.create_id(),
     };
 
