@@ -38,6 +38,7 @@ fn get_token_precedence(token: &lexer::TokenKind) -> usize {
 }
 
 type ParserResult<T> = Result<T, codespan_reporting::diagnostic::Diagnostic<usize>>;
+type ParsedNode = ParserResult<ast::Node>;
 
 pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
@@ -303,7 +304,9 @@ impl<'a> Parser<'a> {
   }
 
   /// {%indent (%statement+) %dedent | '=' {%statement | %expr}}
-  fn parse_block_expr(&mut self) -> ParserResult<ast::BlockExpr> {
+  fn parse_block_expr(&mut self) -> ParsedNode {
+    let start_location = self.current_location();
+
     // let initial_indentation_level = self.indentation_level;
     let mut statements = Vec::new();
     let mut yields = None;
@@ -334,15 +337,20 @@ impl<'a> Parser<'a> {
 
     self.parse_dedent()?;
 
-    Ok(ast::BlockExpr {
-      statements,
-      yields,
-      cache_id: self.cache.create_id(),
+    Ok(ast::Node {
+      id: self.cache.create_id(),
+      kind: ast::NodeKind::BlockExpr(ast::BlockExpr {
+        statements,
+        yields,
+        // FIXME: Id no longer needed.
+        cache_id: 0,
+      }),
+      location: self.seal_location(start_location),
     })
   }
 
   /// {U8 | U16 | U32 | U64 | I8 | I16 | Int | I64}
-  fn parse_int_type(&mut self) -> ParserResult<ast::Type> {
+  fn parse_int_type(&mut self) -> ParsedNode {
     let size = match self.get_token()? {
       lexer::TokenKind::TypeInt8 => ast::IntSize::I8,
       lexer::TokenKind::TypeInt16 => ast::IntSize::I16,
@@ -358,28 +366,46 @@ impl<'a> Parser<'a> {
 
     self.skip()?;
 
-    Ok(ast::Type::Basic(ast::BasicType::Int(size)))
+    Ok(ast::Node {
+      id: self.cache.create_id(),
+      kind: ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::Int(size))),
+      location: self.seal_location(self.current_location()),
+    })
   }
 
   /// Bool
-  fn parse_bool_type(&mut self) -> ParserResult<ast::Type> {
+  fn parse_bool_type(&mut self) -> ParsedNode {
+    let location_start = self.current_location();
+
     self.skip_past(&lexer::TokenKind::TypeBool)?;
 
-    Ok(ast::Type::Basic(ast::BasicType::Bool))
+    Ok(ast::Node {
+      id: self.cache.create_id(),
+      kind: ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::Bool)),
+      location: self.seal_location(location_start),
+    })
   }
 
   // TODO: Specialize return types of the `parse_type_x` functions to their actual types instead of the `ast::Type` enum wrapper?
-  fn parse_this_type(&mut self) -> ParserResult<ast::Type> {
+  fn parse_this_type(&mut self) -> ParsedNode {
+    let location_start = self.current_location();
+
     self.skip_past(&lexer::TokenKind::TypeThis)?;
 
-    Ok(ast::Type::This(ast::ThisType { target_id: None }))
+    Ok(ast::Node {
+      id: self.cache.create_id(),
+      kind: ast::NodeKind::Type(ast::Type::This(ast::ThisType { target_id: None })),
+      location: self.seal_location(location_start),
+    })
   }
 
   /// '[' %type, 0-9+ ']'
-  fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
+  fn parse_array_type(&mut self) -> ParsedNode {
+    let start_location = self.current_location();
+
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
-    let element_type = self.parse_type()?;
+    let element_type = std::rc::Rc::new(self.parse_type()?);
 
     self.skip_past(&lexer::TokenKind::Comma)?;
 
@@ -391,10 +417,14 @@ impl<'a> Parser<'a> {
     self.skip()?;
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
-    Ok(ast::Type::Array(Box::new(element_type), size))
+    Ok(ast::Node {
+      kind: ast::NodeKind::Type(ast::Type::Array(element_type, size)),
+      id: self.cache.create_id(),
+      location: self.seal_location(start_location),
+    })
   }
 
-  fn parse_type(&mut self) -> ParserResult<std::rc::Rc<ast::Node>> {
+  fn parse_type(&mut self) -> ParsedNode {
     let start_location = self.current_location();
 
     // TODO: Support for more types.
@@ -416,12 +446,20 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Asterisk => {
         self.skip()?;
 
-        Ok(ast::Type::Pointer(Box::new(self.parse_type()?)))
+        Ok(ast::Node {
+          id: self.cache.create_id(),
+          kind: ast::NodeKind::Type(ast::Type::Pointer(std::rc::Rc::new(self.parse_type()?))),
+          location: self.seal_location(start_location),
+        })
       }
       lexer::TokenKind::TypeString => {
         self.skip()?;
 
-        Ok(ast::Type::Basic(ast::BasicType::String))
+        Ok(ast::Node {
+          id: self.cache.create_id(),
+          kind: ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::String)),
+          location: self.seal_location(start_location),
+        })
       }
       lexer::TokenKind::TypeThis => self.parse_this_type(),
       _ => return Err(self.expected("type")),
@@ -429,18 +467,18 @@ impl<'a> Parser<'a> {
 
     // Upgrade to a function type, if applicable.
     if self.is(&lexer::TokenKind::Arrow) {
-      ty = self.parse_function_type(ty)?;
+      ty = self.parse_function_type(ty.into_type())?;
     }
 
-    Ok(std::rc::Rc::new(ast::Node {
-      kind: ast::NodeKind::Type(ty),
+    Ok(ast::Node {
+      kind: ast::NodeKind::Type(ty.into_type()),
       location: self.seal_location(start_location),
       id: self.cache.create_id(),
-    }))
+    })
   }
 
   /// fn '(' (%type (','))* ')' ('[' %type ']')
-  fn parse_function_type(&mut self, first_type: ast::Type) -> ParserResult<ast::Type> {
+  fn parse_function_type(&mut self, first_type: ast::Node) -> ParsedNode {
     self.skip_past(&lexer::TokenKind::Arrow)?;
 
     let mut parameter_types = vec![first_type, self.parse_type()?];
@@ -452,30 +490,43 @@ impl<'a> Parser<'a> {
 
     let return_type = parameter_types.remove(parameter_types.len() - 1);
 
+    // TODO: Commented out.
     // Support for no parameters.
-    if parameter_types.len() == 1 && parameter_types[0] == ast::Type::Unit {
-      parameter_types.clear();
-    }
+    // if parameter_types.len() == 1 && parameter_types[0] == ast::Type::Unit {
+    //   parameter_types.clear();
+    // }
 
-    Ok(ast::Type::Function(ast::FunctionType {
-      parameter_types,
-      return_type: Box::new(return_type),
-      // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
-      is_variadic: false,
-      // REVISE: Support for extern functions? This might create logic bugs.
-      is_extern: false,
-    }))
+    Ok(ast::Node {
+      id: self.cache.create_id(),
+      kind: ast::NodeKind::Type(ast::Type::Function(ast::FunctionType {
+        parameter_types: parameter_types
+          .into_iter()
+          .map(|ty| std::rc::Rc::new(ty))
+          .collect(),
+        return_type: std::rc::Rc::new(return_type),
+        // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
+        is_variadic: false,
+        // REVISE: Support for extern functions? This might create logic bugs.
+        is_extern: false,
+      })),
+      location: self.seal_location(self.current_location()),
+    })
   }
 
-  /// %name
-  fn parse_stub_type(&mut self) -> ParserResult<ast::Type> {
+  /// %pattern
+  fn parse_stub_type(&mut self) -> ParsedNode {
+    let location_start = self.current_location();
     let pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
 
-    Ok(ast::Type::Stub(ast::StubType { pattern }))
+    Ok(ast::Node {
+      id: self.cache.create_id(),
+      kind: ast::NodeKind::Type(ast::Type::Stub(ast::StubType { pattern })),
+      location: self.seal_location(location_start),
+    })
   }
 
   /// %name ':' %type
-  fn parse_parameter(&mut self, position: u32) -> ParserResult<ast::Parameter> {
+  fn parse_parameter(&mut self, position: u32) -> ParsedNode {
     let name = self.parse_name()?;
 
     let type_hint = if self.is(&&lexer::TokenKind::Colon) {
@@ -488,7 +539,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::Parameter {
       name,
-      type_hint,
+      type_hint: type_hint.map(|ty| std::rc::Rc::new(ty)),
       position,
       cache_id: self.cache.create_id(),
     })
@@ -508,7 +559,7 @@ impl<'a> Parser<'a> {
     });
 
     Ok(ast::Parameter {
-      name: THIS_IDENTIFIER.to_string(),
+      name: String::from("this"),
       type_hint: Some(type_node),
       position: 0,
       cache_id: self.cache.create_id(),
@@ -605,10 +656,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    let body = std::rc::Rc::new(ast::Node {
-      kind: ast::NodeKind::BlockExpr(self.parse_block_expr()?),
-      id: self.cache.create_id(),
-    });
+    let body = std::rc::Rc::new(self.parse_block_expr()?);
 
     Ok(ast::Function {
       name,

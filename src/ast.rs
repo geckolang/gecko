@@ -66,10 +66,10 @@ pub enum Type {
   /// A static array type.
   ///
   /// Its type and length are always known at compile-time.
-  Array(Box<Type>, u32),
+  Array(std::rc::Rc<Node>, u32),
   Basic(BasicType),
-  Pointer(Box<Type>),
-  Reference(Box<Type>),
+  Pointer(std::rc::Rc<Node>),
+  Reference(std::rc::Rc<Node>),
   Struct(Struct),
   /// A type that needs to be resolved.
   Stub(StubType),
@@ -490,8 +490,8 @@ pub struct Closure {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct FunctionType {
-  pub return_type: Box<Type>,
-  pub parameter_types: Vec<Type>,
+  pub return_type: std::rc::Rc<Node>,
+  pub parameter_types: Vec<std::rc::Rc<Node>>,
   pub is_variadic: bool,
   pub is_extern: bool,
 }
