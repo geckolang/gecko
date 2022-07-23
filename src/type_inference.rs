@@ -34,7 +34,7 @@ impl<'a> TypeInferenceContext<'a> {
     // TODO: Implement.
   }
 
-  fn infer_type_of(&mut self, node: std::rc::Rc<ast::NodeKind>) -> ast::Type {
+  fn infer_type_of(&mut self, node: &ast::NodeKind) -> ast::Type {
     if let Some(cached_type) = self.type_cache.get(&node.id) {
       return cached_type.clone();
     }
@@ -50,7 +50,7 @@ impl<'a> TypeInferenceContext<'a> {
         | ast::OperatorKind::Nor
         | ast::OperatorKind::Xor
         | ast::OperatorKind::In => ast::Type::Basic(ast::BasicType::Bool),
-        _ => self.infer_type_of(std::rc::Rc::clone(&binary_expr.left)),
+        _ => self.infer_type_of(&binary_expr.left),
       },
       ast::NodeKind::BindingStmt(binding_stmt) => binding_stmt
         .type_hint
@@ -114,7 +114,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
 
     // Report that the type of the unary expression's operand must
     // be an integer.
-    let expr_type = self.infer_type_of(std::rc::Rc::clone(&unary_expr.expr));
+    let expr_type = self.infer_type_of(&unary_expr.expr);
 
     self.report_constraint(expr_type, ast::Type::MetaInteger);
   }

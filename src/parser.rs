@@ -41,7 +41,6 @@ fn get_token_precedence(token: &lexer::TokenKind) -> usize {
 }
 
 type ParserResult<T> = Result<T, codespan_reporting::diagnostic::Diagnostic<usize>>;
-type ParsedNode = ParserResult<ast::Node>;
 
 pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
@@ -379,7 +378,7 @@ impl<'a> Parser<'a> {
   fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
-    let element_type = std::rc::Rc::new(self.parse_type()?);
+    let element_type = Box::new(self.parse_type()?);
 
     self.skip_past(&lexer::TokenKind::Comma)?;
 
@@ -412,7 +411,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Asterisk => {
         self.skip()?;
 
-        ast::Type::Pointer(std::rc::Rc::new(self.parse_type()?))
+        ast::Type::Pointer(Box::new(self.parse_type()?))
       }
       lexer::TokenKind::TypeString => {
         self.skip()?;
@@ -442,7 +441,7 @@ impl<'a> Parser<'a> {
       parameter_types.push(self.parse_type()?);
     }
 
-    let return_type = parameter_types.remove(parameter_types.len() - 1);
+    let return_type = Box::new(parameter_types.remove(parameter_types.len() - 1));
 
     // TODO: Commented out.
     // Support for no parameters.
@@ -482,7 +481,7 @@ impl<'a> Parser<'a> {
 
     let parameter = ast::Parameter {
       name,
-      type_hint: type_hint.map(|ty| std::rc::Rc::new(ty)),
+      type_hint,
       position,
       id: self.cache.create_id(),
     };
@@ -493,12 +492,11 @@ impl<'a> Parser<'a> {
   fn parse_this_parameter(&mut self) -> ParserResult<ast::Parameter> {
     self.skip_past(&lexer::TokenKind::This)?;
 
-    let ty = ast::Type::This(ast::ThisType { target_id: None });
-    let type_node = std::rc::Rc::new(ty);
+    let type_hint = Some(ast::Type::This(ast::ThisType { target_id: None }));
 
     let parameter = ast::Parameter {
       name: String::from("this"),
-      type_hint: Some(type_node),
+      type_hint,
       position: 0,
       id: self.cache.create_id(),
     };
@@ -765,7 +763,7 @@ impl<'a> Parser<'a> {
 
     // TODO: New line or EOF.
     let value = if !self.is(&lexer::TokenKind::Whitespace('\n')) {
-      Some(self.parse_expr()?)
+      Some(Box::new(self.parse_expr()?))
     } else {
       self.skip()?;
 
@@ -797,7 +795,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::Equal)?;
 
-    let value = self.parse_expr()?;
+    let value = Box::new(self.parse_expr()?);
 
     // TODO: Value should be treated as rvalue, unless its using an address-of operator. Find out how to translate this to logic.
 
@@ -915,7 +913,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
     while self.until(&lexer::TokenKind::BracketR)? {
-      elements.push(std::rc::Rc::new(self.parse_expr()?));
+      elements.push(self.parse_expr()?);
 
       // REVIEW: What if the comma isn't provided?
       if self.is(&lexer::TokenKind::Comma) {
@@ -1200,7 +1198,7 @@ impl<'a> Parser<'a> {
     Ok(ast::UnaryExpr {
       operator,
       expr,
-      cast_type: cast_type.map(std::rc::Rc::new),
+      cast_type,
     })
   }
 
@@ -1409,6 +1407,7 @@ impl<'a> Parser<'a> {
       captures,
       signature,
       body,
+      id: self.cache.create_id(),
     })
   }
 
@@ -1553,10 +1552,7 @@ impl<'a> Parser<'a> {
 
     let end = self.parse_int_literal()?;
 
-    Ok(ast::Range {
-      start: std::rc::Rc::new(start),
-      end: std::rc::Rc::new(end),
-    })
+    Ok(ast::Range { start, end })
   }
 }
 

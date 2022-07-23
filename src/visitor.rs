@@ -3,9 +3,7 @@ use crate::ast;
 macro_rules! define_visitor {
   (@ $name:ident $(<$lt:lifetime>)?, $return_type:ty, $default_value:expr) => {
     pub trait $name $(<$lt>)? {
-      fn dispatch(&mut self, node: &std::rc::Rc<ast::NodeKind>) -> $return_type {
-        let cloned_rc_node = std::rc::Rc::clone(node);
-
+      fn dispatch(&mut self, node: &ast::NodeKind) -> $return_type {
         match &node {
           ast::NodeKind::Literal(literal) => self.visit_literal(&literal),
           ast::NodeKind::ExternFunction(extern_fn) => self.visit_extern_function(&extern_fn),
@@ -284,33 +282,33 @@ trait Visitor {
 }
 
 // TODO: Accept `&std::rc::Rc<ast::Node>` instead.
-pub fn traverse(node: std::rc::Rc<ast::NodeKind>, visitor: &mut impl AnalysisVisitor) {
+pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
   // visitor.dispatch(&node);
 
   // TODO: Simplify with the addition of the dispatch method.
   match &node {
     ast::NodeKind::InlineExprStmt(inline_expr_stmt) => {
-      traverse(std::rc::Rc::clone(&inline_expr_stmt.expr), visitor);
+      traverse(&inline_expr_stmt.expr, visitor);
     }
     ast::NodeKind::BinaryExpr(binary_expr) => {
-      traverse(std::rc::Rc::clone(&binary_expr.left), visitor);
-      traverse(std::rc::Rc::clone(&binary_expr.right), visitor);
+      traverse(&binary_expr.left, visitor);
+      traverse(&binary_expr.right, visitor);
     }
     ast::NodeKind::BindingStmt(binding_stmt) => {
-      traverse(std::rc::Rc::clone(&binding_stmt.value), visitor);
+      traverse(&binding_stmt.value, visitor);
     }
     ast::NodeKind::BlockExpr(block_expr) => {
       for statement in &block_expr.statements {
-        traverse(std::rc::Rc::clone(&statement), visitor);
+        traverse(&statement, visitor);
       }
 
       visitor.exit_block_expr(block_expr);
     }
     ast::NodeKind::CallExpr(call_expr) => {
-      traverse(std::rc::Rc::clone(&call_expr.callee_expr), visitor);
+      traverse(&call_expr.callee_expr, visitor);
 
       for argument in &call_expr.arguments {
-        traverse(std::rc::Rc::clone(&argument), visitor);
+        traverse(&argument, visitor);
       }
     }
     ast::NodeKind::Closure(closure) => {
@@ -319,30 +317,31 @@ pub fn traverse(node: std::rc::Rc<ast::NodeKind>, visitor: &mut impl AnalysisVis
       visitor.exit_block_expr(&closure.body);
     }
     ast::NodeKind::Function(function) => {
-      traverse(std::rc::Rc::clone(&function.signature), visitor);
-      traverse(std::rc::Rc::clone(&function.body), visitor);
+      visitor.visit_signature(&function.signature);
+      visitor.enter_block_expr(&function.body);
+      visitor.exit_block_expr(&function.body);
     }
     ast::NodeKind::IfExpr(if_expr) => {
-      traverse(std::rc::Rc::clone(&if_expr.condition), visitor);
-      traverse(std::rc::Rc::clone(&if_expr.then_value), visitor);
+      traverse(&if_expr.condition, visitor);
+      traverse(&if_expr.then_value, visitor);
 
       for alternative_branches in &if_expr.alternative_branches {
-        traverse(std::rc::Rc::clone(&alternative_branches.0), visitor);
-        traverse(std::rc::Rc::clone(&alternative_branches.1), visitor);
+        traverse(&alternative_branches.0, visitor);
+        traverse(&alternative_branches.1, visitor);
       }
 
       if let Some(else_expr) = &if_expr.else_value {
-        traverse(std::rc::Rc::clone(&else_expr), visitor);
+        traverse(&else_expr, visitor);
       }
     }
     ast::NodeKind::IndexingExpr(indexing_expr) => {
-      traverse(std::rc::Rc::clone(&indexing_expr.index_expr), visitor);
+      traverse(&indexing_expr.index_expr, visitor);
     }
     ast::NodeKind::MemberAccess(member_expr) => {
-      traverse(std::rc::Rc::clone(&member_expr.base_expr), visitor);
+      traverse(&member_expr.base_expr, visitor);
     }
     ast::NodeKind::ParenthesesExpr(parentheses_expr) => {
-      traverse(std::rc::Rc::clone(&parentheses_expr.0), visitor);
+      traverse(&parentheses_expr.0, visitor);
     }
     ast::NodeKind::Signature(signature) => {
       for parameter in &signature.parameters {
@@ -351,12 +350,12 @@ pub fn traverse(node: std::rc::Rc<ast::NodeKind>, visitor: &mut impl AnalysisVis
     }
     ast::NodeKind::ReturnStmt(return_expr) => {
       if let Some(return_value) = &return_expr.value {
-        traverse(std::rc::Rc::clone(&return_value), visitor);
+        traverse(&return_value, visitor);
       }
     }
     ast::NodeKind::IntrinsicCall(intrinsic_call) => {
       for argument in &intrinsic_call.arguments {
-        traverse(std::rc::Rc::clone(&argument), visitor);
+        traverse(&argument, visitor);
       }
     }
     ast::NodeKind::StructImpl(struct_impl) => {
@@ -371,25 +370,25 @@ pub fn traverse(node: std::rc::Rc<ast::NodeKind>, visitor: &mut impl AnalysisVis
       visitor.exit_struct_impl(struct_impl);
     }
     ast::NodeKind::UnaryExpr(unary_expr) => {
-      traverse(std::rc::Rc::clone(&unary_expr.expr), visitor);
+      traverse(&unary_expr.expr, visitor);
     }
     ast::NodeKind::UnsafeExpr(unsafe_expr) => {
-      traverse(std::rc::Rc::clone(&unsafe_expr.0), visitor);
+      traverse(&unsafe_expr.0, visitor);
       visitor.exit_unsafe_expr(unsafe_expr);
     }
     ast::NodeKind::StaticArrayValue(static_array_value) => {
       for element in &static_array_value.elements {
-        traverse(std::rc::Rc::clone(&element), visitor);
+        traverse(&element, visitor);
       }
     }
     ast::NodeKind::StructValue(struct_value) => {
       for field in &struct_value.fields {
-        traverse(std::rc::Rc::clone(&field), visitor);
+        traverse(&field, visitor);
       }
     }
     ast::NodeKind::Range(range) => {
-      traverse(std::rc::Rc::clone(&range.start), visitor);
-      traverse(std::rc::Rc::clone(&range.end), visitor);
+      visitor.visit_literal(&range.start);
+      visitor.visit_literal(&range.end);
     }
     ast::NodeKind::Enum(_)
     | ast::NodeKind::ExternFunction(_)

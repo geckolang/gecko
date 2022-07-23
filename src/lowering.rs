@@ -52,7 +52,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   /// Lower a node while applying the access rules.
   fn lower_with_access_rules(
     &mut self,
-    node: &std::rc::Rc<ast::NodeKind>,
+    node: &ast::NodeKind,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value_result = self.dispatch(node);
     // let llvm_value_result = node.lower(self, cache, true);
@@ -66,7 +66,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
   fn apply_access_rules(
     &mut self,
-    node: &std::rc::Rc<ast::NodeKind>,
+    node: &ast::NodeKind,
     llvm_value: inkwell::values::BasicValueEnum<'ctx>,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
@@ -423,7 +423,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .collect::<Vec<_>>();
 
     // Insert the instance pointer as the first argument, if applicable.
-    if let ast::NodeKind::MemberAccess(member_access) = &call_expr.callee_expr {
+    if let ast::NodeKind::MemberAccess(member_access) = call_expr.callee_expr.as_ref() {
       // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
       llvm_arguments.insert(
         0,

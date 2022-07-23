@@ -156,7 +156,7 @@ impl Check for ast::Pattern {
 
 impl Check for ast::IntrinsicCall {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    match self {
+    match self.kind {
       ast::IntrinsicKind::LengthOf => ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     }
   }

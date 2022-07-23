@@ -270,18 +270,18 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     );
   }
 
-  fn exit_function(&mut self, _function: &ast::Function) -> () {
+  fn exit_function(&mut self, function: &ast::Function) -> () {
     // NOTE: The scope tree won't be overwritten by the block's, nor the
     // signature's scope tree, instead they will be merged, as expected.
-    self.finish_scope_tree(node.id);
+    self.finish_scope_tree(function.id);
   }
 
   fn enter_block_expr(&mut self, _block: &ast::BlockExpr) {
     self.push_scope();
   }
 
-  fn exit_block_expr(&mut self, _block: &ast::BlockExpr) -> () {
-    self.finish_scope_tree(node.id);
+  fn exit_block_expr(&mut self, block: &ast::BlockExpr) -> () {
+    self.finish_scope_tree(block.id);
   }
 
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
@@ -328,11 +328,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     );
   }
 
-  fn visit_extern_static(
-    &mut self,
-    extern_static: &ast::ExternStatic,
-    node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_extern_static(&mut self, extern_static: &ast::ExternStatic) {
     self.declare_node(
       Symbol {
         base_name: extern_static.name.clone(),

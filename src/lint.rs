@@ -112,7 +112,7 @@ impl AnalysisVisitor for LintContext {
   fn visit_if_expr(&mut self, if_expr: &ast::IfExpr) {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     // TODO: Add a helper method to "unbox" expressions? (e.g. case for `(true)`).
-    if matches!(if_expr.condition, ast::NodeKind::Literal(_)) {
+    if matches!(if_expr.condition.as_ref(), ast::NodeKind::Literal(_)) {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::warning()
           .with_message("if expression's condition is a constant expression"),
@@ -138,10 +138,7 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_indexing_expr(
-    &mut self,
-    indexing_expr: &ast::IndexingExpr,
-  ) {
+  fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr) {
     self
       .variable_references
       .insert(indexing_expr.target_id, true);

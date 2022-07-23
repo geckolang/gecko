@@ -86,7 +86,7 @@ impl<'a> TypeCheckContext<'a> {
     return_type: Option<ast::Type>,
   ) -> ast::Type {
     ast::Type::Function(ast::FunctionType {
-      return_type: std::rc::Rc::new(return_type.unwrap_or(ast::Type::Unit)),
+      return_type: Box::new(return_type.unwrap_or(ast::Type::Unit)),
       parameter_types: signature
         .parameters
         .iter()
@@ -468,7 +468,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     // REVIEW: Might need to mirror `Function`'s type check.
     let previous_function_id = self.current_function_id.clone();
 
-    self.current_function_id = Some(node.id);
+    self.current_function_id = Some(closure.id);
 
     if closure.signature.accepts_instance {
       self.diagnostics.push(
@@ -482,7 +482,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
 
   fn visit_intrinsic_call(&mut self, intrinsic_call: &ast::IntrinsicCall) {
     // TODO: Redundant to have function return types.
-    let target_signature: (Vec<ast::Type>, ast::Type) = match intrinsic_call {
+    let target_signature: (Vec<ast::Type>, ast::Type) = match intrinsic_call.kind {
       ast::IntrinsicKind::LengthOf => (
         // Cannot define array type directly. Use the any type for comparison.
         vec![ast::Type::Any],
@@ -509,7 +509,8 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     );
 
     // Special case because of the static array type.
-    if matches!(intrinsic_call, ast::IntrinsicKind::LengthOf) && intrinsic_call.arguments.len() == 1
+    if matches!(intrinsic_call.kind, ast::IntrinsicKind::LengthOf)
+      && intrinsic_call.arguments.len() == 1
     {
       let target_array = intrinsic_call.arguments.first().unwrap();
       let target_array_type = target_array.infer_flatten_type(self.cache);
@@ -527,15 +528,12 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     // NOTE: No need to check whether the range's bounds are constant
     // ... expressions, this is ensured by the parser.
 
-    let start_literal = crate::force_match!(&range.start, ast::NodeKind::Literal);
-    let end_literal = crate::force_match!(&range.end, ast::NodeKind::Literal);
-
-    let start_int = match start_literal {
+    let start_int = match &range.start {
       ast::Literal::Int(value, _) => value,
       _ => unreachable!(),
     };
 
-    let end_int = match end_literal {
+    let end_int = match &range.end {
       ast::Literal::Int(value, _) => value,
       _ => unreachable!(),
     };

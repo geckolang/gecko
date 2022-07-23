@@ -33,7 +33,7 @@ pub struct ParenthesesExpr(pub std::rc::Rc<NodeKind>);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
   pub name: String,
-  pub type_hint: Option<std::rc::Rc<Type>>,
+  pub type_hint: Option<Type>,
   pub position: u32,
   pub id: cache::Id,
 }
@@ -66,10 +66,10 @@ pub enum Type {
   /// A static array type.
   ///
   /// Its type and length are always known at compile-time.
-  Array(std::rc::Rc<Type>, u32),
+  Array(Box<Type>, u32),
   Basic(BasicType),
-  Pointer(std::rc::Rc<Type>),
-  Reference(std::rc::Rc<Type>),
+  Pointer(Box<Type>),
+  Reference(Box<Type>),
   Struct(Struct),
   /// A type that needs to be resolved.
   Stub(StubType),
@@ -441,8 +441,8 @@ pub struct Node {
 
 #[derive(Debug, Clone)]
 pub struct Range {
-  pub start: std::rc::Rc<Literal>,
-  pub end: std::rc::Rc<Literal>,
+  pub start: Literal,
+  pub end: Literal,
 }
 
 #[derive(Debug, Clone)]
@@ -453,6 +453,7 @@ pub struct Using {
 
 #[derive(Debug, Clone)]
 pub struct Closure {
+  pub id: cache::Id,
   pub captures: Vec<(String, Option<cache::Id>)>,
   pub signature: Signature,
   pub body: std::rc::Rc<BlockExpr>,
@@ -706,7 +707,7 @@ pub struct UnaryExpr {
   /// Represents the type being casted to.
   ///
   /// Only available when the unary expression is a cast.
-  pub cast_type: Option<std::rc::Rc<Type>>,
+  pub cast_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
