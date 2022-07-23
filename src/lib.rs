@@ -1,7 +1,6 @@
 #![deny(rust_2018_idioms)]
 
 pub mod ast;
-pub mod borrow_check;
 pub mod cache;
 pub mod lexer;
 pub mod lint;

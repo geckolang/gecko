@@ -50,17 +50,17 @@ impl LintContext {
 }
 
 impl AnalysisVisitor for LintContext {
-  fn visit_pattern(&mut self, _pattern: &ast::Pattern, _node: std::rc::Rc<ast::Node>) {
+  fn visit_pattern(&mut self, _pattern: &ast::Pattern) {
     // TODO: Lint name(s).
   }
 
-  fn visit_struct(&mut self, struct_type: &ast::Struct, _node: std::rc::Rc<ast::Node>) {
+  fn visit_struct(&mut self, struct_type: &ast::Struct) {
     self.lint_name_casing("struct", &struct_type.name, convert_case::Case::Pascal);
 
     // REVIEW: Any more linting needed?
   }
 
-  fn enter_block_expr(&mut self, block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) {
+  fn enter_block_expr(&mut self, block: &ast::BlockExpr) {
     let mut did_return = false;
 
     for statement in &block.statements {
@@ -73,13 +73,13 @@ impl AnalysisVisitor for LintContext {
         // REVIEW: Consider whether we should stop linting the block at this point.
       }
 
-      if matches!(statement.kind, ast::NodeKind::ReturnStmt(_)) {
+      if matches!(statement, ast::NodeKind::ReturnStmt(_)) {
         did_return = true;
       }
     }
   }
 
-  fn visit_enum(&mut self, enum_: &ast::Enum, _node: std::rc::Rc<ast::Node>) {
+  fn visit_enum(&mut self, enum_: &ast::Enum) {
     self.lint_name_casing("enum", &enum_.name, convert_case::Case::Pascal);
 
     if enum_.variants.is_empty() {
@@ -97,22 +97,22 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_parameter(&mut self, parameter: &ast::Parameter, _node: std::rc::Rc<ast::Node>) {
+  fn visit_parameter(&mut self, parameter: &ast::Parameter) {
     self.lint_name_casing("parameter", &parameter.name, convert_case::Case::Snake);
   }
 
-  fn visit_reference(&mut self, reference: &ast::Reference, _node: std::rc::Rc<ast::Node>) {
+  fn visit_reference(&mut self, reference: &ast::Reference) {
     self.variable_references.insert(reference.pattern.id, true);
   }
 
-  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, _node: std::rc::Rc<ast::Node>) {
+  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
     self.lint_name_casing("variable", &binding_stmt.name, convert_case::Case::Snake);
   }
 
-  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr, _node: std::rc::Rc<ast::Node>) {
+  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr) {
     // TODO: In the future, binary conditions should also be evaluated (if using literals on both operands).
     // TODO: Add a helper method to "unbox" expressions? (e.g. case for `(true)`).
-    if matches!(if_expr.condition.kind, ast::NodeKind::Literal(_)) {
+    if matches!(if_expr.condition, ast::NodeKind::Literal(_)) {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::warning()
           .with_message("if expression's condition is a constant expression"),
@@ -120,17 +120,17 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr, _node: std::rc::Rc<ast::Node>) {
+  fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr) {
     // TODO:
     // context
     //   .function_references
     //   .insert(self.callee_expr.target_key.unwrap(), true);
   }
 
-  fn enter_function(&mut self, function: &ast::Function, _node: std::rc::Rc<ast::Node>) {
+  fn enter_function(&mut self, function: &ast::Function) {
     self.lint_name_casing("function", &function.name, convert_case::Case::Snake);
 
-    if function.signature.as_signature().parameters.len() > 4 {
+    if function.signature.parameters.len() > 4 {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::warning()
           .with_message("function has more than 4 parameters"),
@@ -141,7 +141,6 @@ impl AnalysisVisitor for LintContext {
   fn visit_indexing_expr(
     &mut self,
     indexing_expr: &ast::IndexingExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) {
     self
       .variable_references

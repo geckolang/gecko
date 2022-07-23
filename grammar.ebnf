@@ -1,0 +1,15 @@
+int_literal = [0-9]+;
+bool_literal = true | false;
+literal = int_literal | bool_literal;
+if_expr = if expr ':' expr;
+parentheses_expr = '(' expr ')';
+indent = ? a space indentation ?;
+dedent = ? a space dedentation ?;
+let_binding = 'let' identifier '=' expr;
+pass_statement = 'pass';
+statement = expr | let_binding | pass_statement;
+block_expr = indent statement+ dedent;
+expr = literal | if_expr | parentheses_expr | block_expr;
+type = 'Int' | 'Bool' | 'Unit';
+prototype = '(' parameter* ')' (':' type)?;
+function = 'func' identifier prototype ':' block_expr;

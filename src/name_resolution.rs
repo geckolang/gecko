@@ -74,7 +74,7 @@ impl<'a> NameResDeclContext<'a> {
     //   name_resolver.current_scope_qualifier = Some(qualifier.clone());
 
     //   for node in ast.iter() {
-    //     node.kind.declare(&mut name_resolver);
+    //     node.declare(&mut name_resolver);
     //   }
     // }
 
@@ -84,7 +84,7 @@ impl<'a> NameResDeclContext<'a> {
     //   for node in ast {
     //     // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
     //     // ... an auxiliary map must be accepted in the parameters.
-    //     node.kind.resolve(&mut name_resolver, cache);
+    //     node.resolve(&mut name_resolver, cache);
     //   }
     // }
 
@@ -118,7 +118,7 @@ impl<'a> NameResDeclContext<'a> {
   /// Returns `false`, and creates an error diagnostic in the local diagnostic builder, if
   /// the symbol was already defined in the current scope, or `true` if it was successfully
   /// registered.
-  fn declare_symbol(&mut self, symbol: Symbol, cache_id: cache::Id) -> bool {
+  fn declare_symbol(&mut self, symbol: Symbol, id: cache::Id) -> bool {
     // Check for existing definitions.
     if self.current_scope_contains(&symbol) {
       self.diagnostics.push(
@@ -132,18 +132,18 @@ impl<'a> NameResDeclContext<'a> {
     }
 
     // Bind the symbol to the current scope for name resolution lookup.
-    self.bind(symbol, cache_id);
+    self.bind(symbol, id);
 
     true
   }
 
-  fn declare_node(&mut self, symbol: Symbol, node: std::rc::Rc<ast::Node>) {
+  fn declare_node(&mut self, symbol: Symbol, id: cache::Id, node: std::rc::Rc<ast::NodeKind>) {
     self
       .cache
       .cached_nodes
-      .insert(node.id, std::rc::Rc::clone(&node));
+      .insert(id, std::rc::Rc::clone(&node));
 
-    self.declare_symbol(symbol, node.id);
+    self.declare_symbol(symbol, id);
   }
 
   /// Retrieve the last pushed relative scope, or if there are none,
@@ -179,25 +179,25 @@ impl<'a> NameResDeclContext<'a> {
   ///
   /// If an entry with the same unique id already exists, the scope tree will
   /// be appended onto the existing definition.
-  fn finish_scope_tree(&mut self, cache_id: cache::Id) {
+  fn finish_scope_tree(&mut self, id: cache::Id) {
     let mut scope_tree = vec![self.force_pop_scope()];
 
     // Clone the relative scope tree.
     scope_tree.extend(self.relative_scopes.iter().rev().cloned());
 
     // Append to the existing definition, if applicable.
-    if self.scope_map.contains_key(&cache_id) {
-      scope_tree.extend(self.scope_map.remove(&cache_id).unwrap());
+    if self.scope_map.contains_key(&id) {
+      scope_tree.extend(self.scope_map.remove(&id).unwrap());
     }
 
-    self.scope_map.insert(cache_id, scope_tree);
+    self.scope_map.insert(id, scope_tree);
   }
 
   /// Register a name on the last scope for name resolution lookups.
   ///
   /// If there are no relative scopes, the symbol is registered in the global scope.
-  fn bind(&mut self, symbol: Symbol, cache_id: cache::Id) {
-    self.get_current_scope().insert(symbol, cache_id);
+  fn bind(&mut self, symbol: Symbol, id: cache::Id) {
+    self.get_current_scope().insert(symbol, id);
   }
 
   fn current_scope_contains(&mut self, key: &Symbol) -> bool {
@@ -206,11 +206,7 @@ impl<'a> NameResDeclContext<'a> {
 }
 
 impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
-  fn visit_extern_function(
-    &mut self,
-    extern_fn: &ast::ExternFunction,
-    node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_extern_function(&mut self, extern_fn: &ast::ExternFunction) {
     self.declare_node(
       Symbol {
         base_name: extern_fn.name.clone(),
@@ -221,7 +217,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     );
   }
 
-  fn visit_parameter(&mut self, parameter: &ast::Parameter, node: std::rc::Rc<ast::Node>) {
+  fn visit_parameter(&mut self, parameter: &ast::Parameter) {
     self.declare_node(
       Symbol {
         base_name: parameter.name.clone(),
@@ -232,7 +228,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     );
   }
 
-  fn enter_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) {
+  fn enter_function(&mut self, function: &ast::Function) {
     // BUG: Something is wrong with this scope tree. Consider adding tests for this API.
     // ... The `push_scope()` and `close_scope_tree()` lines where commented out. Once uncommented,
     // ... everything SEEMS to be working fine, but still need tests if there aren't any already, and
@@ -274,21 +270,21 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     );
   }
 
-  fn exit_function(&mut self, _function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
+  fn exit_function(&mut self, _function: &ast::Function) -> () {
     // NOTE: The scope tree won't be overwritten by the block's, nor the
     // signature's scope tree, instead they will be merged, as expected.
     self.finish_scope_tree(node.id);
   }
 
-  fn enter_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) {
+  fn enter_block_expr(&mut self, _block: &ast::BlockExpr) {
     self.push_scope();
   }
 
-  fn exit_block_expr(&mut self, _block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) -> () {
+  fn exit_block_expr(&mut self, _block: &ast::BlockExpr) -> () {
     self.finish_scope_tree(node.id);
   }
 
-  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, node: std::rc::Rc<ast::Node>) {
+  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
     self.declare_node(
       Symbol {
         base_name: binding_stmt.name.clone(),
@@ -299,7 +295,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     );
   }
 
-  fn visit_enum(&mut self, enum_: &ast::Enum, node: std::rc::Rc<ast::Node>) {
+  fn visit_enum(&mut self, enum_: &ast::Enum) {
     self.declare_node(
       Symbol {
         base_name: enum_.name.clone(),
@@ -321,7 +317,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     }
   }
 
-  fn visit_struct(&mut self, struct_type: &ast::Struct, node: std::rc::Rc<ast::Node>) {
+  fn visit_struct(&mut self, struct_type: &ast::Struct) {
     self.declare_node(
       Symbol {
         base_name: struct_type.name.clone(),
@@ -347,7 +343,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     );
   }
 
-  fn visit_type_alias(&mut self, type_alias: &ast::TypeAlias, node: std::rc::Rc<ast::Node>) {
+  fn visit_type_alias(&mut self, type_alias: &ast::TypeAlias) {
     self.declare_node(
       Symbol {
         base_name: type_alias.name.clone(),
@@ -358,7 +354,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     );
   }
 
-  fn enter_struct_impl(&mut self, _struct_impl: &ast::StructImpl, _node: std::rc::Rc<ast::Node>) {
+  fn enter_struct_impl(&mut self, _struct_impl: &ast::StructImpl) {
     // REVIEW: Is there a need to bind this on the cache?
 
     // self.push_scope();
@@ -375,18 +371,14 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     // }
   }
 
-  fn exit_struct_impl(
-    &mut self,
-    _struct_impl: &ast::StructImpl,
-    _node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn exit_struct_impl(&mut self, _struct_impl: &ast::StructImpl) -> () {
     // FIXME: Doesn't this just simply invalidate all previous methods' declarations?
     // self.force_pop_scope();
   }
 
-  fn visit_trait(&mut self, _trait: &ast::Trait, _node: std::rc::Rc<ast::Node>) {
+  fn visit_trait(&mut self, _trait: &ast::Trait) {
     // REVIEW: Is there a need to declare symbol here?
-    // resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.cache_id);
+    // resolver.declare_symbol((self.name.clone(), SymbolKind::Type), self.id);
   }
 }
 
@@ -432,8 +424,8 @@ impl<'a> NameResLinkContext<'a> {
 
     let global_scope = self.global_scopes.get(&qualifier).unwrap();
 
-    if let Some(cache_id) = global_scope.get(&symbol) {
-      return Some(cache_id.clone());
+    if let Some(id) = global_scope.get(&symbol) {
+      return Some(id.clone());
     }
 
     None
@@ -445,15 +437,15 @@ impl<'a> NameResLinkContext<'a> {
     // If applicable, lookup on the relative scopes. This may not
     // be the case for when resolving global entities such as struct
     // types that reference other structs in their fields (in such case,
-    // the relative scopes will be empty and the `current_block_cache_id`
+    // the relative scopes will be empty and the `current_block_id`
     // buffer would be `None`).
-    if let Some(current_block_cache_id) = self.block_id_stack.last() {
-      let scope_tree = self.scope_map.get(&current_block_cache_id).unwrap();
+    if let Some(current_block_id) = self.block_id_stack.last() {
+      let scope_tree = self.scope_map.get(&current_block_id).unwrap();
 
       // First, attempt to find the symbol in the relative scopes.
       for scope in scope_tree {
-        if let Some(cache_id) = scope.get(&symbol) {
-          return Some(cache_id.clone());
+        if let Some(id) = scope.get(&symbol) {
+          return Some(id.clone());
         }
       }
     }
@@ -464,8 +456,8 @@ impl<'a> NameResLinkContext<'a> {
   }
 
   fn local_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::Id> {
-    if let Some(cache_id) = self.local_lookup(symbol) {
-      return Some(cache_id.clone());
+    if let Some(id) = self.local_lookup(symbol) {
+      return Some(id.clone());
     }
 
     // TODO: Include sub-name if available.
@@ -479,7 +471,7 @@ impl<'a> NameResLinkContext<'a> {
 }
 
 impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
-  fn visit_pattern(&mut self, pattern: &ast::Pattern, _node: std::rc::Rc<ast::Node>) {
+  fn visit_pattern(&mut self, pattern: &ast::Pattern) {
     let symbol = Symbol {
       base_name: pattern.base_name.clone(),
       sub_name: pattern.sub_name.clone(),
@@ -506,7 +498,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     });
   }
 
-  fn enter_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) {
+  fn enter_function(&mut self, function: &ast::Function) {
     // BUG: This must be checked only within the initial package. Currently, the main function
     // ... can be defined elsewhere on its dependencies (even if they're libraries).
     // REVIEW: Should we have this check positioned here? Or should it be placed elsewhere?
@@ -518,25 +510,21 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
             .with_message("multiple main functions defined"),
         );
       } else {
-        self.cache.main_function_id = Some(node.id);
+        self.cache.main_function_id = Some(function.id);
       }
     }
   }
 
-  fn enter_block_expr(&mut self, _block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) {
+  fn enter_block_expr(&mut self, block: &ast::BlockExpr) {
     // BUG: Something's wrong when an if-expression is present, with a block as its `then` value. It won't resolve declarations.
-    self.block_id_stack.push(node.id);
+    self.block_id_stack.push(block.id);
   }
 
-  fn exit_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) -> () {
+  fn exit_block_expr(&mut self, _block: &ast::BlockExpr) -> () {
     self.block_id_stack.pop();
   }
 
-  fn visit_indexing_expr(
-    &mut self,
-    indexing_expr: &ast::IndexingExpr,
-    _node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr) {
     self
       .local_lookup_or_error(&Symbol {
         base_name: indexing_expr.name.clone(),
@@ -548,7 +536,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
       });
   }
 
-  fn visit_signature(&mut self, signature: &ast::Signature, _node: std::rc::Rc<ast::Node>) {
+  fn visit_signature(&mut self, signature: &ast::Signature) {
     if let Some(instance_type_id) = &signature.instance_type_id {
       self.cache.links.insert(
         instance_type_id.to_owned(),
@@ -557,7 +545,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     }
   }
 
-  fn visit_struct_value(&mut self, struct_value: &ast::StructValue, _node: std::rc::Rc<ast::Node>) {
+  fn visit_struct_value(&mut self, struct_value: &ast::StructValue) {
     self
       .local_lookup_or_error(&Symbol {
         base_name: struct_value.struct_name.clone(),
@@ -569,7 +557,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
       });
   }
 
-  fn visit_closure(&mut self, _closure: &ast::Closure, _node: std::rc::Rc<ast::Node>) {
+  fn visit_closure(&mut self, _closure: &ast::Closure) {
     // FIXME: Continue implementation.
 
     // for (_index, capture) in closure.captures.iter().enumerate() {
@@ -602,7 +590,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     //   .insert(self.id, ast::NodeKind::Closure(self.clone()));
   }
 
-  fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl, _node: std::rc::Rc<ast::Node>) {
+  fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl) {
     self.current_struct_type_id = Some(struct_impl.target_struct_pattern.id);
 
     self.cache.add_struct_impl(
@@ -610,12 +598,12 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
       struct_impl
         .member_methods
         .iter()
-        .map(|method| (method.cache_id, method.name.clone()))
+        .map(|method| (method.id, method.name.clone()))
         .collect::<Vec<_>>(),
     );
   }
 
-  fn exit_struct_impl(&mut self, _struct_impl: &ast::StructImpl, _node: std::rc::Rc<ast::Node>) {
+  fn exit_struct_impl(&mut self, _struct_impl: &ast::StructImpl) {
     self.current_struct_type_id = None;
   }
 
@@ -705,13 +693,13 @@ mod tests {
 
   // #[test]
   // fn declare_symbol() {
-  //   let cache_id: cache::Id = 0;
+  //   let id: cache::Id = 0;
   //   let symbol = mock_symbol();
   //   let mut name_resolver = NameResolver::new(mock_qualifier());
 
-  //   assert!(name_resolver.declare_symbol(symbol.clone(), cache_id.clone()));
+  //   assert!(name_resolver.declare_symbol(symbol.clone(), id.clone()));
   //   assert!(name_resolver.diagnostics.is_empty());
-  //   assert!(!name_resolver.declare_symbol(symbol.clone(), cache_id));
+  //   assert!(!name_resolver.declare_symbol(symbol.clone(), id));
   //   assert_eq!(1, name_resolver.diagnostics.len());
   //   assert!(name_resolver.current_scope_contains(&symbol));
   // }
@@ -738,14 +726,14 @@ mod tests {
   // fn local_lookup() {
   //   let mut name_resolver = NameResolver::new(mock_qualifier());
   //   let symbol = mock_symbol();
-  //   let cache_id: cache::Id = 0;
+  //   let id: cache::Id = 0;
 
   //   // REVIEW: Ensure this is test is well-formed.
   //   assert!(name_resolver.local_lookup(&symbol).is_none());
   //   name_resolver.push_scope();
-  //   name_resolver.bind(symbol.clone(), cache_id.clone());
-  //   name_resolver.close_scope_tree(cache_id);
-  //   name_resolver.current_block_cache_id = Some(cache_id);
+  //   name_resolver.bind(symbol.clone(), id.clone());
+  //   name_resolver.close_scope_tree(id);
+  //   name_resolver.current_block_id = Some(id);
   //   assert!(name_resolver.local_lookup(&symbol).is_some());
   // }
 

@@ -52,7 +52,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   /// Lower a node while applying the access rules.
   fn lower_with_access_rules(
     &mut self,
-    node: &std::rc::Rc<ast::Node>,
+    node: &std::rc::Rc<ast::NodeKind>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_value_result = self.dispatch(node);
     // let llvm_value_result = node.lower(self, cache, true);
@@ -66,17 +66,17 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
   fn apply_access_rules(
     &mut self,
-    node: &std::rc::Rc<ast::Node>,
+    node: &std::rc::Rc<ast::NodeKind>,
     llvm_value: inkwell::values::BasicValueEnum<'ctx>,
   ) -> inkwell::values::BasicValueEnum<'ctx> {
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
     // REVIEW: Isn't there a need to resolve the type?
 
-    if matches!(node.kind, ast::NodeKind::Parameter(_)) {
+    if matches!(node, ast::NodeKind::Parameter(_)) {
       return llvm_value;
     }
 
-    if let ast::NodeKind::Reference(reference) = &node.kind {
+    if let ast::NodeKind::Reference(reference) = &node {
       let target = self.cache.cached_nodes.get(&reference.pattern.id).unwrap();
 
       // TODO: Ensure this recursive nature doesn't cause stack overflow.
@@ -143,9 +143,9 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     }
   }
 
-  fn find_type_cache_id(&self, ty: &ast::Type) -> Option<cache::Id> {
+  fn find_type_id(&self, ty: &ast::Type) -> Option<cache::Id> {
     Some(match ty.flatten(self.cache) {
-      ast::Type::Struct(struct_type) => struct_type.cache_id.clone(),
+      ast::Type::Struct(struct_type) => struct_type.id.clone(),
       // REVIEW: Any more?
       _ => return None,
     })
@@ -263,14 +263,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       .iter()
       .map(|parameter| {
         self
-          .memoize_or_retrieve_type(
-            &parameter
-              .as_parameter()
-              .type_hint
-              .map(|type_hint| type_hint.as_type())
-              .as_ref()
-              .unwrap(),
-          )
+          .memoize_or_retrieve_type(&parameter.type_hint.as_ref().unwrap())
           .into()
       })
       .collect::<Vec<_>>();
@@ -309,9 +302,9 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
   // TODO: Ensure that there isn't any possible recursion problems going on.
   fn memoize_or_retrieve_type(&mut self, ty: &ast::Type) -> inkwell::types::BasicTypeEnum<'ctx> {
-    if let Some(cache_id) = self.find_type_cache_id(ty) {
+    if let Some(id) = self.find_type_id(ty) {
       // REVIEW: Isn't this indirectly recursive? Will it cause problems?
-      return self.memoize_or_retrieve_type_by_binding(cache_id);
+      return self.memoize_or_retrieve_type_by_binding(id);
     }
 
     self.lower_type(ty)
@@ -319,15 +312,15 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
   fn memoize_or_retrieve_type_by_binding(
     &mut self,
-    cache_id: cache::Id,
+    id: cache::Id,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
-    if let Some(existing_definition) = self.llvm_cached_types.get(&cache_id) {
+    if let Some(existing_definition) = self.llvm_cached_types.get(&id) {
       return existing_definition.clone();
     }
 
     // REVIEW: Consider making a separate map for types in the cache.
 
-    let node = self.cache.force_get(&cache_id);
+    let node = self.cache.force_get(&id);
 
     // REVIEW: Why not perform type-flattening here instead?
     let ty = match &node {
@@ -339,7 +332,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
     let llvm_type = self.lower_type(&ty);
 
-    self.llvm_cached_types.insert(cache_id, llvm_type);
+    self.llvm_cached_types.insert(id, llvm_type);
 
     llvm_type
   }
@@ -368,18 +361,18 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   /// otherwise they will all be restored.
   fn memoize_or_retrieve_value(
     &mut self,
-    cache_id: cache::Id,
+    id: cache::Id,
     forward_buffers: bool,
     apply_access_rules: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let node = self.cache.cached_nodes.get(&cache_id).unwrap();
+    let node = self.cache.cached_nodes.get(&id).unwrap();
 
     // BUG: If a definition is lowered elsewhere without the use of this function,
     // ... there will not be any call to `lower_with_access_rules` for it. This means
     // ... that those definitions will be cached as `PointerValue`s instead of possibly
     // ... needing to be lowered.
     // If the definition has been cached previously, simply retrieve it.
-    if let Some(existing_definition) = self.llvm_cached_values.get(&cache_id) {
+    if let Some(existing_definition) = self.llvm_cached_values.get(&id) {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
       let existing_value_cloned = existing_definition.clone();
 
@@ -397,7 +390,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     let result = if let Some(llvm_value) = llvm_value_result {
       // Cache the value without applying access rules.
       // This way, access rules may be chosen to be applied upon cache retrieval.
-      self.llvm_cached_values.insert(cache_id, llvm_value);
+      self.llvm_cached_values.insert(id, llvm_value);
 
       Some(if apply_access_rules {
         self.apply_access_rules(node, llvm_value)
@@ -421,17 +414,16 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_call_expr(
     &mut self,
     call_expr: &ast::CallExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let mut llvm_arguments = call_expr
       .arguments
       .iter()
-      // .map(|node| node.kind.lower(generator, true).unwrap().into())
+      // .map(|node| node.lower(generator, true).unwrap().into())
       .map(|node| self.dispatch(node).unwrap().into())
       .collect::<Vec<_>>();
 
     // Insert the instance pointer as the first argument, if applicable.
-    if let ast::NodeKind::MemberAccess(member_access) = &call_expr.callee_expr.kind {
+    if let ast::NodeKind::MemberAccess(member_access) = &call_expr.callee_expr {
       // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
       llvm_arguments.insert(
         0,
@@ -474,12 +466,11 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_binding_stmt(
     &mut self,
     binding_stmt: &ast::BindingStmt,
-    node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Should we be lowering const expressions as global constants? What benefits does that provide? What about scoping?
 
     // REVISE: Optimize. The type for this construct may be cached.
-    let value_type = binding_stmt.value.kind.infer_flatten_type(self.cache);
+    let value_type = binding_stmt.value.infer_flatten_type(self.cache);
 
     // Special cases. The allocation is done elsewhere.
     if matches!(value_type, ast::Type::Function(_)) {
@@ -491,7 +482,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
       // REVIEW: Won't let-statements always have a value?
       if let Some(llvm_value) = result {
-        self.llvm_cached_values.insert(node.id, llvm_value);
+        self.llvm_cached_values.insert(binding_stmt.id, llvm_value);
       }
 
       return result;
@@ -519,7 +510,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     let result = llvm_alloca.as_basic_value_enum();
 
-    self.llvm_cached_values.insert(node.id, result);
+    self.llvm_cached_values.insert(binding_stmt.id, result);
 
     // BUG: This needs to return `Some` for the value of the binding-statement to be memoized.
     // ... However, this also implies that the binding-statement itself yields a value!
@@ -529,7 +520,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_unary_expr(
     &mut self,
     unary_expr: &ast::UnaryExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match unary_expr.operator {
       ast::OperatorKind::Not => {
@@ -611,7 +601,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_return_stmt(
     &mut self,
     return_stmt: &ast::ReturnStmt,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_return_value = if let Some(return_value) = &return_stmt.value {
       Some(self.lower_with_access_rules(&return_value).unwrap())
@@ -627,7 +616,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn enter_block_expr(
     &mut self,
     block: &ast::BlockExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for statement in &block.statements {
       // FIXME: Some binding statements (such as let-statement) need to be manually
@@ -645,7 +633,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // REVIEW: This syntax may replace if/else expressions?
     // self.yields.as_ref().map(|value| {
     //   generator
-    //     .lower_with_access_rules(&value.kind, cache)
+    //     .lower_with_access_rules(&value, cache)
     //     // TODO: Why doesn't the one below unwrap?
     //     .unwrap()
     // })
@@ -660,7 +648,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_extern_function(
     &mut self,
     extern_fn: &ast::ExternFunction,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // NOTE: The return type is always explicitly-given for extern functions.
     let llvm_function_type = self.lower_signature(
@@ -669,7 +656,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         .signature
         .return_type_hint
         .as_ref()
-        .map_or(&ast::Type::Unit, |return_type| return_type.as_type()),
+        .map_or(&ast::Type::Unit, |return_type| return_type),
     );
 
     // TODO: Need to handle if the function already exists.
@@ -690,12 +677,10 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn enter_function(
     &mut self,
     function: &ast::Function,
-    node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let return_type =
-      TypeContext::infer_return_value_type(&function.body.as_block_expr(), self.cache);
+    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
 
-    let llvm_function_type = self.lower_signature(&function.signature.as_signature(), &return_type);
+    let llvm_function_type = self.lower_signature(&function.signature, &return_type);
     let is_main = function.name == MAIN_FUNCTION_NAME;
 
     // TODO: Prepend `fn` to the name.
@@ -726,11 +711,11 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // FIXME: Still getting stack-overflow errors when using recursive functions (specially multiple of them at the same time). Investigate whether that's caused here or elsewhere.
     // Manually cache the function now to allow for recursive function calls.
     self.llvm_cached_values.insert(
-      node.id,
+      function.id,
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
-    let signature = function.signature.as_signature();
+    let signature = function.signature;
 
     // REVIEW: Is this conversion safe?
     let expected_param_count = signature.parameters.len() as u32;
@@ -752,7 +737,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .for_each(|params| {
         params
           .0
-          .set_name(format!("param.{}", params.1.as_parameter().name).as_str());
+          .set_name(format!("param.{}", params.1.name).as_str());
       });
 
     let llvm_entry_block = self
@@ -763,7 +748,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     // let yielded_result = function.body.lower(generator, cache, false);
     // let yielded_result = self.dispatch(&function.body);
-    let yielded_result = self.dispatch(&function.body);
+    let yielded_result = self.enter_block_expr(&function.body);
 
     // FIXME: Abstract this logic for use within `closure`, and possibly wherever else this is needed, guided by calls to `attempt_build_return`?
     // If a block was left for further processing, and it has no terminator,
@@ -771,7 +756,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     if self.get_current_block().get_terminator().is_none()
       && function
         .body
-        .kind
         .infer_type(self.cache)
         .flatten(self.cache)
         .is_a_never()
@@ -789,7 +773,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_literal(
     &mut self,
     literal: &ast::Literal,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match literal {
       ast::Literal::Int(value, integer_kind) => {
@@ -840,7 +823,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_if_expr(
     &mut self,
     if_expr: &ast::IfExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: Process alternative branches.
 
@@ -965,7 +947,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_reference(
     &mut self,
     reference: &ast::Reference,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
@@ -980,7 +961,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_binary_expr(
     &mut self,
     binary_expr: &ast::BinaryExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // let mut llvm_left_value = binary_expr.left.lower(generator, cache, false).unwrap();
     let mut llvm_left_value = self.dispatch(&binary_expr.left).unwrap();
@@ -1208,7 +1188,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn enter_unsafe_expr(
     &mut self,
     unsafe_expr: &ast::UnsafeExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Is it correct to pass the `access` parameter along? If this will serve as an expression, then yes, otherwise (block) no.
     // self.0.lower(generator, cache, access)
@@ -1218,7 +1197,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_parameter(
     &mut self,
     parameter: &ast::Parameter,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: In the future, consider having an `alloca` per parameter, for simpler tracking of them?
 
@@ -1234,7 +1212,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_static_array_value(
     &mut self,
     array_value: &ast::StaticArrayValue,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_values = array_value
       .elements
@@ -1287,7 +1264,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_indexing_expr(
     &mut self,
     indexing_expr: &ast::IndexingExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: Consider adding support for indexing strings (or better yet, generalized indexing implementation).
 
@@ -1330,11 +1306,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     }
   }
 
-  fn visit_enum(
-    &mut self,
-    enum_: &ast::Enum,
-    _node: std::rc::Rc<ast::Node>,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+  fn visit_enum(&mut self, enum_: &ast::Enum) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for (index, variant) in enum_.variants.iter().enumerate() {
       let llvm_name = self.mangle_name(&format!("enum.{}.{}", enum_.name, variant.0));
 
@@ -1354,7 +1326,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_struct_value(
     &mut self,
     struct_value: &ast::StructValue,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct_type = self
       .memoize_or_retrieve_type_by_binding(struct_value.target_id)
@@ -1393,10 +1364,9 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_extern_static(
     &mut self,
     extern_static: &ast::ExternStatic,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_global_value = self.llvm_module.add_global(
-      self.memoize_or_retrieve_type(&extern_static.ty.as_type()),
+      self.memoize_or_retrieve_type(&extern_static.ty),
       None,
       extern_static.name.as_str(),
     );
@@ -1407,7 +1377,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_intrinsic_call(
     &mut self,
     intrinsic_call: &ast::IntrinsicCall,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: No need to use the `access` parameter?
 
@@ -1415,7 +1384,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     let _llvm_arguments = intrinsic_call
       .arguments
       .iter()
-      // .map(|node| node.kind.lower(generator, cache, true).unwrap().into())
+      // .map(|node| node.lower(generator, cache, true).unwrap().into())
       .map(|node| self.dispatch(node).unwrap().into())
       .collect::<Vec<inkwell::values::BasicMetadataValueEnum<'ctx>>>();
 
@@ -1423,7 +1392,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       ast::IntrinsicKind::LengthOf => {
         let target_array = intrinsic_call.arguments.first().unwrap();
 
-        let array_static_length = match target_array.kind.infer_flatten_type(self.cache) {
+        let array_static_length = match target_array.infer_flatten_type(self.cache) {
           ast::Type::Array(_, length) => length,
           _ => unreachable!(),
         };
@@ -1442,7 +1411,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_closure(
     &mut self,
     closure: &ast::Closure,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Closures don't have a unique id.
     // ... Don't we need to set the buffer unique id for closures as well?
@@ -1519,7 +1487,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_member_access(
     &mut self,
     member_access: &ast::MemberAccess,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct = self
       .dispatch(&member_access.base_expr)
@@ -1529,7 +1496,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     // Flatten the type in case it is a `ThisType`.
     let llvm_struct_type = crate::force_match!(
-      member_access.base_expr.kind.infer_flatten_type(self.cache),
+      member_access.base_expr.infer_flatten_type(self.cache),
       ast::Type::Struct
     );
 
@@ -1563,7 +1530,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     let impl_method_info = self
       .cache
       .struct_impls
-      .get(&llvm_struct_type.cache_id)
+      .get(&llvm_struct_type.id)
       .unwrap()
       .iter()
       .find(|x| x.1 == member_access.member_name)
@@ -1576,7 +1543,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn enter_struct_impl(
     &mut self,
     struct_impl: &ast::StructImpl,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     for m in &struct_impl.static_methods {
       // TODO: Lower static methods?
@@ -1594,7 +1560,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_parentheses_expr(
     &mut self,
     parentheses_expr: &ast::ParenthesesExpr,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // NOTE: The `access` flag is passed down, since this is a transient construct.
     // self.0.lower(generator, cache, access)
@@ -1604,9 +1569,8 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   fn visit_sizeof_intrinsic(
     &mut self,
     sizeof_intrinsic: &ast::SizeofIntrinsic,
-    _node: std::rc::Rc<ast::Node>,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let ty = self.memoize_or_retrieve_type(&sizeof_intrinsic.ty.as_type());
+    let ty = self.memoize_or_retrieve_type(&sizeof_intrinsic.ty);
 
     Some(ty.size_of().unwrap().as_basic_value_enum())
   }
@@ -1633,7 +1597,7 @@ mod tests {
       name: "a".to_string(),
       value: Mock::rc_node(Mock::literal_int()),
       is_const_expr: false,
-      cache_id: 0,
+      id: 0,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
@@ -1648,28 +1612,28 @@ mod tests {
   fn lower_binding_stmt_ref_val() {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let a_cache_id: cache::Id = 0;
+    let a_id: cache::Id = 0;
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::rc_node(Mock::literal_int()),
       is_const_expr: false,
-      cache_id: a_cache_id,
+      id: a_id,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
-      value: Mock::reference(a_cache_id),
+      value: Box::new(ast::NodeKind::Reference(Mock::reference(a_id))),
       is_const_expr: false,
-      cache_id: a_cache_id + 1,
+      id: a_id + 1,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt_a, a_cache_id)
+      .cache(binding_stmt_a, a_id)
       .function()
-      .lower_cache(a_cache_id, false)
+      .lower_cache(a_id, false)
       .lower(&binding_stmt_b, false)
       .compare_with_file("let_stmt_ref_val");
   }
@@ -1684,7 +1648,7 @@ mod tests {
       name: "a".to_string(),
       value: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
       is_const_expr: false,
-      cache_id: 0,
+      id: 0,
       // FIXME: Wrong type.
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
@@ -1700,30 +1664,30 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
-    let a_cache_id: cache::Id = 0;
+    let a_id: cache::Id = 0;
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
       value: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_const_expr: false,
-      cache_id: a_cache_id,
+      id: a_id,
       // FIXME: Wrong type.
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "b".to_string(),
-      value: Mock::reference(a_cache_id),
+      value: Box::new(ast::NodeKind::Reference(Mock::reference(a_id))),
       is_const_expr: false,
-      cache_id: a_cache_id + 1,
+      id: a_id + 1,
       // FIXME: Wrong type.
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
     Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt_a, a_cache_id)
+      .cache(binding_stmt_a, a_id)
       .function()
-      .lower_cache(a_cache_id, false)
+      .lower_cache(a_id, false)
       .lower(&binding_stmt_b, false)
       .compare_with_file("let_stmt_ptr_ref_val");
   }
@@ -1739,7 +1703,7 @@ mod tests {
         "hello".to_string(),
       ))),
       is_const_expr: false,
-      cache_id: 0,
+      id: 0,
       // FIXME: Wrong type.
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
@@ -1758,10 +1722,8 @@ mod tests {
     let enum_ = ast::NodeKind::Enum(ast::Enum {
       name: "a".to_string(),
       variants: vec![("b".to_string(), 0), ("c".to_string(), 1)],
-      ty: Mock::rc_node(ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::Int(
-        ast::IntSize::I32,
-      )))),
-      cache_id: 0,
+      value_type: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      id: 0,
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1806,7 +1768,7 @@ mod tests {
       name: "a".to_string(),
       signature: Mock::signature_simple(true),
       attributes: Vec::new(),
-      cache_id: 0,
+      id: 0,
     });
 
     Mock::new(&llvm_context, &llvm_module)
@@ -1822,10 +1784,8 @@ mod tests {
 
     let extern_static = ast::NodeKind::ExternStatic(ast::ExternStatic {
       name: "a".to_string(),
-      ty: Mock::rc_node(ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::Int(
-        ast::IntSize::I32,
-      )))),
-      cache_id: 0,
+      ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+      id: 0,
     });
 
     Mock::new(&llvm_context, &llvm_module)

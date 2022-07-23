@@ -12,7 +12,7 @@ pub struct Cache {
   /// the `declare` name resolution step, which has also been resolved.
   pub symbols: std::collections::HashMap<Id, ast::NodeKind>,
   pub links: std::collections::HashMap<Id, Id>,
-  pub cached_nodes: std::collections::HashMap<Id, std::rc::Rc<ast::Node>>,
+  pub cached_nodes: std::collections::HashMap<Id, std::rc::Rc<ast::NodeKind>>,
   // REVIEW: Should this be here?
   pub main_function_id: Option<Id>,
   id_counter: usize,
@@ -45,13 +45,13 @@ impl Cache {
     id
   }
 
-  pub fn add_struct_impl(&mut self, struct_cache_id: Id, methods: Vec<(Id, String)>) {
-    if let Some(existing_impls) = self.struct_impls.get_mut(&struct_cache_id) {
+  pub fn add_struct_impl(&mut self, struct_id: Id, methods: Vec<(Id, String)>) {
+    if let Some(existing_impls) = self.struct_impls.get_mut(&struct_id) {
       existing_impls.extend(methods);
 
       return;
     }
 
-    self.struct_impls.insert(struct_cache_id, methods);
+    self.struct_impls.insert(struct_id, methods);
   }
 }

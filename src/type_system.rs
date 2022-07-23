@@ -15,12 +15,12 @@ impl TypeContext {
 
     // for top_level_node in inner_ast.iter_mut() {
     //   top_level_node
-    //     .kind
+    //
     //     .post_unification(&mut type_context, &cache);
     // }
 
     for node in ast {
-      // node.kind.check(&mut type_context, cache);
+      // node.check(&mut type_context, cache);
       // node.report_constraints(&mut semantic_check_context, cache);
     }
 
@@ -64,7 +64,7 @@ impl TypeContext {
       if let ast::NodeKind::ReturnStmt(return_stmt) = child {
         // REVIEW: What if the return statement's value is a block that contains a return statement?
         if let Some(return_value) = &return_stmt.value {
-          ty = return_value.kind.infer_type(cache);
+          ty = return_value.infer_type(cache);
         }
 
         // If the return statement is empty, then the function's return type is unit.
@@ -105,7 +105,7 @@ impl Check for ast::Trait {
 
 impl Check for ast::MemberAccess {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let base_expr_type = self.base_expr.kind.infer_flatten_type(cache);
+    let base_expr_type = self.base_expr.infer_flatten_type(cache);
 
     let struct_type = match base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
@@ -125,10 +125,10 @@ impl Check for ast::MemberAccess {
 
     // REVIEW: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
     // TODO: Lookup implementation, and attempt to match a method.
-    if let Some(struct_impls) = cache.struct_impls.get(&struct_type.cache_id) {
-      for (method_cache_id, method_name) in struct_impls {
+    if let Some(struct_impls) = cache.struct_impls.get(&struct_type.id) {
+      for (method_id, method_name) in struct_impls {
         if method_name == &self.member_name {
-          return cache.force_get(&method_cache_id).infer_type(cache);
+          return cache.force_get(&method_id).infer_type(cache);
         }
       }
     }
@@ -156,7 +156,7 @@ impl Check for ast::Pattern {
 
 impl Check for ast::IntrinsicCall {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    match self.kind {
+    match self {
       ast::IntrinsicKind::LengthOf => ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
     }
   }
@@ -190,7 +190,7 @@ impl Check for ast::Struct {
 
 impl Check for ast::UnaryExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let expr_type = self.expr.kind.infer_type(cache);
+    let expr_type = self.expr.infer_type(cache);
 
     // Short-circuit if the expression's type is unit.
     if expr_type.is_a_unit() {
@@ -236,7 +236,7 @@ impl Check for ast::StaticArrayValue {
     let array_element_type = if let Some(explicit_type) = &self.explicit_type {
       explicit_type.clone()
     } else {
-      self.elements.first().unwrap().kind.infer_type(cache)
+      self.elements.first().unwrap().infer_type(cache)
     };
 
     // REVIEW: Is the length conversion safe?
@@ -246,7 +246,7 @@ impl Check for ast::StaticArrayValue {
 
 impl Check for ast::UnsafeExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.0.kind.infer_type(cache)
+    self.0.infer_type(cache)
   }
 }
 
@@ -265,7 +265,7 @@ impl Check for ast::Parameter {
 impl Check for ast::BlockExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     if let Some(yields_value) = &self.yields {
-      return yields_value.kind.infer_type(cache);
+      return yields_value.infer_type(cache);
     }
     // FIXME: Ensure this logic is correct, and that it will work as expected.
     // BUG: The function to infer return values uses this infer method, so function types CAN be never!
@@ -274,7 +274,7 @@ impl Check for ast::BlockExpr {
     else if self
       .statements
       .iter()
-      .any(|statement| statement.kind.infer_flatten_type(cache).is_a_never())
+      .any(|statement| statement.infer_flatten_type(cache).is_a_never())
     {
       return ast::Type::Never;
     }
@@ -304,7 +304,7 @@ impl Check for ast::Literal {
 
 impl Check for ast::IfExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let then_expr_type = self.then_value.kind.infer_flatten_type(cache);
+    let then_expr_type = self.then_value.infer_flatten_type(cache);
 
     // At least the two main branches must be present in order for a value
     // to possibly evaluate.
@@ -315,7 +315,7 @@ impl Check for ast::IfExpr {
     // TODO: Take into consideration newly-added alternative branches.
 
     let else_expr = self.else_value.as_ref().unwrap();
-    let else_expr_type = else_expr.kind.infer_flatten_type(cache);
+    let else_expr_type = else_expr.infer_flatten_type(cache);
 
     // Default to type unit if both branches are of incompatible types.
     then_expr_type
@@ -336,21 +336,21 @@ impl Check for ast::BinaryExpr {
       | ast::OperatorKind::Nor
       | ast::OperatorKind::Xor
       | ast::OperatorKind::In => ast::Type::Basic(ast::BasicType::Bool),
-      _ => self.left.kind.infer_type(cache),
+      _ => self.left.infer_type(cache),
     }
   }
 }
 
 impl Check for ast::InlineExprStmt {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.expr.kind.infer_type(cache)
+    self.expr.infer_type(cache)
   }
 }
 
 impl Check for ast::BindingStmt {
   // BUG: This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.value.kind.infer_type(cache)
+    self.value.infer_type(cache)
   }
 }
 
@@ -376,7 +376,7 @@ impl Check for ast::Function {
 
 impl Check for ast::CallExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let callee_expr_type = self.callee_expr.kind.infer_type(cache);
+    let callee_expr_type = self.callee_expr.infer_type(cache);
 
     match callee_expr_type {
       ast::Type::Function(callable_type) => callable_type.return_type.as_ref().clone(),
@@ -478,7 +478,7 @@ mod tests {
   //       cached_type: None,
   //       id: 0,
   //     }),
-  //     cache_id: 0,
+  //     id: 0,
   //     is_const_expr: false,
   //   };
 

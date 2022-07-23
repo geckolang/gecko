@@ -3,283 +3,260 @@ use crate::ast;
 macro_rules! define_visitor {
   (@ $name:ident $(<$lt:lifetime>)?, $return_type:ty, $default_value:expr) => {
     pub trait $name $(<$lt>)? {
-      fn dispatch(&mut self, node: &std::rc::Rc<ast::Node>) -> $return_type {
+      fn dispatch(&mut self, node: &std::rc::Rc<ast::NodeKind>) -> $return_type {
         let cloned_rc_node = std::rc::Rc::clone(node);
 
-        match &node.kind {
-          ast::NodeKind::Literal(literal) => self.visit_literal(&literal, cloned_rc_node),
-          ast::NodeKind::ExternFunction(extern_fn) => self.visit_extern_function(&extern_fn, cloned_rc_node),
-          ast::NodeKind::ExternStatic(extern_static) => self.visit_extern_static(&extern_static, cloned_rc_node),
-          ast::NodeKind::Function(function) => self.enter_function(&function, cloned_rc_node),
-          ast::NodeKind::BlockExpr(block_expr) => self.enter_block_expr(&block_expr, cloned_rc_node),
-          ast::NodeKind::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt, cloned_rc_node),
-          ast::NodeKind::BindingStmt(binding_stmt) => self.visit_binding_stmt(&binding_stmt, cloned_rc_node),
-          ast::NodeKind::IfExpr(if_expr) => self.visit_if_expr(&if_expr, cloned_rc_node),
-          ast::NodeKind::CallExpr(call_expr) => self.visit_call_expr(&call_expr, cloned_rc_node),
-          ast::NodeKind::IntrinsicCall(intrinsic_call) => self.visit_intrinsic_call(&intrinsic_call, cloned_rc_node),
-          ast::NodeKind::InlineExprStmt(inline_expr_stmt) => self.visit_inline_expr_stmt(&inline_expr_stmt, cloned_rc_node),
-          ast::NodeKind::Reference(reference) => self.visit_reference(&reference, cloned_rc_node),
-          ast::NodeKind::BinaryExpr(binary_expr) => self.visit_binary_expr(&binary_expr, cloned_rc_node),
-          ast::NodeKind::UnaryExpr(unary_expr) => self.visit_unary_expr(&unary_expr, cloned_rc_node),
-          ast::NodeKind::Parameter(parameter) => self.visit_parameter(&parameter, cloned_rc_node),
-          ast::NodeKind::UnsafeExpr(unsafe_expr) => self.enter_unsafe_expr(&unsafe_expr, cloned_rc_node),
-          ast::NodeKind::StaticArrayValue(static_array_value) => self.visit_static_array_value(&static_array_value, cloned_rc_node),
-          ast::NodeKind::IndexingExpr(indexing_expr) => self.visit_indexing_expr(&indexing_expr, cloned_rc_node),
-          ast::NodeKind::Enum(enum_) => self.visit_enum(&enum_, cloned_rc_node),
-          ast::NodeKind::Struct(struct_) => self.visit_struct(&struct_, cloned_rc_node),
-          ast::NodeKind::Signature(signature) => self.visit_signature(&signature, cloned_rc_node),
-          ast::NodeKind::StructValue(struct_value) => self.visit_struct_value(&struct_value, cloned_rc_node),
-          ast::NodeKind::Pattern(pattern) => self.visit_pattern(&pattern, cloned_rc_node),
-          ast::NodeKind::TypeAlias(type_alias) => self.visit_type_alias(&type_alias, cloned_rc_node),
-          ast::NodeKind::Closure(closure) => self.visit_closure(&closure, cloned_rc_node),
-          ast::NodeKind::MemberAccess(member_access) => self.visit_member_access(&member_access, cloned_rc_node),
-          ast::NodeKind::StructImpl(struct_impl) => self.enter_struct_impl(&struct_impl, cloned_rc_node),
-          ast::NodeKind::Trait(trait_) => self.visit_trait(&trait_, cloned_rc_node),
-          ast::NodeKind::ParenthesesExpr(parentheses_expr) => self.visit_parentheses_expr(&parentheses_expr, cloned_rc_node),
-          ast::NodeKind::Using(using) => self.visit_using(&using, cloned_rc_node),
-          ast::NodeKind::SizeofIntrinsic(sizeof_intrinsic) => self.visit_sizeof_intrinsic(&sizeof_intrinsic, cloned_rc_node),
-          ast::NodeKind::Range(range) => self.visit_range(&range, cloned_rc_node),
-          ast::NodeKind::Type(ty) => self.visit_type(&ty, cloned_rc_node)
+        match &node {
+          ast::NodeKind::Literal(literal) => self.visit_literal(&literal),
+          ast::NodeKind::ExternFunction(extern_fn) => self.visit_extern_function(&extern_fn),
+          ast::NodeKind::ExternStatic(extern_static) => self.visit_extern_static(&extern_static),
+          ast::NodeKind::Function(function) => self.enter_function(&function),
+          ast::NodeKind::BlockExpr(block_expr) => self.enter_block_expr(&block_expr),
+          ast::NodeKind::ReturnStmt(return_stmt) => self.visit_return_stmt(&return_stmt),
+          ast::NodeKind::BindingStmt(binding_stmt) => self.visit_binding_stmt(&binding_stmt),
+          ast::NodeKind::IfExpr(if_expr) => self.visit_if_expr(&if_expr),
+          ast::NodeKind::CallExpr(call_expr) => self.visit_call_expr(&call_expr),
+          ast::NodeKind::IntrinsicCall(intrinsic_call) => self.visit_intrinsic_call(&intrinsic_call),
+          ast::NodeKind::InlineExprStmt(inline_expr_stmt) => self.visit_inline_expr_stmt(&inline_expr_stmt),
+          ast::NodeKind::Reference(reference) => self.visit_reference(&reference),
+          ast::NodeKind::BinaryExpr(binary_expr) => self.visit_binary_expr(&binary_expr),
+          ast::NodeKind::UnaryExpr(unary_expr) => self.visit_unary_expr(&unary_expr),
+          ast::NodeKind::Parameter(parameter) => self.visit_parameter(&parameter),
+          ast::NodeKind::UnsafeExpr(unsafe_expr) => self.enter_unsafe_expr(&unsafe_expr),
+          ast::NodeKind::StaticArrayValue(static_array_value) => self.visit_static_array_value(&static_array_value),
+          ast::NodeKind::IndexingExpr(indexing_expr) => self.visit_indexing_expr(&indexing_expr),
+          ast::NodeKind::Enum(enum_) => self.visit_enum(&enum_),
+          ast::NodeKind::Struct(struct_) => self.visit_struct(&struct_),
+          ast::NodeKind::Signature(signature) => self.visit_signature(&signature),
+          ast::NodeKind::StructValue(struct_value) => self.visit_struct_value(&struct_value),
+          ast::NodeKind::Pattern(pattern) => self.visit_pattern(&pattern),
+          ast::NodeKind::TypeAlias(type_alias) => self.visit_type_alias(&type_alias),
+          ast::NodeKind::Closure(closure) => self.visit_closure(&closure),
+          ast::NodeKind::MemberAccess(member_access) => self.visit_member_access(&member_access),
+          ast::NodeKind::StructImpl(struct_impl) => self.enter_struct_impl(&struct_impl),
+          ast::NodeKind::Trait(trait_) => self.visit_trait(&trait_),
+          ast::NodeKind::ParenthesesExpr(parentheses_expr) => self.visit_parentheses_expr(&parentheses_expr),
+          ast::NodeKind::Using(using) => self.visit_using(&using),
+          ast::NodeKind::SizeofIntrinsic(sizeof_intrinsic) => self.visit_sizeof_intrinsic(&sizeof_intrinsic),
+          ast::NodeKind::Range(range) => self.visit_range(&range),
+          ast::NodeKind::Type(ty) => self.visit_type(&ty)
         }
       }
 
-      fn visit_literal(&mut self, _literal: &ast::Literal, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_literal(&mut self, _literal: &ast::Literal) -> $return_type {
         $default_value
       }
 
       fn visit_extern_function(
         &mut self,
-        _extern_fn: &ast::ExternFunction,
-        _node: std::rc::Rc<ast::Node>,
+        _extern_fn: &ast::ExternFunction
       ) -> $return_type {
         $default_value
       }
 
       fn visit_signature(
         &mut self,
-        _signature: &ast::Signature,
-        _node: std::rc::Rc<ast::Node>,
+        _signature: &ast::Signature
       ) -> $return_type {
         $default_value
       }
 
       fn visit_extern_static(
         &mut self,
-        _extern_static: &ast::ExternStatic,
-        _node: std::rc::Rc<ast::Node>,
+        _extern_static: &ast::ExternStatic
       ) -> $return_type {
         $default_value
       }
 
       fn visit_inline_expr_stmt(
         &mut self,
-        _inline_expr: &ast::InlineExprStmt,
-        _node: std::rc::Rc<ast::Node>,
+        _inline_expr: &ast::InlineExprStmt
       ) -> $return_type {
         $default_value
       }
 
-      fn enter_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn enter_block_expr(&mut self, _block: &ast::BlockExpr) -> $return_type {
         $default_value
       }
 
-      fn exit_block_expr(&mut self, _block: &ast::BlockExpr, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn exit_block_expr(&mut self, _block: &ast::BlockExpr) -> $return_type {
         $default_value
       }
 
-      fn visit_closure(&mut self, _closure: &ast::Closure, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_closure(&mut self, _closure: &ast::Closure) -> $return_type {
         $default_value
       }
 
-      fn visit_enum(&mut self, _enum: &ast::Enum, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_enum(&mut self, _enum: &ast::Enum) -> $return_type {
         $default_value
       }
 
       fn visit_parameter(
         &mut self,
-        _parameter: &ast::Parameter,
-        _node: std::rc::Rc<ast::Node>,
+        _parameter: &ast::Parameter
       ) -> $return_type {
         $default_value
       }
 
       fn visit_intrinsic_call(
         &mut self,
-        _intrinsic_call: &ast::IntrinsicCall,
-        _node: std::rc::Rc<ast::Node>,
+        _intrinsic_call: &ast::IntrinsicCall
       ) -> $return_type {
         $default_value
       }
 
       fn visit_reference(
         &mut self,
-        _reference: &ast::Reference,
-        _node: std::rc::Rc<ast::Node>,
+        _reference: &ast::Reference
       ) -> $return_type {
         $default_value
       }
 
       fn enter_struct_impl(
         &mut self,
-        _struct_impl: &ast::StructImpl,
-        _node: std::rc::Rc<ast::Node>,
+        _struct_impl: &ast::StructImpl
       ) -> $return_type {
         $default_value
       }
 
       fn exit_struct_impl(
         &mut self,
-        _struct_impl: &ast::StructImpl,
-        _node: std::rc::Rc<ast::Node>,
+        _struct_impl: &ast::StructImpl
       ) -> $return_type {
         $default_value
       }
 
       fn visit_unary_expr(
         &mut self,
-        _unary_expr: &ast::UnaryExpr,
-        _node: std::rc::Rc<ast::Node>,
+        _unary_expr: &ast::UnaryExpr
       ) -> $return_type {
         $default_value
       }
 
       fn visit_struct(
         &mut self,
-        _struct: &ast::Struct,
-        _node: std::rc::Rc<ast::Node>,
+        _struct: &ast::Struct
       ) -> $return_type {
         $default_value
       }
 
-      fn visit_pattern(&mut self, _pattern: &ast::Pattern, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_pattern(&mut self, _pattern: &ast::Pattern) -> $return_type {
         $default_value
       }
 
-      fn visit_using(&mut self, _using: &ast::Using, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_using(&mut self, _using: &ast::Using) -> $return_type {
         $default_value
       }
 
       fn visit_type_alias(
         &mut self,
-        _type_alias: &ast::TypeAlias,
-        _node: std::rc::Rc<ast::Node>,
+        _type_alias: &ast::TypeAlias
       ) -> $return_type {
         $default_value
       }
 
-      fn visit_trait(&mut self, _trait: &ast::Trait, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_trait(&mut self, _trait: &ast::Trait) -> $return_type {
         $default_value
       }
 
       fn visit_sizeof_intrinsic(
         &mut self,
-        _sizeof_intrinsic: &ast::SizeofIntrinsic,
-        _node: std::rc::Rc<ast::Node>,
+        _sizeof_intrinsic: &ast::SizeofIntrinsic
       ) -> $return_type {
         $default_value
       }
 
-      fn visit_range(&mut self, _range: &ast::Range, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_range(&mut self, _range: &ast::Range) -> $return_type {
         $default_value
       }
 
       fn visit_struct_value(
         &mut self,
-        _struct_value: &ast::StructValue,
-        _node: std::rc::Rc<ast::Node>,
+        _struct_value: &ast::StructValue
       ) -> $return_type {
         $default_value
       }
 
       fn visit_static_array_value(
         &mut self,
-        _array_value: &ast::StaticArrayValue,
-        _node: std::rc::Rc<ast::Node>,
+        _array_value: &ast::StaticArrayValue
       ) -> $return_type {
         $default_value
       }
 
       fn enter_unsafe_expr(
         &mut self,
-        _unsafe_expr: &ast::UnsafeExpr,
-        _node: std::rc::Rc<ast::Node>,
+        _unsafe_expr: &ast::UnsafeExpr
       ) -> $return_type {
         $default_value
       }
 
       fn exit_unsafe_expr(
         &mut self,
-        _unsafe_expr: &ast::UnsafeExpr,
-        _node: std::rc::Rc<ast::Node>,
+        _unsafe_expr: &ast::UnsafeExpr
       ) -> $return_type {
         $default_value
       }
 
       fn visit_return_stmt(
         &mut self,
-        _return_stmt: &ast::ReturnStmt,
-        _node: std::rc::Rc<ast::Node>,
+        _return_stmt: &ast::ReturnStmt
       ) -> $return_type {
         $default_value
       }
 
       fn visit_parentheses_expr(
         &mut self,
-        _parentheses_expr: &ast::ParenthesesExpr,
-        _node: std::rc::Rc<ast::Node>,
+        _parentheses_expr: &ast::ParenthesesExpr
       ) -> $return_type {
         $default_value
       }
 
       fn visit_member_access(
         &mut self,
-        _member_access: &ast::MemberAccess,
-        _node: std::rc::Rc<ast::Node>,
+        _member_access: &ast::MemberAccess
       ) -> $return_type {
         $default_value
       }
 
       fn visit_binary_expr(
         &mut self,
-        _binary_expr: &ast::BinaryExpr,
-        _node: std::rc::Rc<ast::Node>,
+        _binary_expr: &ast::BinaryExpr
       ) -> $return_type {
         $default_value
       }
 
       fn visit_binding_stmt(
         &mut self,
-        _binding_stmt: &ast::BindingStmt,
-        _node: std::rc::Rc<ast::Node>,
+        _binding_stmt: &ast::BindingStmt
       ) -> $return_type {
         $default_value
       }
 
-      fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr) -> $return_type {
         $default_value
       }
 
-      fn enter_function(&mut self, _function: &ast::Function, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn enter_function(&mut self, _function: &ast::Function) -> $return_type {
         $default_value
       }
 
-      fn exit_function(&mut self, _function: &ast::Function, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn exit_function(&mut self, _function: &ast::Function) -> $return_type {
         $default_value
       }
 
-      fn visit_if_expr(&mut self, _if_expr: &ast::IfExpr, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_if_expr(&mut self, _if_expr: &ast::IfExpr) -> $return_type {
         $default_value
       }
 
       fn visit_indexing_expr(
         &mut self,
-        _indexing_expr: &ast::IndexingExpr,
-        _node: std::rc::Rc<ast::Node>,
+        _indexing_expr: &ast::IndexingExpr
       ) -> $return_type {
         $default_value
       }
 
-      fn visit_type(&mut self, _ty: &ast::Type, _node: std::rc::Rc<ast::Node>) -> $return_type {
+      fn visit_type(&mut self, _ty: &ast::Type) -> $return_type {
         $default_value
       }
     }
@@ -307,11 +284,11 @@ trait Visitor {
 }
 
 // TODO: Accept `&std::rc::Rc<ast::Node>` instead.
-pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor) {
-  visitor.dispatch(&node);
+pub fn traverse(node: std::rc::Rc<ast::NodeKind>, visitor: &mut impl AnalysisVisitor) {
+  // visitor.dispatch(&node);
 
   // TODO: Simplify with the addition of the dispatch method.
-  match &node.kind {
+  match &node {
     ast::NodeKind::InlineExprStmt(inline_expr_stmt) => {
       traverse(std::rc::Rc::clone(&inline_expr_stmt.expr), visitor);
     }
@@ -327,7 +304,7 @@ pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor
         traverse(std::rc::Rc::clone(&statement), visitor);
       }
 
-      visitor.exit_block_expr(block_expr, std::rc::Rc::clone(&node));
+      visitor.exit_block_expr(block_expr);
     }
     ast::NodeKind::CallExpr(call_expr) => {
       traverse(std::rc::Rc::clone(&call_expr.callee_expr), visitor);
@@ -337,9 +314,9 @@ pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor
       }
     }
     ast::NodeKind::Closure(closure) => {
-      visitor.visit_signature(&closure.signature, std::rc::Rc::clone(&node));
-      visitor.enter_block_expr(&closure.body, std::rc::Rc::clone(&node));
-      visitor.exit_block_expr(&closure.body, std::rc::Rc::clone(&node));
+      visitor.visit_signature(&closure.signature);
+      visitor.enter_block_expr(&closure.body);
+      visitor.exit_block_expr(&closure.body);
     }
     ast::NodeKind::Function(function) => {
       traverse(std::rc::Rc::clone(&function.signature), visitor);
@@ -369,7 +346,7 @@ pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor
     }
     ast::NodeKind::Signature(signature) => {
       for parameter in &signature.parameters {
-        visitor.visit_parameter(parameter.as_parameter(), std::rc::Rc::clone(&node));
+        visitor.visit_parameter(parameter);
       }
     }
     ast::NodeKind::ReturnStmt(return_expr) => {
@@ -384,21 +361,21 @@ pub fn traverse(node: std::rc::Rc<ast::Node>, visitor: &mut impl AnalysisVisitor
     }
     ast::NodeKind::StructImpl(struct_impl) => {
       for static_method in &struct_impl.static_methods {
-        visitor.enter_function(static_method, std::rc::Rc::clone(&node));
+        visitor.enter_function(static_method);
       }
 
       for member_method in &struct_impl.member_methods {
-        visitor.enter_function(member_method, std::rc::Rc::clone(&node));
+        visitor.enter_function(member_method);
       }
 
-      visitor.exit_struct_impl(struct_impl, std::rc::Rc::clone(&node));
+      visitor.exit_struct_impl(struct_impl);
     }
     ast::NodeKind::UnaryExpr(unary_expr) => {
       traverse(std::rc::Rc::clone(&unary_expr.expr), visitor);
     }
     ast::NodeKind::UnsafeExpr(unsafe_expr) => {
       traverse(std::rc::Rc::clone(&unsafe_expr.0), visitor);
-      visitor.exit_unsafe_expr(unsafe_expr, std::rc::Rc::clone(&node));
+      visitor.exit_unsafe_expr(unsafe_expr);
     }
     ast::NodeKind::StaticArrayValue(static_array_value) => {
       for element in &static_array_value.elements {
@@ -443,276 +420,220 @@ pub struct AggregateVisitor<'a> {
 
 // REVIEW: Can we eliminate this with the use of `dispatch`?
 impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
-  fn visit_literal(&mut self, literal: &ast::Literal, node: std::rc::Rc<ast::Node>) {
+  fn visit_literal(&mut self, literal: &ast::Literal) {
     for visitor in &mut self.visitors {
-      visitor.visit_literal(literal, std::rc::Rc::clone(&node));
+      visitor.visit_literal(literal);
     }
   }
 
-  fn visit_extern_function(
-    &mut self,
-    extern_fn: &ast::ExternFunction,
-    node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_extern_function(&mut self, extern_fn: &ast::ExternFunction) {
     for visitor in &mut self.visitors {
-      visitor.visit_extern_function(extern_fn, std::rc::Rc::clone(&node));
+      visitor.visit_extern_function(extern_fn);
     }
   }
 
-  fn visit_signature(&mut self, signature: &ast::Signature, node: std::rc::Rc<ast::Node>) {
+  fn visit_signature(&mut self, signature: &ast::Signature) {
     for visitor in &mut self.visitors {
-      visitor.visit_signature(signature, std::rc::Rc::clone(&node));
+      visitor.visit_signature(signature);
     }
   }
 
-  fn visit_extern_static(
-    &mut self,
-    extern_static: &ast::ExternStatic,
-    node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_extern_static(&mut self, extern_static: &ast::ExternStatic) {
     for visitor in &mut self.visitors {
-      visitor.visit_extern_static(extern_static, std::rc::Rc::clone(&node));
+      visitor.visit_extern_static(extern_static);
     }
   }
 
-  fn visit_inline_expr_stmt(
-    &mut self,
-    inline_expr: &ast::InlineExprStmt,
-    node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_inline_expr_stmt(&mut self, inline_expr: &ast::InlineExprStmt) {
     for visitor in &mut self.visitors {
-      visitor.visit_inline_expr_stmt(inline_expr, std::rc::Rc::clone(&node));
+      visitor.visit_inline_expr_stmt(inline_expr);
     }
   }
 
-  fn enter_block_expr(&mut self, block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) {
+  fn enter_block_expr(&mut self, block: &ast::BlockExpr) {
     for visitor in &mut self.visitors {
-      visitor.enter_block_expr(block, std::rc::Rc::clone(&node));
-      visitor.exit_block_expr(block, std::rc::Rc::clone(&node));
+      visitor.enter_block_expr(block);
+      visitor.exit_block_expr(block);
     }
   }
 
-  fn exit_block_expr(&mut self, block: &ast::BlockExpr, node: std::rc::Rc<ast::Node>) -> () {
+  fn exit_block_expr(&mut self, block: &ast::BlockExpr) -> () {
     for visitor in &mut self.visitors {
-      visitor.exit_block_expr(block, std::rc::Rc::clone(&node));
+      visitor.exit_block_expr(block);
     }
   }
 
-  fn visit_closure(&mut self, closure: &ast::Closure, node: std::rc::Rc<ast::Node>) {
+  fn visit_closure(&mut self, closure: &ast::Closure) {
     for visitor in &mut self.visitors {
-      visitor.visit_closure(closure, std::rc::Rc::clone(&node));
+      visitor.visit_closure(closure);
     }
   }
 
-  fn visit_enum(&mut self, enum_: &ast::Enum, node: std::rc::Rc<ast::Node>) {
+  fn visit_enum(&mut self, enum_: &ast::Enum) {
     for visitor in &mut self.visitors {
-      visitor.visit_enum(enum_, std::rc::Rc::clone(&node));
+      visitor.visit_enum(enum_);
     }
   }
 
-  fn visit_parameter(&mut self, parameter: &ast::Parameter, node: std::rc::Rc<ast::Node>) {
+  fn visit_parameter(&mut self, parameter: &ast::Parameter) {
     for visitor in &mut self.visitors {
-      visitor.visit_parameter(parameter, std::rc::Rc::clone(&node));
+      visitor.visit_parameter(parameter);
     }
   }
 
-  fn visit_intrinsic_call(
-    &mut self,
-    intrinsic_call: &ast::IntrinsicCall,
-    node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_intrinsic_call(&mut self, intrinsic_call: &ast::IntrinsicCall) {
     for visitor in &mut self.visitors {
-      visitor.visit_intrinsic_call(intrinsic_call, std::rc::Rc::clone(&node));
+      visitor.visit_intrinsic_call(intrinsic_call);
     }
   }
 
-  fn visit_reference(&mut self, reference: &ast::Reference, node: std::rc::Rc<ast::Node>) {
+  fn visit_reference(&mut self, reference: &ast::Reference) {
     for visitor in &mut self.visitors {
-      visitor.visit_reference(reference, std::rc::Rc::clone(&node));
+      visitor.visit_reference(reference);
     }
   }
 
-  fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl, node: std::rc::Rc<ast::Node>) {
+  fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl) {
     for visitor in &mut self.visitors {
-      visitor.enter_struct_impl(struct_impl, std::rc::Rc::clone(&node));
+      visitor.enter_struct_impl(struct_impl);
     }
   }
 
-  fn exit_struct_impl(&mut self, struct_impl: &ast::StructImpl, node: std::rc::Rc<ast::Node>) {
+  fn exit_struct_impl(&mut self, struct_impl: &ast::StructImpl) {
     for visitor in &mut self.visitors {
-      visitor.exit_struct_impl(struct_impl, std::rc::Rc::clone(&node));
+      visitor.exit_struct_impl(struct_impl);
     }
   }
 
-  fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr, node: std::rc::Rc<ast::Node>) {
+  fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
     for visitor in &mut self.visitors {
-      visitor.visit_unary_expr(unary_expr, std::rc::Rc::clone(&node));
+      visitor.visit_unary_expr(unary_expr);
     }
   }
 
-  fn visit_struct(&mut self, struct_type: &ast::Struct, node: std::rc::Rc<ast::Node>) {
+  fn visit_struct(&mut self, struct_type: &ast::Struct) {
     for visitor in &mut self.visitors {
-      visitor.visit_struct(struct_type, std::rc::Rc::clone(&node));
+      visitor.visit_struct(struct_type);
     }
   }
 
-  fn visit_pattern(&mut self, pattern: &ast::Pattern, node: std::rc::Rc<ast::Node>) {
+  fn visit_pattern(&mut self, pattern: &ast::Pattern) {
     for visitor in &mut self.visitors {
-      visitor.visit_pattern(pattern, std::rc::Rc::clone(&node));
+      visitor.visit_pattern(pattern);
     }
   }
 
-  fn visit_using(&mut self, using: &ast::Using, node: std::rc::Rc<ast::Node>) {
+  fn visit_using(&mut self, using: &ast::Using) {
     for visitor in &mut self.visitors {
-      visitor.visit_using(using, std::rc::Rc::clone(&node));
+      visitor.visit_using(using);
     }
   }
 
-  fn visit_type_alias(&mut self, type_alias: &ast::TypeAlias, node: std::rc::Rc<ast::Node>) {
+  fn visit_type_alias(&mut self, type_alias: &ast::TypeAlias) {
     for visitor in &mut self.visitors {
-      visitor.visit_type_alias(type_alias, std::rc::Rc::clone(&node));
+      visitor.visit_type_alias(type_alias);
     }
   }
 
-  fn visit_trait(&mut self, trait_: &ast::Trait, node: std::rc::Rc<ast::Node>) {
+  fn visit_trait(&mut self, trait_: &ast::Trait) {
     for visitor in &mut self.visitors {
-      visitor.visit_trait(trait_, std::rc::Rc::clone(&node));
+      visitor.visit_trait(trait_);
     }
   }
 
-  fn visit_sizeof_intrinsic(
-    &mut self,
-    sizeof_intrinsic: &ast::SizeofIntrinsic,
-    node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_sizeof_intrinsic(&mut self, sizeof_intrinsic: &ast::SizeofIntrinsic) {
     for visitor in &mut self.visitors {
-      visitor.visit_sizeof_intrinsic(sizeof_intrinsic, std::rc::Rc::clone(&node));
+      visitor.visit_sizeof_intrinsic(sizeof_intrinsic);
     }
   }
 
-  fn visit_range(&mut self, range: &ast::Range, node: std::rc::Rc<ast::Node>) {
+  fn visit_range(&mut self, range: &ast::Range) {
     for visitor in &mut self.visitors {
-      visitor.visit_range(range, std::rc::Rc::clone(&node));
+      visitor.visit_range(range);
     }
   }
 
-  fn visit_struct_value(&mut self, struct_value: &ast::StructValue, node: std::rc::Rc<ast::Node>) {
+  fn visit_struct_value(&mut self, struct_value: &ast::StructValue) {
     for visitor in &mut self.visitors {
-      visitor.visit_struct_value(struct_value, std::rc::Rc::clone(&node));
+      visitor.visit_struct_value(struct_value);
     }
   }
 
-  fn visit_static_array_value(
-    &mut self,
-    static_array_value: &ast::StaticArrayValue,
-    node: std::rc::Rc<ast::Node>,
-  ) {
+  fn visit_static_array_value(&mut self, static_array_value: &ast::StaticArrayValue) {
     for visitor in &mut self.visitors {
-      visitor.visit_static_array_value(static_array_value, std::rc::Rc::clone(&node));
+      visitor.visit_static_array_value(static_array_value);
     }
   }
 
-  fn enter_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
+  fn enter_function(&mut self, function: &ast::Function) -> () {
     for visitor in &mut self.visitors {
-      visitor.enter_function(function, std::rc::Rc::clone(&node));
+      visitor.enter_function(function);
     }
   }
 
-  fn exit_function(&mut self, function: &ast::Function, node: std::rc::Rc<ast::Node>) -> () {
+  fn exit_function(&mut self, function: &ast::Function) -> () {
     for visitor in &mut self.visitors {
-      visitor.exit_function(function, std::rc::Rc::clone(&node));
+      visitor.exit_function(function);
     }
   }
 
-  fn enter_unsafe_expr(
-    &mut self,
-    unsafe_expr: &ast::UnsafeExpr,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn enter_unsafe_expr(&mut self, unsafe_expr: &ast::UnsafeExpr) -> () {
     for visitor in &mut self.visitors {
-      visitor.enter_unsafe_expr(unsafe_expr, std::rc::Rc::clone(&node));
+      visitor.enter_unsafe_expr(unsafe_expr);
     }
   }
 
-  fn exit_unsafe_expr(
-    &mut self,
-    unsafe_expr: &ast::UnsafeExpr,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn exit_unsafe_expr(&mut self, unsafe_expr: &ast::UnsafeExpr) -> () {
     for visitor in &mut self.visitors {
-      visitor.exit_unsafe_expr(unsafe_expr, std::rc::Rc::clone(&node));
+      visitor.exit_unsafe_expr(unsafe_expr);
     }
   }
 
-  fn visit_binary_expr(
-    &mut self,
-    binary_expr: &ast::BinaryExpr,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn visit_binary_expr(&mut self, binary_expr: &ast::BinaryExpr) -> () {
     for visitor in &mut self.visitors {
-      visitor.visit_binary_expr(binary_expr, std::rc::Rc::clone(&node));
+      visitor.visit_binary_expr(binary_expr);
     }
   }
 
-  fn visit_binding_stmt(
-    &mut self,
-    binding_stmt: &ast::BindingStmt,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) -> () {
     for visitor in &mut self.visitors {
-      visitor.visit_binding_stmt(binding_stmt, std::rc::Rc::clone(&node));
+      visitor.visit_binding_stmt(binding_stmt);
     }
   }
 
-  fn visit_call_expr(&mut self, call_expr: &ast::CallExpr, node: std::rc::Rc<ast::Node>) -> () {
+  fn visit_call_expr(&mut self, call_expr: &ast::CallExpr) -> () {
     for visitor in &mut self.visitors {
-      visitor.visit_call_expr(call_expr, std::rc::Rc::clone(&node));
+      visitor.visit_call_expr(call_expr);
     }
   }
 
-  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr, node: std::rc::Rc<ast::Node>) -> () {
+  fn visit_if_expr(&mut self, if_expr: &ast::IfExpr) -> () {
     for visitor in &mut self.visitors {
-      visitor.visit_if_expr(if_expr, std::rc::Rc::clone(&node));
+      visitor.visit_if_expr(if_expr);
     }
   }
 
-  fn visit_indexing_expr(
-    &mut self,
-    indexing_expr: &ast::IndexingExpr,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr) -> () {
     for visitor in &mut self.visitors {
-      visitor.visit_indexing_expr(indexing_expr, std::rc::Rc::clone(&node));
+      visitor.visit_indexing_expr(indexing_expr);
     }
   }
 
-  fn visit_member_access(
-    &mut self,
-    member_access: &ast::MemberAccess,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn visit_member_access(&mut self, member_access: &ast::MemberAccess) -> () {
     for visitor in &mut self.visitors {
-      visitor.visit_member_access(member_access, std::rc::Rc::clone(&node));
+      visitor.visit_member_access(member_access);
     }
   }
 
-  fn visit_parentheses_expr(
-    &mut self,
-    parentheses_expr: &ast::ParenthesesExpr,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn visit_parentheses_expr(&mut self, parentheses_expr: &ast::ParenthesesExpr) -> () {
     for visitor in &mut self.visitors {
-      visitor.visit_parentheses_expr(parentheses_expr, std::rc::Rc::clone(&node));
+      visitor.visit_parentheses_expr(parentheses_expr);
     }
   }
 
-  fn visit_return_stmt(
-    &mut self,
-    return_stmt: &ast::ReturnStmt,
-    node: std::rc::Rc<ast::Node>,
-  ) -> () {
+  fn visit_return_stmt(&mut self, return_stmt: &ast::ReturnStmt) -> () {
     for visitor in &mut self.visitors {
-      visitor.visit_return_stmt(return_stmt, std::rc::Rc::clone(&node));
+      visitor.visit_return_stmt(return_stmt);
     }
   }
 }

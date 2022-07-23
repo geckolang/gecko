@@ -1,4 +1,7 @@
-use crate::{ast, cache, lexer, name_resolution};
+use crate::{
+  ast::{self, BlockExpr},
+  cache, lexer, name_resolution,
+};
 
 // TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
 /// Determine the minimum bit-size in which a number can fit.
@@ -79,7 +82,7 @@ impl<'a> Parser<'a> {
   }
 
   /// Parse all top-level definitions.
-  pub fn parse_all(&mut self) -> ParserResult<Vec<ast::Node>> {
+  pub fn parse_all(&mut self) -> ParserResult<Vec<ast::NodeKind>> {
     let mut result = Vec::new();
 
     while !self.is_eof() {
@@ -262,21 +265,18 @@ impl<'a> Parser<'a> {
     Ok(name)
   }
 
-  fn parse_statement(&mut self) -> ParserResult<ast::Node> {
+  fn parse_statement(&mut self) -> ParserResult<ast::NodeKind> {
     let start_location = self.current_location();
 
-    let kind = match self.get_token()? {
+    let node = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
       lexer::TokenKind::Let | lexer::TokenKind::Const => {
         ast::NodeKind::BindingStmt(self.parse_binding_stmt()?)
       }
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
       _ => {
-        let expr = self.parse_expr()?;
-
-        let inline_expr_stmt = ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
-          expr: std::rc::Rc::new(expr),
-        });
+        let expr = Box::new(self.parse_expr()?);
+        let inline_expr_stmt = ast::NodeKind::InlineExprStmt(ast::InlineExprStmt { expr });
 
         // FIXME: Temporary workaround for yield expressions.
         // if self.is(&lexer::TokenKind::SemiColon) {
@@ -288,11 +288,7 @@ impl<'a> Parser<'a> {
       }
     };
 
-    Ok(ast::Node {
-      kind,
-      id: self.cache.create_id(),
-      location: self.seal_location(start_location),
-    })
+    Ok(node)
   }
 
   fn parse_indent(&mut self) -> ParserResult<()> {
@@ -304,7 +300,7 @@ impl<'a> Parser<'a> {
   }
 
   /// {%indent (%statement+) %dedent | '=' {%statement | %expr}}
-  fn parse_block_expr(&mut self) -> ParsedNode {
+  fn parse_block_expr(&mut self) -> ParserResult<BlockExpr> {
     let start_location = self.current_location();
 
     // let initial_indentation_level = self.indentation_level;
@@ -319,7 +315,7 @@ impl<'a> Parser<'a> {
       // REVIEW: Is it okay to have exclusive syntax here, and instead not treat it as a statement?
       if self.is(&lexer::TokenKind::Yield) {
         self.skip()?;
-        yields = Some(std::rc::Rc::new(self.parse_expr()?));
+        yields = Some(Box::new(self.parse_expr()?));
 
         break;
       } else if self.is(&lexer::TokenKind::Pass) {
@@ -328,7 +324,7 @@ impl<'a> Parser<'a> {
         break;
       }
 
-      statements.push(std::rc::Rc::new(self.parse_statement()?));
+      statements.push(self.parse_statement()?);
 
       if self.is(&lexer::TokenKind::Dedent) {
         break;
@@ -337,20 +333,16 @@ impl<'a> Parser<'a> {
 
     self.parse_dedent()?;
 
-    Ok(ast::Node {
-      id: self.cache.create_id(),
-      kind: ast::NodeKind::BlockExpr(ast::BlockExpr {
-        statements,
-        yields,
-        // FIXME: Id no longer needed.
-        cache_id: 0,
-      }),
-      location: self.seal_location(start_location),
+    Ok(ast::BlockExpr {
+      statements,
+      yields,
+      // FIXME: Id no longer needed.
+      id: 0,
     })
   }
 
   /// {U8 | U16 | U32 | U64 | I8 | I16 | Int | I64}
-  fn parse_int_type(&mut self) -> ParsedNode {
+  fn parse_int_type(&mut self) -> ParserResult<ast::BasicType> {
     let size = match self.get_token()? {
       lexer::TokenKind::TypeInt8 => ast::IntSize::I8,
       lexer::TokenKind::TypeInt16 => ast::IntSize::I16,
@@ -366,43 +358,25 @@ impl<'a> Parser<'a> {
 
     self.skip()?;
 
-    Ok(ast::Node {
-      id: self.cache.create_id(),
-      kind: ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::Int(size))),
-      location: self.seal_location(self.current_location()),
-    })
+    Ok(ast::BasicType::Int(size))
   }
 
   /// Bool
-  fn parse_bool_type(&mut self) -> ParsedNode {
-    let location_start = self.current_location();
-
+  fn parse_bool_type(&mut self) -> ParserResult<ast::BasicType> {
     self.skip_past(&lexer::TokenKind::TypeBool)?;
 
-    Ok(ast::Node {
-      id: self.cache.create_id(),
-      kind: ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::Bool)),
-      location: self.seal_location(location_start),
-    })
+    Ok(ast::BasicType::Bool)
   }
 
   // TODO: Specialize return types of the `parse_type_x` functions to their actual types instead of the `ast::Type` enum wrapper?
-  fn parse_this_type(&mut self) -> ParsedNode {
-    let location_start = self.current_location();
-
+  fn parse_this_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::TypeThis)?;
 
-    Ok(ast::Node {
-      id: self.cache.create_id(),
-      kind: ast::NodeKind::Type(ast::Type::This(ast::ThisType { target_id: None })),
-      location: self.seal_location(location_start),
-    })
+    Ok(ast::Type::This(ast::ThisType { target_id: None }))
   }
 
   /// '[' %type, 0-9+ ']'
-  fn parse_array_type(&mut self) -> ParsedNode {
-    let start_location = self.current_location();
-
+  fn parse_array_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
     let element_type = std::rc::Rc::new(self.parse_type()?);
@@ -417,21 +391,13 @@ impl<'a> Parser<'a> {
     self.skip()?;
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
-    Ok(ast::Node {
-      kind: ast::NodeKind::Type(ast::Type::Array(element_type, size)),
-      id: self.cache.create_id(),
-      location: self.seal_location(start_location),
-    })
+    Ok(ast::Type::Array(element_type, size))
   }
 
-  fn parse_type(&mut self) -> ParsedNode {
-    let start_location = self.current_location();
-
+  fn parse_type(&mut self) -> ParserResult<ast::Type> {
     // TODO: Support for more types.
     let mut ty = match self.get_token()? {
       // TODO: Other types as well.
-      // TODO: Parse function types.
-      // lexer::TokenKind::Fn => self.parse_callable_type(),
       lexer::TokenKind::TypeInt8
       | lexer::TokenKind::TypeInt16
       | lexer::TokenKind::TypeInt32
@@ -439,46 +405,34 @@ impl<'a> Parser<'a> {
       | lexer::TokenKind::TypeUint8
       | lexer::TokenKind::TypeUint16
       | lexer::TokenKind::TypeUint32
-      | lexer::TokenKind::TypeUint64 => self.parse_int_type(),
-      lexer::TokenKind::TypeBool => self.parse_bool_type(),
-      lexer::TokenKind::Identifier(_) => self.parse_stub_type(),
-      lexer::TokenKind::BracketL => self.parse_array_type(),
+      | lexer::TokenKind::TypeUint64 => ast::Type::Basic(self.parse_int_type()?),
+      lexer::TokenKind::TypeBool => ast::Type::Basic(self.parse_bool_type()?),
+      lexer::TokenKind::Identifier(_) => ast::Type::Stub(self.parse_stub_type()?),
+      lexer::TokenKind::BracketL => self.parse_array_type()?,
       lexer::TokenKind::Asterisk => {
         self.skip()?;
 
-        Ok(ast::Node {
-          id: self.cache.create_id(),
-          kind: ast::NodeKind::Type(ast::Type::Pointer(std::rc::Rc::new(self.parse_type()?))),
-          location: self.seal_location(start_location),
-        })
+        ast::Type::Pointer(std::rc::Rc::new(self.parse_type()?))
       }
       lexer::TokenKind::TypeString => {
         self.skip()?;
 
-        Ok(ast::Node {
-          id: self.cache.create_id(),
-          kind: ast::NodeKind::Type(ast::Type::Basic(ast::BasicType::String)),
-          location: self.seal_location(start_location),
-        })
+        ast::Type::Basic(ast::BasicType::String)
       }
-      lexer::TokenKind::TypeThis => self.parse_this_type(),
+      lexer::TokenKind::TypeThis => self.parse_this_type()?,
       _ => return Err(self.expected("type")),
     }?;
 
     // Upgrade to a function type, if applicable.
     if self.is(&lexer::TokenKind::Arrow) {
-      ty = self.parse_function_type(ty.into_type())?;
+      ty = ast::Type::Function(self.parse_function_type(ty)?);
     }
 
-    Ok(ast::Node {
-      kind: ast::NodeKind::Type(ty.into_type()),
-      location: self.seal_location(start_location),
-      id: self.cache.create_id(),
-    })
+    Ok(ty)
   }
 
   /// fn '(' (%type (','))* ')' ('[' %type ']')
-  fn parse_function_type(&mut self, first_type: ast::Node) -> ParsedNode {
+  fn parse_function_type(&mut self, first_type: ast::Type) -> ParserResult<ast::FunctionType> {
     self.skip_past(&lexer::TokenKind::Arrow)?;
 
     let mut parameter_types = vec![first_type, self.parse_type()?];
@@ -496,37 +450,26 @@ impl<'a> Parser<'a> {
     //   parameter_types.clear();
     // }
 
-    Ok(ast::Node {
-      id: self.cache.create_id(),
-      kind: ast::NodeKind::Type(ast::Type::Function(ast::FunctionType {
-        parameter_types: parameter_types
-          .into_iter()
-          .map(|ty| std::rc::Rc::new(ty))
-          .collect(),
-        return_type: std::rc::Rc::new(return_type),
-        // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
-        is_variadic: false,
-        // REVISE: Support for extern functions? This might create logic bugs.
-        is_extern: false,
-      })),
-      location: self.seal_location(self.current_location()),
+    Ok(ast::FunctionType {
+      parameter_types,
+      return_type,
+      // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
+      is_variadic: false,
+      // REVISE: Support for extern functions? This might create logic bugs.
+      is_extern: false,
     })
   }
 
   /// %pattern
-  fn parse_stub_type(&mut self) -> ParsedNode {
-    let location_start = self.current_location();
+  fn parse_stub_type(&mut self) -> ParserResult<ast::StubType> {
     let pattern = self.parse_pattern(name_resolution::SymbolKind::Type)?;
 
-    Ok(ast::Node {
-      id: self.cache.create_id(),
-      kind: ast::NodeKind::Type(ast::Type::Stub(ast::StubType { pattern })),
-      location: self.seal_location(location_start),
-    })
+    Ok(ast::StubType { pattern })
   }
 
   /// %name ':' %type
-  fn parse_parameter(&mut self, position: u32) -> ParsedNode {
+  fn parse_parameter(&mut self, position: u32) -> ParserResult<ast::Parameter> {
+    let location_start = self.current_location();
     let name = self.parse_name()?;
 
     let type_hint = if self.is(&&lexer::TokenKind::Colon) {
@@ -537,40 +480,37 @@ impl<'a> Parser<'a> {
       None
     };
 
-    Ok(ast::Parameter {
+    let parameter = ast::Parameter {
       name,
       type_hint: type_hint.map(|ty| std::rc::Rc::new(ty)),
       position,
-      cache_id: self.cache.create_id(),
-    })
+      id: self.cache.create_id(),
+    };
+
+    Ok(parameter)
   }
 
   fn parse_this_parameter(&mut self) -> ParserResult<ast::Parameter> {
-    let start_location = self.current_location();
-
     self.skip_past(&lexer::TokenKind::This)?;
 
     let ty = ast::Type::This(ast::ThisType { target_id: None });
+    let type_node = std::rc::Rc::new(ty);
 
-    let type_node = std::rc::Rc::new(ast::Node {
-      id: self.cache.create_id(),
-      kind: ast::NodeKind::Type(ty),
-      location: self.seal_location(start_location),
-    });
-
-    Ok(ast::Parameter {
+    let parameter = ast::Parameter {
       name: String::from("this"),
       type_hint: Some(type_node),
       position: 0,
-      cache_id: self.cache.create_id(),
-    })
+      id: self.cache.create_id(),
+    };
+
+    Ok(parameter)
   }
 
   /// '(' {%parameter* (,)} (+) ')' ':' %type
   fn parse_signature(&mut self, is_extern: bool) -> ParserResult<ast::Signature> {
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
-    let mut parameters = vec![];
+    let mut parameters = Vec::new();
     let mut is_variadic = false;
     let mut parameter_index_counter = 0;
     let mut accepts_instance = false;
@@ -598,7 +538,10 @@ impl<'a> Parser<'a> {
         break;
       }
 
-      parameters.push(self.parse_parameter(parameter_index_counter)?);
+      parameters.push(std::rc::Rc::new(
+        self.parse_parameter(parameter_index_counter)?,
+      ));
+
       parameter_index_counter += 1;
 
       if !self.is(&lexer::TokenKind::Comma) {
@@ -635,8 +578,6 @@ impl<'a> Parser<'a> {
     static_owner_name: Option<String>,
     attributes: Vec<ast::Attribute>,
   ) -> ParserResult<ast::Function> {
-    let location_start = self.current_location();
-
     // TODO: Support for visibility.
     self.skip_past(&lexer::TokenKind::Func)?;
 
@@ -648,25 +589,24 @@ impl<'a> Parser<'a> {
       None
     };
 
-    let signature = std::rc::Rc::new(ast::Node {
-      kind: ast::NodeKind::Signature(self.parse_signature(false)?),
-      id: self.cache.create_id(),
-      location: self.seal_location(location_start),
-    });
+    let signature = self.parse_signature(false)?;
 
     self.skip_past(&lexer::TokenKind::Colon)?;
 
     let body = std::rc::Rc::new(self.parse_block_expr()?);
+    let function_id = self.cache.create_id();
 
-    Ok(ast::Function {
+    let function = ast::Function {
       name,
       static_owner_name,
       signature,
       body,
       attributes,
-      cache_id: self.cache.create_id(),
+      id: function_id.clone(),
       generics,
-    })
+    };
+
+    Ok(function)
   }
 
   /// extern fn %signature
@@ -682,12 +622,14 @@ impl<'a> Parser<'a> {
     let name = self.parse_name()?;
     let signature = self.parse_signature(true)?;
 
-    Ok(ast::ExternFunction {
+    let extern_function = ast::ExternFunction {
       name,
       signature,
       attributes,
-      cache_id: self.cache.create_id(),
-    })
+      id: self.cache.create_id(),
+    };
+
+    Ok(extern_function)
   }
 
   /// extern static %name ':' %type
@@ -700,12 +642,15 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Colon)?;
 
     let ty = self.parse_type()?;
+    let extern_static_id = self.cache.create_id();
 
-    Ok(ast::ExternStatic {
+    let extern_static = ast::ExternStatic {
       name,
       ty,
-      cache_id: self.cache.create_id(),
-    })
+      id: extern_static_id.clone(),
+    };
+
+    Ok(extern_static)
   }
 
   /// '@' %name ('(' (%literal (','))* ')')
@@ -736,7 +681,7 @@ impl<'a> Parser<'a> {
   }
 
   /// {%function | %extern_function | %extern_static | %type_alias | %enum | %struct_type}
-  fn parse_root_node(&mut self) -> ParserResult<ast::Node> {
+  fn parse_root_node(&mut self) -> ParserResult<ast::NodeKind> {
     // REVIEW: Why not move this check into the `get()` method?
     if self.is_eof() {
       return Err(
@@ -777,7 +722,7 @@ impl<'a> Parser<'a> {
 
     let token = self.get_token();
 
-    let kind = match token? {
+    Ok(match token? {
       lexer::TokenKind::Func => ast::NodeKind::Function(self.parse_function(None, attributes)?),
       lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Func) => {
         ast::NodeKind::ExternFunction(self.parse_extern_function(attributes)?)
@@ -792,11 +737,6 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Trait => ast::NodeKind::Trait(self.parse_trait()?),
       lexer::TokenKind::Using => ast::NodeKind::Using(self.parse_using()?),
       _ => return Err(self.expected("top-level construct")),
-    };
-
-    Ok(ast::Node {
-      kind,
-      id: self.cache.create_id(),
     })
   }
 
@@ -815,7 +755,7 @@ impl<'a> Parser<'a> {
     Ok(ast::TypeAlias {
       name,
       ty,
-      cache_id: self.cache.create_id(),
+      id: self.cache.create_id(),
     })
   }
 
@@ -825,7 +765,7 @@ impl<'a> Parser<'a> {
 
     // TODO: New line or EOF.
     let value = if !self.is(&lexer::TokenKind::Whitespace('\n')) {
-      Some(std::rc::Rc::new(self.parse_expr()?))
+      Some(self.parse_expr()?)
     } else {
       self.skip()?;
 
@@ -847,7 +787,7 @@ impl<'a> Parser<'a> {
 
     let name = self.parse_name()?;
 
-    let ty = if self.is(&lexer::TokenKind::Colon) {
+    let type_hint = if self.is(&lexer::TokenKind::Colon) {
       self.skip()?;
 
       Some(self.parse_type()?)
@@ -863,10 +803,10 @@ impl<'a> Parser<'a> {
 
     Ok(ast::BindingStmt {
       name,
-      value: std::rc::Rc::new(value),
+      value,
       is_const_expr,
-      cache_id: self.cache.create_id(),
-      type_hint: ty,
+      id: self.cache.create_id(),
+      type_hint,
     })
   }
 
@@ -874,11 +814,11 @@ impl<'a> Parser<'a> {
   fn parse_if_expr(&mut self) -> ParserResult<ast::IfExpr> {
     self.skip_past(&lexer::TokenKind::If)?;
 
-    let condition = self.parse_expr()?;
+    let condition = Box::new(self.parse_expr()?);
 
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    let then_value = self.parse_expr()?;
+    let then_value = Box::new(self.parse_expr()?);
     let mut alternative_branches = Vec::new();
 
     while self.is(&lexer::TokenKind::Elif) {
@@ -890,24 +830,21 @@ impl<'a> Parser<'a> {
 
       let alternative_value = self.parse_expr()?;
 
-      alternative_branches.push((
-        std::rc::Rc::new(alternative_condition),
-        std::rc::Rc::new(alternative_value),
-      ));
+      alternative_branches.push((alternative_condition, alternative_value));
     }
 
     let else_value = if self.is(&lexer::TokenKind::Else) {
       self.skip()?;
       self.skip_past(&lexer::TokenKind::Colon)?;
 
-      Some(std::rc::Rc::new(self.parse_expr()?))
+      Some(Box::new(self.parse_expr()?))
     } else {
       None
     };
 
     Ok(ast::IfExpr {
-      condition: std::rc::Rc::new(condition),
-      then_value: std::rc::Rc::new(then_value),
+      condition,
+      then_value,
       alternative_branches,
       else_value,
     })
@@ -920,7 +857,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Unsafe)?;
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    Ok(ast::UnsafeExpr(std::rc::Rc::new(self.parse_expr()?)))
+    Ok(ast::UnsafeExpr(Box::new(self.parse_expr()?)))
   }
 
   /// {true | false}
@@ -972,7 +909,7 @@ impl<'a> Parser<'a> {
   }
 
   /// '[' (%expr (','))* ']'
-  fn parse_array_value(&mut self) -> ParserResult<ast::StaticArrayValue> {
+  fn parse_static_array_value(&mut self) -> ParserResult<ast::StaticArrayValue> {
     let mut elements = Vec::new();
 
     self.skip_past(&lexer::TokenKind::BracketL)?;
@@ -1009,7 +946,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
-    let index_expr = std::rc::Rc::new(self.parse_expr()?);
+    let index_expr = Box::new(self.parse_expr()?);
 
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
@@ -1113,8 +1050,8 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_primary_expr(&mut self) -> ParserResult<ast::Node> {
-    let kind = match self.get_token()? {
+  fn parse_primary_expr(&mut self) -> ParserResult<ast::NodeKind> {
+    let mut node = match self.get_token()? {
       lexer::TokenKind::Int(_) if self.peek_is(&lexer::TokenKind::ShortEllipsis) => {
         ast::NodeKind::Range(self.parse_range()?)
       }
@@ -1131,7 +1068,9 @@ impl<'a> Parser<'a> {
         ast::NodeKind::IndexingExpr(self.parse_array_indexing()?)
       }
       lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
-      lexer::TokenKind::BracketL => ast::NodeKind::StaticArrayValue(self.parse_array_value()?),
+      lexer::TokenKind::BracketL => {
+        ast::NodeKind::StaticArrayValue(self.parse_static_array_value()?)
+      }
       lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
       lexer::TokenKind::Indent => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
@@ -1144,23 +1083,12 @@ impl<'a> Parser<'a> {
       _ => ast::NodeKind::Literal(self.parse_literal()?),
     };
 
-    let mut node = ast::Node {
-      kind,
-      id: self.cache.create_id(),
-    };
-
     // Promote the node to a chain, if applicable.
     while self.is_chain() {
-      let kind = match self.get_token()? {
+      node = match self.get_token()? {
         lexer::TokenKind::ParenthesesL => ast::NodeKind::CallExpr(self.parse_call_expr(node)?),
         lexer::TokenKind::Dot => ast::NodeKind::MemberAccess(self.parse_member_access(node)?),
         _ => unreachable!(),
-      };
-
-      // REVIEW: Simplify (DRY)?
-      node = ast::Node {
-        kind,
-        id: self.cache.create_id(),
       };
     }
 
@@ -1168,7 +1096,7 @@ impl<'a> Parser<'a> {
   }
 
   /// %expr '.' %name
-  fn parse_member_access(&mut self, base_expr: ast::Node) -> ParserResult<ast::MemberAccess> {
+  fn parse_member_access(&mut self, base_expr: ast::NodeKind) -> ParserResult<ast::MemberAccess> {
     self.skip_past(&lexer::TokenKind::Dot)?;
 
     Ok(ast::MemberAccess {
@@ -1208,9 +1136,9 @@ impl<'a> Parser<'a> {
   /// %expr %operator %expr
   fn parse_binary_expr_or_default(
     &mut self,
-    left: ast::Node,
+    left: ast::NodeKind,
     min_precedence: usize,
-  ) -> ParserResult<ast::Node> {
+  ) -> ParserResult<ast::NodeKind> {
     // REVIEW: Is this logic correct?
     let mut token_buffer = if let Ok(token) = self.get_token() {
       token
@@ -1222,7 +1150,6 @@ impl<'a> Parser<'a> {
     let mut buffer = left;
 
     while Parser::is_binary_operator(&token_buffer) && (precedence > min_precedence) {
-      let id = self.cache.create_id();
       let operator = self.parse_operator()?;
       let mut right = self.parse_primary_expr()?;
 
@@ -1243,7 +1170,7 @@ impl<'a> Parser<'a> {
         operator,
       });
 
-      buffer = ast::Node { kind, id };
+      buffer = kind;
     }
 
     Ok(buffer)
@@ -1273,12 +1200,12 @@ impl<'a> Parser<'a> {
     Ok(ast::UnaryExpr {
       operator,
       expr,
-      cast_type,
+      cast_type: cast_type.map(std::rc::Rc::new),
     })
   }
 
   // REVISE: Better naming and/or positioning for logic.
-  fn parse_expr(&mut self) -> ParserResult<ast::Node> {
+  fn parse_expr(&mut self) -> ParserResult<ast::NodeKind> {
     // TODO: Add support for unary expressions (such as `!`, '-', etc.).
 
     let starting_expr = self.parse_primary_expr()?;
@@ -1288,16 +1215,16 @@ impl<'a> Parser<'a> {
   }
 
   /// %expr '(' (%expr (,))* ')'
-  fn parse_call_expr(&mut self, callee_expr: ast::Node) -> ParserResult<ast::CallExpr> {
+  fn parse_call_expr(&mut self, callee_expr: ast::NodeKind) -> ParserResult<ast::CallExpr> {
     // REVIEW: On the expressions being parsed, the pattern may not be parsed as a pattern linking to a function or extern. Ensure this is actually the case.
     // let callee_pattern = self.parse_pattern(name_resolution::SymbolKind::FunctionOrExtern)?;
 
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
-    let mut arguments = vec![];
+    let mut arguments = Vec::new();
 
     while self.until(&lexer::TokenKind::ParenthesesR)? {
-      arguments.push(std::rc::Rc::new(self.parse_expr()?));
+      arguments.push(self.parse_expr()?);
 
       // REVIEW: What if the comma is omitted?
       if self.is(&lexer::TokenKind::Comma) {
@@ -1308,7 +1235,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
     Ok(ast::CallExpr {
-      callee_expr: std::rc::Rc::new(callee_expr),
+      callee_expr: Box::new(callee_expr),
       arguments,
     })
   }
@@ -1326,7 +1253,7 @@ impl<'a> Parser<'a> {
     let mut arguments = Vec::new();
 
     while self.until(&lexer::TokenKind::ParenthesesR)? {
-      arguments.push(std::rc::Rc::new(self.parse_expr()?));
+      arguments.push(self.parse_expr()?);
 
       if !self.is(&lexer::TokenKind::ParenthesesR) {
         self.skip_past(&lexer::TokenKind::Comma)?;
@@ -1370,15 +1297,22 @@ impl<'a> Parser<'a> {
 
     self.parse_dedent()?;
 
-    Ok(ast::Enum {
+    let enum_id = self.cache.create_id();
+
+    // TODO: Infer the type from the value, or default to `I32` if values are omitted.
+    // ... Issue an error diagnostic if the value is `nullptr`. Finally, verify that all
+    // ... the values are of the same inferred type. Allow any constant expression to serve
+    // ... as the value.
+    let value_type = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
+
+    let enum_ = ast::Enum {
       name,
       variants,
-      cache_id: self.cache.create_id(),
-      // TODO: Infer the type from the value, or default to `I32` if values are omitted.
-      // ... Issue an error diagnostic if the value is `nullptr`. Finally, verify that all
-      // ... the values are of the same inferred type.
-      ty: ast::BasicType::Int(ast::IntSize::I32),
-    })
+      id: enum_id.clone(),
+      value_type,
+    };
+
+    Ok(enum_)
   }
 
   /// struct %name ':' %indent (%name ':' %type ',')+ %dedent
@@ -1413,7 +1347,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Struct {
       name,
       fields,
-      cache_id: self.cache.create_id(),
+      id: self.cache.create_id(),
     })
   }
 
@@ -1469,7 +1403,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::Colon)?;
 
-    let body = self.parse_block_expr()?;
+    let body = std::rc::Rc::new(self.parse_block_expr()?);
 
     Ok(ast::Closure {
       captures,
@@ -1503,11 +1437,13 @@ impl<'a> Parser<'a> {
       if self.is(&lexer::TokenKind::Static) {
         self.skip()?;
 
-        static_methods
-          .push(self.parse_function(Some(target_struct_pattern.base_name.clone()), Vec::new())?)
+        let static_method =
+          self.parse_function(Some(target_struct_pattern.base_name.clone()), Vec::new())?;
+
+        static_methods.push(std::rc::Rc::new(static_method));
       } else {
         // TODO: Support for attributes.
-        member_methods.push(self.parse_function(None, Vec::new())?);
+        member_methods.push(std::rc::Rc::new(self.parse_function(None, Vec::new())?));
       }
 
       if self.is(&lexer::TokenKind::Dedent) {
@@ -1554,7 +1490,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Trait {
       name,
       methods,
-      cache_id: self.cache.create_id(),
+      id: self.cache.create_id(),
     })
   }
 
@@ -1611,17 +1547,11 @@ impl<'a> Parser<'a> {
 
   /// %int_literal '..' %int_literal
   fn parse_range(&mut self) -> ParserResult<ast::Range> {
-    let start = ast::Node {
-      kind: ast::NodeKind::Literal(self.parse_int_literal()?),
-      id: self.cache.create_id(),
-    };
+    let start = self.parse_int_literal()?;
 
     self.skip_past(&lexer::TokenKind::ShortEllipsis)?;
 
-    let end = ast::Node {
-      kind: ast::NodeKind::Literal(self.parse_int_literal()?),
-      id: self.cache.create_id(),
-    };
+    let end = self.parse_int_literal()?;
 
     Ok(ast::Range {
       start: std::rc::Rc::new(start),

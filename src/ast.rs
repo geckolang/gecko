@@ -28,14 +28,14 @@ pub struct Generics {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParenthesesExpr(pub std::rc::Rc<Node>);
+pub struct ParenthesesExpr(pub std::rc::Rc<NodeKind>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
   pub name: String,
-  pub type_hint: Option<std::rc::Rc<Node>>,
+  pub type_hint: Option<std::rc::Rc<Type>>,
   pub position: u32,
-  pub cache_id: cache::Id,
+  pub id: cache::Id,
 }
 
 #[derive(PartialEq, PartialOrd, Clone, Debug)]
@@ -66,10 +66,10 @@ pub enum Type {
   /// A static array type.
   ///
   /// Its type and length are always known at compile-time.
-  Array(std::rc::Rc<Node>, u32),
+  Array(std::rc::Rc<Type>, u32),
   Basic(BasicType),
-  Pointer(std::rc::Rc<Node>),
-  Reference(std::rc::Rc<Node>),
+  Pointer(std::rc::Rc<Type>),
+  Reference(std::rc::Rc<Type>),
   Struct(Struct),
   /// A type that needs to be resolved.
   Stub(StubType),
@@ -219,7 +219,7 @@ impl Type {
 
       // REVISE: Cleanup!
       if let NodeKind::TypeAlias(type_alias) = &target_node {
-        return type_alias.ty.as_type().flatten(cache);
+        return type_alias.ty.flatten(cache);
       } else if let NodeKind::Struct(target_type) = &target_node {
         // REVIEW: Why is `flatten_type` being called again with a struct type inside?
         return Type::Struct(target_type.clone()).flatten(cache);
@@ -280,41 +280,41 @@ impl NodeKind {
   // TODO: Can this be made a Rust Iterator? This way we get all of Iterator's features.
   pub fn traverse<'a>(&'a self, mut visitor: impl FnMut(&'a NodeKind) -> bool) {
     todo!();
-    // let map_children = |children: &'a Vec<Node>| children.iter().map(|child_node| &child_node.kind);
+    // let map_children = |children: &'a Vec<Node>| children.iter().map(|child_node| &child_node);
 
     // // TODO: signature.
     // // let map_signature = |signature: &'a signature| map_children(&signature.parameters);
 
     // let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
     //   match node {
-    //     NodeKind::InlineExprStmt(inline_expr_stmt) => vec![&inline_expr_stmt.expr.kind],
+    //     NodeKind::InlineExprStmt(inline_expr_stmt) => vec![&inline_expr_stmt.expr],
     //     NodeKind::BinaryExpr(binary_expr) => {
-    //       vec![&binary_expr.left.kind, &binary_expr.right.kind]
+    //       vec![&binary_expr.left, &binary_expr.right]
     //     }
     //     NodeKind::BlockExpr(block_expr) => map_children(block_expr.statements).collect(),
-    //     NodeKind::UnaryExpr(unary_expr) => vec![&unary_expr.expr.kind],
-    //     NodeKind::UnsafeExpr(unsafe_expr) => vec![&unsafe_expr.0.kind],
-    //     NodeKind::ParenthesesExpr(parentheses_expr) => vec![&parentheses_expr.0.kind],
-    //     NodeKind::CallExpr(call_expr) => vec![&call_expr.callee_expr.kind]
+    //     NodeKind::UnaryExpr(unary_expr) => vec![&unary_expr.expr],
+    //     NodeKind::UnsafeExpr(unsafe_expr) => vec![&unsafe_expr.0],
+    //     NodeKind::ParenthesesExpr(parentheses_expr) => vec![&parentheses_expr.0],
+    //     NodeKind::CallExpr(call_expr) => vec![&call_expr.callee_expr]
     //       .into_iter()
     //       .chain(map_children(call_expr.arguments))
     //       .collect(),
     //     // TODO: Include `else` expression, and alternative branches.
-    //     NodeKind::IfExpr(if_expr) => vec![&if_expr.condition.kind, &if_expr.then_value.kind],
+    //     NodeKind::IfExpr(if_expr) => vec![&if_expr.condition, &if_expr.then_value],
     //     // TODO: Missing signature.
     //     // NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
     //     // TODO: Missing signature.
     //     NodeKind::Function(function) => map_children(function.body.statements).collect(),
-    //     NodeKind::BindingStmt(binding_stmt) => vec![&binding_stmt.value.kind],
-    //     NodeKind::ReturnStmt(ReturnStmt { value: Some(value) }) => vec![&value.kind],
+    //     NodeKind::BindingStmt(binding_stmt) => vec![&binding_stmt.value],
+    //     NodeKind::ReturnStmt(ReturnStmt { value: Some(value) }) => vec![&value],
     //     NodeKind::IndexingExpr(indexing_expr) => {
-    //       vec![&indexing_expr.index_expr.kind]
+    //       vec![&indexing_expr.index_expr]
     //     }
     //     NodeKind::IntrinsicCall(intrinsic_call) => {
     //       map_children(intrinsic_call.arguments).collect()
     //     }
-    //     NodeKind::MemberAccess(member_access) => vec![&member_access.base_expr.kind],
-    //     NodeKind::Range(range) => vec![&range.start.kind, &range.end.kind],
+    //     NodeKind::MemberAccess(member_access) => vec![&member_access.base_expr],
+    //     NodeKind::Range(range) => vec![&range.start, &range.end],
     //     NodeKind::StaticArrayValue(static_array_value) => {
     //       map_children(static_array_value.elements).collect()
     //     }
@@ -417,7 +417,7 @@ impl NodeKind {
   // REVIEW: Ensure this is tail-recursive.
   pub fn flatten<'a>(&'a self) -> &'a NodeKind {
     if let NodeKind::ParenthesesExpr(parentheses_expr) = self {
-      return &parentheses_expr.0.kind.flatten();
+      return &parentheses_expr.0.flatten();
     }
 
     self
@@ -439,40 +439,10 @@ pub struct Node {
   pub location: (usize, usize),
 }
 
-impl Node {
-  pub fn into_signature(self) -> Signature {
-    crate::force_match!(self.kind, NodeKind::Signature)
-  }
-
-  pub fn as_signature(&self) -> &Signature {
-    crate::force_match!(&self.kind, NodeKind::Signature)
-  }
-
-  pub fn into_type(self) -> Type {
-    crate::force_match!(self.kind, NodeKind::Type)
-  }
-
-  pub fn as_type(&self) -> &Type {
-    crate::force_match!(&self.kind, NodeKind::Type)
-  }
-
-  pub fn into_block_expr(self) -> BlockExpr {
-    crate::force_match!(self.kind, NodeKind::BlockExpr)
-  }
-
-  pub fn as_block_expr(&self) -> &BlockExpr {
-    crate::force_match!(&self.kind, NodeKind::BlockExpr)
-  }
-
-  pub fn as_parameter(&self) -> &Parameter {
-    crate::force_match!(&self.kind, NodeKind::Parameter)
-  }
-}
-
 #[derive(Debug, Clone)]
 pub struct Range {
-  pub start: std::rc::Rc<Node>,
-  pub end: std::rc::Rc<Node>,
+  pub start: std::rc::Rc<Literal>,
+  pub end: std::rc::Rc<Literal>,
 }
 
 #[derive(Debug, Clone)]
@@ -485,13 +455,13 @@ pub struct Using {
 pub struct Closure {
   pub captures: Vec<(String, Option<cache::Id>)>,
   pub signature: Signature,
-  pub body: BlockExpr,
+  pub body: std::rc::Rc<BlockExpr>,
 }
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct FunctionType {
-  pub return_type: std::rc::Rc<Node>,
-  pub parameter_types: Vec<std::rc::Rc<Node>>,
+  pub return_type: Box<Type>,
+  pub parameter_types: Vec<Type>,
   pub is_variadic: bool,
   pub is_extern: bool,
 }
@@ -520,7 +490,7 @@ pub struct StubType {
 #[derive(Debug, Clone)]
 pub struct StructValue {
   pub struct_name: String,
-  pub fields: Vec<std::rc::Rc<Node>>,
+  pub fields: Vec<std::rc::Rc<NodeKind>>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
   pub target_id: cache::Id,
@@ -532,41 +502,41 @@ pub struct StructImpl {
   pub is_default: bool,
   pub target_struct_pattern: Pattern,
   pub trait_pattern: Option<Pattern>,
-  pub member_methods: Vec<Function>,
-  pub static_methods: Vec<Function>,
+  pub member_methods: Vec<std::rc::Rc<Function>>,
+  pub static_methods: Vec<std::rc::Rc<Function>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Trait {
   pub name: String,
   pub methods: Vec<(String, Signature)>,
-  pub cache_id: cache::Id,
+  pub id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
 pub struct Enum {
   pub name: String,
   pub variants: Vec<(String, cache::Id)>,
-  pub cache_id: cache::Id,
-  pub ty: std::rc::Rc<Node>,
+  pub id: cache::Id,
+  pub value_type: Type,
 }
 
 #[derive(Debug, Clone)]
 pub struct IndexingExpr {
   pub name: String,
-  pub index_expr: std::rc::Rc<Node>,
+  pub index_expr: Box<NodeKind>,
   pub target_id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
 pub struct StaticArrayValue {
-  pub elements: Vec<std::rc::Rc<Node>>,
+  pub elements: Vec<NodeKind>,
   /// Holds the type of the array, in case it is an empty array.
   pub explicit_type: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
-pub struct UnsafeExpr(pub std::rc::Rc<Node>);
+pub struct UnsafeExpr(pub Box<NodeKind>);
 
 #[derive(Debug, Clone)]
 pub struct Reference {
@@ -580,7 +550,7 @@ pub struct Reference {
 
 #[derive(Debug, Clone)]
 pub struct SizeofIntrinsic {
-  pub ty: std::rc::Rc<Node>,
+  pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -594,13 +564,13 @@ pub enum Literal {
 
 #[derive(Debug, Clone)]
 pub struct Signature {
-  pub parameters: Vec<std::rc::Rc<Node>>,
-  pub return_type_hint: Option<std::rc::Rc<Node>>,
+  pub parameters: Vec<std::rc::Rc<Parameter>>,
+  pub return_type_hint: Option<Type>,
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
   pub instance_type_id: Option<cache::Id>,
-  pub this_parameter: Option<std::rc::Rc<Node>>,
+  pub this_parameter: Option<Parameter>,
 }
 
 #[derive(Debug, Clone)]
@@ -608,14 +578,14 @@ pub struct ExternFunction {
   pub name: String,
   pub signature: Signature,
   pub attributes: Vec<Attribute>,
-  pub cache_id: cache::Id,
+  pub id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExternStatic {
   pub name: String,
-  pub ty: std::rc::Rc<Node>,
-  pub cache_id: cache::Id,
+  pub ty: Type,
+  pub id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
@@ -628,51 +598,51 @@ pub struct Attribute {
 pub struct Function {
   pub static_owner_name: Option<String>,
   pub name: String,
-  pub signature: std::rc::Rc<Node>,
-  pub body: std::rc::Rc<Node>,
+  pub signature: Signature,
+  pub body: std::rc::Rc<BlockExpr>,
   pub attributes: Vec<Attribute>,
-  pub cache_id: cache::Id,
+  pub id: cache::Id,
   pub generics: Option<Generics>,
 }
 
 #[derive(Debug, Clone)]
 pub struct BlockExpr {
-  pub statements: Vec<std::rc::Rc<Node>>,
-  pub yields: Option<std::rc::Rc<Node>>,
-  pub cache_id: cache::Id,
+  pub statements: Vec<NodeKind>,
+  pub yields: Option<Box<NodeKind>>,
+  pub id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
 pub struct ReturnStmt {
-  pub value: Option<std::rc::Rc<Node>>,
+  pub value: Option<Box<NodeKind>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct BindingStmt {
   pub name: String,
-  pub value: std::rc::Rc<Node>,
+  pub value: Box<NodeKind>,
   pub is_const_expr: bool,
-  pub cache_id: cache::Id,
-  pub type_hint: Option<std::rc::Rc<Node>>,
+  pub id: cache::Id,
+  pub type_hint: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
 pub struct IfExpr {
-  pub condition: std::rc::Rc<Node>,
-  pub then_value: std::rc::Rc<Node>,
-  pub alternative_branches: Vec<(std::rc::Rc<Node>, std::rc::Rc<Node>)>,
-  pub else_value: Option<std::rc::Rc<Node>>,
+  pub condition: Box<NodeKind>,
+  pub then_value: Box<NodeKind>,
+  pub alternative_branches: Vec<(NodeKind, NodeKind)>,
+  pub else_value: Option<Box<NodeKind>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct InlineExprStmt {
-  pub expr: std::rc::Rc<Node>,
+  pub expr: Box<NodeKind>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CallExpr {
-  pub callee_expr: std::rc::Rc<Node>,
-  pub arguments: Vec<std::rc::Rc<Node>>,
+  pub callee_expr: Box<NodeKind>,
+  pub arguments: Vec<NodeKind>,
 }
 
 #[derive(Debug, Clone)]
@@ -683,12 +653,12 @@ pub enum IntrinsicKind {
 #[derive(Debug, Clone)]
 pub struct IntrinsicCall {
   pub kind: IntrinsicKind,
-  pub arguments: Vec<std::rc::Rc<Node>>,
+  pub arguments: Vec<NodeKind>,
 }
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct Struct {
-  pub cache_id: cache::Id,
+  pub id: cache::Id,
   pub name: String,
   pub fields: Vec<(String, Type)>,
 }
@@ -696,8 +666,8 @@ pub struct Struct {
 #[derive(Debug, Clone)]
 pub struct TypeAlias {
   pub name: String,
-  pub ty: std::rc::Rc<Node>,
-  pub cache_id: cache::Id,
+  pub ty: Type,
+  pub id: cache::Id,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -724,24 +694,24 @@ pub enum OperatorKind {
 
 #[derive(Debug, Clone)]
 pub struct BinaryExpr {
-  pub left: std::rc::Rc<Node>,
-  pub right: std::rc::Rc<Node>,
+  pub left: std::rc::Rc<NodeKind>,
+  pub right: std::rc::Rc<NodeKind>,
   pub operator: OperatorKind,
 }
 
 #[derive(Debug, Clone)]
 pub struct UnaryExpr {
-  pub expr: std::rc::Rc<Node>,
+  pub expr: std::rc::Rc<NodeKind>,
   pub operator: OperatorKind,
   /// Represents the type being casted to.
   ///
   /// Only available when the unary expression is a cast.
-  pub cast_type: Option<std::rc::Rc<Node>>,
+  pub cast_type: Option<std::rc::Rc<Type>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct MemberAccess {
-  pub base_expr: std::rc::Rc<Node>,
+  pub base_expr: std::rc::Rc<NodeKind>,
   pub member_name: String,
 }
 
@@ -752,7 +722,7 @@ mod tests {
   #[test]
   fn traverse_ast() {
     let node = NodeKind::BlockExpr(BlockExpr {
-      cache_id: 0,
+      id: 0,
       statements: Vec::new(),
       yields: None,
     });
@@ -774,7 +744,7 @@ mod tests {
   //   let target_node = NodeKind::BreakStmt(BreakStmt);
 
   //   let block = NodeKind::BlockExpr(BlockExpr {
-  //     cache_id: 0,
+  //     id: 0,
   //     statements: vec![Node {
   //       cached_type: None,
   //       kind: target_node.clone(),

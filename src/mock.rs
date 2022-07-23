@@ -40,9 +40,9 @@ pub mod tests {
       self
     }
 
-    pub fn lower_cache(&mut self, cache_id: cache::Id, access: bool) -> &mut Self {
+    pub fn lower_cache(&mut self, id: cache::Id, access: bool) -> &mut Self {
       // TODO:
-      // self.mock.cache.force_get(&cache_id).lower(
+      // self.mock.cache.force_get(&id).lower(
       //   &mut self.mock.generator,
       //   &self.mock.cache,
       //   access,
@@ -84,9 +84,9 @@ pub mod tests {
       self
     }
 
-    pub fn _lower_cache(&mut self, cache_id: cache::Id, access: bool) -> &mut Self {
+    pub fn _lower_cache(&mut self, id: cache::Id, access: bool) -> &mut Self {
       // TODO:
-      // self.mock.cache.force_get(&cache_id).lower(
+      // self.mock.cache.force_get(&id).lower(
       //   &mut self.mock.generator,
       //   &self.mock.cache,
       //   access,
@@ -118,17 +118,17 @@ pub mod tests {
       ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
     }
 
-    pub fn reference(cache_id: cache::Id) -> std::rc::Rc<ast::Node> {
-      Mock::rc_node(ast::NodeKind::Reference(ast::Reference {
+    pub fn reference(id: cache::Id) -> ast::Reference {
+      ast::Reference {
         pattern: ast::Pattern {
           // BUG: Made up id. See how this affects tests.
-          id: cache_id,
+          id: id,
           qualifier: None,
           base_name: "test".to_string(),
           sub_name: None,
           symbol_kind: name_resolution::SymbolKind::Definition,
         },
-      }))
+      }
     }
 
     pub fn signature_simple(is_extern: bool) -> ast::Signature {
@@ -168,13 +168,9 @@ pub mod tests {
       Mock::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
     }
 
-    // TODO: Take in id to avoid conflicts?
-    pub fn rc_node(kind: ast::NodeKind) -> std::rc::Rc<ast::Node> {
-      std::rc::Rc::new(ast::Node {
-        kind,
-        id: 0,
-        location: (0, 0),
-      })
+    // TODO: Redundant.
+    pub fn rc_node(node: ast::NodeKind) -> Box<ast::NodeKind> {
+      Box::new(node)
     }
 
     pub fn new(
@@ -221,8 +217,8 @@ pub mod tests {
       self
     }
 
-    pub fn cache(&mut self, node: ast::NodeKind, cache_id: usize) -> &mut Self {
-      self.cache.symbols.insert(cache_id, node);
+    pub fn cache(&mut self, node: ast::NodeKind, id: usize) -> &mut Self {
+      self.cache.symbols.insert(id, node);
 
       self
     }

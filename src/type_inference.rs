@@ -34,12 +34,12 @@ impl<'a> TypeInferenceContext<'a> {
     // TODO: Implement.
   }
 
-  fn infer_type_of(&mut self, node: std::rc::Rc<ast::Node>) -> ast::Type {
+  fn infer_type_of(&mut self, node: std::rc::Rc<ast::NodeKind>) -> ast::Type {
     if let Some(cached_type) = self.type_cache.get(&node.id) {
       return cached_type.clone();
     }
 
-    let ty = match &node.kind {
+    let ty = match &node {
       ast::NodeKind::BinaryExpr(binary_expr) => match binary_expr.operator {
         ast::OperatorKind::LessThan
         | ast::OperatorKind::GreaterThan
@@ -86,7 +86,7 @@ impl<'a> TypeInferenceContext<'a> {
 }
 
 impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
-  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt, node: std::rc::Rc<ast::Node>) {
+  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
     if binding_stmt.type_hint.is_some() {
       return;
     }
@@ -95,10 +95,12 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
     // variable and associate it with the binding.
     let fresh_type_variable = self.create_type_variable();
 
-    self.substitutions.insert(node.id, fresh_type_variable);
+    self
+      .substitutions
+      .insert(binding_stmt.id, fresh_type_variable);
   }
 
-  fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr, _node: std::rc::Rc<ast::Node>) {
+  fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
     // TODO: Add support for missing hints; logical not, pointer dereference, and address-of?
     if !matches!(
       unary_expr.operator,
@@ -117,7 +119,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
     self.report_constraint(expr_type, ast::Type::MetaInteger);
   }
 
-  fn visit_return_stmt(&mut self, _return_stmt: &ast::ReturnStmt, _node: std::rc::Rc<ast::Node>) {
+  fn visit_return_stmt(&mut self, _return_stmt: &ast::ReturnStmt) {
     // TODO: Where is signature return type type variable created?
   }
 }
