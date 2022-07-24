@@ -420,7 +420,7 @@ impl<'a> Parser<'a> {
       }
       lexer::TokenKind::TypeThis => self.parse_this_type()?,
       _ => return Err(self.expected("type")),
-    }?;
+    };
 
     // Upgrade to a function type, if applicable.
     if self.is(&lexer::TokenKind::Arrow) {

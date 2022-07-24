@@ -623,7 +623,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
         ast::NodeKind::Function(function) => {
           name = Some(function.name.clone());
 
-          function.body
+          &function.body
         }
         ast::NodeKind::Closure(closure) => &closure.body,
         _ => unreachable!(),
