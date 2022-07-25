@@ -74,17 +74,6 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     }
   }
 
-  fn with_possible_access(
-    &mut self,
-    llvm_value: inkwell::values::BasicValueEnum<'ctx>,
-  ) -> inkwell::values::BasicValueEnum<'ctx> {
-    if !self.do_access {
-      return llvm_value;
-    }
-
-    self.attempt_access(llvm_value)
-  }
-
   fn apply_access_rules(
     &mut self,
     node: &ast::NodeKind,
@@ -343,7 +332,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
     // REVIEW: Why not perform type-flattening here instead?
     let ty = match &node {
-      ast::NodeKind::Struct(struct_type) => ast::Type::Struct(struct_type.clone()),
+      ast::NodeKind::Struct(struct_type) => ast::Type::Struct(struct_type.as_ref().clone()),
       ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
       // REVIEW: Any more?
       _ => unreachable!(),
@@ -382,7 +371,6 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     &mut self,
     id: cache::Id,
     forward_buffers: bool,
-    apply_access_rules: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let node = self.cache.cached_nodes.get(&id).unwrap();
 
@@ -395,7 +383,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
       let existing_value_cloned = existing_definition.clone();
 
-      return Some(if apply_access_rules {
+      return Some(if self.do_access {
         self.apply_access_rules(node, existing_value_cloned)
       } else {
         existing_value_cloned
@@ -411,7 +399,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       // This way, access rules may be chosen to be applied upon cache retrieval.
       self.llvm_cached_values.insert(id, llvm_value);
 
-      Some(if apply_access_rules {
+      Some(if self.do_access {
         self.apply_access_rules(node, llvm_value)
       } else {
         llvm_value
@@ -982,23 +970,23 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
-    // let llvm_target = self
-    //   // .memoize_or_retrieve_value(reference.pattern.id, false, access)
-    //   .memoize_or_retrieve_value(reference.pattern.id, false, false)
-    //   .unwrap();
+    let llvm_target = self
+      // .memoize_or_retrieve_value(reference.pattern.id, false, access)
+      .memoize_or_retrieve_value(reference.pattern.id, false)
+      .unwrap();
 
     // TODO: Unsafe unwrap?
     // NOTE: Safe to clone LLVM values. Only the pointer is duplicated.
     // BUG: What if the target is, say, a function that hasn't been lowered yet? This approach might
     // ... be naive.
 
-    let llvm_target = self
-      .llvm_cached_values
-      .get(&reference.pattern.id)
-      .unwrap()
-      .clone();
+    // let llvm_target = self
+    //   .llvm_cached_values
+    //   .get(&reference.pattern.id)
+    //   .unwrap()
+    //   .clone();
 
-    Some(self.with_possible_access(llvm_target))
+    Some(llvm_target)
   }
 
   fn visit_binary_expr(
@@ -1318,7 +1306,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     // REVIEW: Opted not to use access rules. Ensure this is correct.
     let llvm_target_array = self
-      .memoize_or_retrieve_value(indexing_expr.target_id, false, false)
+      .memoize_or_retrieve_value(indexing_expr.target_id, false)
       .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
@@ -1580,7 +1568,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .unwrap();
 
     // REVIEW: Opted to not use access rules. Ensure this is correct.
-    self.memoize_or_retrieve_value(impl_method_info.0, false, false)
+    self.memoize_or_retrieve_value(impl_method_info.0, false)
   }
 
   fn enter_struct_impl(
@@ -1639,13 +1627,13 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
+    let binding_stmt = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
       value: Box::new(Mock::literal_int()),
       is_const_expr: false,
       id: 0,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    });
+    }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
@@ -1662,21 +1650,21 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let a_id: cache::Id = 0;
 
-    let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
+    let binding_stmt_a = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
       value: Box::new(Mock::literal_int()),
       is_const_expr: false,
       id: a_id,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    });
+    }));
 
-    let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
+    let binding_stmt_b = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "b".to_string(),
       value: Box::new(ast::NodeKind::Reference(Mock::reference(a_id))),
       is_const_expr: false,
       id: a_id + 1,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    });
+    }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
@@ -1693,13 +1681,13 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
 
-    let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
+    let binding_stmt = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
       value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_const_expr: false,
       id: 0,
       type_hint: Some(ast::Type::Pointer(Box::new(ty))),
-    });
+    }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
@@ -1717,21 +1705,21 @@ mod tests {
     let pointer_type = ast::Type::Pointer(Box::new(ty.clone()));
     let a_id: cache::Id = 0;
 
-    let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
+    let binding_stmt_a = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
       value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_const_expr: false,
       id: a_id,
       type_hint: Some(pointer_type.clone()),
-    });
+    }));
 
-    let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
+    let binding_stmt_b = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "b".to_string(),
       value: Box::new(ast::NodeKind::Reference(Mock::reference(a_id))),
       is_const_expr: false,
       id: a_id + 1,
       type_hint: Some(pointer_type),
-    });
+    }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
@@ -1772,12 +1760,12 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let enum_ = ast::NodeKind::Enum(ast::Enum {
+    let enum_ = ast::NodeKind::Enum(std::rc::Rc::new(ast::Enum {
       name: "a".to_string(),
       variants: vec![("b".to_string(), 0), ("c".to_string(), 1)],
       value_type: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
       id: 0,
-    });
+    }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .module()
@@ -1823,13 +1811,13 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let extern_fn = ast::NodeKind::ExternFunction(ast::ExternFunction {
+    let extern_fn = ast::NodeKind::ExternFunction(std::rc::Rc::new(ast::ExternFunction {
       name: "a".to_string(),
       // TODO: Provide parameters in the signature.
       signature: Mock::signature_simple(true),
       attributes: Vec::new(),
       id: 0,
-    });
+    }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .module()
@@ -1844,11 +1832,11 @@ mod tests {
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
-    let extern_static = ast::NodeKind::ExternStatic(ast::ExternStatic {
+    let extern_static = ast::NodeKind::ExternStatic(std::rc::Rc::new(ast::ExternStatic {
       name: "a".to_string(),
       ty: ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
       id: 0,
-    });
+    }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .module()

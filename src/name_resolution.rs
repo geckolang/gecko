@@ -140,11 +140,8 @@ impl<'a> NameResDeclContext<'a> {
     true
   }
 
-  fn declare_node(&mut self, symbol: Symbol, id: cache::Id, node: std::rc::Rc<ast::NodeKind>) {
-    self
-      .cache
-      .cached_nodes
-      .insert(id, std::rc::Rc::clone(&node));
+  fn declare_node(&mut self, symbol: Symbol, id: cache::Id, node: ast::NodeKind) {
+    self.cache.cached_nodes.insert(id, node);
 
     self.declare_symbol(symbol, id);
   }
@@ -209,6 +206,59 @@ impl<'a> NameResDeclContext<'a> {
 }
 
 impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
+  fn before_dispatch(&mut self, node: &ast::NodeKind) {
+    // TODO: There might be a way to simplify this (macro or trait?).
+    match node {
+      ast::NodeKind::Function(function) => {
+        self.cache.cached_nodes.insert(
+          function.id,
+          ast::NodeKind::Function(std::rc::Rc::clone(&function)),
+        );
+      }
+      ast::NodeKind::ExternFunction(extern_fn) => {
+        self.cache.cached_nodes.insert(
+          extern_fn.id,
+          ast::NodeKind::ExternFunction(std::rc::Rc::clone(&extern_fn)),
+        );
+      }
+      ast::NodeKind::ExternStatic(extern_static) => {
+        self.cache.cached_nodes.insert(
+          extern_static.id,
+          ast::NodeKind::ExternStatic(std::rc::Rc::clone(&extern_static)),
+        );
+      }
+      ast::NodeKind::Enum(enum_) => {
+        self
+          .cache
+          .cached_nodes
+          .insert(enum_.id, ast::NodeKind::Enum(std::rc::Rc::clone(&enum_)));
+      }
+      ast::NodeKind::TypeAlias(type_alias) => {
+        self.cache.cached_nodes.insert(
+          type_alias.id,
+          ast::NodeKind::TypeAlias(std::rc::Rc::clone(&type_alias)),
+        );
+      }
+
+      ast::NodeKind::Struct(struct_) => {
+        self.cache.cached_nodes.insert(
+          struct_.id,
+          ast::NodeKind::Struct(std::rc::Rc::clone(&struct_)),
+        );
+      }
+      // NOTE: Bindings are not top-level, however they statements, part of blocks.
+      // This means that they are registered as `ast::NodeKind`s, under blocks. They
+      // must be dispatched.
+      ast::NodeKind::BindingStmt(binding_stmt) => {
+        self.cache.cached_nodes.insert(
+          binding_stmt.id,
+          ast::NodeKind::BindingStmt(std::rc::Rc::clone(&binding_stmt)),
+        );
+      }
+      _ => {}
+    }
+  }
+
   fn visit_extern_function(&mut self, extern_fn: &ast::ExternFunction) {
     self.declare_symbol(
       Symbol {
@@ -540,6 +590,13 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
       self.cache.links.insert(
         instance_type_id.to_owned(),
         self.current_struct_type_id.unwrap(),
+      );
+    }
+
+    for parameter in &signature.parameters {
+      self.cache.cached_nodes.insert(
+        parameter.id,
+        ast::NodeKind::Parameter(std::rc::Rc::clone(parameter)),
       );
     }
   }

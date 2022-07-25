@@ -4,6 +4,8 @@ macro_rules! define_visitor {
   (@ $name:ident $(<$lt:lifetime>)?, $return_type:ty, $default_value:expr) => {
     pub trait $name $(<$lt>)? {
       fn dispatch(&mut self, node: &ast::NodeKind) -> $return_type {
+        self.before_dispatch(node);
+
         match &node {
           ast::NodeKind::Literal(literal) => self.visit_literal(&literal),
           ast::NodeKind::ExternFunction(extern_fn) => self.visit_extern_function(&extern_fn),
@@ -39,6 +41,10 @@ macro_rules! define_visitor {
           ast::NodeKind::Range(range) => self.visit_range(&range),
           ast::NodeKind::Type(ty) => self.visit_type(&ty)
         }
+      }
+
+      fn before_dispatch(&mut self, _node: &ast::NodeKind) {
+        //
       }
 
       fn visit_literal(&mut self, _literal: &ast::Literal) -> $return_type {

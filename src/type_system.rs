@@ -176,7 +176,7 @@ impl Check for ast::StructValue {
     };
 
     // REVIEW: Is this the correct type? We might need this one in order to unify with the original struct type.
-    ast::Type::Struct(struct_type.clone())
+    ast::Type::Struct(struct_type.as_ref().clone())
   }
 }
 

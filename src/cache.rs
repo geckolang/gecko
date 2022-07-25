@@ -15,7 +15,7 @@ pub struct Cache {
   // FIXME: Instead of caching, nodes, use a mapping from their id to their type.
   // ... This is because all retrievals of cached nodes are simply to determine or
   // ... retrieve their type. So, we can avoid the headaches of caching the nodes.
-  pub cached_nodes: std::collections::HashMap<Id, std::rc::Rc<ast::NodeKind>>,
+  pub cached_nodes: std::collections::HashMap<Id, ast::NodeKind>,
   // REVIEW: Should this be here?
   pub main_function_id: Option<Id>,
   id_counter: usize,

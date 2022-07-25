@@ -222,14 +222,14 @@ impl Type {
         return type_alias.ty.flatten(cache);
       } else if let NodeKind::Struct(target_type) = &target_node {
         // REVIEW: Why is `flatten_type` being called again with a struct type inside?
-        return Type::Struct(target_type.clone()).flatten(cache);
+        return Type::Struct(target_type.as_ref().clone()).flatten(cache);
       }
     } else if let Type::This(this_type) = &self {
       // REVISE: No need to clone?
       let target_struct_type = cache.force_get(&this_type.target_id.unwrap());
 
       if let NodeKind::Struct(struct_type) = &target_struct_type {
-        return Type::Struct(struct_type.clone());
+        return Type::Struct(struct_type.as_ref().clone());
       }
     }
 
@@ -242,12 +242,12 @@ impl Type {
 #[derive(Debug, Clone)]
 pub enum NodeKind {
   Literal(Literal),
-  ExternFunction(ExternFunction),
-  ExternStatic(ExternStatic),
-  Function(Function),
+  ExternFunction(std::rc::Rc<ExternFunction>),
+  ExternStatic(std::rc::Rc<ExternStatic>),
+  Function(std::rc::Rc<Function>),
   BlockExpr(BlockExpr),
   ReturnStmt(ReturnStmt),
-  BindingStmt(BindingStmt),
+  BindingStmt(std::rc::Rc<BindingStmt>),
   IfExpr(IfExpr),
   CallExpr(CallExpr),
   IntrinsicCall(IntrinsicCall),
@@ -255,20 +255,20 @@ pub enum NodeKind {
   Reference(Reference),
   BinaryExpr(BinaryExpr),
   UnaryExpr(UnaryExpr),
-  Parameter(Parameter),
+  Parameter(std::rc::Rc<Parameter>),
   UnsafeExpr(UnsafeExpr),
   StaticArrayValue(StaticArrayValue),
   IndexingExpr(IndexingExpr),
-  Enum(Enum),
-  Struct(Struct),
+  Enum(std::rc::Rc<Enum>),
+  Struct(std::rc::Rc<Struct>),
   Signature(Signature),
   StructValue(StructValue),
   Pattern(Pattern),
-  TypeAlias(TypeAlias),
+  TypeAlias(std::rc::Rc<TypeAlias>),
   Closure(Closure),
   MemberAccess(MemberAccess),
   StructImpl(StructImpl),
-  Trait(Trait),
+  Trait(std::rc::Rc<Trait>),
   ParenthesesExpr(ParenthesesExpr),
   Using(Using),
   SizeofIntrinsic(SizeofIntrinsic),

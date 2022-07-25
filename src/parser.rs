@@ -270,7 +270,7 @@ impl<'a> Parser<'a> {
     let node = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
       lexer::TokenKind::Let | lexer::TokenKind::Const => {
-        ast::NodeKind::BindingStmt(self.parse_binding_stmt()?)
+        ast::NodeKind::BindingStmt(std::rc::Rc::new(self.parse_binding_stmt()?))
       }
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
       _ => {
@@ -721,18 +721,22 @@ impl<'a> Parser<'a> {
     let token = self.get_token();
 
     Ok(match token? {
-      lexer::TokenKind::Func => ast::NodeKind::Function(self.parse_function(None, attributes)?),
+      lexer::TokenKind::Func => {
+        ast::NodeKind::Function(std::rc::Rc::new(self.parse_function(None, attributes)?))
+      }
       lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Func) => {
-        ast::NodeKind::ExternFunction(self.parse_extern_function(attributes)?)
+        ast::NodeKind::ExternFunction(std::rc::Rc::new(self.parse_extern_function(attributes)?))
       }
       lexer::TokenKind::Extern if self.peek_is(&lexer::TokenKind::Static) => {
-        ast::NodeKind::ExternStatic(self.parse_extern_static()?)
+        ast::NodeKind::ExternStatic(std::rc::Rc::new(self.parse_extern_static()?))
       }
-      lexer::TokenKind::Enum => ast::NodeKind::Enum(self.parse_enum()?),
-      lexer::TokenKind::Struct => ast::NodeKind::Struct(self.parse_struct()?),
-      lexer::TokenKind::Type => ast::NodeKind::TypeAlias(self.parse_type_alias()?),
+      lexer::TokenKind::Enum => ast::NodeKind::Enum(std::rc::Rc::new(self.parse_enum()?)),
+      lexer::TokenKind::Struct => ast::NodeKind::Struct(std::rc::Rc::new(self.parse_struct()?)),
+      lexer::TokenKind::Type => {
+        ast::NodeKind::TypeAlias(std::rc::Rc::new(self.parse_type_alias()?))
+      }
       lexer::TokenKind::Impl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
-      lexer::TokenKind::Trait => ast::NodeKind::Trait(self.parse_trait()?),
+      lexer::TokenKind::Trait => ast::NodeKind::Trait(std::rc::Rc::new(self.parse_trait()?)),
       lexer::TokenKind::Using => ast::NodeKind::Using(self.parse_using()?),
       _ => return Err(self.expected("top-level construct")),
     })
