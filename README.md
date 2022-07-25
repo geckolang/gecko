@@ -202,9 +202,14 @@ Below is a list of all the intrinsic attributes available:
 
 ### Building
 
+#### &mdash; Requirements
+
+- [Rust](https://www.rust-lang.org/)
+- [LLVM](https://llvm.org/) >=v14.0.0
+
 #### &mdash; Environment variables
 
-**If building from source**: Set the `LLVM_SYS_120_PREFIX` environment variable to the `build` directory inside the LLVM source files. It is expected that LLVM was built from source at this point. Additionally, set the `LLVM_CONFIG` to point to the `build/bin/llvm-config` (or `build/bin/llvm-config.exe` on Windows) executable file. Do not wrap the path with quotes, as it might lead to `Access denied` errors when attempting to build `llvm-sys`. If you're using Visual Studio Code, ensure it is seeing the `LLVM_SYS_120_PREFIX` environment variable.
+**If building from source**: Set the `LLVM_SYS_140_PREFIX` environment variable to the `build` directory inside the LLVM source files. It is expected that LLVM was built from source at this point. Additionally, set the `LLVM_CONFIG` to point to the `build/bin/llvm-config` (or `build/bin/llvm-config.exe` on Windows) executable file. Do not wrap the path with quotes, as it might lead to `Access denied` errors when attempting to build `llvm-sys`. If you're using Visual Studio Code, ensure it is seeing the `LLVM_SYS_140_PREFIX` environment variable.
 
 #### &mdash; Linux
 
@@ -222,10 +227,10 @@ After installing, you can verify you're running the correct LLVM version by usin
 
 ```bash
 $ llvm-config --version
-13.0.0
+14.0.0
 ```
 
-If, after installing `llvm-devel` and restarting your shell session you're still having problems with the `inkwell` crate not being able to find the LLVM installation, try setting the `LLVM_SYS_130_PREFIX` environment variable manually:
+If, after installing `llvm-devel` and restarting your shell session you're still having problems with the `inkwell` crate not being able to find the LLVM installation, try setting the `LLVM_SYS_140_PREFIX` environment variable manually:
 
 ```bash
 export LLVM_SYS_130_PREFIX=${llvm-config --prefix}

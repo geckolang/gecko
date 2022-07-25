@@ -1,5 +1,46 @@
 use crate::{ast, cache, lowering, visitor::AnalysisVisitor};
 
+pub fn run(
+  ast_map: &mut std::collections::BTreeMap<Qualifier, Vec<ast::NodeKind>>,
+  cache: &mut cache::Cache,
+) -> Vec<codespan_reporting::diagnostic::Diagnostic<usize>> {
+  if ast_map.is_empty() {
+    return Vec::new();
+  }
+
+  let mut name_res_decl = NameResDeclContext::new(ast_map.keys().next().unwrap().clone(), cache);
+  // let mut name_resolver = NameResolver::new(ast_map.keys().next().unwrap().clone());
+
+  // // BUG: Cannot be processed linearly. Once an import is used, the whole corresponding
+  // // ... module must be recursively processed first!
+
+  for (qualifier, ast) in ast_map.iter() {
+    // REVIEW: Shouldn't the module be created before, on the Driver?
+    name_res_decl.create_module(qualifier.clone());
+    name_res_decl.current_scope_qualifier = Some(qualifier.clone());
+
+    for node in ast.iter() {
+      name_res_decl.dispatch(node);
+    }
+  }
+
+  let mut name_res_link = NameResLinkContext::new(&name_res_decl.global_scopes, cache);
+
+  for (qualifier, ast) in ast_map {
+    name_res_link.current_scope_qualifier = Some(qualifier.clone());
+
+    for node in ast {
+      // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
+      // ... an auxiliary map must be accepted in the parameters.
+      // node.resolve(&mut name_resolver, cache);
+      name_res_link.dispatch(node);
+    }
+  }
+
+  // TODO: Include declaration diagnostics too.
+  name_res_link.diagnostics
+}
+
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum SymbolKind {
   Definition,
@@ -51,44 +92,6 @@ impl<'a> NameResDeclContext<'a> {
     result.create_module(initial_module_qualifier);
 
     result
-  }
-
-  pub fn run(
-    &mut self,
-    ast_map: &mut std::collections::BTreeMap<Qualifier, Vec<ast::Node>>,
-    cache: &mut cache::Cache,
-  ) -> Vec<codespan_reporting::diagnostic::Diagnostic<usize>> {
-    todo!();
-    // if ast_map.is_empty() {
-    //   return Vec::new();
-    // }
-
-    // let mut name_resolver = NameResolver::new(ast_map.keys().next().unwrap().clone());
-
-    // // BUG: Cannot be processed linearly. Once an import is used, the whole corresponding
-    // // ... module must be recursively processed first!
-
-    // for (qualifier, ast) in ast_map.iter() {
-    //   // REVIEW: Shouldn't the module be created before, on the Driver?
-    //   name_resolver.create_module(qualifier.clone());
-    //   name_resolver.current_scope_qualifier = Some(qualifier.clone());
-
-    //   for node in ast.iter() {
-    //     node.declare(&mut name_resolver);
-    //   }
-    // }
-
-    // for (qualifier, ast) in ast_map {
-    //   name_resolver.current_scope_qualifier = Some(qualifier.clone());
-
-    //   for node in ast {
-    //     // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
-    //     // ... an auxiliary map must be accepted in the parameters.
-    //     node.resolve(&mut name_resolver, cache);
-    //   }
-    // }
-
-    // name_resolver.diagnostics
   }
 
   /// Set per-file. A new global scope is created per-module.
@@ -632,6 +635,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use pretty_assertions::{assert_eq, assert_ne};
 
   fn mock_qualifier() -> Qualifier {
     Qualifier {

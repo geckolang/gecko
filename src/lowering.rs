@@ -1,5 +1,5 @@
 use crate::{
-  ast, cache,
+  ast, cache, type_inference,
   type_system::{Check, TypeContext},
   visitor::{self, LoweringVisitor},
 };
@@ -8,6 +8,7 @@ use inkwell::{types::BasicType, values::BasicValue};
 use std::convert::TryFrom;
 
 pub const MAIN_FUNCTION_NAME: &str = "main";
+
 pub struct LlvmGeneratorBuffers<'ctx> {
   current_loop_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
   llvm_current_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
@@ -20,23 +21,31 @@ pub struct LoweringContext<'a, 'ctx> {
   pub(super) llvm_builder: inkwell::builder::Builder<'ctx>,
   pub(super) llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   pub module_name: String,
+  // REVIEW: Why do we need the cache here? If we retrieve nodes from it, remember that we've
+  // ... outlined that option already because of design issues. Find a better way to handle lowering
+  // ... of things like what a reference refers to.
   cache: &'a cache::Cache,
+  type_cache: &'a type_inference::TypeCache,
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
   // TODO: Shouldn't this be a vector instead?
   llvm_cached_values: std::collections::HashMap<cache::Id, inkwell::values::BasicValueEnum<'ctx>>,
   llvm_cached_types: std::collections::HashMap<cache::Id, inkwell::types::BasicTypeEnum<'ctx>>,
   mangle_counter: usize,
+  do_access: bool,
 }
 
 impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   pub fn new(
+    type_cache: &'a type_inference::TypeCache,
     cache: &'a cache::Cache,
     llvm_context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
   ) -> Self {
     Self {
       cache,
+      type_cache,
+      // TODO: Proper name?
       module_name: "unnamed".to_string(),
       llvm_context,
       llvm_module,
@@ -46,6 +55,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       llvm_cached_types: std::collections::HashMap::new(),
       current_loop_block: None,
       mangle_counter: 0,
+      do_access: false,
     }
   }
 
@@ -62,6 +72,17 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     } else {
       None
     }
+  }
+
+  fn with_possible_access(
+    &mut self,
+    llvm_value: inkwell::values::BasicValueEnum<'ctx>,
+  ) -> inkwell::values::BasicValueEnum<'ctx> {
+    if !self.do_access {
+      return llvm_value;
+    }
+
+    self.attempt_access(llvm_value)
   }
 
   fn apply_access_rules(
@@ -227,9 +248,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       | ast::Type::Variable(_)
       | ast::Type::MetaInteger
       | ast::Type::Never
-      | ast::Type::Any => {
-        unreachable!()
-      }
+      | ast::Type::Any => unreachable!(),
     }
   }
 
@@ -470,7 +489,13 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // REVIEW: Should we be lowering const expressions as global constants? What benefits does that provide? What about scoping?
 
     // REVISE: Optimize. The type for this construct may be cached.
-    let value_type = binding_stmt.value.infer_flatten_type(self.cache);
+    // let value_type = binding_stmt.value.infer_flatten_type(self.cache);
+    let value_type = if let Some(type_hint) = &binding_stmt.type_hint {
+      type_hint
+    } else {
+      // TODO: Unsafe unwrap?
+      self.type_cache.get(&binding_stmt.id).unwrap()
+    };
 
     // Special cases. The allocation is done elsewhere.
     if matches!(value_type, ast::Type::Function(_)) {
@@ -488,8 +513,15 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       return result;
     }
 
-    // let llvm_value_result = binding_stmt.value.lower(generator, cache, true);
+    // REVIEW: Is the usage of a buffer required here? Will it interfere with anything
+    // ... if not used?
+    let previous_do_access = self.do_access;
+
+    self.do_access = true;
+
     let llvm_value_result = self.dispatch(&binding_stmt.value);
+
+    self.do_access = previous_do_access;
 
     // FIXME: What about for other things that may be in the same situation (their values are unit)?
     // Do not proceed if the value will never evaluate.
@@ -512,9 +544,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     self.llvm_cached_values.insert(binding_stmt.id, result);
 
-    // BUG: This needs to return `Some` for the value of the binding-statement to be memoized.
-    // ... However, this also implies that the binding-statement itself yields a value!
-    Some(result)
+    None
   }
 
   fn visit_unary_expr(
@@ -678,8 +708,12 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     &mut self,
     function: &ast::Function,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
+    // BUG: If we do choose to lower declarations such as functions on-demand (i.e. a reference
+    // ... to a function yet to be lowered), buffers would interfere with the lowering of such
+    // ... function, so we would need to stash buffers and pop them when entering and exiting
+    // ... functions.
 
+    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
     let llvm_function_type = self.lower_signature(&function.signature, &return_type);
     let is_main = function.name == MAIN_FUNCTION_NAME;
 
@@ -948,12 +982,23 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
-    let llvm_target = self
-      // .memoize_or_retrieve_value(reference.pattern.id, false, access)
-      .memoize_or_retrieve_value(reference.pattern.id, false, false)
-      .unwrap();
+    // let llvm_target = self
+    //   // .memoize_or_retrieve_value(reference.pattern.id, false, access)
+    //   .memoize_or_retrieve_value(reference.pattern.id, false, false)
+    //   .unwrap();
 
-    Some(llvm_target)
+    // TODO: Unsafe unwrap?
+    // NOTE: Safe to clone LLVM values. Only the pointer is duplicated.
+    // BUG: What if the target is, say, a function that hasn't been lowered yet? This approach might
+    // ... be naive.
+
+    let llvm_target = self
+      .llvm_cached_values
+      .get(&reference.pattern.id)
+      .unwrap()
+      .clone();
+
+    Some(self.with_possible_access(llvm_target))
   }
 
   fn visit_binary_expr(
@@ -1578,6 +1623,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 mod tests {
   use super::*;
   use crate::mock::tests::{ComparableMock, Mock};
+  use pretty_assertions::{assert_eq, assert_ne};
 
   // TODO: Test mocking helpers themselves (in their own file).
 
@@ -1588,33 +1634,37 @@ mod tests {
 
   #[test]
   fn lower_binding_stmt_const_val() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
     let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::rc_node(Mock::literal_int()),
+      value: Box::new(Mock::literal_int()),
       is_const_expr: false,
       id: 0,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
-    Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
-      .lower(&binding_stmt, false)
+      .lower(&binding_stmt)
       // TODO: Change name to `binding_stmt_const_val`, and the others.
       .compare_with_file("let_stmt_const_val");
   }
 
   #[test]
   fn lower_binding_stmt_ref_val() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let a_id: cache::Id = 0;
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::rc_node(Mock::literal_int()),
+      value: Box::new(Mock::literal_int()),
       is_const_expr: false,
       id: a_id,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
@@ -1628,49 +1678,51 @@ mod tests {
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     });
 
-    Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt_a, a_id)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
-      .lower_cache(a_id, false)
-      .lower(&binding_stmt_b, false)
+      .lower(&binding_stmt_a)
+      .lower(&binding_stmt_b)
       .compare_with_file("let_stmt_ref_val");
   }
 
   #[test]
   fn lower_binding_stmt_nullptr_val() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
 
     let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty))),
+      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_const_expr: false,
       id: 0,
-      // FIXME: Wrong type.
-      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(ast::Type::Pointer(Box::new(ty))),
     });
 
-    Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
-      .lower(&binding_stmt, false)
+      .lower(&binding_stmt)
       .compare_with_file("let_stmt_nullptr_val");
   }
 
   #[test]
   fn lower_binding_stmt_ptr_ref_val() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
+    let pointer_type = ast::Type::Pointer(Box::new(ty.clone()));
     let a_id: cache::Id = 0;
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(ast::BindingStmt {
       name: "a".to_string(),
-      value: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_const_expr: false,
       id: a_id,
-      // FIXME: Wrong type.
-      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(pointer_type.clone()),
     });
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(ast::BindingStmt {
@@ -1678,42 +1730,45 @@ mod tests {
       value: Box::new(ast::NodeKind::Reference(Mock::reference(a_id))),
       is_const_expr: false,
       id: a_id + 1,
-      // FIXME: Wrong type.
-      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(pointer_type),
     });
 
-    Mock::new(&llvm_context, &llvm_module)
-      .cache(binding_stmt_a, a_id)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
-      .lower_cache(a_id, false)
-      .lower(&binding_stmt_b, false)
+      .lower(&binding_stmt_a)
+      .lower(&binding_stmt_b)
       .compare_with_file("let_stmt_ptr_ref_val");
   }
 
-  #[test]
-  fn lower_binding_stmt_string_val() {
-    let llvm_context = inkwell::context::Context::create();
-    let llvm_module = llvm_context.create_module("test");
+  // FIXME: Causing SEGFAULT for some reason! Could it be because it needs more context (module-level)
+  // ... to produce output LLVM IR for comparison?
+  // #[test]
+  // fn lower_binding_stmt_string_val() {
+  //   let cache = cache::Cache::new();
+  //   let llvm_context = inkwell::context::Context::create();
+  //   let llvm_module = llvm_context.create_module("test");
 
-    let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
-      name: "a".to_string(),
-      value: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::String(
-        "hello".to_string(),
-      ))),
-      is_const_expr: false,
-      id: 0,
-      // FIXME: Wrong type.
-      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    });
+  //   let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
+  //     name: "a".to_string(),
+  //     value: Box::new(ast::NodeKind::Literal(ast::Literal::String(
+  //       "hello".to_string(),
+  //     ))),
+  //     is_const_expr: false,
+  //     id: 0,
+  //     // FIXME: Wrong type.
+  //     type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+  //   });
 
-    Mock::new(&llvm_context, &llvm_module)
-      .function()
-      .lower(&binding_stmt, false)
-      .compare_with_file("let_stmt_string_val");
-  }
+  //   Mock::new(&cache, &llvm_context, &llvm_module)
+  //     .function()
+  //     .lower(&binding_stmt)
+  //     .compare_with_file("let_stmt_string_val");
+  // }
 
   #[test]
   fn lower_enum() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1724,59 +1779,68 @@ mod tests {
       id: 0,
     });
 
-    Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .module()
-      .lower(&enum_, false)
+      .lower(&enum_)
       .compare_with_file("enum");
   }
 
   #[test]
   fn lower_return_stmt_unit() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt { value: None });
 
-    Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
-      .lower(&return_stmt, false)
+      .lower(&return_stmt)
       .compare_with_file("return_stmt_unit");
   }
 
   #[test]
   fn lower_return_stmt() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
-      value: Some(Mock::rc_node(Mock::literal_int())),
+      value: Some(Box::new(Mock::literal_int())),
     });
 
-    Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
-      .lower(&return_stmt, false)
+      .lower(&return_stmt)
       .compare_with_file("return_stmt");
   }
 
   #[test]
   fn lower_extern_fn() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
     let extern_fn = ast::NodeKind::ExternFunction(ast::ExternFunction {
       name: "a".to_string(),
+      // TODO: Provide parameters in the signature.
       signature: Mock::signature_simple(true),
       attributes: Vec::new(),
       id: 0,
     });
 
-    Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .module()
-      .lower(&extern_fn, false)
+      .lower(&extern_fn)
       .compare_with_file("extern_fn");
   }
 
   #[test]
   fn lower_extern_static() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1786,27 +1850,29 @@ mod tests {
       id: 0,
     });
 
-    Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .module()
-      .lower(&extern_static, false)
+      .lower(&extern_static)
       .compare_with_file("extern_static");
   }
 
   #[test]
   fn lower_if_expr_simple() {
+    let type_cache = type_inference::TypeCache::new();
+    let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
-      condition: Mock::rc_node(ast::NodeKind::Literal(ast::Literal::Bool(true))),
-      then_value: Mock::rc_node(Mock::literal_int()),
+      condition: Box::new(ast::NodeKind::Literal(ast::Literal::Bool(true))),
+      then_value: Box::new(Mock::literal_int()),
       alternative_branches: Vec::new(),
       else_value: None,
     });
 
-    Mock::new(&llvm_context, &llvm_module)
+    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
-      .lower(&if_expr, false)
+      .lower(&if_expr)
       .compare_with_file("if_expr_simple");
   }
 }

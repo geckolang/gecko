@@ -1559,6 +1559,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use pretty_assertions::{assert_eq, assert_ne};
 
   fn create_parser<'a>(tokens: Vec<lexer::TokenKind>, cache: &'a mut cache::Cache) -> Parser<'a> {
     // TODO: Consider making the position incremental.

@@ -1,7 +1,8 @@
 #[cfg(test)]
 pub mod tests {
-  use crate::name_resolution;
-  use crate::{ast, cache};
+  use crate::{ast, cache, lowering, visitor::LoweringVisitor};
+  use crate::{name_resolution, type_inference};
+  use pretty_assertions::assert_eq;
 
   pub trait ComparableMock: ToString {
     fn compare_with(&self, expected: &str) {
@@ -33,20 +34,8 @@ pub mod tests {
       }
     }
 
-    pub fn lower(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
-      // TODO:
-      // node.lower(&mut self.mock.generator, &self.mock.cache, access);
-
-      self
-    }
-
-    pub fn lower_cache(&mut self, id: cache::Id, access: bool) -> &mut Self {
-      // TODO:
-      // self.mock.cache.force_get(&id).lower(
-      //   &mut self.mock.generator,
-      //   &self.mock.cache,
-      //   access,
-      // );
+    pub fn lower(&mut self, node: &ast::NodeKind) -> &mut Self {
+      self.mock.lowering_context.dispatch(node);
 
       self
     }
@@ -77,20 +66,10 @@ pub mod tests {
   }
 
   impl ModuleMock<'_, '_> {
-    pub fn lower(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
+    pub fn lower(&mut self, node: &ast::NodeKind) -> &mut Self {
       // TODO:
-      // node.lower(&mut self.mock.generator, &self.mock.cache, access);
-
-      self
-    }
-
-    pub fn _lower_cache(&mut self, id: cache::Id, access: bool) -> &mut Self {
-      // TODO:
-      // self.mock.cache.force_get(&id).lower(
-      //   &mut self.mock.generator,
-      //   &self.mock.cache,
-      //   access,
-      // );
+      // node.lower(&mut self.mock.lowering_visitor, &self.mock.cache, access);
+      self.mock.lowering_context.dispatch(node);
 
       self
     }
@@ -98,7 +77,7 @@ pub mod tests {
 
   impl ToString for ModuleMock<'_, '_> {
     fn to_string(&self) -> String {
-      self.mock.module.print_to_string().to_string()
+      self.mock.llvm_module.print_to_string().to_string()
     }
   }
 
@@ -108,9 +87,8 @@ pub mod tests {
 
   pub struct Mock<'a, 'ctx> {
     context: &'ctx inkwell::context::Context,
-    module: &'a inkwell::module::Module<'ctx>,
-    // generator: LlvmGenerator<'a, 'ctx>,
-    cache: cache::Cache,
+    llvm_module: &'a inkwell::module::Module<'ctx>,
+    lowering_context: lowering::LoweringContext<'a, 'ctx>,
   }
 
   impl<'a, 'ctx> Mock<'a, 'ctx> {
@@ -122,7 +100,7 @@ pub mod tests {
       ast::Reference {
         pattern: ast::Pattern {
           // BUG: Made up id. See how this affects tests.
-          id: id,
+          id,
           qualifier: None,
           base_name: "test".to_string(),
           sub_name: None,
@@ -168,34 +146,33 @@ pub mod tests {
       Mock::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
     }
 
-    // TODO: Redundant.
-    pub fn rc_node(node: ast::NodeKind) -> Box<ast::NodeKind> {
-      Box::new(node)
-    }
-
     pub fn new(
+      type_cache: &'a type_inference::TypeCache,
+      cache: &'a cache::Cache,
       context: &'ctx inkwell::context::Context,
       module: &'a inkwell::module::Module<'ctx>,
     ) -> Self {
       Self {
         context,
-        module,
-        // generator: LlvmGenerator::new(context, module),
-        cache: cache::Cache::new(),
+        llvm_module: module,
+        lowering_context: lowering::LoweringContext::new(&type_cache, &cache, context, module),
       }
     }
 
     pub fn function(&'a mut self) -> FunctionMock<'a, 'ctx> {
       let function =
         self
-          .module
+          .llvm_module
           .add_function("test", self.context.void_type().fn_type(&[], false), None);
 
       let entry_block = self.context.append_basic_block(function, "entry");
 
-      // TODO:
-      // self.generator.llvm_builder.position_at_end(entry_block);
-      // self.generator.llvm_function_buffer = Some(function);
+      self
+        .lowering_context
+        .llvm_builder
+        .position_at_end(entry_block);
+
+      self.lowering_context.llvm_function_buffer = Some(function);
 
       FunctionMock::new(self, function)
     }
@@ -205,20 +182,7 @@ pub mod tests {
     }
 
     pub fn _verify(&mut self) -> &mut Self {
-      assert!(self.module.verify().is_ok());
-
-      self
-    }
-
-    pub fn _lower_without_context(&mut self, node: &ast::NodeKind, access: bool) -> &mut Self {
-      // TODO:
-      // node.lower(&mut self.generator, &self.cache, access);
-
-      self
-    }
-
-    pub fn cache(&mut self, node: ast::NodeKind, id: usize) -> &mut Self {
-      self.cache.symbols.insert(id, node);
+      assert!(self.llvm_module.verify().is_ok());
 
       self
     }

@@ -737,25 +737,26 @@ pub struct MemberAccess {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use pretty_assertions::{assert_eq, assert_ne};
 
-  #[test]
-  fn traverse_ast() {
-    let node = NodeKind::BlockExpr(BlockExpr {
-      id: 0,
-      statements: Vec::new(),
-      yields: None,
-    });
+  // #[test]
+  // fn traverse_ast() {
+  //   let node = NodeKind::BlockExpr(BlockExpr {
+  //     id: 0,
+  //     statements: Vec::new(),
+  //     yields: None,
+  //   });
 
-    let mut visitations = 0;
+  //   let mut visitations = 0;
 
-    node.traverse(|_| {
-      visitations += 1;
+  //   node.traverse(|_| {
+  //     visitations += 1;
 
-      true
-    });
+  //     true
+  //   });
 
-    assert_eq!(1, visitations);
-  }
+  //   assert_eq!(1, visitations);
+  // }
 
   // TODO: Re-do.
   // #[test]

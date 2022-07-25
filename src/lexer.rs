@@ -547,6 +547,7 @@ fn is_whitespace(character: char) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use pretty_assertions::{assert_eq, assert_ne};
 
   #[test]
   fn is_letter() {

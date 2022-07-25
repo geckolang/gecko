@@ -388,6 +388,7 @@ impl Check for ast::CallExpr {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use pretty_assertions::{assert_eq, assert_ne};
 
   // TODO: Move this test to the `ast` file.
   // #[test]
