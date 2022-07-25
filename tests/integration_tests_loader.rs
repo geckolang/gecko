@@ -5,7 +5,7 @@ extern crate inkwell;
 mod tests {
   use gecko::{
     lowering, name_resolution, type_check, type_inference,
-    visitor::{AnalysisVisitor, LoweringVisitor},
+    visitor::{self, AnalysisVisitor, LoweringVisitor},
   };
   use pretty_assertions::assert_eq;
   use std::{fs, io::Read};
@@ -70,7 +70,7 @@ mod tests {
       // REVIEW: Can we mix linting with type-checking without any problems?
       for top_level_node in inner_ast {
         // top_level_node.lint(&mut lint_context);
-        type_check_context.dispatch(top_level_node);
+        visitor::traverse(top_level_node, &mut type_check_context);
       }
 
       assert!(type_check_context.diagnostics.is_empty());

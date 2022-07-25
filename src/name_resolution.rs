@@ -1,4 +1,7 @@
-use crate::{ast, cache, lowering, visitor::AnalysisVisitor};
+use crate::{
+  ast, cache, lowering,
+  visitor::{self, AnalysisVisitor},
+};
 
 pub fn run(
   ast_map: &mut std::collections::BTreeMap<Qualifier, Vec<ast::NodeKind>>,
@@ -20,8 +23,12 @@ pub fn run(
     name_res_decl.current_scope_qualifier = Some(qualifier.clone());
 
     for node in ast.iter() {
-      name_res_decl.dispatch(node);
+      visitor::traverse(node, &mut name_res_decl);
     }
+  }
+
+  if !name_res_decl.diagnostics.is_empty() {
+    return name_res_decl.diagnostics;
   }
 
   let mut name_res_link = NameResLinkContext::new(&name_res_decl.global_scopes, cache);
@@ -33,11 +40,11 @@ pub fn run(
       // FIXME: Need to set active module here. Since the ASTs are jumbled-up together,
       // ... an auxiliary map must be accepted in the parameters.
       // node.resolve(&mut name_resolver, cache);
-      name_res_link.dispatch(node);
+      // name_res_link.dispatch(node);
+      visitor::traverse(node, &mut name_res_link);
     }
   }
 
-  // TODO: Include declaration diagnostics too.
   name_res_link.diagnostics
 }
 
@@ -141,7 +148,7 @@ impl<'a> NameResDeclContext<'a> {
   }
 
   fn declare_node(&mut self, symbol: Symbol, id: cache::Id, node: ast::NodeKind) {
-    self.cache.cached_nodes.insert(id, node);
+    self.cache.declarations.insert(id, node);
 
     self.declare_symbol(symbol, id);
   }
@@ -210,19 +217,19 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     // TODO: There might be a way to simplify this (macro or trait?).
     match node {
       ast::NodeKind::Function(function) => {
-        self.cache.cached_nodes.insert(
+        self.cache.declarations.insert(
           function.id,
           ast::NodeKind::Function(std::rc::Rc::clone(&function)),
         );
       }
       ast::NodeKind::ExternFunction(extern_fn) => {
-        self.cache.cached_nodes.insert(
+        self.cache.declarations.insert(
           extern_fn.id,
           ast::NodeKind::ExternFunction(std::rc::Rc::clone(&extern_fn)),
         );
       }
       ast::NodeKind::ExternStatic(extern_static) => {
-        self.cache.cached_nodes.insert(
+        self.cache.declarations.insert(
           extern_static.id,
           ast::NodeKind::ExternStatic(std::rc::Rc::clone(&extern_static)),
         );
@@ -230,18 +237,18 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
       ast::NodeKind::Enum(enum_) => {
         self
           .cache
-          .cached_nodes
+          .declarations
           .insert(enum_.id, ast::NodeKind::Enum(std::rc::Rc::clone(&enum_)));
       }
       ast::NodeKind::TypeAlias(type_alias) => {
-        self.cache.cached_nodes.insert(
+        self.cache.declarations.insert(
           type_alias.id,
           ast::NodeKind::TypeAlias(std::rc::Rc::clone(&type_alias)),
         );
       }
 
       ast::NodeKind::Struct(struct_) => {
-        self.cache.cached_nodes.insert(
+        self.cache.declarations.insert(
           struct_.id,
           ast::NodeKind::Struct(std::rc::Rc::clone(&struct_)),
         );
@@ -250,7 +257,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
       // This means that they are registered as `ast::NodeKind`s, under blocks. They
       // must be dispatched.
       ast::NodeKind::BindingStmt(binding_stmt) => {
-        self.cache.cached_nodes.insert(
+        self.cache.declarations.insert(
           binding_stmt.id,
           ast::NodeKind::BindingStmt(std::rc::Rc::clone(&binding_stmt)),
         );
@@ -594,7 +601,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     }
 
     for parameter in &signature.parameters {
-      self.cache.cached_nodes.insert(
+      self.cache.declarations.insert(
         parameter.id,
         ast::NodeKind::Parameter(std::rc::Rc::clone(parameter)),
       );

@@ -99,10 +99,9 @@ pub mod tests {
     pub fn reference(id: cache::Id) -> ast::Reference {
       ast::Reference {
         pattern: ast::Pattern {
-          // BUG: Made up id. See how this affects tests.
           id,
           qualifier: None,
-          base_name: "test".to_string(),
+          base_name: "test_reference".to_string(),
           sub_name: None,
           symbol_kind: name_resolution::SymbolKind::Definition,
         },

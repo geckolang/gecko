@@ -396,12 +396,14 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
       visitor.visit_literal(&range.start);
       visitor.visit_literal(&range.end);
     }
+    ast::NodeKind::Reference(reference) => {
+      visitor.visit_pattern(&reference.pattern);
+    }
     ast::NodeKind::Enum(_)
     | ast::NodeKind::ExternFunction(_)
     | ast::NodeKind::ExternStatic(_)
     | ast::NodeKind::Literal(_)
     | ast::NodeKind::Parameter(_)
-    | ast::NodeKind::Reference(_)
     | ast::NodeKind::Struct(_)
     | ast::NodeKind::Pattern(_)
     | ast::NodeKind::Using(_)

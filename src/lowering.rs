@@ -87,7 +87,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     }
 
     if let ast::NodeKind::Reference(reference) = &node {
-      let target = self.cache.cached_nodes.get(&reference.pattern.id).unwrap();
+      let target = self.cache.declarations.get(&reference.pattern.id).unwrap();
 
       // TODO: Ensure this recursive nature doesn't cause stack overflow.
       return self.apply_access_rules(target, llvm_value);
@@ -369,17 +369,17 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   /// otherwise they will all be restored.
   fn memoize_or_retrieve_value(
     &mut self,
-    id: cache::Id,
+    id: &cache::Id,
     forward_buffers: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let node = self.cache.cached_nodes.get(&id).unwrap();
+    let node = self.cache.declarations.get(id).unwrap();
 
     // BUG: If a definition is lowered elsewhere without the use of this function,
     // ... there will not be any call to `lower_with_access_rules` for it. This means
     // ... that those definitions will be cached as `PointerValue`s instead of possibly
     // ... needing to be lowered.
     // If the definition has been cached previously, simply retrieve it.
-    if let Some(existing_definition) = self.llvm_cached_values.get(&id) {
+    if let Some(existing_definition) = self.llvm_cached_values.get(id) {
       // NOTE: The underlying LLVM value is not copied, but rather the reference to it.
       let existing_value_cloned = existing_definition.clone();
 
@@ -397,7 +397,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     let result = if let Some(llvm_value) = llvm_value_result {
       // Cache the value without applying access rules.
       // This way, access rules may be chosen to be applied upon cache retrieval.
-      self.llvm_cached_values.insert(id, llvm_value);
+      self.llvm_cached_values.insert(id.clone(), llvm_value);
 
       Some(if self.do_access {
         self.apply_access_rules(node, llvm_value)
@@ -968,11 +968,13 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     &mut self,
     reference: &ast::Reference,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let target_id = self.cache.links.get(&reference.pattern.id).unwrap();
+
     // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
     // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
     let llvm_target = self
       // .memoize_or_retrieve_value(reference.pattern.id, false, access)
-      .memoize_or_retrieve_value(reference.pattern.id, false)
+      .memoize_or_retrieve_value(target_id, false)
       .unwrap();
 
     // TODO: Unsafe unwrap?
@@ -1306,7 +1308,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     // REVIEW: Opted not to use access rules. Ensure this is correct.
     let llvm_target_array = self
-      .memoize_or_retrieve_value(indexing_expr.target_id, false)
+      .memoize_or_retrieve_value(&indexing_expr.target_id, false)
       .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
@@ -1568,7 +1570,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .unwrap();
 
     // REVIEW: Opted to not use access rules. Ensure this is correct.
-    self.memoize_or_retrieve_value(impl_method_info.0, false)
+    self.memoize_or_retrieve_value(&impl_method_info.0, false)
   }
 
   fn enter_struct_impl(
@@ -1698,20 +1700,28 @@ mod tests {
   #[test]
   fn lower_binding_stmt_ptr_ref_val() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let mut cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
     let pointer_type = ast::Type::Pointer(Box::new(ty.clone()));
     let a_id: cache::Id = 0;
 
-    let binding_stmt_a = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
+    let binding_stmt_rc_a = std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
       value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
       is_const_expr: false,
       id: a_id,
       type_hint: Some(pointer_type.clone()),
-    }));
+    });
+
+    cache
+      .declarations
+      .insert(a_id, ast::NodeKind::BindingStmt(binding_stmt_rc_a.clone()));
+
+    cache.links.insert(a_id, a_id);
+
+    let binding_stmt_a = ast::NodeKind::BindingStmt(binding_stmt_rc_a);
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "b".to_string(),
