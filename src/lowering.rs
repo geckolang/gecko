@@ -715,14 +715,12 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       llvm_function.as_global_value().as_basic_value_enum(),
     );
 
-    let signature = function.signature;
-
     // REVIEW: Is this conversion safe?
-    let expected_param_count = signature.parameters.len() as u32;
+    let expected_param_count = function.signature.parameters.len() as u32;
 
     assert_eq!(
       llvm_function.count_params(),
-      if signature.accepts_instance {
+      if function.signature.accepts_instance {
         expected_param_count + 1
       } else {
         expected_param_count
@@ -733,7 +731,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // ... if the signature accepts an instance. This zip might cause unexpected problems.
     llvm_function
       .get_param_iter()
-      .zip(signature.parameters.iter())
+      .zip(function.signature.parameters.iter())
       .for_each(|params| {
         params
           .0

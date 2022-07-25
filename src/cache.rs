@@ -12,6 +12,9 @@ pub struct Cache {
   /// the `declare` name resolution step, which has also been resolved.
   pub symbols: std::collections::HashMap<Id, ast::NodeKind>,
   pub links: std::collections::HashMap<Id, Id>,
+  // FIXME: Instead of caching, nodes, use a mapping from their id to their type.
+  // ... This is because all retrievals of cached nodes are simply to determine or
+  // ... retrieve their type. So, we can avoid the headaches of caching the nodes.
   pub cached_nodes: std::collections::HashMap<Id, std::rc::Rc<ast::NodeKind>>,
   // REVIEW: Should this be here?
   pub main_function_id: Option<Id>,

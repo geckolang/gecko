@@ -345,7 +345,7 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     }
     ast::NodeKind::Signature(signature) => {
       for parameter in &signature.parameters {
-        visitor.visit_parameter(parameter);
+        visitor.visit_parameter(&parameter);
       }
     }
     ast::NodeKind::ReturnStmt(return_expr) => {
@@ -476,7 +476,7 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
 
   fn visit_parameter(&mut self, parameter: &ast::Parameter) {
     for visitor in &mut self.visitors {
-      visitor.visit_parameter(parameter);
+      visitor.visit_parameter(&parameter);
     }
   }
 

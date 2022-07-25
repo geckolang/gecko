@@ -552,16 +552,14 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
 
     self.current_function_id = Some(function.id);
 
-    let signature = function.signature;
-
-    if signature.accepts_instance && !self.in_struct_impl {
+    if function.signature.accepts_instance && !self.in_struct_impl {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("cannot accept instance in a non-impl function"),
       );
     }
 
-    if signature.is_variadic {
+    if function.signature.is_variadic {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
           "function `{}` cannot be variadic; only externs are allowed to be variadic",
@@ -590,14 +588,14 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       }
     }
 
-    let body = function.body;
-    let return_type = TypeContext::infer_return_value_type(&body, self.cache);
+    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
 
     if !return_type.is_a_unit() {
       // If at least one statement's type evaluates to never, it
       // means that all paths are covered, because code execution will
       // always return at one point before reaching (or at) the end of the function.
-      let all_paths_covered = body
+      let all_paths_covered = function
+        .body
         .statements
         .iter()
         .any(|statement| statement.infer_flatten_type(self.cache).is_a_never());

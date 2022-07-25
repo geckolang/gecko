@@ -429,6 +429,24 @@ impl NodeKind {
   pub fn infer_flatten_type(&self, cache: &cache::Cache) -> Type {
     self.infer_type(cache).flatten(cache)
   }
+
+  pub fn find_id(&self) -> Option<cache::Id> {
+    match self {
+      NodeKind::BindingStmt(binding_stmt) => Some(binding_stmt.id),
+      NodeKind::Function(function) => Some(function.id),
+      NodeKind::TypeAlias(type_alias) => Some(type_alias.id),
+      NodeKind::Struct(struct_) => Some(struct_.id),
+      NodeKind::Trait(trait_) => Some(trait_.id),
+      NodeKind::Closure(closure) => Some(closure.id),
+      NodeKind::Enum(enum_) => Some(enum_.id),
+      NodeKind::Pattern(pattern) => Some(pattern.id),
+      NodeKind::BlockExpr(block_expr) => Some(block_expr.id),
+      NodeKind::ExternFunction(extern_function) => Some(extern_function.id),
+      NodeKind::ExternStatic(extern_static) => Some(extern_static.id),
+      NodeKind::Parameter(parameter) => Some(parameter.id),
+      _ => None,
+    }
+  }
 }
 
 #[derive(Debug, Clone)]

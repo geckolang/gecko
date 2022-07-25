@@ -207,24 +207,24 @@ impl<'a> NameResDeclContext<'a> {
 
 impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
   fn visit_extern_function(&mut self, extern_fn: &ast::ExternFunction) {
-    self.declare_node(
+    self.declare_symbol(
       Symbol {
         base_name: extern_fn.name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       },
-      node,
+      extern_fn.id,
     );
   }
 
   fn visit_parameter(&mut self, parameter: &ast::Parameter) {
-    self.declare_node(
+    self.declare_symbol(
       Symbol {
         base_name: parameter.name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       },
-      node,
+      parameter.id,
     );
   }
 
@@ -251,8 +251,8 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
       }
     }
 
-    self.declare_node(
-      // TODO: Cleanup.
+    // TODO: Cleanup.
+    self.declare_symbol(
       Symbol {
         base_name: if let Some(static_owner_name) = &function.static_owner_name {
           static_owner_name.clone()
@@ -266,7 +266,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
         },
         kind: SymbolKind::Definition,
       },
-      node,
+      function.id,
     );
   }
 
@@ -285,24 +285,24 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
   }
 
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
-    self.declare_node(
+    self.declare_symbol(
       Symbol {
         base_name: binding_stmt.name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       },
-      node,
+      binding_stmt.id,
     );
   }
 
   fn visit_enum(&mut self, enum_: &ast::Enum) {
-    self.declare_node(
+    self.declare_symbol(
       Symbol {
         base_name: enum_.name.clone(),
         sub_name: None,
         kind: SymbolKind::Type,
       },
-      node,
+      enum_.id,
     );
 
     for variant in &enum_.variants {
@@ -318,35 +318,35 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
   }
 
   fn visit_struct(&mut self, struct_type: &ast::Struct) {
-    self.declare_node(
+    self.declare_symbol(
       Symbol {
         base_name: struct_type.name.clone(),
         sub_name: None,
         kind: SymbolKind::Type,
       },
-      node,
+      struct_type.id,
     );
   }
 
   fn visit_extern_static(&mut self, extern_static: &ast::ExternStatic) {
-    self.declare_node(
+    self.declare_symbol(
       Symbol {
         base_name: extern_static.name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       },
-      node,
+      extern_static.id,
     );
   }
 
   fn visit_type_alias(&mut self, type_alias: &ast::TypeAlias) {
-    self.declare_node(
+    self.declare_symbol(
       Symbol {
         base_name: type_alias.name.clone(),
         sub_name: None,
         kind: SymbolKind::Type,
       },
-      node,
+      type_alias.id,
     );
   }
 

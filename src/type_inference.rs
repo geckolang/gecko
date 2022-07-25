@@ -34,8 +34,15 @@ impl<'a> TypeInferenceContext<'a> {
     // TODO: Implement.
   }
 
+  // REVIEW: Now with the implementation of `node.find_id()`, things like `(expr)` might have issues.
+  // ... Perhaps employ the use of node flattening to solve any issues?
   fn infer_type_of(&mut self, node: &ast::NodeKind) -> ast::Type {
-    if let Some(cached_type) = self.type_cache.get(&node.id) {
+    let id = match node.find_id() {
+      Some(id) => id,
+      None => return ast::Type::Unit,
+    };
+
+    if let Some(cached_type) = self.type_cache.get(&id) {
       return cached_type.clone();
     }
 
@@ -65,7 +72,7 @@ impl<'a> TypeInferenceContext<'a> {
       _ => ast::Type::Unit,
     };
 
-    self.type_cache.insert(node.id, ty.clone());
+    self.type_cache.insert(id, ty.clone());
 
     ty
   }
