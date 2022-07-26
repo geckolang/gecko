@@ -3,10 +3,7 @@ use crate::{
   visitor::{self, AnalysisVisitor},
 };
 
-pub fn run(
-  ast_map: &mut std::collections::BTreeMap<Qualifier, Vec<ast::NodeKind>>,
-  cache: &mut cache::Cache,
-) -> Vec<codespan_reporting::diagnostic::Diagnostic<usize>> {
+pub fn run(ast_map: &mut ast::AstMap, cache: &mut cache::Cache) -> Vec<ast::Diagnostic> {
   if ast_map.is_empty() {
     return Vec::new();
   }
@@ -31,7 +28,8 @@ pub fn run(
     return name_res_decl.diagnostics;
   }
 
-  let mut name_res_link = NameResLinkContext::new(&name_res_decl.global_scopes, cache);
+  let mut name_res_link =
+    NameResLinkContext::new(&name_res_decl.global_scopes, name_res_decl.scope_map, cache);
 
   for (qualifier, ast) in ast_map {
     name_res_link.current_scope_qualifier = Some(qualifier.clone());
@@ -75,7 +73,7 @@ pub struct NameResDeclContext<'a> {
   pub scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
   /// Contains the modules with their respective top-level definitions.
   pub global_scopes: std::collections::HashMap<Qualifier, Scope>,
-  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+  pub diagnostics: Vec<ast::Diagnostic>,
   cache: &'a mut cache::Cache,
   current_scope_qualifier: Option<Qualifier>,
   /// Contains volatile, relative scopes.
@@ -451,16 +449,17 @@ pub struct NameResLinkContext<'a> {
   block_id_stack: Vec<cache::Id>,
   /// Contains the modules with their respective top-level definitions.
   global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
-  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+  pub diagnostics: Vec<ast::Diagnostic>,
 }
 
 impl<'a> NameResLinkContext<'a> {
   pub fn new(
     global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
+    scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
     cache: &'a mut cache::Cache,
   ) -> Self {
     Self {
-      scope_map: std::collections::HashMap::new(),
+      scope_map,
       cache,
       current_scope_qualifier: None,
       current_struct_type_id: None,

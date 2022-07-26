@@ -3,7 +3,7 @@ use crate::{ast, cache, visitor::AnalysisVisitor};
 // REVIEW: Why not abstract the error reporting to the lint methods themselves? This is more functional.
 // ... Perhaps we can also get rid of variable reference counting, in favor of functional programming.
 pub struct LintContext {
-  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+  pub diagnostics: Vec<ast::Diagnostic>,
   variable_references: std::collections::HashMap<cache::Id, bool>,
 }
 

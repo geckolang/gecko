@@ -5,7 +5,7 @@ use crate::{
 };
 
 pub struct TypeCheckContext<'a> {
-  pub diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+  pub diagnostics: Vec<ast::Diagnostic>,
   in_unsafe_block: bool,
   in_struct_impl: bool,
   current_function_id: Option<cache::Id>,
@@ -612,13 +612,19 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       }
     }
 
-    self.current_function_id = previous_function_key;
+    // self.current_function_id = previous_function_key;
+  }
+
+  fn exit_function(&mut self, _function: &ast::Function) -> () {
+    // REVIEW: No need for buffer?
+    self.current_function_id = None;
   }
 
   fn visit_return_stmt(&mut self, return_stmt: &ast::ReturnStmt) {
     let current_function_node = self
       .cache
-      .find_decl_via_link(&self.current_function_id.unwrap())
+      .declarations
+      .get(&self.current_function_id.unwrap())
       .unwrap();
 
     let mut name = None;

@@ -1,7 +1,7 @@
 # TODO: Two of the same extern is being lowered, with name wrongly mangled.
-func arrays():
-  let empty_arr = [] Int
-  let arr = [1]
-  let arr_2 = [arr[`U32 0]]
+func arrays(): # ty: (return stmt) Int
+  let empty_arr = [] Int # ty: fresh ! WHAT ABOUT Array<> constructor?
+  let arr = [1] # ty: Array<Int, 1>
+  let arr_2 = [arr[`U32 0]] # idx expr ty: Int, arr_2 ty: Array<Int, 1>
 
-  return arr[`U32 0]
+  return arr[`U32 0] # ty: Int

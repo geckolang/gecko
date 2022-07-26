@@ -10,6 +10,9 @@ macro_rules! force_match {
   };
 }
 
+pub type AstMap = std::collections::BTreeMap<name_resolution::Qualifier, Vec<NodeKind>>;
+pub type Diagnostic = codespan_reporting::diagnostic::Diagnostic<usize>;
+
 #[derive(Debug, Clone)]
 pub enum GenericConstraintKind {
   Implements,
@@ -170,6 +173,13 @@ impl Type {
     {
       return true;
     }
+    // If at least one is a meta integer type, return `true` if the other is an integer type,
+    // or if they're both a meta integer type.
+    else if matches!(self, Type::MetaInteger) || matches!(other, Type::MetaInteger) {
+      return matches!(self, Type::Basic(BasicType::Int(_)))
+        || matches!(other, Type::Basic(BasicType::Int(_)))
+        || self == other;
+    }
 
     // BUG: Is this actually true? What if we compare a Stub type with a Basic type (defined by the user)?
     // NOTE: Stub types will also work, because their target ids will be compared.
@@ -226,7 +236,9 @@ impl Type {
       }
     } else if let Type::This(this_type) = &self {
       // REVISE: No need to clone?
-      let target_struct_type = cache.find_decl_via_link(&this_type.target_id.unwrap()).unwrap();
+      let target_struct_type = cache
+        .find_decl_via_link(&this_type.target_id.unwrap())
+        .unwrap();
 
       if let NodeKind::Struct(struct_type) = &target_struct_type {
         return Type::Struct(struct_type.as_ref().clone());

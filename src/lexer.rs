@@ -1,3 +1,5 @@
+use crate::ast;
+
 pub type Token = (TokenKind, usize);
 
 #[derive(PartialEq, Debug, Clone)]
@@ -144,9 +146,7 @@ impl Lexer {
   }
 
   /// Attempt to lex all possible tokens until reaching `EOF`.
-  pub fn lex_all(
-    &mut self,
-  ) -> Result<Vec<Token>, codespan_reporting::diagnostic::Diagnostic<usize>> {
+  pub fn lex_all(&mut self) -> Result<Vec<Token>, ast::Diagnostic> {
     let mut tokens = Vec::new();
 
     loop {
@@ -195,7 +195,7 @@ impl Lexer {
     })
   }
 
-  fn read_number(&mut self) -> Result<u64, codespan_reporting::diagnostic::Diagnostic<usize>> {
+  fn read_number(&mut self) -> Result<u64, ast::Diagnostic> {
     let number_result = self.read_while(is_digit).parse::<u64>();
 
     if let Err(_) = number_result {
@@ -216,7 +216,7 @@ impl Lexer {
   }
 
   // TODO: Need tests implemented for this.
-  fn read_string(&mut self) -> Result<String, codespan_reporting::diagnostic::Diagnostic<usize>> {
+  fn read_string(&mut self) -> Result<String, ast::Diagnostic> {
     // Skip the opening double-quote.
     self.read_char();
 
@@ -265,7 +265,7 @@ impl Lexer {
     Ok(string)
   }
 
-  fn read_character(&mut self) -> Result<char, codespan_reporting::diagnostic::Diagnostic<usize>> {
+  fn read_character(&mut self) -> Result<char, ast::Diagnostic> {
     // Skip the opening single-quote, and retrieve the character.
     let character = self.read_char();
 
@@ -298,7 +298,7 @@ impl Lexer {
   /// returned. If the current character is neither an identifier nor a
   /// digit, an [`Illegal`] token with the encountered character as its
   /// value will be returned.
-  fn lex_token(&mut self) -> Result<TokenKind, codespan_reporting::diagnostic::Diagnostic<usize>> {
+  fn lex_token(&mut self) -> Result<TokenKind, ast::Diagnostic> {
     if self.is_eof() {
       if self.indent_level > 0 {
         self.indent_level -= 1;
@@ -455,7 +455,7 @@ impl Lexer {
 
 // REVIEW: Is this implementation practical (even used)? If not, simply remove.
 impl Iterator for Lexer {
-  type Item = Result<TokenKind, codespan_reporting::diagnostic::Diagnostic<usize>>;
+  type Item = Result<TokenKind, ast::Diagnostic>;
 
   fn next(&mut self) -> Option<Self::Item> {
     let token = self.lex_token();

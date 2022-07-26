@@ -5,7 +5,7 @@ extern crate inkwell;
 mod tests {
   use gecko::{
     lowering, name_resolution, type_check, type_inference,
-    visitor::{self, AnalysisVisitor, LoweringVisitor},
+    visitor::{self, LoweringVisitor},
   };
   use pretty_assertions::assert_eq;
   use std::{fs, io::Read};
@@ -51,16 +51,11 @@ mod tests {
 
     assert!(top_level_nodes.is_ok());
     ast_map.insert(qualifier.clone(), top_level_nodes.unwrap());
-
     assert!(name_resolution::run(&mut ast_map, &mut cache).is_empty());
 
-    // REVIEW: Is this the correct qualifier to pass it?
-    // let mut name_resolver = gecko::name_resolution::NameResolver::new(qualifier.clone());
+    let (type_inference_diagnostics, type_cache) = type_inference::run(&ast_map, &cache);
 
-    // ast_map.insert(qualifier, top_level_nodes.unwrap());
-
-    // // After all the ASTs have been collected, perform name resolution step.
-    // assert!(name_resolver.run(&mut ast_map, &mut cache).is_empty());
+    assert!(type_inference_diagnostics.is_empty());
 
     let mut type_check_context = type_check::TypeCheckContext::new(&cache);
 
@@ -76,7 +71,6 @@ mod tests {
       assert!(type_check_context.diagnostics.is_empty());
     }
 
-    let type_cache = type_inference::TypeCache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module(&qualifier.module_name);
 

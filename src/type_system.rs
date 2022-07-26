@@ -1,14 +1,11 @@
 use crate::{ast, cache};
 
 pub struct TypeContext {
-  diagnostics: Vec<codespan_reporting::diagnostic::Diagnostic<usize>>,
+  diagnostics: Vec<ast::Diagnostic>,
 }
 
 impl TypeContext {
-  pub fn run(
-    ast: &Vec<ast::Node>,
-    cache: &cache::Cache,
-  ) -> Vec<codespan_reporting::diagnostic::Diagnostic<usize>> {
+  pub fn run(ast: &Vec<ast::Node>, cache: &cache::Cache) -> Vec<ast::Diagnostic> {
     let mut type_context = TypeContext::new();
 
     // TODO: What about constraint reports, and post-unification?
@@ -88,7 +85,7 @@ pub trait Check {
 impl Check for ast::NodeKind {
   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
     // dispatch!(&self, Check::infer_type, cache)
-    // TODO: Temporary.
+    // BUG: Temporary.
     ast::Type::Unit
   }
 }

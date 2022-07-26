@@ -40,7 +40,7 @@ fn get_token_precedence(token: &lexer::TokenKind) -> usize {
   }
 }
 
-type ParserResult<T> = Result<T, codespan_reporting::diagnostic::Diagnostic<usize>>;
+type ParserResult<T> = Result<T, ast::Diagnostic>;
 
 pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
@@ -113,7 +113,7 @@ impl<'a> Parser<'a> {
     Ok(())
   }
 
-  fn expected(&self, expected: &str) -> codespan_reporting::diagnostic::Diagnostic<usize> {
+  fn expected(&self, expected: &str) -> ast::Diagnostic {
     codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
       "expected {}, but got `{:?}`",
       expected,

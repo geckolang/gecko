@@ -1,4 +1,4 @@
-use crate::ast;
+use crate::ast::{self, BlockExpr};
 
 macro_rules! define_visitor {
   (@ $name:ident $(<$lt:lifetime>)?, $return_type:ty, $default_value:expr) => {
@@ -283,13 +283,17 @@ define_visitor!(
 
 define_visitor!(AnalysisVisitor, (), ());
 
-trait Visitor {
-  type VisitResult;
+fn traverse_block_expr(block_expr: &ast::BlockExpr, visitor: &mut impl AnalysisVisitor) {
+  for stmt in &block_expr.statements {
+    traverse(stmt, visitor);
+  }
+
+  visitor.exit_block_expr(&block_expr);
 }
 
 // TODO: Accept `&std::rc::Rc<ast::Node>` instead.
 pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
-  // visitor.dispatch(&node);
+  visitor.dispatch(&node);
 
   // TODO: Simplify with the addition of the dispatch method.
   match &node {
@@ -303,13 +307,7 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     ast::NodeKind::BindingStmt(binding_stmt) => {
       traverse(&binding_stmt.value, visitor);
     }
-    ast::NodeKind::BlockExpr(block_expr) => {
-      for statement in &block_expr.statements {
-        traverse(&statement, visitor);
-      }
-
-      visitor.exit_block_expr(block_expr);
-    }
+    ast::NodeKind::BlockExpr(block_expr) => traverse_block_expr(block_expr, visitor),
     ast::NodeKind::CallExpr(call_expr) => {
       traverse(&call_expr.callee_expr, visitor);
 
@@ -320,12 +318,12 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     ast::NodeKind::Closure(closure) => {
       visitor.visit_signature(&closure.signature);
       visitor.enter_block_expr(&closure.body);
-      visitor.exit_block_expr(&closure.body);
+      traverse_block_expr(&closure.body, visitor);
     }
     ast::NodeKind::Function(function) => {
       visitor.visit_signature(&function.signature);
       visitor.enter_block_expr(&function.body);
-      visitor.exit_block_expr(&function.body);
+      traverse_block_expr(&function.body, visitor);
     }
     ast::NodeKind::IfExpr(if_expr) => {
       traverse(&if_expr.condition, visitor);
