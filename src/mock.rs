@@ -2,7 +2,6 @@
 pub mod tests {
   use crate::{ast, cache, lowering, visitor::LoweringVisitor};
   use crate::{name_resolution, type_inference};
-  use pretty_assertions::assert_eq;
 
   pub trait ComparableMock: ToString {
     fn compare_with(&self, expected: &str) {
@@ -89,9 +88,14 @@ pub mod tests {
     context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
     lowering_context: lowering::LoweringContext<'a, 'ctx>,
+    id_counter: usize,
   }
 
   impl<'a, 'ctx> Mock<'a, 'ctx> {
+    pub fn int_type() -> ast::Type {
+      ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))
+    }
+
     pub fn literal_int() -> ast::NodeKind {
       ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
     }
@@ -106,6 +110,21 @@ pub mod tests {
           symbol_kind: name_resolution::SymbolKind::Definition,
         },
       }
+    }
+
+    pub fn binding(
+      &mut self,
+      name: &str,
+      value: ast::NodeKind,
+      type_hint: Option<ast::Type>,
+    ) -> ast::NodeKind {
+      ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
+        id: self.next_id(),
+        value: Box::new(value),
+        is_const_expr: false,
+        name: name.to_string(),
+        type_hint,
+      }))
     }
 
     pub fn signature_simple(is_extern: bool) -> ast::Signature {
@@ -130,7 +149,7 @@ pub mod tests {
       let actual_normalized_whitespace = whitespace_regex.replace_all(&actual_no_comments, " ");
       let expected_normalized_whitespace = whitespace_regex.replace_all(&expected_no_comments, " ");
 
-      assert_eq!(
+      pretty_assertions::assert_eq!(
         actual_normalized_whitespace.trim(),
         expected_normalized_whitespace.trim()
       );
@@ -155,6 +174,7 @@ pub mod tests {
         context,
         llvm_module: module,
         lowering_context: lowering::LoweringContext::new(&type_cache, &cache, context, module),
+        id_counter: 0,
       }
     }
 
@@ -184,6 +204,14 @@ pub mod tests {
       assert!(self.llvm_module.verify().is_ok());
 
       self
+    }
+
+    fn next_id(&mut self) -> cache::Id {
+      let id = self.id_counter;
+
+      self.id_counter += 1;
+
+      id
     }
   }
 }

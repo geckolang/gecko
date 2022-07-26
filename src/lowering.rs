@@ -1613,9 +1613,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 mod tests {
   use super::*;
   use crate::mock::tests::{ComparableMock, Mock};
-  use pretty_assertions::{assert_eq, assert_ne};
-
-  // TODO: Test mocking helpers themselves (in their own file).
 
   #[test]
   fn proper_initial_values() {
@@ -1628,37 +1625,43 @@ mod tests {
     let cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
+    let mut mock = Mock::new(&type_cache, &cache, &llvm_context, &llvm_module);
 
-    let binding_stmt = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
-      name: "a".to_string(),
-      value: Box::new(Mock::literal_int()),
-      is_const_expr: false,
-      id: 0,
-      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    }));
+    let binding_stmt = mock.binding(
+      "a",
+      Mock::literal_int(),
+      Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+    );
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    mock
       .function()
       .lower(&binding_stmt)
-      // TODO: Change name to `binding_stmt_const_val`, and the others.
-      .compare_with_file("let_stmt_const_val");
+      .compare_with_file("binding_stmt_const_val");
   }
 
   #[test]
   fn lower_binding_stmt_ref_val() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let mut cache = cache::Cache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let a_id: cache::Id = 0;
 
-    let binding_stmt_a = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
+    let binding_stmt_rc_a = std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
       value: Box::new(Mock::literal_int()),
       is_const_expr: false,
       id: a_id,
       type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-    }));
+    });
+
+    cache
+      .declarations
+      .insert(a_id, ast::NodeKind::BindingStmt(binding_stmt_rc_a.clone()));
+
+    cache.links.insert(a_id, a_id);
+
+    let binding_stmt_a = ast::NodeKind::BindingStmt(binding_stmt_rc_a);
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "b".to_string(),
@@ -1672,7 +1675,7 @@ mod tests {
       .function()
       .lower(&binding_stmt_a)
       .lower(&binding_stmt_b)
-      .compare_with_file("let_stmt_ref_val");
+      .compare_with_file("binding_stmt_ref_val");
   }
 
   #[test]
@@ -1694,7 +1697,7 @@ mod tests {
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .function()
       .lower(&binding_stmt)
-      .compare_with_file("let_stmt_nullptr_val");
+      .compare_with_file("binding_stmt_nullptr_val");
   }
 
   #[test]
@@ -1735,33 +1738,24 @@ mod tests {
       .function()
       .lower(&binding_stmt_a)
       .lower(&binding_stmt_b)
-      .compare_with_file("let_stmt_ptr_ref_val");
+      .compare_with_file("binding_stmt_ptr_ref_val");
   }
 
-  // FIXME: Causing SEGFAULT for some reason! Could it be because it needs more context (module-level)
-  // ... to produce output LLVM IR for comparison?
-  // #[test]
-  // fn lower_binding_stmt_string_val() {
-  //   let cache = cache::Cache::new();
-  //   let llvm_context = inkwell::context::Context::create();
-  //   let llvm_module = llvm_context.create_module("test");
+  #[test]
+  fn lower_binding_stmt_string_val() {
+    let cache = cache::Cache::new();
+    let type_cache = type_inference::TypeCache::new();
+    let llvm_context = inkwell::context::Context::create();
+    let llvm_module = llvm_context.create_module("test");
+    let mut mock = Mock::new(&type_cache, &cache, &llvm_context, &llvm_module);
+    let value = ast::NodeKind::Literal(ast::Literal::String("hello".to_string()));
+    let binding_stmt = mock.binding("a", value, Some(ast::Type::Basic(ast::BasicType::String)));
 
-  //   let binding_stmt = ast::NodeKind::BindingStmt(ast::BindingStmt {
-  //     name: "a".to_string(),
-  //     value: Box::new(ast::NodeKind::Literal(ast::Literal::String(
-  //       "hello".to_string(),
-  //     ))),
-  //     is_const_expr: false,
-  //     id: 0,
-  //     // FIXME: Wrong type.
-  //     type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
-  //   });
-
-  //   Mock::new(&cache, &llvm_context, &llvm_module)
-  //     .function()
-  //     .lower(&binding_stmt)
-  //     .compare_with_file("let_stmt_string_val");
-  // }
+    mock
+      .function()
+      .lower(&binding_stmt)
+      .compare_with_file("binding_stmt_string_val");
+  }
 
   #[test]
   fn lower_enum() {
