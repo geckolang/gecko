@@ -213,7 +213,7 @@ impl Type {
 
     // REVIEW: What if it's a pointer to a user-defined type?
     if let Type::Stub(stub_type) = self {
-      let target_node = cache.force_get(&stub_type.pattern.id);
+      let target_node = cache.find_decl_via_link(&stub_type.pattern.id).unwrap();
 
       // REVIEW: What about type aliases, and other types that might be encountered in the future?
 
@@ -226,7 +226,7 @@ impl Type {
       }
     } else if let Type::This(this_type) = &self {
       // REVISE: No need to clone?
-      let target_struct_type = cache.force_get(&this_type.target_id.unwrap());
+      let target_struct_type = cache.find_decl_via_link(&this_type.target_id.unwrap()).unwrap();
 
       if let NodeKind::Struct(struct_type) = &target_struct_type {
         return Type::Struct(struct_type.as_ref().clone());

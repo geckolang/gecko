@@ -38,6 +38,12 @@ pub mod tests {
 
       self
     }
+
+    pub fn finish_and_verify(mut self) -> Self {
+      // TODO: Create builder, build return void and verify module.
+
+      self
+    }
   }
 
   impl<'a, 'ctx> ThenMock<'a, 'ctx> for FunctionMock<'a, 'ctx> {

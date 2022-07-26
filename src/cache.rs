@@ -4,13 +4,7 @@ pub type Id = usize;
 
 pub struct Cache {
   pub struct_impls: std::collections::HashMap<Id, Vec<(Id, String)>>,
-  // TODO: Update description with the generalization to allow for closure retrieval.
-  /// A map of unique ids to their corresponding `NodeKind` construct.
-  ///
-  /// This map contains only nodes that may be referenced at some point (such as functions,
-  /// variables, and other bindings). This serves as a snapshot of the AST, created during
-  /// the `declare` name resolution step, which has also been resolved.
-  pub symbols: std::collections::HashMap<Id, ast::NodeKind>,
+  // REVIEW: Is this necessary, or can we just have a direct mapping?
   pub links: std::collections::HashMap<Id, Id>,
   // FIXME: Instead of caching, nodes, use a mapping from their id to their type.
   // ... This is because all retrievals of cached nodes are simply to determine or
@@ -26,18 +20,10 @@ impl Cache {
     Self {
       links: std::collections::HashMap::new(),
       struct_impls: std::collections::HashMap::new(),
-      symbols: std::collections::HashMap::new(),
       main_function_id: None,
       id_counter: 0,
       declarations: std::collections::HashMap::new(),
     }
-  }
-
-  /// Forcefully retrieve a node from the cache.
-  ///
-  /// This function will panic if the given key does not exist.
-  pub fn force_get(&self, key: &Id) -> &ast::NodeKind {
-    self.symbols.get(key).unwrap()
   }
 
   pub fn create_id(&mut self) -> Id {
@@ -56,5 +42,14 @@ impl Cache {
     }
 
     self.struct_impls.insert(struct_id, methods);
+  }
+
+  // REVIEW: Will there ever be a need to follow multiple links?
+  pub fn find_decl_via_link(&self, id: &Id) -> Option<&ast::NodeKind> {
+    if let Some(target) = self.links.get(id) {
+      return self.declarations.get(target);
+    }
+
+    None
   }
 }

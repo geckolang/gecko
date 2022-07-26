@@ -128,7 +128,10 @@ impl Check for ast::MemberAccess {
     if let Some(struct_impls) = cache.struct_impls.get(&struct_type.id) {
       for (method_id, method_name) in struct_impls {
         if method_name == &self.member_name {
-          return cache.force_get(&method_id).infer_type(cache);
+          return cache
+            .find_decl_via_link(&method_id)
+            .unwrap()
+            .infer_type(cache);
         }
       }
     }
@@ -170,7 +173,7 @@ impl Check for ast::ExternStatic {
 
 impl Check for ast::StructValue {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type = match cache.force_get(&self.target_id) {
+    let struct_type = match cache.find_decl_via_link(&self.target_id).unwrap() {
       ast::NodeKind::Struct(struct_type) => struct_type,
       _ => unreachable!(),
     };
@@ -215,8 +218,10 @@ impl Check for ast::Enum {
 
 impl Check for ast::IndexingExpr {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let target_array = cache.force_get(&self.target_id);
-    let array_type = target_array.infer_flatten_type(cache);
+    let array_type = cache
+      .find_decl_via_link(&self.target_id)
+      .unwrap()
+      .infer_flatten_type(cache);
 
     // TODO: In the future, add support for when indexing strings.
     let element_type = match array_type {
@@ -286,7 +291,10 @@ impl Check for ast::BlockExpr {
 impl Check for ast::Reference {
   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
     // REVIEW: We should have some sort of caching specifically applied to this construct.
-    cache.force_get(&self.pattern.id).infer_type(cache)
+    cache
+      .find_decl_via_link(&self.pattern.id)
+      .unwrap()
+      .infer_type(cache)
   }
 }
 

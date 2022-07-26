@@ -371,6 +371,7 @@ impl<'a> Parser<'a> {
   fn parse_this_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::TypeThis)?;
 
+    // BUG: This must be filled here, and it should no longer be `Option<>`. AST is always immutable.
     Ok(ast::Type::This(ast::ThisType { target_id: None }))
   }
 

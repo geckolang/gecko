@@ -59,19 +59,38 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     }
   }
 
-  /// Lower a node while applying the access rules.
-  fn lower_with_access_rules(
+  /// Lower a node with the `do_access` flag set to `true`, and apply
+  /// access rules to it after, if it yielded an LLVM value.
+  fn lower_with_access(
     &mut self,
     node: &ast::NodeKind,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_value_result = self.dispatch(node);
-    // let llvm_value_result = node.lower(self, cache, true);
+    let llvm_value_result = self.lower_with_do_access_flag(node);
 
     if let Some(llvm_value) = llvm_value_result {
+      // REVIEW: Why apply access rules here if we already specified the access flag?
       Some(self.apply_access_rules(node, llvm_value))
     } else {
       None
     }
+  }
+
+  /// Lower a node with the `do_access` flag set to `true`
+  fn lower_with_do_access_flag(
+    &mut self,
+    node: &ast::NodeKind,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    // REVIEW: Is the usage of a buffer required here? Will it interfere with anything
+    // ... if not used?
+    let do_access_buffer = self.do_access;
+
+    self.do_access = true;
+
+    let llvm_value_opt = self.dispatch(node);
+
+    self.do_access = do_access_buffer;
+
+    llvm_value_opt
   }
 
   fn apply_access_rules(
@@ -82,12 +101,20 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
     // REVIEW: Isn't there a need to resolve the type?
 
-    if matches!(node, ast::NodeKind::Parameter(_)) {
+    // REVIEW: Isn't this superficial?
+    if matches!(node, ast::NodeKind::Parameter(_))
+      || node
+        .infer_type(self.cache)
+        .is(&ast::Type::Basic(ast::BasicType::String))
+    {
       return llvm_value;
     }
 
     if let ast::NodeKind::Reference(reference) = &node {
-      let target = self.cache.declarations.get(&reference.pattern.id).unwrap();
+      let target = self
+        .cache
+        .find_decl_via_link(&reference.pattern.id)
+        .unwrap();
 
       // TODO: Ensure this recursive nature doesn't cause stack overflow.
       return self.apply_access_rules(target, llvm_value);
@@ -328,10 +355,10 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
     // REVIEW: Consider making a separate map for types in the cache.
 
-    let node = self.cache.force_get(&id);
+    let declaration = self.cache.find_decl_via_link(&id).unwrap();
 
     // REVIEW: Why not perform type-flattening here instead?
-    let ty = match &node {
+    let ty = match &declaration {
       ast::NodeKind::Struct(struct_type) => ast::Type::Struct(struct_type.as_ref().clone()),
       ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
       // REVIEW: Any more?
@@ -362,17 +389,17 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   }
 
   // REVIEW: Shouldn't this be used for any and all lowering? Possible problems with closures and/or structs if not?
-  /// Attempt to retrieve an existing definition, otherwise proceed to
-  /// lowering it and memoizing it under the current module.
+  /// Attempt to retrieve an existing declaration, otherwise proceed to
+  /// lower and memoize it under the current module.
   ///
   /// If specified, any modified buffers during the process will be kept,
   /// otherwise they will all be restored.
-  fn memoize_or_retrieve_value(
+  fn memoize_declaration(
     &mut self,
     id: &cache::Id,
     forward_buffers: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let node = self.cache.declarations.get(id).unwrap();
+    let declaration = self.cache.find_decl_via_link(id).unwrap();
 
     // BUG: If a definition is lowered elsewhere without the use of this function,
     // ... there will not be any call to `lower_with_access_rules` for it. This means
@@ -384,15 +411,14 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       let existing_value_cloned = existing_definition.clone();
 
       return Some(if self.do_access {
-        self.apply_access_rules(node, existing_value_cloned)
+        self.apply_access_rules(declaration, existing_value_cloned)
       } else {
         existing_value_cloned
       });
     }
 
     let buffers = self.copy_buffers();
-    // let llvm_value_result = node.lower(self, cache, false);
-    let llvm_value_result = self.dispatch(node);
+    let llvm_value_result = self.lower_with_access(declaration);
 
     let result = if let Some(llvm_value) = llvm_value_result {
       // Cache the value without applying access rules.
@@ -400,7 +426,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       self.llvm_cached_values.insert(id.clone(), llvm_value);
 
       Some(if self.do_access {
-        self.apply_access_rules(node, llvm_value)
+        self.apply_access_rules(declaration, llvm_value)
       } else {
         llvm_value
       })
@@ -425,22 +451,13 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     let mut llvm_arguments = call_expr
       .arguments
       .iter()
-      // .map(|node| node.lower(generator, true).unwrap().into())
-      .map(|node| self.dispatch(node).unwrap().into())
+      .map(|node| self.lower_with_access(node).unwrap().into())
       .collect::<Vec<_>>();
 
     // Insert the instance pointer as the first argument, if applicable.
     if let ast::NodeKind::MemberAccess(member_access) = call_expr.callee_expr.as_ref() {
       // FIXME: This will panic for zero-length vectors. Find another way to prepend elements.
-      llvm_arguments.insert(
-        0,
-        // member_access
-        //   .base_expr
-        //   .lower(generator, false)
-        //   .unwrap()
-        //   .into(),
-        self.dispatch(&member_access.base_expr).unwrap().into(),
-      );
+      llvm_arguments.insert(0, self.dispatch(&member_access.base_expr).unwrap().into());
     }
 
     // BUG: It seems that this is causing stack-overflow because results aren't cached? What's going on? Or maybe it's the parser?
@@ -490,7 +507,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       // REVISE: Cleanup the caching code.
       // REVIEW: Here create a definition for the closure, with the let statement as the name?
 
-      // let result = binding_stmt.value.lower(generator, cache, false);
       let result = self.dispatch(&binding_stmt.value);
 
       // REVIEW: Won't let-statements always have a value?
@@ -501,15 +517,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       return result;
     }
 
-    // REVIEW: Is the usage of a buffer required here? Will it interfere with anything
-    // ... if not used?
-    let previous_do_access = self.do_access;
-
-    self.do_access = true;
-
-    let llvm_value_result = self.dispatch(&binding_stmt.value);
-
-    self.do_access = previous_do_access;
+    let llvm_value_result = self.lower_with_do_access_flag(&binding_stmt.value);
 
     // FIXME: What about for other things that may be in the same situation (their values are unit)?
     // Do not proceed if the value will never evaluate.
@@ -541,7 +549,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match unary_expr.operator {
       ast::OperatorKind::Not => {
-        // let llvm_value = unary_expr.expr.lower(generator, cache, false).unwrap();
         let llvm_value = self.dispatch(&unary_expr.expr).unwrap();
         let llvm_final_value = self.attempt_access(llvm_value);
 
@@ -552,7 +559,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
-        // let llvm_value = unary_expr.expr.lower(generator, cache, false).unwrap();
         let llvm_value = self.dispatch(&unary_expr.expr).unwrap();
         let llvm_final_value = self.attempt_access(llvm_value);
 
@@ -582,7 +588,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         // todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
-        // let llvm_value = unary_expr.expr.lower(generator, cache, false).unwrap();
         let llvm_value = self.dispatch(&unary_expr.expr).unwrap();
 
         // BUG: If the value is a reference to a let-statement, the pointer of
@@ -591,7 +596,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         self.access(llvm_value.into_pointer_value())
       }
       ast::OperatorKind::Cast => {
-        // let llvm_value = unary_expr.expr.lower(generator, cache, false).unwrap();
         let llvm_value = self.dispatch(&unary_expr.expr).unwrap();
         let llvm_final_value = self.attempt_access(llvm_value);
 
@@ -621,7 +625,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     return_stmt: &ast::ReturnStmt,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_return_value = if let Some(return_value) = &return_stmt.value {
-      Some(self.lower_with_access_rules(&return_value).unwrap())
+      Some(self.lower_with_access(&return_value).unwrap())
     } else {
       None
     };
@@ -648,7 +652,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       }
     }
 
-    // REVIEW: This syntax may replace if/else expressions?
+    // REVIEW: This syntax may replace if/else expressions? Use `and_then`?
     // self.yields.as_ref().map(|value| {
     //   generator
     //     .lower_with_access_rules(&value, cache)
@@ -657,7 +661,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // })
 
     if let Some(yields_value) = &block.yields {
-      self.lower_with_access_rules(&yields_value)
+      self.lower_with_access(&yields_value)
     } else {
       None
     }
@@ -766,8 +770,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     self.llvm_builder.position_at_end(llvm_entry_block);
 
-    // let yielded_result = function.body.lower(generator, cache, false);
-    // let yielded_result = self.dispatch(&function.body);
     let yielded_result = self.enter_block_expr(&function.body);
 
     // FIXME: Abstract this logic for use within `closure`, and possibly wherever else this is needed, guided by calls to `attempt_build_return`?
@@ -846,16 +848,14 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // TODO: Process alternative branches.
 
-    // let llvm_condition = if_expr.condition.lower(generator, cache, false).unwrap();
     let llvm_condition = self.dispatch(&if_expr.condition).unwrap();
     let llvm_current_function = self.llvm_function_buffer.unwrap();
     let ty = if_expr.infer_type(self.cache).flatten(self.cache);
+    let mut llvm_if_value = None;
 
     // This if-expression will never yield a value if its type
     // is unit or never.
     let yields_expression = !ty.is_a_meta();
-
-    let mut llvm_if_value = None;
 
     // Allocate the resulting if-value early on, if applicable.
     if yields_expression {
@@ -895,7 +895,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       );
 
       self.llvm_builder.position_at_end(llvm_else_block);
-      // llvm_else_block_value = else_block.lower(generator, cache, false);
       llvm_else_block_value = self.dispatch(else_block);
 
       // FIXME: Is this correct? Or should we be using the `else_block` directly here?
@@ -916,7 +915,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     self.llvm_builder.position_at_end(llvm_then_block);
 
-    // let llvm_then_block_value = if_expr.then_value.lower(generator, cache, false);
     let llvm_then_block_value = self.dispatch(&if_expr.then_value);
 
     // FIXME: Is this correct? Or should we be using `get_current_block()` here? Or maybe this is just a special case to not leave the `then` block without a terminator? Investigate.
@@ -968,25 +966,11 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     &mut self,
     reference: &ast::Reference,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let target_id = self.cache.links.get(&reference.pattern.id).unwrap();
-
-    // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
-    // REVIEW: This may not be working, because the `memoize_or_retrieve` function directly lowers, regardless of expected access or not.
+    // REVIEW: This may not be working, because the `memoize_declaration` function directly lowers, regardless of expected access or not.
     let llvm_target = self
-      // .memoize_or_retrieve_value(reference.pattern.id, false, access)
-      .memoize_or_retrieve_value(target_id, false)
+      // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
+      .memoize_declaration(&reference.pattern.id, false)
       .unwrap();
-
-    // TODO: Unsafe unwrap?
-    // NOTE: Safe to clone LLVM values. Only the pointer is duplicated.
-    // BUG: What if the target is, say, a function that hasn't been lowered yet? This approach might
-    // ... be naive.
-
-    // let llvm_target = self
-    //   .llvm_cached_values
-    //   .get(&reference.pattern.id)
-    //   .unwrap()
-    //   .clone();
 
     Some(llvm_target)
   }
@@ -995,7 +979,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     &mut self,
     binary_expr: &ast::BinaryExpr,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // let mut llvm_left_value = binary_expr.left.lower(generator, cache, false).unwrap();
     let mut llvm_left_value = self.dispatch(&binary_expr.left).unwrap();
     let mut llvm_right_value = self.dispatch(&binary_expr.right).unwrap();
 
@@ -1222,8 +1205,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     &mut self,
     unsafe_expr: &ast::UnsafeExpr,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // REVIEW: Is it correct to pass the `access` parameter along? If this will serve as an expression, then yes, otherwise (block) no.
-    // self.0.lower(generator, cache, access)
     self.dispatch(&unsafe_expr.0)
   }
 
@@ -1249,7 +1230,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     let llvm_values = array_value
       .elements
       .iter()
-      // .map(|element| element.lower(generator, cache, false).unwrap())
       .map(|element| self.dispatch(element).unwrap())
       .collect::<Vec<_>>();
 
@@ -1302,13 +1282,12 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     let llvm_index = self
       .dispatch(&indexing_expr.index_expr)
-      // .lower(generator, cache, false)
       .unwrap()
       .into_int_value();
 
     // REVIEW: Opted not to use access rules. Ensure this is correct.
     let llvm_target_array = self
-      .memoize_or_retrieve_value(&indexing_expr.target_id, false)
+      .memoize_declaration(&indexing_expr.target_id, false)
       .unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
@@ -1324,7 +1303,8 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
       let target_indexable_type = self
         .cache
-        .force_get(&indexing_expr.target_id)
+        .find_decl_via_link(&indexing_expr.target_id)
+        .unwrap()
         .infer_type(self.cache);
 
       let target_indexable_size = match target_indexable_type {
@@ -1376,8 +1356,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         .build_struct_gep(llvm_struct_alloca, index as u32, "struct.alloca.field.gep")
         .unwrap();
 
-      // let llvm_field_value = field.lower(generator, cache, true).unwrap();
-      let llvm_field_value = self.dispatch(field).unwrap();
+      let llvm_field_value = self.lower_with_do_access_flag(field).unwrap();
 
       self
         .llvm_builder
@@ -1417,8 +1396,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     let _llvm_arguments = intrinsic_call
       .arguments
       .iter()
-      // .map(|node| node.lower(generator, cache, true).unwrap().into())
-      .map(|node| self.dispatch(node).unwrap().into())
+      .map(|node| self.lower_with_do_access_flag(node).unwrap().into())
       .collect::<Vec<inkwell::values::BasicMetadataValueEnum<'ctx>>>();
 
     match intrinsic_call.kind {
@@ -1502,9 +1480,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     self.llvm_builder.position_at_end(llvm_entry_block);
 
-    // let yielded_result = self.body.lower(generator, cache, false);
-    // let yielded_result = self.dispatch(&closure.body);
-    let yielded_result = todo!();
+    let yielded_result = self.enter_block_expr(&closure.body);
 
     self.attempt_build_return(yielded_result);
 
@@ -1523,7 +1499,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_struct = self
       .dispatch(&member_access.base_expr)
-      // .lower(generator, cache, false)
       .unwrap()
       .into_pointer_value();
 
@@ -1546,16 +1521,12 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         .build_struct_gep(llvm_struct, field_index as u32, "struct.member.gep")
         .unwrap();
 
-      // TODO:
-      return Some(
-        if
-        /*access*/
-        true {
-          self.access(field_gep).as_basic_value_enum()
-        } else {
-          field_gep.as_basic_value_enum()
-        },
-      );
+      // TODO: Review that this is correct. Previously we had hard-coded "true" condition.
+      return Some(if self.do_access {
+        self.access(field_gep).as_basic_value_enum()
+      } else {
+        field_gep.as_basic_value_enum()
+      });
     }
 
     // REVIEW: Is it safe to use the binding id of an inferred struct type?
@@ -1570,21 +1541,19 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .unwrap();
 
     // REVIEW: Opted to not use access rules. Ensure this is correct.
-    self.memoize_or_retrieve_value(&impl_method_info.0, false)
+    self.memoize_declaration(&impl_method_info.0, false)
   }
 
   fn enter_struct_impl(
     &mut self,
     struct_impl: &ast::StructImpl,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    for m in &struct_impl.static_methods {
+    for static_method in &struct_impl.static_methods {
       // TODO: Lower static methods?
     }
 
     for method in &struct_impl.member_methods {
-      // method.lower(generator, cache, false).unwrap();
-      // TODO: Methods aren't boxed around `std::rc::Rc<Node>`.
-      // self.dispatch(&method);
+      self.enter_function(method);
     }
 
     None
@@ -1594,8 +1563,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     &mut self,
     parentheses_expr: &ast::ParenthesesExpr,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    // NOTE: The `access` flag is passed down, since this is a transient construct.
-    // self.0.lower(generator, cache, access)
     self.dispatch(&parentheses_expr.0)
   }
 
@@ -1652,7 +1619,7 @@ mod tests {
       value: Box::new(Mock::literal_int()),
       is_const_expr: false,
       id: a_id,
-      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(Mock::int_type()),
     });
 
     cache
@@ -1668,7 +1635,7 @@ mod tests {
       value: Box::new(ast::NodeKind::Reference(Mock::reference(a_id))),
       is_const_expr: false,
       id: a_id + 1,
-      type_hint: Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
+      type_hint: Some(Mock::int_type()),
     }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)

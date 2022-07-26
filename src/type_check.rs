@@ -358,12 +358,15 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       }
     }
 
-    let target_node = self.cache.force_get(&struct_impl.target_struct_pattern.id);
+    let target_node = self
+      .cache
+      .find_decl_via_link(&struct_impl.target_struct_pattern.id)
+      .unwrap();
 
     // REVISE: Cleanup.
     if let ast::NodeKind::Struct(_target_struct_type) = &target_node {
       if let Some(trait_pattern) = &struct_impl.trait_pattern {
-        let trait_node = self.cache.force_get(&trait_pattern.id);
+        let trait_node = self.cache.find_decl_via_link(&trait_pattern.id).unwrap();
 
         if let ast::NodeKind::Trait(trait_type) = &trait_node {
           for trait_method in &trait_type.methods {
@@ -613,7 +616,11 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_return_stmt(&mut self, return_stmt: &ast::ReturnStmt) {
-    let current_function_node = self.cache.force_get(&self.current_function_id.unwrap());
+    let current_function_node = self
+      .cache
+      .find_decl_via_link(&self.current_function_id.unwrap())
+      .unwrap();
+
     let mut name = None;
 
     let return_type = TypeContext::infer_return_value_type(
@@ -801,7 +808,8 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   fn visit_reference(&mut self, reference: &ast::Reference) {
     let target_type = self
       .cache
-      .force_get(&reference.pattern.id)
+      .find_decl_via_link(&reference.pattern.id)
+      .unwrap()
       .infer_type(self.cache);
 
     // FIXME: Investigate how this affects.
@@ -877,8 +885,11 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       return;
     }
 
-    let target_array = self.cache.force_get(&indexing_expr.target_id);
-    let target_expr_type = target_array.infer_flatten_type(self.cache);
+    let target_expr_type = self
+      .cache
+      .find_decl_via_link(&indexing_expr.target_id)
+      .unwrap()
+      .infer_flatten_type(self.cache);
 
     // REVIEW: Any way of avoiding nesting?
     if let ast::Type::Array(_, length) = target_expr_type {
@@ -986,7 +997,10 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_struct_value(&mut self, struct_value: &ast::StructValue) {
-    let struct_type_node = self.cache.force_get(&struct_value.target_id);
+    let struct_type_node = self
+      .cache
+      .find_decl_via_link(&struct_value.target_id)
+      .unwrap();
 
     let struct_type = match struct_type_node {
       ast::NodeKind::Struct(struct_type) => struct_type,
