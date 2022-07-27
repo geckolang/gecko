@@ -1603,7 +1603,7 @@ mod tests {
     );
 
     mock
-      .function()
+      .llvm_function()
       .lower(&binding_stmt)
       .compare_with_file("binding_stmt_const_val");
   }
@@ -1641,7 +1641,7 @@ mod tests {
     }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
-      .function()
+      .llvm_function()
       .lower(&binding_stmt_a)
       .lower(&binding_stmt_b)
       .compare_with_file("binding_stmt_ref_val");
@@ -1667,7 +1667,7 @@ mod tests {
     }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
-      .function()
+      .llvm_function()
       .lower(&binding_stmt)
       .compare_with_file("binding_stmt_nullptr_val");
   }
@@ -1710,7 +1710,7 @@ mod tests {
     }));
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
-      .function()
+      .llvm_function()
       .lower(&binding_stmt_a)
       .lower(&binding_stmt_b)
       .compare_with_file("binding_stmt_ptr_ref_val");
@@ -1727,7 +1727,7 @@ mod tests {
     let binding_stmt = mock.binding("a", value, Some(ast::Type::Basic(ast::BasicType::String)));
 
     mock
-      .function()
+      .llvm_function()
       .lower(&binding_stmt)
       .compare_with_file("binding_stmt_string_val");
   }
@@ -1761,7 +1761,7 @@ mod tests {
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt { value: None });
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
-      .function()
+      .llvm_function()
       .lower(&return_stmt)
       .compare_with_file("return_stmt_unit");
   }
@@ -1778,7 +1778,7 @@ mod tests {
     });
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
-      .function()
+      .llvm_function()
       .lower(&return_stmt)
       .compare_with_file("return_stmt");
   }
@@ -1838,7 +1838,7 @@ mod tests {
     });
 
     Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
-      .function()
+      .llvm_function()
       .lower(&if_expr)
       .compare_with_file("if_expr_simple");
   }

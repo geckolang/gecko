@@ -45,6 +45,7 @@ pub struct TypeInferenceContext<'a> {
   /// They are first gathered, then the unification algorithm is performed to solve types, at
   /// the last step of type inference.
   constraints: Vec<TypeConstraint>,
+  current_function_id: Option<cache::Id>,
 }
 
 impl<'a> TypeInferenceContext<'a> {
@@ -55,6 +56,7 @@ impl<'a> TypeInferenceContext<'a> {
       cache,
       type_cache: TypeCache::new(),
       constraints: Vec::new(),
+      current_function_id: None,
     }
   }
 
@@ -133,12 +135,18 @@ impl<'a> TypeInferenceContext<'a> {
   /// their post-unification phase, which mostly consists of replacing
   /// their type variables with concrete types.
   fn solve_constraints(&mut self) {
+    // REVIEW: What if we have conflicting constraints? Say, we have different calls with different types to the same function?
+    // ... Or if the parameters are constrained to be something, yet the arguments are constrained to be different?
     // REVIEW: Any way to avoid cloning?
     for constrain in self.constraints.clone() {
       self.unify(&constrain.0, &constrain.1);
     }
 
-    /// !!!!!!!!!!!!!! HERE DEBUG self.substitutions !!!!!!!!!!!!!!!!
+    for (id, ty) in &self.substitutions {
+      // Update the type for this node in the type cache.
+      self.type_cache.insert(id.clone(), ty.clone());
+    }
+
     self.constraints.clear();
   }
 
@@ -196,12 +204,12 @@ impl<'a> TypeInferenceContext<'a> {
         .type_hint
         // REVISE: Cloning regardless.
         .clone()
-        .unwrap_or(self.create_type_variable(binding_stmt.id)),
+        .unwrap_or_else(|| self.create_type_variable(binding_stmt.id)),
       ast::NodeKind::Parameter(parameter) => parameter
         .type_hint
         // REVISE: Cloning regardless.
         .clone()
-        .unwrap_or(self.create_type_variable(parameter.id)),
+        .unwrap_or_else(|| self.create_type_variable(parameter.id)),
       ast::NodeKind::Literal(literal) => match literal {
         ast::Literal::Bool(_) => ast::Type::Basic(ast::BasicType::Bool),
         ast::Literal::Char(_) => ast::Type::Basic(ast::BasicType::Char),
@@ -231,12 +239,8 @@ impl<'a> TypeInferenceContext<'a> {
     // ... function performs memoization of the inferred types, but apparently only for declarations.
     // ... Review what can be done, and whether it is efficient to only infer and memoize declaration's types.
     if let Some(id) = node.find_id() {
-      // TODO: Debugging. This should be here?
       // Update association of the node's id with the newly inferred type.
       self.substitutions.insert(id, ty.clone());
-
-      // Update the type for this node in the type cache.
-      self.type_cache.insert(id, ty.clone());
     }
 
     ty
@@ -247,14 +251,17 @@ impl<'a> TypeInferenceContext<'a> {
     // REVIEW: Why add have a new id for this type variable? Couldn't we use the node id?
     // let id = self.substitutions.len();
 
-    let result = ast::Type::Variable(for_node_id.clone());
+    let type_variable = ast::Type::Variable(for_node_id.clone());
 
-    self.substitutions.insert(for_node_id, result.clone());
+    // Update association of the node's id with the new fresh type variable.
+    self
+      .substitutions
+      .insert(for_node_id, type_variable.clone());
 
     // REVIEW: Why add have a new id for this type variable? Couldn't we use the node id?
     // self.substitutions.insert(id, result.clone());
 
-    result
+    type_variable
   }
 
   /// Add a constraint stating that both of the provided types are equal.
@@ -299,21 +306,17 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
   }
 
   fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
+    // REVIEW: We need to insert a substitution? Otherwise what links the constraint back to this?
+    let expr_type = self.infer_type_of(&unary_expr.expr);
+
     match unary_expr.operator {
       ast::OperatorKind::Add | ast::OperatorKind::SubtractOrNegate => {
-        // TODO: ?
-        // - {error handling} check types to be what we expect?
-
-        // REVIEW: We need to insert a substitution? Otherwise what links the constraint back to this?
-        let expr_type = self.infer_type_of(&unary_expr.expr);
-
         // Report that the type of the unary expression's operand must
         // be an integer.
         self.report_constraint(expr_type, ast::Type::MetaInteger);
       }
       // TODO: Add support for missing hints; logical not, and address-of?
       ast::OperatorKind::MultiplyOrDereference => {
-        let expr_type = self.infer_type_of(&unary_expr.expr);
         // let _pointer_inner_type = self.create_type_variable();
 
         // TODO: How to specify/deal with type constructor? Currently just defaulting to creating a type variable.
@@ -322,12 +325,92 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
         // TODO: Temporary.
         self.report_constraint(expr_type, ast::Type::Any);
       }
+      ast::OperatorKind::Not => {
+        self.report_constraint(expr_type, ast::Type::Basic(ast::BasicType::Bool));
+      }
+      // NOTE: All cases for unary operators are covered above.
       _ => {}
     }
   }
 
-  fn visit_return_stmt(&mut self, _return_stmt: &ast::ReturnStmt) {
-    // TODO: Where is signature return type type variable created?
+  fn visit_binary_expr(&mut self, binary_expr: &ast::BinaryExpr) {
+    let left_expr_type = self.infer_type_of(&binary_expr.left);
+    let right_expr_type = self.infer_type_of(&binary_expr.right);
+
+    // REVIEW: Should we report a constraint that both operands must be of the same type?
+    // ... Or is it implied by both being expected to equal the same type? Will it affect the
+    // ... algorithm if we don't report them to be equal to each other specifically?
+
+    // REVIEW: What about the right expression?
+    let ty = match binary_expr.operator {
+      ast::OperatorKind::Add
+      | ast::OperatorKind::SubtractOrNegate
+      | ast::OperatorKind::MultiplyOrDereference
+      | ast::OperatorKind::Divide
+      | ast::OperatorKind::LessThan
+      | ast::OperatorKind::LessThanOrEqual
+      | ast::OperatorKind::Equality
+      | ast::OperatorKind::GreaterThan
+      | ast::OperatorKind::GreaterThanOrEqual => ast::Type::MetaInteger,
+      ast::OperatorKind::And
+      | ast::OperatorKind::Or
+      | ast::OperatorKind::Nand
+      | ast::OperatorKind::Nor
+      | ast::OperatorKind::Xor => ast::Type::Basic(ast::BasicType::Bool),
+      // TODO: Implement.
+      ast::OperatorKind::Cast | ast::OperatorKind::In => todo!(),
+      // NOTE: All cases for binary operators are covered above.
+      _ => return,
+    };
+
+    self.report_constraint(left_expr_type, ty.clone());
+    self.report_constraint(right_expr_type, ty);
+  }
+
+  fn visit_return_stmt(&mut self, return_stmt: &ast::ReturnStmt) {
+    // REVIEW: What about block yielding as the return value of a function?
+
+    let return_value_type = if let Some(return_value) = &return_stmt.value {
+      self.infer_type_of(&return_value)
+    } else {
+      ast::Type::Unit
+    };
+
+    let current_function_sig = self
+      .cache
+      // NOTE: No need to follow declaration link because it is directly set.
+      .declarations
+      .get(&self.current_function_id.unwrap())
+      .unwrap()
+      .find_signature()
+      .unwrap();
+
+    // FIXME: Here, we are manually doing the job of `infer_type_of`, which does automatic caching as well.
+    // ... Prone to bugs. Consider abstracting the common functionality, or merge into `infer_type_of`.
+    let current_function_return_type = current_function_sig
+      .return_type_hint
+      // REVISE: Cloning regardless.
+      .clone()
+      .unwrap_or_else(|| self.create_type_variable(current_function_sig.return_type_id));
+
+    self.report_constraint(return_value_type, current_function_return_type);
+  }
+
+  fn visit_signature(&mut self, _signature: &ast::Signature) {
+    // TODO: For the return type, we might need to add the `id` field to `ast::Signature`, and then
+    // ... make it an `rc::Rc<>`, and possibly use a buffer id to be able to retrieve it during visitation.
+  }
+
+  fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr) {
+    // TODO: The arguments of the call constrain the types of the target's parameters.
+  }
+
+  fn enter_function(&mut self, function: &ast::Function) {
+    self.current_function_id = Some(function.id);
+  }
+
+  fn exit_function(&mut self, _function: &ast::Function) -> () {
+    self.current_function_id = None;
   }
 }
 
@@ -400,7 +483,7 @@ mod tests {
   }
 
   #[test]
-  fn infer_binding_literal() {
+  fn infer_binding_from_literal() {
     let cache = cache::Cache::new();
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
@@ -421,7 +504,7 @@ mod tests {
   }
 
   #[test]
-  fn infer_binding_binding() {
+  fn infer_binding_from_reference() {
     let mut cache = cache::Cache::new();
     let binding_stmt_a_id = 0;
     let binding_stmt_b_id = binding_stmt_a_id + 1;
@@ -457,17 +540,18 @@ mod tests {
       ast::Type::Basic(ast::BasicType::Bool)
     );
 
-    // assert_eq!(
-    //   type_inference_ctx
-    //     .type_cache
-    //     .get(&binding_stmt_b_id)
-    //     .unwrap(),
-    //   &ast::Type::Basic(ast::BasicType::Bool)
-    // );
+    // REVIEW: Why is this failing?
+    assert_eq!(
+      type_inference_ctx
+        .type_cache
+        .get(&binding_stmt_b_id)
+        .unwrap(),
+      &ast::Type::Basic(ast::BasicType::Bool)
+    );
   }
 
   #[test]
-  fn infer_binding_nullptr() {
+  fn infer_binding_from_nullptr() {
     let mut cache = cache::Cache::new();
 
     let binding_id = 0;
@@ -480,10 +564,7 @@ mod tests {
     );
 
     cache.links.insert(binding_id, binding_id);
-
-    cache
-      .declarations
-      .insert(binding_id.clone(), binding_stmt.clone());
+    cache.declarations.insert(binding_id, binding_stmt.clone());
 
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
@@ -499,8 +580,80 @@ mod tests {
 
     assert_eq!(
       type_inference_ctx.substitute(ast::Type::Variable(0)),
-      ast::Type::Basic(ast::BasicType::Bool)
+      // FIXME: Awaiting type constructor inference.
+      ast::Type::Any
     );
+  }
+
+  #[test]
+  fn infer_parameter_from_unary_expr() {
+    let mut cache = cache::Cache::new();
+
+    let id = 0;
+
+    let parameter = ast::NodeKind::Parameter(std::rc::Rc::new(ast::Parameter {
+      id,
+      name: "a".to_string(),
+      position: 0,
+      type_hint: None,
+    }));
+
+    cache.links.insert(id, id);
+    cache.declarations.insert(id, parameter.clone());
+
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+
+    let negation_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
+      cast_type: None,
+      expr: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(id))),
+      operator: ast::OperatorKind::SubtractOrNegate,
+    });
+
+    type_inference_ctx.dispatch(&parameter);
+    visitor::traverse(&negation_expr, &mut type_inference_ctx);
+    type_inference_ctx.solve_constraints();
+
+    assert_eq!(
+      type_inference_ctx.substitute(ast::Type::Variable(id)),
+      // FIXME: Awaiting type constructor inference.
+      ast::Type::MetaInteger
+    );
+
+    assert_eq!(
+      type_inference_ctx.type_cache.get(&id).unwrap(),
+      &ast::Type::MetaInteger
+    );
+  }
+
+  #[test]
+  fn infer_return_type_from_literal() {
+    let mut cache = cache::Cache::new();
+
+    let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
+      value: Some(Box::new(ast::NodeKind::Literal(ast::Literal::Bool(true)))),
+    });
+
+    let function = Mock::free_function(vec![return_stmt]);
+
+    cache
+      .declarations
+      .insert(function.find_id().unwrap(), function.clone());
+
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+    let signature = function.find_signature().unwrap();
+
+    visitor::traverse(&function, &mut type_inference_ctx);
+    type_inference_ctx.solve_constraints();
+
+    assert_eq!(
+      type_inference_ctx.type_cache.get(&signature.return_type_id),
+      Some(&ast::Type::Basic(ast::BasicType::Bool))
+    );
+
+    // assert_eq!(
+    //   type_inference_ctx.substitute(ast::Type::Variable(0)),
+    //   ast::Type::Basic(ast::BasicType::Bool)
+    // );
   }
 
   // TODO: Use the empty array type test.

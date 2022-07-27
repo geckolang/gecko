@@ -98,6 +98,31 @@ pub mod tests {
   }
 
   impl<'a, 'ctx> Mock<'a, 'ctx> {
+    pub fn free_function(statements: Vec<ast::NodeKind>) -> ast::NodeKind {
+      ast::NodeKind::Function(std::rc::Rc::new(ast::Function {
+        attributes: Vec::new(),
+        body: std::rc::Rc::new(ast::BlockExpr {
+          id: 1,
+          statements,
+          yields: None,
+        }),
+        id: 0,
+        generics: None,
+        name: "test_function".to_string(),
+        signature: ast::Signature {
+          accepts_instance: false,
+          instance_type_id: None,
+          is_extern: false,
+          is_variadic: false,
+          parameters: Vec::new(),
+          return_type_hint: None,
+          return_type_id: 2,
+          this_parameter: None,
+        },
+        static_owner_name: None,
+      }))
+    }
+
     pub fn free_binding(
       id: cache::Id,
       name: &str,
@@ -150,6 +175,8 @@ pub mod tests {
         is_extern,
         accepts_instance: false,
         instance_type_id: None,
+        // FIXME: Temporary.
+        return_type_id: 99,
         this_parameter: None,
       }
     }
@@ -193,7 +220,7 @@ pub mod tests {
       }
     }
 
-    pub fn function(&'a mut self) -> FunctionMock<'a, 'ctx> {
+    pub fn llvm_function(&'a mut self) -> FunctionMock<'a, 'ctx> {
       let function =
         self
           .llvm_module

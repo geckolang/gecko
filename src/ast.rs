@@ -464,6 +464,14 @@ impl NodeKind {
       _ => None,
     }
   }
+
+  pub fn find_signature(&self) -> Option<&Signature> {
+    match self {
+      NodeKind::Function(function) => Some(&function.signature),
+      NodeKind::Closure(closure) => Some(&closure.signature),
+      _ => None,
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -606,6 +614,7 @@ pub struct Signature {
   pub is_extern: bool,
   pub accepts_instance: bool,
   pub instance_type_id: Option<cache::Id>,
+  pub return_type_id: cache::Id,
   pub this_parameter: Option<Parameter>,
 }
 

@@ -566,6 +566,7 @@ impl<'a> Parser<'a> {
       is_variadic,
       accepts_instance,
       instance_type_id: None,
+      return_type_id: self.cache.next_id(),
       this_parameter,
       is_extern,
     })
