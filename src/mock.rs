@@ -98,6 +98,21 @@ pub mod tests {
   }
 
   impl<'a, 'ctx> Mock<'a, 'ctx> {
+    pub fn free_binding(
+      id: cache::Id,
+      name: &str,
+      value: ast::NodeKind,
+      type_hint: Option<ast::Type>,
+    ) -> ast::NodeKind {
+      ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
+        id,
+        value: Box::new(value),
+        is_const_expr: false,
+        name: name.to_string(),
+        type_hint,
+      }))
+    }
+
     pub fn int_type() -> ast::Type {
       ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))
     }
@@ -124,13 +139,7 @@ pub mod tests {
       value: ast::NodeKind,
       type_hint: Option<ast::Type>,
     ) -> ast::NodeKind {
-      ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
-        id: self.next_id(),
-        value: Box::new(value),
-        is_const_expr: false,
-        name: name.to_string(),
-        type_hint,
-      }))
+      Self::free_binding(self.next_id(), name, value, type_hint)
     }
 
     pub fn signature_simple(is_extern: bool) -> ast::Signature {

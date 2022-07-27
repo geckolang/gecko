@@ -243,7 +243,7 @@ impl<'a> Parser<'a> {
     // TODO: Add support for static sub-entities.
 
     Ok(ast::Pattern {
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
       qualifier,
       base_name,
       sub_name,
@@ -484,7 +484,7 @@ impl<'a> Parser<'a> {
       name,
       type_hint,
       position,
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
     };
 
     Ok(parameter)
@@ -499,7 +499,7 @@ impl<'a> Parser<'a> {
       name: String::from("this"),
       type_hint,
       position: 0,
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
     };
 
     Ok(parameter)
@@ -593,7 +593,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Colon)?;
 
     let body = std::rc::Rc::new(self.parse_block_expr()?);
-    let function_id = self.cache.create_id();
+    let function_id = self.cache.next_id();
 
     let function = ast::Function {
       name,
@@ -625,7 +625,7 @@ impl<'a> Parser<'a> {
       name,
       signature,
       attributes,
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
     };
 
     Ok(extern_function)
@@ -641,7 +641,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Colon)?;
 
     let ty = self.parse_type()?;
-    let extern_static_id = self.cache.create_id();
+    let extern_static_id = self.cache.next_id();
 
     let extern_static = ast::ExternStatic {
       name,
@@ -758,7 +758,7 @@ impl<'a> Parser<'a> {
     Ok(ast::TypeAlias {
       name,
       ty,
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
     })
   }
 
@@ -808,7 +808,7 @@ impl<'a> Parser<'a> {
       name,
       value,
       is_const_expr,
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
       type_hint,
     })
   }
@@ -956,7 +956,7 @@ impl<'a> Parser<'a> {
     Ok(ast::IndexingExpr {
       name,
       index_expr,
-      target_id: self.cache.create_id(),
+      target_id: self.cache.next_id(),
     })
   }
 
@@ -968,7 +968,7 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
-    Ok(ast::Literal::Nullptr(ty))
+    Ok(ast::Literal::Nullptr(self.cache.next_id(), Some(ty)))
   }
 
   fn parse_sizeof_intrinsic(&mut self) -> ParserResult<ast::SizeofIntrinsic> {
@@ -1290,7 +1290,7 @@ impl<'a> Parser<'a> {
 
     // TODO: Support for different basic values/types.
     loop {
-      variants.push((self.parse_name()?, self.cache.create_id()));
+      variants.push((self.parse_name()?, self.cache.next_id()));
       self.skip_past(&lexer::TokenKind::Comma)?;
 
       if self.is(&lexer::TokenKind::Dedent) {
@@ -1300,7 +1300,7 @@ impl<'a> Parser<'a> {
 
     self.parse_dedent()?;
 
-    let enum_id = self.cache.create_id();
+    let enum_id = self.cache.next_id();
 
     // TODO: Infer the type from the value, or default to `I32` if values are omitted.
     // ... Issue an error diagnostic if the value is `nullptr`. Finally, verify that all
@@ -1350,7 +1350,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Struct {
       name,
       fields,
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
     })
   }
 
@@ -1381,7 +1381,7 @@ impl<'a> Parser<'a> {
     Ok(ast::StructValue {
       struct_name,
       fields,
-      target_id: self.cache.create_id(),
+      target_id: self.cache.next_id(),
       ty: None,
     })
   }
@@ -1412,7 +1412,7 @@ impl<'a> Parser<'a> {
       captures,
       signature,
       body,
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
     })
   }
 
@@ -1494,7 +1494,7 @@ impl<'a> Parser<'a> {
     Ok(ast::Trait {
       name,
       methods,
-      id: self.cache.create_id(),
+      id: self.cache.next_id(),
     })
   }
 

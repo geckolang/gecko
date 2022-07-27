@@ -834,8 +834,10 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         .llvm_builder
         .build_global_string_ptr(value.as_str(), "string_literal")
         .as_basic_value_enum(),
-      ast::Literal::Nullptr(ty) => self
-        .lower_type(ty)
+      ast::Literal::Nullptr(_, ty) => self
+        // FIXME: In the future, nullptr literal will no longer have a type attached to it.
+        // ... Instead, use the type cache to retrieve it's type.
+        .lower_type(ty.as_ref().unwrap())
         .ptr_type(inkwell::AddressSpace::Generic)
         .const_null()
         .as_basic_value_enum(),
@@ -1655,7 +1657,10 @@ mod tests {
 
     let binding_stmt = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
-      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(
+        1,
+        Some(ty.clone()),
+      ))),
       is_const_expr: false,
       id: 0,
       type_hint: Some(ast::Type::Pointer(Box::new(ty))),
@@ -1679,7 +1684,10 @@ mod tests {
 
     let binding_stmt_rc_a = std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
-      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(ty.clone()))),
+      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(
+        a_id + 2,
+        Some(ty.clone()),
+      ))),
       is_const_expr: false,
       id: a_id,
       type_hint: Some(pointer_type.clone()),

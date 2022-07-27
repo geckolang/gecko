@@ -451,11 +451,16 @@ impl NodeKind {
       NodeKind::Trait(trait_) => Some(trait_.id),
       NodeKind::Closure(closure) => Some(closure.id),
       NodeKind::Enum(enum_) => Some(enum_.id),
+      // REVIEW: Should this be here as well? Not a declaration?
       NodeKind::Pattern(pattern) => Some(pattern.id),
       NodeKind::BlockExpr(block_expr) => Some(block_expr.id),
       NodeKind::ExternFunction(extern_function) => Some(extern_function.id),
       NodeKind::ExternStatic(extern_static) => Some(extern_static.id),
       NodeKind::Parameter(parameter) => Some(parameter.id),
+      // REVIEW: Should this be here as well? Not a declaration?
+      NodeKind::Reference(reference) => Some(reference.pattern.id),
+      NodeKind::Literal(Literal::Nullptr(id, _)) => Some(id.to_owned()),
+      // TODO: What about parentheses expression (transient nodes)? Perform flattening?
       _ => None,
     }
   }
@@ -590,7 +595,7 @@ pub enum Literal {
   Int(u64, IntSize),
   Char(char),
   String(String),
-  Nullptr(Type),
+  Nullptr(cache::Id, Option<Type>),
 }
 
 #[derive(Debug, Clone)]

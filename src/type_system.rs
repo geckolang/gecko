@@ -302,7 +302,8 @@ impl Check for ast::Literal {
       ast::Literal::Char(_) => ast::BasicType::Char,
       ast::Literal::Int(_, size) => ast::BasicType::Int(size.clone()),
       ast::Literal::String(_) => ast::BasicType::String,
-      ast::Literal::Nullptr(ty) => return ast::Type::Pointer(Box::new(ty.clone())),
+      // TODO: Deprecated. Nullptr will soon no longer have a type attached to it. (Use type cache).
+      ast::Literal::Nullptr(_, ty) => return ast::Type::Pointer(Box::new(ty.clone().unwrap())),
     })
   }
 }

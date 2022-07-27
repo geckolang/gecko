@@ -25,10 +25,13 @@ pub fn run(ast_map: &ast::AstMap, cache: &cache::Cache) -> (Vec<ast::Diagnostic>
 
 pub struct TypeInferenceContext<'a> {
   pub diagnostics: Vec<ast::Diagnostic>,
-  /// A map from a type variable's id to a type.
+  // TODO: This doc. is outdated. It is not created during parsing. Instead,
+  // ... it is created during type inference. If the type hint of something is `None`,
+  // ... a fresh variable type is created for it here.
+  /// A map from a type variable's (TODO: Or actually, a node's id) id to a type.
   ///
   /// This serves as a buffer for type inference to occur. It is
-  /// populated during parsing phase, when type variables are created, and
+  /// populated during parsing, when type variables are created, and
   /// it also is scope-less/context-free.
   substitutions: std::collections::HashMap<usize, ast::Type>,
   cache: &'a cache::Cache,
@@ -37,6 +40,10 @@ pub struct TypeInferenceContext<'a> {
   ///
   /// This is needed because analysis passes cannot mutate nodes.
   type_cache: TypeCache,
+  /// Constraints are expectations, or hints, of equality between a pair of types.
+  ///
+  /// They are first gathered, then the unification algorithm is performed to solve types, at
+  /// the last step of type inference.
   constraints: Vec<TypeConstraint>,
 }
 
@@ -137,10 +144,12 @@ impl<'a> TypeInferenceContext<'a> {
 
   /// Substitute a type variable with its non-variable type (if defined).
   ///
-  /// This function will recursively substitute type variables,
-  /// until a non-variable type is found.
+  /// If the substitution is not defined, the same type is returned. This
+  /// function will recursively substitute type variables, until a non-variable
+  /// type is found.
   pub fn substitute(&self, ty: ast::Type) -> ast::Type {
     if let ast::Type::Variable(id) = &ty {
+      // REVIEW: Should we be force-unwrapping here?
       let substitution = self.substitutions.get(id).unwrap().clone();
 
       // case TVariable(i) if substitution(i) != TVariable(i) =>
@@ -159,16 +168,17 @@ impl<'a> TypeInferenceContext<'a> {
 
   // REVIEW: Now with the implementation of `node.find_id()`, things like `(expr)` might have issues.
   // ... Perhaps employ the use of node flattening to solve any issues?
+  // REVIEW: What is the `expectedType` parameter used for in the type inference reference?
   fn infer_type_of(&mut self, node: &ast::NodeKind) -> ast::Type {
-    let id = match node.find_id() {
-      Some(id) => id,
-      None => return ast::Type::Unit,
-    };
-
-    if let Some(cached_type) = self.type_cache.get(&id) {
-      return cached_type.clone();
+    // REVIEW: This only works for direct declarations. All other nodes will type `Unit`.
+    if let Some(id) = node.find_id() {
+      if let Some(cached_type) = self.type_cache.get(&id) {
+        return cached_type.clone();
+      }
     }
 
+    // REVIEW: Shouldn't we be associating (substitutions is associations) any type variables created with the id of their corresponding nodes?
+    // ... Example: Nullptr literal, its id => type variable.
     let ty = match &node {
       ast::NodeKind::BinaryExpr(binary_expr) => match binary_expr.operator {
         ast::OperatorKind::LessThan
@@ -192,14 +202,42 @@ impl<'a> TypeInferenceContext<'a> {
         // REVISE: Cloning regardless.
         .clone()
         .unwrap_or(self.create_type_variable()),
+      ast::NodeKind::Literal(literal) => match literal {
+        ast::Literal::Bool(_) => ast::Type::Basic(ast::BasicType::Bool),
+        ast::Literal::Char(_) => ast::Type::Basic(ast::BasicType::Char),
+        ast::Literal::Int(_, size) => ast::Type::Basic(ast::BasicType::Int(size.clone())),
+        ast::Literal::String(_) => ast::Type::Basic(ast::BasicType::String),
+        ast::Literal::Nullptr(..) => {
+          // TODO: Temporary.
+          // return ast::Type::Pointer(Box::new(self.create_type_variable()))
+          self.create_type_variable()
+        }
+      },
+      ast::NodeKind::Reference(reference) => {
+        let target = self
+          .cache
+          .find_decl_via_link(&reference.pattern.id)
+          .unwrap();
+
+        self.infer_type_of(&target)
+      }
       // REVIEW: What about other nodes? Say, indexing, array value, etc. Their types shouldn't be `Unit`.
       _ => ast::Type::Unit,
     };
 
     // REVIEW: Why is this here? We need to report things' types somewhere to fill up the
     // ... type cache, but why here? Also, probably only declaration's types are to be inserted
-    // ... on the type cache, because only declarations have ids.
-    self.type_cache.insert(id, ty.clone());
+    // ... on the type cache, because only declarations have ids. Actually, it's here because this
+    // ... function performs memoization of the inferred types, but apparently only for declarations.
+    // ... Review what can be done, and whether it is efficient to only infer and memoize declaration's types.
+    if let Some(id) = node.find_id() {
+      // TODO: Debugging. This should be here?
+      // Update association of the node's id with the newly inferred type.
+      self.substitutions.insert(id, ty.clone());
+
+      // Update the type for this node in the type cache.
+      self.type_cache.insert(id, ty.clone());
+    }
 
     ty
   }
@@ -214,21 +252,36 @@ impl<'a> TypeInferenceContext<'a> {
   }
 
   /// Add a constraint stating that both of the provided types are equal.
-  fn report_constraint(&mut self, for_type_var_or_type: ast::Type, is_equal_to: ast::Type) {
-    self.constraints.push((for_type_var_or_type, is_equal_to));
+  fn report_constraint(&mut self, that_type_or_var: ast::Type, is_equal_to: ast::Type) {
+    self.constraints.push((that_type_or_var, is_equal_to));
   }
 }
 
 impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
+  fn visit_literal(&mut self, literal: &ast::Literal) {
+    let id = match literal {
+      ast::Literal::Nullptr(id, _) => id,
+      // Only the nullptr literal has the juicy stuff.
+      _ => return,
+    };
+
+    let ty = self.create_type_variable();
+
+    self.substitutions.insert(id.to_owned(), ty);
+  }
+
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
+    // REVIEW: Don't we have to specify that the type of the binding must equal its value's type,
+    // ... regardless of the type hint's presence?
     if binding_stmt.type_hint.is_some() {
       return;
     }
 
     // If the type hint is not present, create a fresh type
-    // variable and associate it with the binding.
+    // variable.
     let fresh_type_variable = self.create_type_variable();
 
+    // Associate the fresh type variable with the binding.
     self
       .substitutions
       .insert(binding_stmt.id, fresh_type_variable.clone());
@@ -240,25 +293,164 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
   }
 
   fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
-    // TODO: Add support for missing hints; logical not, pointer dereference, and address-of?
-    if !matches!(
-      unary_expr.operator,
-      ast::OperatorKind::Add | ast::OperatorKind::SubtractOrNegate
-    ) {
-      return;
+    match unary_expr.operator {
+      ast::OperatorKind::Add | ast::OperatorKind::SubtractOrNegate => {
+        // TODO: ?
+        // - {error handling} check types to be what we expect?
+
+        // REVIEW: We need to insert a substitution? Otherwise what links the constraint back to this?
+        let expr_type = self.infer_type_of(&unary_expr.expr);
+
+        // Report that the type of the unary expression's operand must
+        // be an integer.
+        self.report_constraint(expr_type, ast::Type::MetaInteger);
+      }
+      // TODO: Add support for missing hints; logical not, and address-of?
+      ast::OperatorKind::MultiplyOrDereference => {
+        let expr_type = self.infer_type_of(&unary_expr.expr);
+        // let _pointer_inner_type = self.create_type_variable();
+
+        // TODO: How to specify/deal with type constructor? Currently just defaulting to creating a type variable.
+        // self.report_constraint(expr_type, ast::Type::Pointer(Box::new(pointer_inner_type)))
+
+        // TODO: Temporary.
+        self.report_constraint(expr_type, ast::Type::Any);
+      }
+      _ => {}
     }
-
-    // TODO:
-    // - {error handling} check types to be what we expect
-
-    // Report that the type of the unary expression's operand must
-    // be an integer.
-    let expr_type = self.infer_type_of(&unary_expr.expr);
-
-    self.report_constraint(expr_type, ast::Type::MetaInteger);
   }
 
   fn visit_return_stmt(&mut self, _return_stmt: &ast::ReturnStmt) {
     // TODO: Where is signature return type type variable created?
   }
+}
+
+#[cfg(test)]
+mod tests {
+  use crate::mock::tests::Mock;
+
+  use super::*;
+
+  #[test]
+  fn occurs_in() {
+    let cache = cache::Cache::new();
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+    let first_index_id = 0;
+    let second_index_id = first_index_id + 1;
+
+    type_inference_ctx
+      .substitutions
+      .insert(first_index_id, ast::Type::Variable(first_index_id));
+
+    type_inference_ctx
+      .substitutions
+      .insert(second_index_id, ast::Type::Unit);
+
+    let subject_type_variable = ast::Type::Variable(first_index_id);
+
+    assert!(type_inference_ctx.occurs_in(first_index_id, &subject_type_variable));
+    assert!(!type_inference_ctx.occurs_in(second_index_id, &subject_type_variable));
+    assert!(!type_inference_ctx.occurs_in(first_index_id, &ast::Type::Unit));
+  }
+
+  #[test]
+  fn create_type_variable() {
+    let cache = cache::Cache::new();
+    let mut type_context = TypeInferenceContext::new(&cache);
+
+    assert_eq!(type_context.create_type_variable(), ast::Type::Variable(0));
+    assert_eq!(1, type_context.substitutions.len());
+  }
+
+  #[test]
+  fn solve_constraints() {
+    let cache = cache::Cache::new();
+    let mut type_context = TypeInferenceContext::new(&cache);
+
+    // TODO: Add actual constraints to complete this test.
+
+    type_context.solve_constraints();
+    assert!(type_context.constraints.is_empty());
+  }
+
+  #[test]
+  fn substitute() {
+    let cache = cache::Cache::new();
+    let mut type_context = TypeInferenceContext::new(&cache);
+
+    assert_eq!(ast::Type::Unit, type_context.substitute(ast::Type::Unit));
+
+    let type_variable_id = 0;
+    let non_type_variable = ast::Type::Basic(ast::BasicType::Bool);
+
+    type_context
+      .substitutions
+      .insert(type_variable_id, non_type_variable.clone());
+
+    assert_eq!(
+      non_type_variable,
+      type_context.substitute(ast::Type::Variable(type_variable_id))
+    );
+  }
+
+  #[test]
+  fn infer_binding_literal() {
+    let cache = cache::Cache::new();
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+
+    let binding_stmt = Mock::free_binding(
+      0,
+      "a",
+      ast::NodeKind::Literal(ast::Literal::Bool(true)),
+      None,
+    );
+
+    type_inference_ctx.dispatch(&binding_stmt);
+    type_inference_ctx.solve_constraints();
+
+    assert_eq!(
+      type_inference_ctx.substitute(ast::Type::Variable(0)),
+      ast::Type::Basic(ast::BasicType::Bool)
+    );
+  }
+
+  #[test]
+  fn infer_binding_nullptr() {
+    let mut cache = cache::Cache::new();
+
+    let binding_id = 0;
+
+    let binding_stmt = Mock::free_binding(
+      binding_id.clone(),
+      "a",
+      ast::NodeKind::Literal(ast::Literal::Nullptr(1, None)),
+      None,
+    );
+
+    cache.links.insert(binding_id, binding_id);
+
+    cache
+      .declarations
+      .insert(binding_id.clone(), binding_stmt.clone());
+
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+
+    let deref_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
+      cast_type: None,
+      expr: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(binding_id))),
+      operator: ast::OperatorKind::MultiplyOrDereference,
+    });
+
+    visitor::traverse(&binding_stmt, &mut type_inference_ctx);
+    visitor::traverse(&deref_expr, &mut type_inference_ctx);
+    type_inference_ctx.solve_constraints();
+
+    assert_eq!(
+      type_inference_ctx.substitute(ast::Type::Variable(0)),
+      ast::Type::Basic(ast::BasicType::Bool)
+    );
+  }
+
+  // TODO: Use the empty array type test.
+  // TODO: Also, create a second test for inferring of parameter types.
 }

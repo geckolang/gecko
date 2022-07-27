@@ -26,7 +26,7 @@ impl Cache {
     }
   }
 
-  pub fn create_id(&mut self) -> Id {
+  pub fn next_id(&mut self) -> Id {
     let id = self.id_counter;
 
     self.id_counter += 1;
