@@ -4,7 +4,11 @@ pub type Id = usize;
 
 pub struct Cache {
   pub struct_impls: std::collections::HashMap<Id, Vec<(Id, String)>>,
-  // REVIEW: Is this necessary, or can we just have a direct mapping?
+  /// A mapping from a referential id to the id of its target node.
+  ///
+  /// The reason why this is necessary is, and there is no direct mapping
+  /// from id to the target node is because then the target node would need to
+  /// be repeated per referential id.
   pub links: std::collections::HashMap<Id, Id>,
   // FIXME: Instead of caching, nodes, use a mapping from their id to their type.
   // ... This is because all retrievals of cached nodes are simply to determine or

@@ -196,21 +196,21 @@ impl<'a> TypeInferenceContext<'a> {
         .type_hint
         // REVISE: Cloning regardless.
         .clone()
-        .unwrap_or(self.create_type_variable()),
+        .unwrap_or(self.create_type_variable(binding_stmt.id)),
       ast::NodeKind::Parameter(parameter) => parameter
         .type_hint
         // REVISE: Cloning regardless.
         .clone()
-        .unwrap_or(self.create_type_variable()),
+        .unwrap_or(self.create_type_variable(parameter.id)),
       ast::NodeKind::Literal(literal) => match literal {
         ast::Literal::Bool(_) => ast::Type::Basic(ast::BasicType::Bool),
         ast::Literal::Char(_) => ast::Type::Basic(ast::BasicType::Char),
         ast::Literal::Int(_, size) => ast::Type::Basic(ast::BasicType::Int(size.clone())),
         ast::Literal::String(_) => ast::Type::Basic(ast::BasicType::String),
-        ast::Literal::Nullptr(..) => {
+        ast::Literal::Nullptr(id, _) => {
           // TODO: Temporary.
           // return ast::Type::Pointer(Box::new(self.create_type_variable()))
-          self.create_type_variable()
+          self.create_type_variable(id.to_owned())
         }
       },
       ast::NodeKind::Reference(reference) => {
@@ -242,11 +242,17 @@ impl<'a> TypeInferenceContext<'a> {
     ty
   }
 
-  fn create_type_variable(&mut self) -> ast::Type {
-    let id = self.substitutions.len();
-    let result = ast::Type::Variable(id.clone());
+  // TODO: Why not take an id here, and directly associate?
+  fn create_type_variable(&mut self, for_node_id: cache::Id) -> ast::Type {
+    // REVIEW: Why add have a new id for this type variable? Couldn't we use the node id?
+    // let id = self.substitutions.len();
 
-    self.substitutions.insert(id, result.clone());
+    let result = ast::Type::Variable(for_node_id.clone());
+
+    self.substitutions.insert(for_node_id, result.clone());
+
+    // REVIEW: Why add have a new id for this type variable? Couldn't we use the node id?
+    // self.substitutions.insert(id, result.clone());
 
     result
   }
@@ -265,9 +271,9 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
       _ => return,
     };
 
-    let ty = self.create_type_variable();
+    self.create_type_variable(id.to_owned());
 
-    self.substitutions.insert(id.to_owned(), ty);
+    // self.substitutions.insert(id.to_owned(), ty);
   }
 
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
@@ -279,12 +285,12 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
 
     // If the type hint is not present, create a fresh type
     // variable.
-    let fresh_type_variable = self.create_type_variable();
+    let fresh_type_variable = self.create_type_variable(binding_stmt.id);
 
     // Associate the fresh type variable with the binding.
-    self
-      .substitutions
-      .insert(binding_stmt.id, fresh_type_variable.clone());
+    // self
+    //   .substitutions
+    //   .insert(binding_stmt.id, fresh_type_variable.clone());
 
     // FIXME: Added this constraint because it makes sense, but it was not part of the reference code.
     let value_type = self.infer_type_of(&binding_stmt.value);
@@ -358,7 +364,7 @@ mod tests {
     let cache = cache::Cache::new();
     let mut type_context = TypeInferenceContext::new(&cache);
 
-    assert_eq!(type_context.create_type_variable(), ast::Type::Variable(0));
+    assert_eq!(type_context.create_type_variable(0), ast::Type::Variable(0));
     assert_eq!(1, type_context.substitutions.len());
   }
 
@@ -412,6 +418,52 @@ mod tests {
       type_inference_ctx.substitute(ast::Type::Variable(0)),
       ast::Type::Basic(ast::BasicType::Bool)
     );
+  }
+
+  #[test]
+  fn infer_binding_binding() {
+    let mut cache = cache::Cache::new();
+    let binding_stmt_a_id = 0;
+    let binding_stmt_b_id = binding_stmt_a_id + 1;
+
+    let binding_stmt_a = Mock::free_binding(
+      binding_stmt_a_id,
+      "a",
+      ast::NodeKind::Literal(ast::Literal::Bool(true)),
+      None,
+    );
+
+    cache.links.insert(binding_stmt_a_id, binding_stmt_a_id);
+
+    cache
+      .declarations
+      .insert(binding_stmt_a_id, binding_stmt_a.clone());
+
+    let binding_stmt_b = Mock::free_binding(
+      binding_stmt_b_id,
+      "b",
+      ast::NodeKind::Reference(Mock::reference(binding_stmt_a_id)),
+      None,
+    );
+
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+
+    type_inference_ctx.dispatch(&binding_stmt_a);
+    visitor::traverse(&binding_stmt_b, &mut type_inference_ctx);
+    type_inference_ctx.solve_constraints();
+
+    assert_eq!(
+      type_inference_ctx.substitute(ast::Type::Variable(binding_stmt_b_id)),
+      ast::Type::Basic(ast::BasicType::Bool)
+    );
+
+    // assert_eq!(
+    //   type_inference_ctx
+    //     .type_cache
+    //     .get(&binding_stmt_b_id)
+    //     .unwrap(),
+    //   &ast::Type::Basic(ast::BasicType::Bool)
+    // );
   }
 
   #[test]
