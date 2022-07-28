@@ -61,6 +61,9 @@ impl<'a> TypeInferenceContext<'a> {
   }
 
   // REVISE: Avoid excessive cloning.
+  /// Solves the constraints by performing a unification algorithm.
+  ///
+  /// This serves as one step of the type inference substitution algorithm.
   fn unify(&mut self, type_a: &ast::Type, type_b: &ast::Type) {
     // TODO: Cleanup code. Perhaps expand it to not be a big match statement?
     match (type_a, type_b) {
@@ -103,6 +106,26 @@ impl<'a> TypeInferenceContext<'a> {
 
         self.substitutions.insert(*id_b, type_a.clone());
       }
+      // (constructor_a, constructor_b) if constructor_a.is_a_constructor() && constructor_b.is_a_constructor() => {
+
+      // }
+      (ast::Type::Constructor(kind_a, generics_a), ast::Type::Constructor(kind_b, generics_b)) => {
+        // Technical info: https://en.wikipedia.org/wiki/Type_inference#Hindley%E2%80%93Milner_type_inference_algorithm
+        // See also in the same page: Higher-order types?
+        // case (TConstructor(name1, generics1), TConstructor(name2, generics2)) =>
+        //       if(name1 != name2 || generics1.size != generics2.size) {
+        //           throw TypeError("Type mismatch: " + substitute(t1) + " vs. " + substitute(t2))
+        //       }
+        //       for((t1, t2) <- generics1.zip(generics2)) unify(t1, t2)
+
+        // REVISE: Proper error handling.
+
+        assert!(kind_a == kind_b && generics_a.len() == generics_b.len());
+
+        for (type_a, type_b) in generics_a.iter().zip(generics_b.iter()) {
+          self.unify(type_a, type_b);
+        }
+      }
       _ => {}
     }
   }
@@ -121,7 +144,9 @@ impl<'a> TypeInferenceContext<'a> {
       }
       // REVIEW: Will this compare the underlying values or the addresses?
       ast::Type::Variable(id) => id == &index_id,
-      // TODO: Generics / type constructors.
+      ast::Type::Constructor(_, generics) => generics
+        .into_iter()
+        .any(|generic| self.occurs_in(index_id, generic)),
       _ => false,
     }
   }
@@ -142,6 +167,8 @@ impl<'a> TypeInferenceContext<'a> {
       self.unify(&constrain.0, &constrain.1);
     }
 
+    // BUG: This will fail for type constructors because the substitutions here refer to
+    // ... the generics (inner type variables) of the type constructor.
     for (id, ty) in &self.substitutions {
       // Update the type for this node in the type cache.
       self.type_cache.insert(id.clone(), ty.clone());
@@ -156,22 +183,22 @@ impl<'a> TypeInferenceContext<'a> {
   /// function will recursively substitute type variables, until a non-variable
   /// type is found.
   pub fn substitute(&self, ty: ast::Type) -> ast::Type {
-    if let ast::Type::Variable(id) = &ty {
-      // REVIEW: Should we be force-unwrapping here?
-      let substitution = self.substitutions.get(id).unwrap().clone();
-
-      // case TVariable(i) if substitution(i) != TVariable(i) =>
-      //substitute(substitution(i))
-
-      // REVIEW: Is this condition correct?
-      if substitution != ty {
-        return self.substitute(substitution);
+    match &ty {
+      ast::Type::Variable(id)
+        if self.substitutions.get(id) != Some(&ast::Type::Variable(id.to_owned())) =>
+      {
+        // REVIEW: Unsafe unwrap?
+        self.substitute(self.substitutions.get(id).unwrap().clone())
       }
+      ast::Type::Constructor(kind, generics) => ast::Type::Constructor(
+        kind.clone(),
+        generics
+          .into_iter()
+          .map(|generic| self.substitute(generic.clone()))
+          .collect(),
+      ),
+      _ => ty,
     }
-
-    // TODO: Missing support for constructor types.
-
-    ty
   }
 
   // REVIEW: Now with the implementation of `node.find_id()`, things like `(expr)` might have issues.
@@ -222,6 +249,11 @@ impl<'a> TypeInferenceContext<'a> {
         }
       },
       ast::NodeKind::Reference(reference) => {
+        // BUG: Other instances don't infer types of other things, take a look at the binding
+        // ... statement for example, it doesn't look at its value here. Same goes for the static
+        // ... array value. So why is this here? If we do make it a simple unknown type variable,
+        // ... then what connection will there be? Will it even work? Or, is it that we've just
+        // ... made the inference external to use constraints on the visitation methods?
         let target = self
           .cache
           .find_decl_via_link(&reference.pattern.id)
@@ -229,6 +261,10 @@ impl<'a> TypeInferenceContext<'a> {
 
         self.infer_type_of(&target)
       }
+      ast::NodeKind::StaticArrayValue(static_array_value) => ast::Type::Constructor(
+        ast::TypeConstructorKind::Array,
+        vec![self.create_type_variable(static_array_value.id)],
+      ),
       // REVIEW: What about other nodes? Say, indexing, array value, etc. Their types shouldn't be `Unit`.
       _ => ast::Type::Unit,
     };
@@ -278,31 +314,38 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
       _ => return,
     };
 
+    // REVIEW: Isn't this a type constructor?
     self.create_type_variable(id.to_owned());
 
     // self.substitutions.insert(id.to_owned(), ty);
   }
 
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
+    // FIXME: Added this constraint because it makes sense, but it was not part of the reference code.
+    let value_type = self.infer_type_of(&binding_stmt.value);
+
+    // REVIEW: Isn't this being repeated in the `infer_type_of` function? If so,
+    // ... abstract common code or merge.
+    let binding_type = binding_stmt
+      .type_hint
+      // REVISE: Cloning.
+      .clone()
+      // If the type hint is not present, create a fresh type
+      // variable.
+      .unwrap_or_else(|| self.create_type_variable(binding_stmt.id));
+
+    self.report_constraint(binding_type, value_type);
+
     // REVIEW: Don't we have to specify that the type of the binding must equal its value's type,
     // ... regardless of the type hint's presence?
-    if binding_stmt.type_hint.is_some() {
-      return;
-    }
-
-    // If the type hint is not present, create a fresh type
-    // variable.
-    let fresh_type_variable = self.create_type_variable(binding_stmt.id);
+    // if binding_stmt.type_hint.is_some() {
+    //   return;
+    // }
 
     // Associate the fresh type variable with the binding.
     // self
     //   .substitutions
     //   .insert(binding_stmt.id, fresh_type_variable.clone());
-
-    // FIXME: Added this constraint because it makes sense, but it was not part of the reference code.
-    let value_type = self.infer_type_of(&binding_stmt.value);
-
-    self.report_constraint(fresh_type_variable, value_type);
   }
 
   fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
@@ -313,7 +356,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
       ast::OperatorKind::Add | ast::OperatorKind::SubtractOrNegate => {
         // Report that the type of the unary expression's operand must
         // be an integer.
-        self.report_constraint(expr_type, ast::Type::MetaInteger);
+        self.report_constraint(expr_type, ast::Type::AnyInteger);
       }
       // TODO: Add support for missing hints; logical not, and address-of?
       ast::OperatorKind::MultiplyOrDereference => {
@@ -351,7 +394,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
       | ast::OperatorKind::LessThanOrEqual
       | ast::OperatorKind::Equality
       | ast::OperatorKind::GreaterThan
-      | ast::OperatorKind::GreaterThanOrEqual => ast::Type::MetaInteger,
+      | ast::OperatorKind::GreaterThanOrEqual => ast::Type::AnyInteger,
       ast::OperatorKind::And
       | ast::OperatorKind::Or
       | ast::OperatorKind::Nand
@@ -399,6 +442,12 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
   fn visit_signature(&mut self, _signature: &ast::Signature) {
     // TODO: For the return type, we might need to add the `id` field to `ast::Signature`, and then
     // ... make it an `rc::Rc<>`, and possibly use a buffer id to be able to retrieve it during visitation.
+  }
+
+  fn visit_static_array_value(&mut self, _array_value: &ast::StaticArrayValue) {
+    // let array_type = self.create_type_variable(array_value.id);
+
+    // let element_types
   }
 
   fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr) {
@@ -553,7 +602,6 @@ mod tests {
   #[test]
   fn infer_binding_from_nullptr() {
     let mut cache = cache::Cache::new();
-
     let binding_id = 0;
 
     let binding_stmt = Mock::free_binding(
@@ -588,7 +636,6 @@ mod tests {
   #[test]
   fn infer_parameter_from_unary_expr() {
     let mut cache = cache::Cache::new();
-
     let id = 0;
 
     let parameter = ast::NodeKind::Parameter(std::rc::Rc::new(ast::Parameter {
@@ -616,14 +663,67 @@ mod tests {
     assert_eq!(
       type_inference_ctx.substitute(ast::Type::Variable(id)),
       // FIXME: Awaiting type constructor inference.
-      ast::Type::MetaInteger
+      ast::Type::AnyInteger
     );
 
     assert_eq!(
       type_inference_ctx.type_cache.get(&id).unwrap(),
-      &ast::Type::MetaInteger
+      &ast::Type::AnyInteger
     );
   }
+
+  // #[test]
+  // fn infer_parameter_from_call_expr() {
+  //   let mut cache = cache::Cache::new();
+  //   let id = 0;
+
+  //   let mut function = Mock::free_function(Vec::new());
+
+  //   let mut sig = function.find_signature().unwrap();
+
+  //   let inner_param = ast::Parameter {
+  //     id,
+  //     name: "a".to_string(),
+  //     position: 0,
+  //     type_hint: None,
+  //   };
+
+  //   let parameter = ast::NodeKind::Parameter(std::rc::Rc::new(inner_param));
+
+  //   sig.parameters.push(std::rc::Rc::new(inner_param));
+  //   cache.links.insert(id, id);
+  //   cache.declarations.insert(id, parameter.clone());
+
+  //   let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+
+  //   let negation_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
+  //     cast_type: None,
+  //     expr: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(id))),
+  //     operator: ast::OperatorKind::SubtractOrNegate,
+  //   });
+
+  //   let bool_literal = ast::NodeKind::Literal(ast::Literal::Bool(true));
+
+  //   let call_expr = ast::NodeKind::CallExpr(ast::CallExpr {
+  //     arguments: vec![bool_literal],
+  //     callee_expr:
+  //   });
+
+  //   type_inference_ctx.dispatch(&parameter);
+  //   visitor::traverse(&negation_expr, &mut type_inference_ctx);
+  //   type_inference_ctx.solve_constraints();
+
+  //   assert_eq!(
+  //     type_inference_ctx.substitute(ast::Type::Variable(id)),
+  //     // FIXME: Awaiting type constructor inference.
+  //     ast::Type::AnyInteger
+  //   );
+
+  //   assert_eq!(
+  //     type_inference_ctx.type_cache.get(&id).unwrap(),
+  //     &ast::Type::AnyInteger
+  //   );
+  // }
 
   #[test]
   fn infer_return_type_from_literal() {
@@ -654,6 +754,41 @@ mod tests {
     //   type_inference_ctx.substitute(ast::Type::Variable(0)),
     //   ast::Type::Basic(ast::BasicType::Bool)
     // );
+  }
+
+  #[test]
+  fn infer_array_type_from_binding() {
+    let cache = cache::Cache::new();
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+    let binding_stmt_id = 0;
+    let static_array_value_id = binding_stmt_id + 1;
+
+    let static_array_value = ast::NodeKind::StaticArrayValue(ast::StaticArrayValue {
+      elements: vec![ast::NodeKind::Literal(ast::Literal::Bool(true))],
+      id: static_array_value_id,
+      type_hint: None,
+    });
+
+    let binding_type = ast::Type::Array(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 1);
+
+    // BUG: Solving is working, but only when it is fed type constructors wrapped in `ast::Type::Constructor`.
+    let binding_ty_test =
+      ast::Type::Constructor(ast::TypeConstructorKind::Array, vec![binding_type]);
+
+    let binding_stmt = Mock::free_binding(
+      binding_stmt_id,
+      "a",
+      static_array_value,
+      Some(binding_ty_test.clone()),
+    );
+
+    type_inference_ctx.dispatch(&binding_stmt);
+    type_inference_ctx.solve_constraints();
+
+    assert_eq!(
+      Some(&binding_ty_test),
+      type_inference_ctx.type_cache.get(&static_array_value_id)
+    )
   }
 
   // TODO: Use the empty array type test.

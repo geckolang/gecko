@@ -849,7 +849,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   fn visit_static_array_value(&mut self, static_array_value: &ast::StaticArrayValue) {
     let mut mixed_elements_flag = false;
 
-    let expected_element_type = if let Some(explicit_type) = &static_array_value.explicit_type {
+    let expected_element_type = if let Some(explicit_type) = &static_array_value.type_hint {
       explicit_type.clone()
     } else {
       static_array_value

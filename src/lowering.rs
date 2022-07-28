@@ -262,9 +262,10 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       // Meta types are never to be lowered.
       ast::Type::Unit
       | ast::Type::Variable(_)
-      | ast::Type::MetaInteger
+      | ast::Type::AnyInteger
       | ast::Type::Never
-      | ast::Type::Any => unreachable!(),
+      | ast::Type::Any
+      | ast::Type::Constructor(..) => unreachable!(),
     }
   }
 
@@ -705,7 +706,12 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // ... function, so we would need to stash buffers and pop them when entering and exiting
     // ... functions.
 
-    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
+    // let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
+    let return_type = self
+      .type_cache
+      .get(&function.signature.return_type_id)
+      .unwrap();
+
     let llvm_function_type = self.lower_signature(&function.signature, &return_type);
     let is_main = function.name == MAIN_FUNCTION_NAME;
 
@@ -1236,7 +1242,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .collect::<Vec<_>>();
 
     let llvm_array_type = if llvm_values.is_empty() {
-      self.memoize_or_retrieve_type(array_value.explicit_type.as_ref().unwrap())
+      self.memoize_or_retrieve_type(array_value.type_hint.as_ref().unwrap())
     } else {
       llvm_values.first().unwrap().get_type()
     }

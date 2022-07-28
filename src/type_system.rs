@@ -235,7 +235,7 @@ impl Check for ast::StaticArrayValue {
     // TODO: Temporary, until type-inference is implemented.
     // We assume that the length is `0` if the explicit type is provided, otherwise
     // the array type is determined by the first element.
-    let array_element_type = if let Some(explicit_type) = &self.explicit_type {
+    let array_element_type = if let Some(explicit_type) = &self.type_hint {
       explicit_type.clone()
     } else {
       self.elements.first().unwrap().infer_type(cache)

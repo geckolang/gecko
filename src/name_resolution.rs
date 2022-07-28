@@ -582,7 +582,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
   fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr) {
     self
       .local_lookup_or_error(&Symbol {
-        base_name: indexing_expr.name.clone(),
+        base_name: indexing_expr.target_name.clone(),
         sub_name: None,
         kind: SymbolKind::Definition,
       })

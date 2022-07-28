@@ -65,6 +65,13 @@ pub enum BasicType {
 }
 
 #[derive(PartialEq, Clone, Debug)]
+pub enum TypeConstructorKind {
+  Array,
+  Pointer,
+  Reference,
+}
+
+#[derive(PartialEq, Clone, Debug)]
 pub enum Type {
   /// A static array type.
   ///
@@ -79,9 +86,15 @@ pub enum Type {
   Function(FunctionType),
   This(ThisType),
   /// A meta type to be used during unification.
+  ///
+  /// Represents a type that has not yet been solved.
   Variable(usize),
-  /// A super-type of all integer types.
-  MetaInteger,
+  /// A meta type to be used during unification.
+  ///
+  /// Represents a constructor type that has not yet been solved.
+  Constructor(TypeConstructorKind, Vec<Type>),
+  /// A meta type that represents a super-type of all integer types.
+  AnyInteger,
   /// A meta type that represents the lack of a value.
   Unit,
   // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where super-types bind with subtypes?
@@ -98,6 +111,23 @@ pub enum Type {
 }
 
 impl Type {
+  pub fn find_inner_generics(&self) -> Vec<&Type> {
+    match &self {
+      Type::Array(inner, _) => vec![inner],
+      Type::Pointer(inner) => vec![inner],
+      Type::Reference(inner) => vec![inner],
+      _ => Vec::new(),
+    }
+  }
+
+  pub fn is_a_constructor(&self) -> bool {
+    return matches!(
+      self,
+      // FIXME: Any more? Yes! Missing `nullptr`, which is a constructor (generic).
+      Type::Array(..) | Type::Pointer(_) | Type::Reference(_)
+    );
+  }
+
   /// Determine whether the type is a unit type.
   ///
   /// This determination will not perform flattening.
@@ -125,7 +155,12 @@ impl Type {
   ///
   /// This determination will not perform flattening.
   pub fn is_a_meta(&self) -> bool {
-    self.is_a_unit() || self.is_a_never() || matches!(self, Type::Any)
+    self.is_a_unit()
+      || self.is_a_never()
+      || matches!(
+        self,
+        Type::Any | Type::AnyInteger | Type::Variable(_) | Type::Constructor(..)
+      )
   }
 
   /// Determine whether the type is a stub type.
@@ -175,7 +210,7 @@ impl Type {
     }
     // If at least one is a meta integer type, return `true` if the other is an integer type,
     // or if they're both a meta integer type.
-    else if matches!(self, Type::MetaInteger) || matches!(other, Type::MetaInteger) {
+    else if matches!(self, Type::AnyInteger) || matches!(other, Type::AnyInteger) {
       return matches!(self, Type::Basic(BasicType::Int(_)))
         || matches!(other, Type::Basic(BasicType::Int(_)))
         || self == other;
@@ -567,16 +602,19 @@ pub struct Enum {
 
 #[derive(Debug, Clone)]
 pub struct IndexingExpr {
-  pub name: String,
   pub index_expr: Box<NodeKind>,
+  pub target_name: String,
   pub target_id: cache::Id,
 }
 
 #[derive(Debug, Clone)]
 pub struct StaticArrayValue {
   pub elements: Vec<NodeKind>,
-  /// Holds the type of the array, in case it is an empty array.
-  pub explicit_type: Option<Type>,
+  /// An optional type hint for the array.
+  ///
+  /// Can be provided by the user.
+  pub type_hint: Option<Type>,
+  pub id: cache::Id,
 }
 
 #[derive(Debug, Clone)]

@@ -939,7 +939,8 @@ impl<'a> Parser<'a> {
 
     Ok(ast::StaticArrayValue {
       elements,
-      explicit_type,
+      type_hint: explicit_type,
+      id: self.cache.next_id(),
     })
   }
 
@@ -955,7 +956,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::IndexingExpr {
-      name,
+      target_name: name,
       index_expr,
       target_id: self.cache.next_id(),
     })
