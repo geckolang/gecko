@@ -73,10 +73,10 @@ pub enum TypeConstructorKind {
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Type {
-  /// A static array type.
+  /// A static indexable type.
   ///
   /// Its type and length are always known at compile-time.
-  Array(Box<Type>, u32),
+  StaticIndexable(Box<Type>, u32),
   Basic(BasicType),
   Pointer(Box<Type>),
   Reference(Box<Type>),
@@ -111,9 +111,33 @@ pub enum Type {
 }
 
 impl Type {
+  // REVIEW: What about nested type constructors?
+  /// Attempt to upgrade a type to a type constructor for use with the
+  /// inference algorithm.
+  ///
+  /// If the type is not a type constructor, then it is returned as-is.
+  pub fn try_upgrade(self) -> Type {
+    let kind = match &self {
+      Type::StaticIndexable(..) => TypeConstructorKind::Array,
+      Type::Pointer(_) => TypeConstructorKind::Pointer,
+      Type::Reference(_) => TypeConstructorKind::Reference,
+      _ => return self,
+    };
+
+    // REVIEW: I think we've got the concept of generics wrong (Or the implementation's
+    // ... handling is wrong). This looks like it should be it instead:
+    // let generics = self
+    //   .find_inner_generics()
+    //   .into_iter()
+    //   .map(|ty| ty.to_owned())
+    //   .collect();
+
+    Type::Constructor(kind, vec![self])
+  }
+
   pub fn find_inner_generics(&self) -> Vec<&Type> {
     match &self {
-      Type::Array(inner, _) => vec![inner],
+      Type::StaticIndexable(inner, _) => vec![inner],
       Type::Pointer(inner) => vec![inner],
       Type::Reference(inner) => vec![inner],
       _ => Vec::new(),
@@ -124,7 +148,7 @@ impl Type {
     return matches!(
       self,
       // FIXME: Any more? Yes! Missing `nullptr`, which is a constructor (generic).
-      Type::Array(..) | Type::Pointer(_) | Type::Reference(_)
+      Type::StaticIndexable(..) | Type::Pointer(_) | Type::Reference(_)
     );
   }
 
@@ -602,9 +626,8 @@ pub struct Enum {
 
 #[derive(Debug, Clone)]
 pub struct IndexingExpr {
+  pub target_expr: Box<NodeKind>,
   pub index_expr: Box<NodeKind>,
-  pub target_name: String,
-  pub target_id: cache::Id,
 }
 
 #[derive(Debug, Clone)]

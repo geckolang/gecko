@@ -579,18 +579,6 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     self.block_id_stack.pop();
   }
 
-  fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr) {
-    self
-      .local_lookup_or_error(&Symbol {
-        base_name: indexing_expr.target_name.clone(),
-        sub_name: None,
-        kind: SymbolKind::Definition,
-      })
-      .map(|target_id| {
-        self.cache.links.insert(indexing_expr.target_id, target_id);
-      });
-  }
-
   fn visit_signature(&mut self, signature: &ast::Signature) {
     if let Some(instance_type_id) = &signature.instance_type_id {
       self.cache.links.insert(

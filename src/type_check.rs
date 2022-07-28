@@ -518,7 +518,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       let target_array = intrinsic_call.arguments.first().unwrap();
       let target_array_type = target_array.infer_flatten_type(self.cache);
 
-      if !matches!(target_array_type, ast::Type::Array(..)) {
+      if !matches!(target_array_type, ast::Type::StaticIndexable(..)) {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error()
             .with_message("cannot determine static length of non-array type"),
@@ -769,7 +769,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
             {
               if matches!(
                 first_argument.infer_flatten_type(self.cache),
-                ast::Type::Array(..)
+                ast::Type::StaticIndexable(..)
               ) {
                 bounded_array_buffer = Some(target_id);
 
@@ -898,7 +898,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       .infer_flatten_type(self.cache);
 
     // REVIEW: Any way of avoiding nesting?
-    if let ast::Type::Array(_, length) = target_expr_type {
+    if let ast::Type::StaticIndexable(_, length) = target_expr_type {
       // If the index expression is not a constant expression, then
       // this scope must fall under a bounds check for that index, and
       // the length of the array.

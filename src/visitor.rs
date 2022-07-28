@@ -284,8 +284,8 @@ define_visitor!(
 define_visitor!(AnalysisVisitor, (), ());
 
 fn traverse_block_expr(block_expr: &ast::BlockExpr, visitor: &mut impl AnalysisVisitor) {
-  for stmt in &block_expr.statements {
-    traverse(stmt, visitor);
+  for statement in &block_expr.statements {
+    traverse(statement, visitor);
   }
 
   visitor.exit_block_expr(&block_expr);
@@ -339,6 +339,7 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
       }
     }
     ast::NodeKind::IndexingExpr(indexing_expr) => {
+      traverse(&indexing_expr.target_expr, visitor);
       traverse(&indexing_expr.index_expr, visitor);
     }
     ast::NodeKind::MemberAccess(member_expr) => {

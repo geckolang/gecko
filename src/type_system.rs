@@ -222,7 +222,7 @@ impl Check for ast::IndexingExpr {
 
     // TODO: In the future, add support for when indexing strings.
     let element_type = match array_type {
-      ast::Type::Array(element_type, _) => element_type.as_ref().clone(),
+      ast::Type::StaticIndexable(element_type, _) => element_type.as_ref().clone(),
       _ => unreachable!(),
     };
 
@@ -242,7 +242,7 @@ impl Check for ast::StaticArrayValue {
     };
 
     // REVIEW: Is the length conversion safe?
-    ast::Type::Array(Box::new(array_element_type), self.elements.len() as u32)
+    ast::Type::StaticIndexable(Box::new(array_element_type), self.elements.len() as u32)
   }
 }
 

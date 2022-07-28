@@ -304,6 +304,13 @@ impl<'a> TypeInferenceContext<'a> {
   fn report_constraint(&mut self, that_type_or_var: ast::Type, is_equal_to: ast::Type) {
     self.constraints.push((that_type_or_var, is_equal_to));
   }
+
+  fn type_hint_or_variable(&mut self, type_hint: &Option<ast::Type>, id: cache::Id) -> ast::Type {
+    match type_hint {
+      Some(type_hint) => type_hint.clone().try_upgrade(),
+      None => self.create_type_variable(id),
+    }
+  }
 }
 
 impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
@@ -326,13 +333,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
 
     // REVIEW: Isn't this being repeated in the `infer_type_of` function? If so,
     // ... abstract common code or merge.
-    let binding_type = binding_stmt
-      .type_hint
-      // REVISE: Cloning.
-      .clone()
-      // If the type hint is not present, create a fresh type
-      // variable.
-      .unwrap_or_else(|| self.create_type_variable(binding_stmt.id));
+    let binding_type = self.type_hint_or_variable(&binding_stmt.type_hint, binding_stmt.id);
 
     self.report_constraint(binding_type, value_type);
 
@@ -465,9 +466,8 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
 
 #[cfg(test)]
 mod tests {
-  use crate::mock::tests::Mock;
-
   use super::*;
+  use crate::mock::tests::Mock;
 
   #[test]
   fn occurs_in() {
@@ -769,24 +769,26 @@ mod tests {
       type_hint: None,
     });
 
-    let binding_type = ast::Type::Array(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 1);
+    let binding_type =
+      ast::Type::StaticIndexable(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 1);
 
     // BUG: Solving is working, but only when it is fed type constructors wrapped in `ast::Type::Constructor`.
-    let binding_ty_test =
-      ast::Type::Constructor(ast::TypeConstructorKind::Array, vec![binding_type]);
+    // ... One approach would be to create/use a hub to capture and transform/map type constructors.
+    // let binding_ty_test =
+    //   ast::Type::Constructor(ast::TypeConstructorKind::Array, vec![binding_type]);
 
     let binding_stmt = Mock::free_binding(
       binding_stmt_id,
       "a",
       static_array_value,
-      Some(binding_ty_test.clone()),
+      Some(binding_type.clone()),
     );
 
     type_inference_ctx.dispatch(&binding_stmt);
     type_inference_ctx.solve_constraints();
 
     assert_eq!(
-      Some(&binding_ty_test),
+      Some(&binding_type),
       type_inference_ctx.type_cache.get(&static_array_value_id)
     )
   }

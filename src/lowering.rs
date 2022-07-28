@@ -215,7 +215,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
         // NOTE: The null primitive type is never lowered, only the nullptr value.
         ast::BasicType::Null => unreachable!(),
       },
-      ast::Type::Array(element_type, size) => self
+      ast::Type::StaticIndexable(element_type, size) => self
         .lower_type(&element_type)
         .array_type(size.clone())
         .as_basic_type_enum(),
@@ -419,9 +419,8 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     }
 
     let buffers = self.copy_buffers();
-    let llvm_value_result = self.lower_with_access(declaration);
 
-    let result = if let Some(llvm_value) = llvm_value_result {
+    let llvm_value_opt = self.lower_with_access(declaration).and_then(|llvm_value| {
       // Cache the value without applying access rules.
       // This way, access rules may be chosen to be applied upon cache retrieval.
       self.llvm_cached_values.insert(id.clone(), llvm_value);
@@ -431,16 +430,14 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       } else {
         llvm_value
       })
-    } else {
-      None
-    };
+    });
 
     // Restore buffers after processing, if requested.
     if !forward_buffers {
       self.restore_buffers(buffers);
     }
 
-    result
+    llvm_value_opt
   }
 }
 
@@ -1316,7 +1313,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         .infer_type(self.cache);
 
       let target_indexable_size = match target_indexable_type {
-        ast::Type::Array(_, size) => size,
+        ast::Type::StaticIndexable(_, size) => size,
         _ => unreachable!(),
       };
 
@@ -1412,7 +1409,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         let target_array = intrinsic_call.arguments.first().unwrap();
 
         let array_static_length = match target_array.infer_flatten_type(self.cache) {
-          ast::Type::Array(_, length) => length,
+          ast::Type::StaticIndexable(_, length) => length,
           _ => unreachable!(),
         };
 

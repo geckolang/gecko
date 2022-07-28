@@ -47,10 +47,10 @@ mod tests {
     let mut ast_map = std::collections::BTreeMap::new();
     let tokens = lex(source_file_contents);
     let mut parser = gecko::parser::Parser::new(tokens, &mut cache);
-    let top_level_nodes = parser.parse_all();
+    let parse_result = parser.parse_all();
 
-    assert!(top_level_nodes.is_ok());
-    ast_map.insert(qualifier.clone(), top_level_nodes.unwrap());
+    assert!(parse_result.is_ok());
+    ast_map.insert(qualifier.clone(), parse_result.unwrap());
     assert!(name_resolution::run(&mut ast_map, &mut cache).is_empty());
 
     let (type_inference_diagnostics, type_cache) = type_inference::run(&ast_map, &cache);

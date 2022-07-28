@@ -391,7 +391,7 @@ impl<'a> Parser<'a> {
     self.skip()?;
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
-    Ok(ast::Type::Array(element_type, size))
+    Ok(ast::Type::StaticIndexable(element_type, size))
   }
 
   fn parse_type(&mut self) -> ParserResult<ast::Type> {
@@ -944,10 +944,9 @@ impl<'a> Parser<'a> {
     })
   }
 
-  /// %name '[' %expr ']'
-  fn parse_array_indexing(&mut self) -> ParserResult<ast::IndexingExpr> {
-    // TODO: Work with a pattern instead.
-    let name = self.parse_name()?;
+  /// %expr '[' %expr ']'
+  fn parse_indexing_expr(&mut self) -> ParserResult<ast::IndexingExpr> {
+    let target_expr = Box::new(self.parse_expr()?);
 
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
@@ -956,9 +955,8 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::IndexingExpr {
-      target_name: name,
+      target_expr,
       index_expr,
-      target_id: self.cache.next_id(),
     })
   }
 
@@ -1070,7 +1068,7 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::If => ast::NodeKind::IfExpr(self.parse_if_expr()?),
       // REVISE: Change this syntax to the same treatment as call expressions (check afterwards).
       lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::BracketL) => {
-        ast::NodeKind::IndexingExpr(self.parse_array_indexing()?)
+        ast::NodeKind::IndexingExpr(self.parse_indexing_expr()?)
       }
       lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
       lexer::TokenKind::BracketL => {
