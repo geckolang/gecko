@@ -265,8 +265,6 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_statement(&mut self) -> ParserResult<ast::NodeKind> {
-    let start_location = self.current_location();
-
     let node = match self.get_token()? {
       lexer::TokenKind::Return => ast::NodeKind::ReturnStmt(self.parse_return_stmt()?),
       lexer::TokenKind::Let | lexer::TokenKind::Const => {
@@ -847,6 +845,7 @@ impl<'a> Parser<'a> {
     };
 
     Ok(ast::IfExpr {
+      id: self.cache.next_id(),
       condition,
       then_value,
       alternative_branches,
@@ -930,24 +929,14 @@ impl<'a> Parser<'a> {
     // Skip the closing bracket.
     self.skip()?;
 
-    // TODO: In the future, the type of an empty array will be inferred.
-    let explicit_type = if elements.is_empty() {
-      Some(self.parse_type()?)
-    } else {
-      None
-    };
-
     Ok(ast::StaticArrayValue {
       elements,
-      type_hint: explicit_type,
       id: self.cache.next_id(),
     })
   }
 
   /// %expr '[' %expr ']'
-  fn parse_indexing_expr(&mut self) -> ParserResult<ast::IndexingExpr> {
-    let target_expr = Box::new(self.parse_expr()?);
-
+  fn parse_indexing_expr(&mut self, target_expr: ast::NodeKind) -> ParserResult<ast::IndexingExpr> {
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
     let index_expr = Box::new(self.parse_expr()?);
@@ -955,7 +944,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::BracketR)?;
 
     Ok(ast::IndexingExpr {
-      target_expr,
+      target_expr: Box::new(target_expr),
       index_expr,
     })
   }
@@ -1030,15 +1019,14 @@ impl<'a> Parser<'a> {
     }
   }
 
-  // TODO: Make use-of, or dispose.
-  fn is_chain(&self) -> bool {
+  fn is_promotion_chain(&self) -> bool {
     if self.is_eof() {
       return false;
     }
 
     matches!(
       self.get_token().unwrap_or(&lexer::TokenKind::EOF),
-      lexer::TokenKind::Dot | lexer::TokenKind::ParenthesesL
+      lexer::TokenKind::Dot | lexer::TokenKind::ParenthesesL | lexer::TokenKind::BracketL
     )
   }
 
@@ -1066,10 +1054,6 @@ impl<'a> Parser<'a> {
         ast::NodeKind::Closure(self.parse_closure()?)
       }
       lexer::TokenKind::If => ast::NodeKind::IfExpr(self.parse_if_expr()?),
-      // REVISE: Change this syntax to the same treatment as call expressions (check afterwards).
-      lexer::TokenKind::Identifier(_) if self.after_pattern_is(&lexer::TokenKind::BracketL) => {
-        ast::NodeKind::IndexingExpr(self.parse_indexing_expr()?)
-      }
       lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
       lexer::TokenKind::BracketL => {
         ast::NodeKind::StaticArrayValue(self.parse_static_array_value()?)
@@ -1087,10 +1071,11 @@ impl<'a> Parser<'a> {
     };
 
     // Promote the node to a chain, if applicable.
-    while self.is_chain() {
+    while self.is_promotion_chain() {
       node = match self.get_token()? {
         lexer::TokenKind::ParenthesesL => ast::NodeKind::CallExpr(self.parse_call_expr(node)?),
         lexer::TokenKind::Dot => ast::NodeKind::MemberAccess(self.parse_member_access(node)?),
+        lexer::TokenKind::BracketL => ast::NodeKind::IndexingExpr(self.parse_indexing_expr(node)?),
         _ => unreachable!(),
       };
     }

@@ -1,6 +1,6 @@
 # TODO: Two of the same extern is being lowered, with name wrongly mangled.
 func arrays():
-  let empty_arr = [] Int
+  let empty_arr: [Int, 0] = []
   let arr = [1]
   let arr_2 = [arr[`U32 0]]
 

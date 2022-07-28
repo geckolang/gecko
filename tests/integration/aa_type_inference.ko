@@ -1,2 +1,4 @@
 func test():
+  let arr = [1]
+
   return true

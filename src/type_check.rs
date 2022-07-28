@@ -1,8 +1,4 @@
-use crate::{
-  ast, cache, lowering,
-  type_system::{Check, TypeContext},
-  visitor::AnalysisVisitor,
-};
+use crate::{ast, cache, lowering, visitor::AnalysisVisitor};
 
 pub struct TypeCheckContext<'a> {
   pub diagnostics: Vec<ast::Diagnostic>,
@@ -97,33 +93,37 @@ impl<'a> TypeCheckContext<'a> {
     })
   }
 
-  pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
-    let body_type = body.infer_type(cache).flatten(cache);
-
-    if !body_type.is_a_never() {
-      return body_type;
-    }
-
-    let mut ty = ast::Type::Unit;
-
-    // BUG: Finish re-implementing. This is essential.
-    // REVISE: Cloning body. This may be a large AST.
-    ast::NodeKind::BlockExpr(body.clone()).traverse(|child| {
-      if let ast::NodeKind::ReturnStmt(return_stmt) = child {
-        // REVIEW: What if the return statement's value is a block that contains a return statement?
-        if let Some(return_value) = &return_stmt.value {
-          ty = return_value.infer_type(cache);
-        }
-
-        // If the return statement is empty, then the function's return type is unit.
-        return false;
-      }
-
-      true
-    });
-
-    ty
+  pub fn find_type_of(&self, node: &ast::NodeKind) -> Option<ast::Type> {
+    todo!();
   }
+
+  // pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
+  //   let body_type = body.infer_type(cache).flatten(cache);
+
+  //   if !body_type.is_a_never() {
+  //     return body_type;
+  //   }
+
+  //   let mut ty = ast::Type::Unit;
+
+  //   // BUG: Finish re-implementing. This is essential.
+  //   // REVISE: Cloning body. This may be a large AST.
+  //   ast::NodeKind::BlockExpr(body.clone()).traverse(|child| {
+  //     if let ast::NodeKind::ReturnStmt(return_stmt) = child {
+  //       // REVIEW: What if the return statement's value is a block that contains a return statement?
+  //       if let Some(return_value) = &return_stmt.value {
+  //         ty = return_value.infer_type(cache);
+  //       }
+
+  //       // If the return statement is empty, then the function's return type is unit.
+  //       return false;
+  //     }
+
+  //     true
+  //   });
+
+  //   ty
+  // }
 
   // TODO: Use an enum to specify error type instead of a string.
   // REVIEW: Consider using `Result` instead of `Option`.
@@ -283,7 +283,8 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     // REVIEW: Need access to the current function?
 
     // TODO: Isn't there a need to flatten this type?
-    let callee_expr_type = call_expr.callee_expr.infer_type(self.cache);
+    // TODO: Unsafe unwrap.
+    let callee_expr_type = self.find_type_of(&call_expr.callee_expr).unwrap();
 
     if !matches!(callee_expr_type, ast::Type::Function(_)) {
       self.diagnostics.push(
@@ -326,16 +327,16 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     //   };
     // }
 
-    self.validate_fn_call(
-      call_expr
-        .arguments
-        .iter()
-        // No need to flatten here.
-        .map(|argument| argument.infer_type(self.cache))
-        .collect(),
-      callee_type,
-      self.cache,
-    );
+    // self.validate_fn_call(
+    //   call_expr
+    //     .arguments
+    //     .iter()
+    //     // No need to flatten here.
+    //     .map(|argument| argument.infer_type(self.cache))
+    //     .collect(),
+    //   callee_type,
+    //   self.cache,
+    // );
   }
 
   fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl) {
@@ -500,16 +501,16 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       return_type: Box::new(target_signature.1),
     };
 
-    self.validate_fn_call(
-      intrinsic_call
-        .arguments
-        .iter()
-        // No need to flatten.
-        .map(|argument| argument.infer_type(self.cache))
-        .collect(),
-      target_function_type,
-      self.cache,
-    );
+    // self.validate_fn_call(
+    //   intrinsic_call
+    //     .arguments
+    //     .iter()
+    //     // No need to flatten.
+    //     .map(|argument| argument.infer_type(self.cache))
+    //     .collect(),
+    //   target_function_type,
+    //   self.cache,
+    // );
 
     // Special case because of the static array type.
     if matches!(intrinsic_call.kind, ast::IntrinsicKind::LengthOf)
@@ -582,35 +583,35 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
         is_extern: false,
       });
 
-      if function.infer_type(self.cache) != main_function_type {
-        self.diagnostics.push(
-          codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message("the `main` function has an invalid signature")
-            .with_notes(vec![String::from("should accept a first parameter of type `Int`, a second one of type `*Str`, and the return type should be `Int`"), String::from("cannot be marked as variadic or extern")]),
-        );
-      }
+      // if function.infer_type(self.cache) != main_function_type {
+      //   self.diagnostics.push(
+      //     codespan_reporting::diagnostic::Diagnostic::error()
+      //       .with_message("the `main` function has an invalid signature")
+      //       .with_notes(vec![String::from("should accept a first parameter of type `Int`, a second one of type `*Str`, and the return type should be `Int`"), String::from("cannot be marked as variadic or extern")]),
+      //   );
+      // }
     }
 
-    let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
+    // let return_type = TypeContext::infer_return_value_type(&function.body, self.cache);
 
-    if !return_type.is_a_unit() {
-      // If at least one statement's type evaluates to never, it
-      // means that all paths are covered, because code execution will
-      // always return at one point before reaching (or at) the end of the function.
-      let all_paths_covered = function
-        .body
-        .statements
-        .iter()
-        .any(|statement| statement.infer_flatten_type(self.cache).is_a_never());
+    // if !return_type.is_a_unit() {
+    //   // If at least one statement's type evaluates to never, it
+    //   // means that all paths are covered, because code execution will
+    //   // always return at one point before reaching (or at) the end of the function.
+    //   let all_paths_covered = function
+    //     .body
+    //     .statements
+    //     .iter()
+    //     .any(|statement| statement.infer_flatten_type(self.cache).is_a_never());
 
-      if !all_paths_covered {
-        self.diagnostics.push(
-          codespan_reporting::diagnostic::Diagnostic::error()
-            // TODO: Function name.
-            .with_message("not all paths return a value"),
-        );
-      }
-    }
+    //   if !all_paths_covered {
+    //     self.diagnostics.push(
+    //       codespan_reporting::diagnostic::Diagnostic::error()
+    //         // TODO: Function name.
+    //         .with_message("not all paths return a value"),
+    //     );
+    //   }
+    // }
 
     // self.current_function_id = previous_function_key;
   }
@@ -627,70 +628,70 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       .get(&self.current_function_id.unwrap())
       .unwrap();
 
-    let mut name = None;
+    // let mut name = None;
 
-    let return_type = TypeContext::infer_return_value_type(
-      match &current_function_node {
-        ast::NodeKind::Function(function) => {
-          name = Some(function.name.clone());
+    // let return_type = TypeContext::infer_return_value_type(
+    //   match &current_function_node {
+    //     ast::NodeKind::Function(function) => {
+    //       name = Some(function.name.clone());
 
-          &function.body
-        }
-        ast::NodeKind::Closure(closure) => &closure.body,
-        _ => unreachable!(),
-      },
-      self.cache,
-    )
-    .flatten(self.cache);
+    //       &function.body
+    //     }
+    //     ast::NodeKind::Closure(closure) => &closure.body,
+    //     _ => unreachable!(),
+    //   },
+    //   self.cache,
+    // )
+    // .flatten(self.cache);
 
-    // REVISE: Whether a function returns is already checked. Limit this to comparing the types only.
-    if !return_type.is_a_unit() && return_stmt.value.is_none() {
-      self.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("return statement must return a value"),
-      );
-    } else if return_type.is_a_unit() && return_stmt.value.is_some() {
-      self.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("return statement must not return a value"),
-      );
+    // // REVISE: Whether a function returns is already checked. Limit this to comparing the types only.
+    // if !return_type.is_a_unit() && return_stmt.value.is_none() {
+    //   self.diagnostics.push(
+    //     codespan_reporting::diagnostic::Diagnostic::error()
+    //       .with_message("return statement must return a value"),
+    //   );
+    // } else if return_type.is_a_unit() && return_stmt.value.is_some() {
+    //   self.diagnostics.push(
+    //     codespan_reporting::diagnostic::Diagnostic::error()
+    //       .with_message("return statement must not return a value"),
+    //   );
 
-      // REVIEW: Returning at this point. Is this okay?
-      return;
-    }
+    //   // REVIEW: Returning at this point. Is this okay?
+    //   return;
+    // }
 
-    if let Some(value) = &return_stmt.value {
-      let value_type = value.infer_flatten_type(self.cache);
+    // if let Some(value) = &return_stmt.value {
+    //   let value_type = value.infer_flatten_type(self.cache);
 
-      if !return_type.is(&value_type) {
-        self.diagnostics.push(
-          codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-            "return statement value and signature return type mismatch for {}",
-            // REVISE: Change the actual name to this on its initialization.
-            if let Some(name) = name {
-              format!("function `{}`", name)
-            } else {
-              "closure".to_string()
-            }
-          )),
-        );
-      }
-    }
+    //   if !return_type.is(&value_type) {
+    //     self.diagnostics.push(
+    //       codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+    //         "return statement value and signature return type mismatch for {}",
+    //         // REVISE: Change the actual name to this on its initialization.
+    //         if let Some(name) = name {
+    //           format!("function `{}`", name)
+    //         } else {
+    //           "closure".to_string()
+    //         }
+    //       )),
+    //     );
+    //   }
+    // }
   }
 
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
-    let value_type = binding_stmt.value.infer_type(self.cache);
-    let ty = binding_stmt.infer_type(self.cache);
+    // let value_type = binding_stmt.value.infer_type(self.cache);
+    // let ty = binding_stmt.infer_type(self.cache);
 
-    // FIXME: This is redundant. The same type is being compared!
-    if !ty.flat_is(&value_type, self.cache) {
-      self.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-          "variable declaration of `{}` value and type mismatch",
-          binding_stmt.name
-        )),
-      );
-    }
+    // // FIXME: This is redundant. The same type is being compared!
+    // if !ty.flat_is(&value_type, self.cache) {
+    //   self.diagnostics.push(
+    //     codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+    //       "variable declaration of `{}` value and type mismatch",
+    //       binding_stmt.name
+    //     )),
+    //   );
+    // }
   }
 
   fn visit_binary_expr(&mut self, binary_expr: &ast::BinaryExpr) {
@@ -812,19 +813,19 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_reference(&mut self, reference: &ast::Reference) {
-    let target_type = self
-      .cache
-      .find_decl_via_link(&reference.pattern.id)
-      .unwrap()
-      .infer_type(self.cache);
+    // let target_type = self
+    //   .cache
+    //   .find_decl_via_link(&reference.pattern.id)
+    //   .unwrap()
+    //   .infer_type(self.cache);
 
-    // FIXME: Investigate how this affects.
-    if target_type.is_a_meta() {
-      self.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("cannot reference a binding that has a meta type; it cannot be evaluated"),
-      );
-    }
+    // // FIXME: Investigate how this affects.
+    // if target_type.is_a_meta() {
+    //   self.diagnostics.push(
+    //     codespan_reporting::diagnostic::Diagnostic::error()
+    //       .with_message("cannot reference a binding that has a meta type; it cannot be evaluated"),
+    //   );
+    // }
   }
 
   fn visit_extern_function(&mut self, extern_fn: &ast::ExternFunction) {
@@ -849,29 +850,29 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   fn visit_static_array_value(&mut self, static_array_value: &ast::StaticArrayValue) {
     let mut mixed_elements_flag = false;
 
-    let expected_element_type = if let Some(explicit_type) = &static_array_value.type_hint {
-      explicit_type.clone()
-    } else {
-      static_array_value
-        .elements
-        .first()
-        .unwrap()
-        .infer_type(self.cache)
-    };
+    // let expected_element_type = if let Some(explicit_type) = &static_array_value.type_hint {
+    //   explicit_type.clone()
+    // } else {
+    //   static_array_value
+    //     .elements
+    //     .first()
+    //     .unwrap()
+    //     .infer_type(self.cache)
+    // };
 
-    // TODO: Skip the first element during iteration, as it is redundant.
-    for element in &static_array_value.elements {
-      // Report this error only once.
-      // FIXME: Use type comparison function? And also flatten?
-      if !mixed_elements_flag && element.infer_type(self.cache) != expected_element_type {
-        self.diagnostics.push(
-          codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message("array elements must all be of the same type"),
-        );
+    // // TODO: Skip the first element during iteration, as it is redundant.
+    // for element in &static_array_value.elements {
+    //   // Report this error only once.
+    //   // FIXME: Use type comparison function? And also flatten?
+    //   if !mixed_elements_flag && element.infer_type(self.cache) != expected_element_type {
+    //     self.diagnostics.push(
+    //       codespan_reporting::diagnostic::Diagnostic::error()
+    //         .with_message("array elements must all be of the same type"),
+    //     );
 
-        mixed_elements_flag = true;
-      }
-    }
+    //     mixed_elements_flag = true;
+    //   }
+    // }
   }
 
   fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr) {
@@ -891,54 +892,54 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       return;
     }
 
-    let target_expr_type = self
-      .cache
-      .find_decl_via_link(&indexing_expr.target_id)
-      .unwrap()
-      .infer_flatten_type(self.cache);
+    // let target_expr_type = self
+    //   .cache
+    //   .find_decl_via_link(&indexing_expr.target_id)
+    //   .unwrap()
+    //   .infer_flatten_type(self.cache);
 
-    // REVIEW: Any way of avoiding nesting?
-    if let ast::Type::StaticIndexable(_, length) = target_expr_type {
-      // If the index expression is not a constant expression, then
-      // this scope must fall under a bounds check for that index, and
-      // the length of the array.
-      if !indexing_expr.index_expr.is_constant_expr() {
-        // TODO: Support for dynamic index, but require a bounds check.
+    // // REVIEW: Any way of avoiding nesting?
+    // if let ast::Type::StaticIndexable(_, length) = target_expr_type {
+    //   // If the index expression is not a constant expression, then
+    //   // this scope must fall under a bounds check for that index, and
+    //   // the length of the array.
+    //   if !indexing_expr.index_expr.is_constant_expr() {
+    //     // TODO: Support for dynamic index, but require a bounds check.
 
-        self.diagnostics.push(
-          codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message("array index expression must be a constant expression"),
-        );
-      } else {
-        // FIXME: Why we allow unary expressions on const expressions if we extract their value intact?
-        let index_expr_literal = crate::force_match!(
-          indexing_expr
-            .index_expr
-            .find_node(|node| matches!(node, ast::NodeKind::Literal(..)))
-            .unwrap(),
-          ast::NodeKind::Literal
-        );
+    //     self.diagnostics.push(
+    //       codespan_reporting::diagnostic::Diagnostic::error()
+    //         .with_message("array index expression must be a constant expression"),
+    //     );
+    //   } else {
+    //     // FIXME: Why we allow unary expressions on const expressions if we extract their value intact?
+    //     let index_expr_literal = crate::force_match!(
+    //       indexing_expr
+    //         .index_expr
+    //         .find_node(|node| matches!(node, ast::NodeKind::Literal(..)))
+    //         .unwrap(),
+    //       ast::NodeKind::Literal
+    //     );
 
-        let index_expr_value = match index_expr_literal {
-          // NOTE: Safe cast because we know that the literal is of type `U32` at this point.
-          ast::Literal::Int(value, _) => *value as u32,
-          _ => unreachable!(),
-        };
+    //     let index_expr_value = match index_expr_literal {
+    //       // NOTE: Safe cast because we know that the literal is of type `U32` at this point.
+    //       ast::Literal::Int(value, _) => *value as u32,
+    //       _ => unreachable!(),
+    //     };
 
-        // NOTE: Because of its type, the index expression will never be lower than 0.
-        if index_expr_value >= length {
-          self.diagnostics.push(
-            codespan_reporting::diagnostic::Diagnostic::error()
-              .with_message("array index expression must be within the bounds of the array"),
-          );
-        }
-      }
-    } else {
-      self.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error()
-          .with_message("can only index into arrays"),
-      );
-    }
+    //     // NOTE: Because of its type, the index expression will never be lower than 0.
+    //     if index_expr_value >= length {
+    //       self.diagnostics.push(
+    //         codespan_reporting::diagnostic::Diagnostic::error()
+    //           .with_message("array index expression must be within the bounds of the array"),
+    //       );
+    //     }
+    //   }
+    // } else {
+    //   self.diagnostics.push(
+    //     codespan_reporting::diagnostic::Diagnostic::error()
+    //       .with_message("can only index into arrays"),
+    //   );
+    // }
   }
 
   fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
@@ -1028,7 +1029,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       .zip(struct_type.fields.iter())
       .enumerate()
     {
-      let value_field_type = value_field.infer_type(self.cache);
+      // let value_field_type = value_field.infer_type(self.cache);
 
       // FIXME: Uncomment and translate to current codebase.
       // if !unify_option(value_field_type, Some(struct_field.1), cache) {

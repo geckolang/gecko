@@ -575,7 +575,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     self.block_id_stack.push(block.id);
   }
 
-  fn exit_block_expr(&mut self, _block: &ast::BlockExpr) -> () {
+  fn exit_block_expr(&mut self, _block: &ast::BlockExpr) {
     self.block_id_stack.pop();
   }
 

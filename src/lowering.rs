@@ -1,6 +1,8 @@
+// FIXME: Absolutely no need to infer types anywhere in here. Simplify this without the
+// ... inference / retrieval of types.
+
 use crate::{
   ast, cache, type_inference,
-  type_system::{Check, TypeContext},
   visitor::{self, LoweringVisitor},
 };
 
@@ -101,11 +103,14 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     // REVISE: Need to remove the exclusive logic for let-statements / references (or simplify it).
     // REVIEW: Isn't there a need to resolve the type?
 
-    // REVIEW: Isn't this superficial?
-    if matches!(node, ast::NodeKind::Parameter(_))
-      || node
-        .infer_type(self.cache)
-        .is(&ast::Type::Basic(ast::BasicType::String))
+    // REVIEW: Isn't this superficial? Will this work as expected without type inference?
+    if matches!(
+      node.flatten(),
+      ast::NodeKind::Parameter(_) | ast::NodeKind::Literal(ast::Literal::String(_))
+    )
+    // || node
+    //   .infer_type(self.cache)
+    //   .is(&ast::Type::Basic(ast::BasicType::String))
     {
       return llvm_value;
     }
@@ -493,12 +498,10 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     // REVISE: Optimize. The type for this construct may be cached.
     // let value_type = binding_stmt.value.infer_flatten_type(self.cache);
-    let value_type = if let Some(type_hint) = &binding_stmt.type_hint {
-      type_hint
-    } else {
-      // TODO: Unsafe unwrap?
-      self.type_cache.get(&binding_stmt.id).unwrap()
-    };
+    // REVIEW: Always retrieve from the type cache regardless of type hint?
+    let value_type = self.type_cache.get(&binding_stmt.id).unwrap();
+
+    dbg!(value_type);
 
     // Special cases. The allocation is done elsewhere.
     if matches!(value_type, ast::Type::Function(_)) {
@@ -538,7 +541,8 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     self.llvm_cached_values.insert(binding_stmt.id, result);
 
-    None
+    // FIXME: Temporary. In the future this shouldn't yield a value? Review.
+    Some(result)
   }
 
   fn visit_unary_expr(
@@ -779,11 +783,12 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // If a block was left for further processing, and it has no terminator,
     // complete it here.
     if self.get_current_block().get_terminator().is_none()
-      && function
-        .body
-        .infer_type(self.cache)
-        .flatten(self.cache)
-        .is_a_never()
+    // FIXME: Build unreachable if applicable.
+    // && function
+    //   .body
+    //   .infer_type(self.cache)
+    //   .flatten(self.cache)
+    //   .is_a_never()
     {
       self.llvm_builder.build_unreachable();
     } else {
@@ -855,8 +860,13 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     let llvm_condition = self.dispatch(&if_expr.condition).unwrap();
     let llvm_current_function = self.llvm_function_buffer.unwrap();
-    let ty = if_expr.infer_type(self.cache).flatten(self.cache);
     let mut llvm_if_value = None;
+
+    let ty = self
+      .type_cache
+      .get(&if_expr.id)
+      .unwrap()
+      .flatten(self.cache);
 
     // This if-expression will never yield a value if its type
     // is unit or never.
@@ -1238,8 +1248,10 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .map(|element| self.dispatch(element).unwrap())
       .collect::<Vec<_>>();
 
-    let llvm_array_type = if llvm_values.is_empty() {
-      self.memoize_or_retrieve_type(array_value.type_hint.as_ref().unwrap())
+    let llvm_indexable_type = if llvm_values.is_empty() {
+      let indexable_type = self.type_cache.get(&array_value.id).unwrap();
+
+      self.memoize_or_retrieve_type(indexable_type)
     } else {
       llvm_values.first().unwrap().get_type()
     }
@@ -1248,7 +1260,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     let llvm_array_ptr = self
       .llvm_builder
-      .build_alloca(llvm_array_type, "array.value");
+      .build_alloca(llvm_indexable_type, "array.value");
 
     for (index, llvm_value) in llvm_values.iter().enumerate() {
       let first_index = self.llvm_context.i32_type().const_int(0, false);
@@ -1291,9 +1303,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .into_int_value();
 
     // REVIEW: Opted not to use access rules. Ensure this is correct.
-    let llvm_target_array = self
-      .memoize_declaration(&indexing_expr.target_id, false)
-      .unwrap();
+    let llvm_target = self.dispatch(&indexing_expr.target_expr).unwrap();
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
     unsafe {
@@ -1301,16 +1311,18 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       let first_index = self.llvm_context.i32_type().const_int(0, false);
 
       let llvm_gep_ptr = self.llvm_builder.build_in_bounds_gep(
-        llvm_target_array.into_pointer_value(),
+        llvm_target.into_pointer_value(),
         &[first_index, llvm_index],
         "array.index.gep",
       );
 
-      let target_indexable_type = self
-        .cache
-        .find_decl_via_link(&indexing_expr.target_id)
-        .unwrap()
-        .infer_type(self.cache);
+      // let target_indexable_type = self
+      //   .cache
+      //   .find_decl_via_link(&indexing_expr.target_id)
+      //   .unwrap()
+      //   .infer_type(self.cache);
+
+      let target_indexable_type = indexing_expr.index_expr.find_type(self.type_cache).unwrap();
 
       let target_indexable_size = match target_indexable_type {
         ast::Type::StaticIndexable(_, size) => size,
@@ -1451,7 +1463,9 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // FIXME: Use the modified signature.
     let llvm_function_type = self.lower_signature(
       &closure.signature,
-      &TypeContext::infer_return_value_type(&closure.body, self.cache),
+      // &TypeContext::infer_return_value_type(&closure.body, self.cache),
+      // TODO: Implement with the addition of type inference.
+      todo!(),
     );
 
     let llvm_function_name = self.mangle_name(&String::from("closure"));
@@ -1828,12 +1842,17 @@ mod tests {
 
   #[test]
   fn lower_if_expr_simple() {
-    let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let mut cache = cache::Cache::new();
+    let if_expr_id = cache.next_id();
+    let mut type_cache = type_inference::TypeCache::new();
+
+    type_cache.insert(if_expr_id, ast::Type::Unit);
+
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
+      id: if_expr_id,
       condition: Box::new(ast::NodeKind::Literal(ast::Literal::Bool(true))),
       then_value: Box::new(Mock::literal_int()),
       alternative_branches: Vec::new(),

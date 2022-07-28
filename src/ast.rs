@@ -1,4 +1,4 @@
-use crate::{cache, name_resolution, type_system::Check};
+use crate::{cache, name_resolution, type_inference};
 
 #[macro_export]
 macro_rules! force_match {
@@ -348,6 +348,10 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
+  pub fn find_type<'a>(&self, type_cache: &'a type_inference::TypeCache) -> Option<&'a Type> {
+    self.find_id().and_then(|id| type_cache.get(&id))
+  }
+
   // TODO: Can this be made a Rust Iterator? This way we get all of Iterator's features.
   pub fn traverse<'a>(&'a self, mut visitor: impl FnMut(&'a NodeKind) -> bool) {
     todo!();
@@ -498,7 +502,8 @@ impl NodeKind {
   ///
   /// Should be used when the type is to be compared.
   pub fn infer_flatten_type(&self, cache: &cache::Cache) -> Type {
-    self.infer_type(cache).flatten(cache)
+    // self.infer_type(cache).flatten(cache)
+    todo!()
   }
 
   pub fn find_id(&self) -> Option<cache::Id> {
@@ -633,10 +638,6 @@ pub struct IndexingExpr {
 #[derive(Debug, Clone)]
 pub struct StaticArrayValue {
   pub elements: Vec<NodeKind>,
-  /// An optional type hint for the array.
-  ///
-  /// Can be provided by the user.
-  pub type_hint: Option<Type>,
   pub id: cache::Id,
 }
 
@@ -734,6 +735,7 @@ pub struct BindingStmt {
 
 #[derive(Debug, Clone)]
 pub struct IfExpr {
+  pub id: cache::Id,
   pub condition: Box<NodeKind>,
   pub then_value: Box<NodeKind>,
   pub alternative_branches: Vec<(NodeKind, NodeKind)>,

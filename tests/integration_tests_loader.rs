@@ -53,9 +53,9 @@ mod tests {
     ast_map.insert(qualifier.clone(), parse_result.unwrap());
     assert!(name_resolution::run(&mut ast_map, &mut cache).is_empty());
 
-    let (type_inference_diagnostics, type_cache) = type_inference::run(&ast_map, &cache);
+    let (inference_diagnostics, type_cache) = type_inference::run(&ast_map, &cache);
 
-    assert!(type_inference_diagnostics.is_empty());
+    assert!(inference_diagnostics.is_empty());
 
     let mut type_check_context = type_check::TypeCheckContext::new(&cache);
 

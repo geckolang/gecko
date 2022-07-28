@@ -46,350 +46,350 @@ impl TypeContext {
     })
   }
 
-  pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
-    let body_type = body.infer_type(cache).flatten(cache);
+  // pub fn infer_return_value_type(body: &ast::BlockExpr, cache: &cache::Cache) -> ast::Type {
+  //   let body_type = body.infer_type(cache).flatten(cache);
 
-    if !body_type.is_a_never() {
-      return body_type;
-    }
+  //   if !body_type.is_a_never() {
+  //     return body_type;
+  //   }
 
-    let mut ty = ast::Type::Unit;
+  //   let mut ty = ast::Type::Unit;
 
-    // BUG: Finish re-implementing. This is essential.
-    // REVISE: Cloning body. This may be a large AST.
-    ast::NodeKind::BlockExpr(body.clone()).traverse(|child| {
-      if let ast::NodeKind::ReturnStmt(return_stmt) = child {
-        // REVIEW: What if the return statement's value is a block that contains a return statement?
-        if let Some(return_value) = &return_stmt.value {
-          ty = return_value.infer_type(cache);
-        }
+  //   // BUG: Finish re-implementing. This is essential.
+  //   // REVISE: Cloning body. This may be a large AST.
+  //   ast::NodeKind::BlockExpr(body.clone()).traverse(|child| {
+  //     if let ast::NodeKind::ReturnStmt(return_stmt) = child {
+  //       // REVIEW: What if the return statement's value is a block that contains a return statement?
+  //       if let Some(return_value) = &return_stmt.value {
+  //         ty = return_value.infer_type(cache);
+  //       }
 
-        // If the return statement is empty, then the function's return type is unit.
-        return false;
-      }
+  //       // If the return statement is empty, then the function's return type is unit.
+  //       return false;
+  //     }
 
-      true
-    });
+  //     true
+  //   });
 
-    ty
-  }
+  //   ty
+  // }
 }
 
-pub trait Check {
-  // REVIEW: Consider caching inference results here, if they are indeed costly.
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    ast::Type::Unit
-  }
-}
+// pub trait Check {
+//   // REVIEW: Consider caching inference results here, if they are indeed costly.
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     ast::Type::Unit
+//   }
+// }
 
-impl Check for ast::NodeKind {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    // dispatch!(&self, Check::infer_type, cache)
-    // BUG: Temporary.
-    ast::Type::Unit
-  }
-}
+// impl Check for ast::NodeKind {
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     // dispatch!(&self, Check::infer_type, cache)
+//     // BUG: Temporary.
+//     ast::Type::Unit
+//   }
+// }
 
-impl Check for ast::SizeofIntrinsic {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I64))
-  }
-}
+// impl Check for ast::SizeofIntrinsic {
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I64))
+//   }
+// }
 
-impl Check for ast::Trait {
-  //
-}
+// impl Check for ast::Trait {
+//   //
+// }
 
-impl Check for ast::MemberAccess {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let base_expr_type = self.base_expr.infer_flatten_type(cache);
+// impl Check for ast::MemberAccess {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     let base_expr_type = self.base_expr.infer_flatten_type(cache);
 
-    let struct_type = match base_expr_type {
-      ast::Type::Struct(struct_type) => struct_type,
-      // REVIEW: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
-      // ... But this point may be reachable from the user-side. Need to somehow properly
-      // ... handle this case.
-      _ => todo!(),
-    };
+//     let struct_type = match base_expr_type {
+//       ast::Type::Struct(struct_type) => struct_type,
+//       // REVIEW: Investigate this strategy. Shouldn't we be using `unreachable!()` instead?
+//       // ... But this point may be reachable from the user-side. Need to somehow properly
+//       // ... handle this case.
+//       _ => todo!(),
+//     };
 
-    if let Some(struct_field) = struct_type
-      .fields
-      .iter()
-      .find(|field| field.0 == self.member_name)
-    {
-      return struct_field.1.clone();
-    }
+//     if let Some(struct_field) = struct_type
+//       .fields
+//       .iter()
+//       .find(|field| field.0 == self.member_name)
+//     {
+//       return struct_field.1.clone();
+//     }
 
-    // REVIEW: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
-    // TODO: Lookup implementation, and attempt to match a method.
-    if let Some(struct_impls) = cache.struct_impls.get(&struct_type.id) {
-      for (method_id, method_name) in struct_impls {
-        if method_name == &self.member_name {
-          return cache
-            .find_decl_via_link(&method_id)
-            .unwrap()
-            .infer_type(cache);
-        }
-      }
-    }
+//     // REVIEW: Why not abstract this to the `Reference` node? We're doing the same thing (or very similar at least), correct?
+//     // TODO: Lookup implementation, and attempt to match a method.
+//     if let Some(struct_impls) = cache.struct_impls.get(&struct_type.id) {
+//       for (method_id, method_name) in struct_impls {
+//         if method_name == &self.member_name {
+//           return cache
+//             .find_decl_via_link(&method_id)
+//             .unwrap()
+//             .infer_type(cache);
+//         }
+//       }
+//     }
 
-    todo!();
-  }
-}
+//     todo!();
+//   }
+// }
 
-impl Check for ast::Closure {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    TypeContext::infer_signature_type(
-      &self.signature,
-      Some(TypeContext::infer_return_value_type(&self.body, cache)),
-    )
-  }
-}
+// impl Check for ast::Closure {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     TypeContext::infer_signature_type(
+//       &self.signature,
+//       Some(TypeContext::infer_return_value_type(&self.body, cache)),
+//     )
+//   }
+// }
 
-impl Check for ast::TypeAlias {
-  // REVIEW: Don't we need to implement `infer_type` here? Seems like not. Confirm.
-}
+// impl Check for ast::TypeAlias {
+//   // REVIEW: Don't we need to implement `infer_type` here? Seems like not. Confirm.
+// }
 
-impl Check for ast::Pattern {
-  //
-}
+// impl Check for ast::Pattern {
+//   //
+// }
 
-impl Check for ast::IntrinsicCall {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    match self.kind {
-      ast::IntrinsicKind::LengthOf => ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
-    }
-  }
-}
+// impl Check for ast::IntrinsicCall {
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     match self.kind {
+//       ast::IntrinsicKind::LengthOf => ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
+//     }
+//   }
+// }
 
-impl Check for ast::ExternStatic {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    self.ty.clone()
-  }
-}
+// impl Check for ast::ExternStatic {
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     self.ty.clone()
+//   }
+// }
 
-impl Check for ast::StructValue {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let struct_type = match cache.find_decl_via_link(&self.target_id).unwrap() {
-      ast::NodeKind::Struct(struct_type) => struct_type,
-      _ => unreachable!(),
-    };
+// impl Check for ast::StructValue {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     let struct_type = match cache.find_decl_via_link(&self.target_id).unwrap() {
+//       ast::NodeKind::Struct(struct_type) => struct_type,
+//       _ => unreachable!(),
+//     };
 
-    // REVIEW: Is this the correct type? We might need this one in order to unify with the original struct type.
-    ast::Type::Struct(struct_type.as_ref().clone())
-  }
-}
+//     // REVIEW: Is this the correct type? We might need this one in order to unify with the original struct type.
+//     ast::Type::Struct(struct_type.as_ref().clone())
+//   }
+// }
 
-impl Check for ast::Signature {
-  //
-}
+// impl Check for ast::Signature {
+//   //
+// }
 
-impl Check for ast::Struct {
-  // REVIEW: Implement? This is already a type on itself.
-}
+// impl Check for ast::Struct {
+//   // REVIEW: Implement? This is already a type on itself.
+// }
 
-impl Check for ast::UnaryExpr {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let expr_type = self.expr.infer_type(cache);
+// impl Check for ast::UnaryExpr {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     let expr_type = self.expr.infer_type(cache);
 
-    // Short-circuit if the expression's type is unit.
-    if expr_type.is_a_unit() {
-      return ast::Type::Unit;
-    }
+//     // Short-circuit if the expression's type is unit.
+//     if expr_type.is_a_unit() {
+//       return ast::Type::Unit;
+//     }
 
-    return match self.operator {
-      ast::OperatorKind::AddressOf => ast::Type::Pointer(Box::new(expr_type)),
-      ast::OperatorKind::Cast => self.cast_type.as_ref().unwrap().clone(),
-      ast::OperatorKind::Not => ast::Type::Basic(ast::BasicType::Bool),
-      ast::OperatorKind::SubtractOrNegate => expr_type,
-      // BUG: The type must be whatever was inside the pointer; otherwise assume type error.
-      ast::OperatorKind::MultiplyOrDereference => expr_type,
-      _ => unreachable!(),
-    };
-  }
-}
+//     return match self.operator {
+//       ast::OperatorKind::AddressOf => ast::Type::Pointer(Box::new(expr_type)),
+//       ast::OperatorKind::Cast => self.cast_type.as_ref().unwrap().clone(),
+//       ast::OperatorKind::Not => ast::Type::Basic(ast::BasicType::Bool),
+//       ast::OperatorKind::SubtractOrNegate => expr_type,
+//       // BUG: The type must be whatever was inside the pointer; otherwise assume type error.
+//       ast::OperatorKind::MultiplyOrDereference => expr_type,
+//       _ => unreachable!(),
+//     };
+//   }
+// }
 
-impl Check for ast::Enum {
-  // REVIEW: Isn't there a need for its variants to be considered integer types?
-}
+// impl Check for ast::Enum {
+//   // REVIEW: Isn't there a need for its variants to be considered integer types?
+// }
 
-impl Check for ast::IndexingExpr {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let array_type = cache
-      .find_decl_via_link(&self.target_id)
-      .unwrap()
-      .infer_flatten_type(cache);
+// impl Check for ast::IndexingExpr {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     let array_type = cache
+//       .find_decl_via_link(&self.target_id)
+//       .unwrap()
+//       .infer_flatten_type(cache);
 
-    // TODO: In the future, add support for when indexing strings.
-    let element_type = match array_type {
-      ast::Type::StaticIndexable(element_type, _) => element_type.as_ref().clone(),
-      _ => unreachable!(),
-    };
+//     // TODO: In the future, add support for when indexing strings.
+//     let element_type = match array_type {
+//       ast::Type::StaticIndexable(element_type, _) => element_type.as_ref().clone(),
+//       _ => unreachable!(),
+//     };
 
-    element_type
-  }
-}
+//     element_type
+//   }
+// }
 
-impl Check for ast::StaticArrayValue {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // TODO: Temporary, until type-inference is implemented.
-    // We assume that the length is `0` if the explicit type is provided, otherwise
-    // the array type is determined by the first element.
-    let array_element_type = if let Some(explicit_type) = &self.type_hint {
-      explicit_type.clone()
-    } else {
-      self.elements.first().unwrap().infer_type(cache)
-    };
+// impl Check for ast::StaticArrayValue {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     // TODO: Temporary, until type-inference is implemented.
+//     // We assume that the length is `0` if the explicit type is provided, otherwise
+//     // the array type is determined by the first element.
+//     let array_element_type = if let Some(explicit_type) = &self.type_hint {
+//       explicit_type.clone()
+//     } else {
+//       self.elements.first().unwrap().infer_type(cache)
+//     };
 
-    // REVIEW: Is the length conversion safe?
-    ast::Type::StaticIndexable(Box::new(array_element_type), self.elements.len() as u32)
-  }
-}
+//     // REVIEW: Is the length conversion safe?
+//     ast::Type::StaticIndexable(Box::new(array_element_type), self.elements.len() as u32)
+//   }
+// }
 
-impl Check for ast::UnsafeExpr {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.0.infer_type(cache)
-  }
-}
+// impl Check for ast::UnsafeExpr {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     self.0.infer_type(cache)
+//   }
+// }
 
-impl Check for ast::ExternFunction {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    TypeContext::infer_signature_type(&self.signature, self.signature.return_type_hint.clone())
-  }
-}
+// impl Check for ast::ExternFunction {
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     TypeContext::infer_signature_type(&self.signature, self.signature.return_type_hint.clone())
+//   }
+// }
 
-impl Check for ast::Parameter {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    self.type_hint.as_ref().unwrap().clone()
-  }
-}
+// impl Check for ast::Parameter {
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     self.type_hint.as_ref().unwrap().clone()
+//   }
+// }
 
-impl Check for ast::BlockExpr {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    if let Some(yields_value) = &self.yields {
-      return yields_value.infer_type(cache);
-    }
-    // FIXME: Ensure this logic is correct, and that it will work as expected.
-    // BUG: The function to infer return values uses this infer method, so function types CAN be never!
-    // If at least one statement evaluates to type never, the type of this
-    // block is also never.
-    else if self
-      .statements
-      .iter()
-      .any(|statement| statement.infer_flatten_type(cache).is_a_never())
-    {
-      return ast::Type::Never;
-    }
+// impl Check for ast::BlockExpr {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     if let Some(yields_value) = &self.yields {
+//       return yields_value.infer_type(cache);
+//     }
+//     // FIXME: Ensure this logic is correct, and that it will work as expected.
+//     // BUG: The function to infer return values uses this infer method, so function types CAN be never!
+//     // If at least one statement evaluates to type never, the type of this
+//     // block is also never.
+//     else if self
+//       .statements
+//       .iter()
+//       .any(|statement| statement.infer_flatten_type(cache).is_a_never())
+//     {
+//       return ast::Type::Never;
+//     }
 
-    ast::Type::Unit
-  }
-}
+//     ast::Type::Unit
+//   }
+// }
 
-impl Check for ast::Reference {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // REVIEW: We should have some sort of caching specifically applied to this construct.
-    cache
-      .find_decl_via_link(&self.pattern.id)
-      .unwrap()
-      .infer_type(cache)
-  }
-}
+// impl Check for ast::Reference {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     // REVIEW: We should have some sort of caching specifically applied to this construct.
+//     cache
+//       .find_decl_via_link(&self.pattern.id)
+//       .unwrap()
+//       .infer_type(cache)
+//   }
+// }
 
-impl Check for ast::Literal {
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    ast::Type::Basic(match self {
-      ast::Literal::Bool(_) => ast::BasicType::Bool,
-      ast::Literal::Char(_) => ast::BasicType::Char,
-      ast::Literal::Int(_, size) => ast::BasicType::Int(size.clone()),
-      ast::Literal::String(_) => ast::BasicType::String,
-      // TODO: Deprecated. Nullptr will soon no longer have a type attached to it. (Use type cache).
-      ast::Literal::Nullptr(_, ty) => return ast::Type::Pointer(Box::new(ty.clone().unwrap())),
-    })
-  }
-}
+// impl Check for ast::Literal {
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     ast::Type::Basic(match self {
+//       ast::Literal::Bool(_) => ast::BasicType::Bool,
+//       ast::Literal::Char(_) => ast::BasicType::Char,
+//       ast::Literal::Int(_, size) => ast::BasicType::Int(size.clone()),
+//       ast::Literal::String(_) => ast::BasicType::String,
+//       // TODO: Deprecated. Nullptr will soon no longer have a type attached to it. (Use type cache).
+//       ast::Literal::Nullptr(_, ty) => return ast::Type::Pointer(Box::new(ty.clone().unwrap())),
+//     })
+//   }
+// }
 
-impl Check for ast::IfExpr {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let then_expr_type = self.then_value.infer_flatten_type(cache);
+// impl Check for ast::IfExpr {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     let then_expr_type = self.then_value.infer_flatten_type(cache);
 
-    // At least the two main branches must be present in order for a value
-    // to possibly evaluate.
-    if self.else_value.is_none() {
-      return ast::Type::Unit;
-    }
+//     // At least the two main branches must be present in order for a value
+//     // to possibly evaluate.
+//     if self.else_value.is_none() {
+//       return ast::Type::Unit;
+//     }
 
-    // TODO: Take into consideration newly-added alternative branches.
+//     // TODO: Take into consideration newly-added alternative branches.
 
-    let else_expr = self.else_value.as_ref().unwrap();
-    let else_expr_type = else_expr.infer_flatten_type(cache);
+//     let else_expr = self.else_value.as_ref().unwrap();
+//     let else_expr_type = else_expr.infer_flatten_type(cache);
 
-    // Default to type unit if both branches are of incompatible types.
-    then_expr_type
-      .coercion(&else_expr_type)
-      .unwrap_or(ast::Type::Unit)
-  }
-}
+//     // Default to type unit if both branches are of incompatible types.
+//     then_expr_type
+//       .coercion(&else_expr_type)
+//       .unwrap_or(ast::Type::Unit)
+//   }
+// }
 
-impl Check for ast::BinaryExpr {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    match self.operator {
-      ast::OperatorKind::LessThan
-      | ast::OperatorKind::GreaterThan
-      | ast::OperatorKind::Equality
-      | ast::OperatorKind::And
-      | ast::OperatorKind::Or
-      | ast::OperatorKind::Nand
-      | ast::OperatorKind::Nor
-      | ast::OperatorKind::Xor
-      | ast::OperatorKind::In => ast::Type::Basic(ast::BasicType::Bool),
-      _ => self.left.infer_type(cache),
-    }
-  }
-}
+// impl Check for ast::BinaryExpr {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     match self.operator {
+//       ast::OperatorKind::LessThan
+//       | ast::OperatorKind::GreaterThan
+//       | ast::OperatorKind::Equality
+//       | ast::OperatorKind::And
+//       | ast::OperatorKind::Or
+//       | ast::OperatorKind::Nand
+//       | ast::OperatorKind::Nor
+//       | ast::OperatorKind::Xor
+//       | ast::OperatorKind::In => ast::Type::Basic(ast::BasicType::Bool),
+//       _ => self.left.infer_type(cache),
+//     }
+//   }
+// }
 
-impl Check for ast::InlineExprStmt {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.expr.infer_type(cache)
-  }
-}
+// impl Check for ast::InlineExprStmt {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     self.expr.infer_type(cache)
+//   }
+// }
 
-impl Check for ast::BindingStmt {
-  // BUG: This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    self.value.infer_type(cache)
-  }
-}
+// impl Check for ast::BindingStmt {
+//   // BUG: This causes a bug where the string literal is not accessed (left as `i8**`). The let-statement didn't have a type before.
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     self.value.infer_type(cache)
+//   }
+// }
 
-impl Check for ast::ReturnStmt {
-  // FIXME: This implies that the return statement may be used as an expression,
-  // ... but that's currently not possible. Instead, this type is currently solely
-  // ... used to determine if all paths return a value?
-  fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
-    ast::Type::Never
-  }
-}
+// impl Check for ast::ReturnStmt {
+//   // FIXME: This implies that the return statement may be used as an expression,
+//   // ... but that's currently not possible. Instead, this type is currently solely
+//   // ... used to determine if all paths return a value?
+//   fn infer_type(&self, _cache: &cache::Cache) -> ast::Type {
+//     ast::Type::Never
+//   }
+// }
 
-impl Check for ast::Function {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    // REVIEW: Why not use annotated return type if defined?
-    todo!()
-    // TypeContext::infer_signature_type(
-    //   &self.signature,
-    //   Some(TypeContext::infer_return_value_type(&self.body, cache)),
-    // )
-  }
-}
+// impl Check for ast::Function {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     // REVIEW: Why not use annotated return type if defined?
+//     todo!()
+//     // TypeContext::infer_signature_type(
+//     //   &self.signature,
+//     //   Some(TypeContext::infer_return_value_type(&self.body, cache)),
+//     // )
+//   }
+// }
 
-impl Check for ast::CallExpr {
-  fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
-    let callee_expr_type = self.callee_expr.infer_type(cache);
+// impl Check for ast::CallExpr {
+//   fn infer_type(&self, cache: &cache::Cache) -> ast::Type {
+//     let callee_expr_type = self.callee_expr.infer_type(cache);
 
-    match callee_expr_type {
-      ast::Type::Function(callable_type) => callable_type.return_type.as_ref().clone(),
-      _ => todo!(),
-    }
-  }
-}
+//     match callee_expr_type {
+//       ast::Type::Function(callable_type) => callable_type.return_type.as_ref().clone(),
+//       _ => todo!(),
+//     }
+//   }
+// }
 
 #[cfg(test)]
 mod tests {

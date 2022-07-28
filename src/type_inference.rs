@@ -170,6 +170,11 @@ impl<'a> TypeInferenceContext<'a> {
     // BUG: This will fail for type constructors because the substitutions here refer to
     // ... the generics (inner type variables) of the type constructor.
     for (id, ty) in &self.substitutions {
+      // REVISE: Temporary fix until proper diagnostic handling implementation.
+      // if matches!(ty, ast::Type::Variable(_) | ast::Type::Constructor(..)) {
+      //   panic!("Type variable {} is still bound to `{:?}`", id, ty);
+      // }
+
       // Update the type for this node in the type cache.
       self.type_cache.insert(id.clone(), ty.clone());
     }
@@ -445,7 +450,25 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
     // ... make it an `rc::Rc<>`, and possibly use a buffer id to be able to retrieve it during visitation.
   }
 
-  fn visit_static_array_value(&mut self, _array_value: &ast::StaticArrayValue) {
+  fn visit_static_array_value(&mut self, array_value: &ast::StaticArrayValue) {
+    let array_element_type = self.create_type_variable(array_value.id);
+
+    let array_type = ast::Type::StaticIndexable(
+      Box::new(array_element_type.clone()),
+      // REVIEW: Is this conversion safe?
+      array_value.elements.len() as u32,
+    );
+
+    // FIXME: Abstract common functionality from `infer_type_of`.
+    self
+      .substitutions
+      .insert(array_value.id, array_type.clone().try_upgrade());
+
+    for element in &array_value.elements {
+      let actual_element_type = self.infer_type_of(element);
+
+      self.report_constraint(actual_element_type, array_element_type.clone());
+    }
     // let array_type = self.create_type_variable(array_value.id);
 
     // let element_types
@@ -757,16 +780,15 @@ mod tests {
   }
 
   #[test]
-  fn infer_array_type_from_binding() {
-    let cache = cache::Cache::new();
+  fn infer_array_type_from_binding_hint() {
+    let mut cache = cache::Cache::new();
+    let binding_stmt_id = cache.next_id();
+    let static_array_value_id = cache.next_id();
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
-    let binding_stmt_id = 0;
-    let static_array_value_id = binding_stmt_id + 1;
 
     let static_array_value = ast::NodeKind::StaticArrayValue(ast::StaticArrayValue {
-      elements: vec![ast::NodeKind::Literal(ast::Literal::Bool(true))],
+      elements: Vec::new(),
       id: static_array_value_id,
-      type_hint: None,
     });
 
     let binding_type =
@@ -789,6 +811,29 @@ mod tests {
 
     assert_eq!(
       Some(&binding_type),
+      type_inference_ctx.type_cache.get(&static_array_value_id)
+    )
+  }
+
+  #[test]
+  fn infer_array_type_from_element() {
+    let mut cache = cache::Cache::new();
+    let static_array_value_id = cache.next_id();
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+
+    let static_array_value = ast::NodeKind::StaticArrayValue(ast::StaticArrayValue {
+      elements: vec![ast::NodeKind::Literal(ast::Literal::Bool(true))],
+      id: static_array_value_id,
+    });
+
+    type_inference_ctx.dispatch(&static_array_value);
+    type_inference_ctx.solve_constraints();
+
+    let expected_type =
+      ast::Type::StaticIndexable(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 1);
+
+    assert_eq!(
+      Some(&expected_type),
       type_inference_ctx.type_cache.get(&static_array_value_id)
     )
   }
