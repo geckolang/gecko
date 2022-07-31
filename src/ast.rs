@@ -66,7 +66,7 @@ pub enum BasicType {
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum TypeConstructorKind {
-  Array,
+  StaticIndexable,
   Pointer,
   Reference,
 }
@@ -88,7 +88,7 @@ pub enum Type {
   /// A meta type to be used during unification.
   ///
   /// Represents a type that has not yet been solved.
-  Variable(usize),
+  Variable(type_inference::TypeVariableId),
   /// A meta type to be used during unification.
   ///
   /// Represents a constructor type that has not yet been solved.
@@ -112,13 +112,13 @@ pub enum Type {
 
 impl Type {
   // REVIEW: What about nested type constructors?
-  /// Attempt to upgrade a type to a type constructor for use with the
+  /// Attempt to lift a type to a type constructor for use with the
   /// inference algorithm.
   ///
   /// If the type is not a type constructor, then it is returned as-is.
   pub fn try_upgrade(self) -> Type {
     let kind = match &self {
-      Type::StaticIndexable(..) => TypeConstructorKind::Array,
+      Type::StaticIndexable(..) => TypeConstructorKind::StaticIndexable,
       Type::Pointer(_) => TypeConstructorKind::Pointer,
       Type::Reference(_) => TypeConstructorKind::Reference,
       _ => return self,
@@ -132,7 +132,29 @@ impl Type {
     //   .map(|ty| ty.to_owned())
     //   .collect();
 
-    Type::Constructor(kind, vec![self])
+    Type::Constructor(
+      kind,
+      self
+        .find_inner_generics()
+        .into_iter()
+        .map(|generic| generic.to_owned())
+        .collect(),
+    )
+  }
+
+  pub fn try_downgrade(self) -> Type {
+    match self {
+      Type::Constructor(kind, generics) => match &kind {
+        TypeConstructorKind::StaticIndexable => {
+          // TODO: Cloning.
+          // REVIEW: Is this conversion correct?
+          // REVIEW: Direct access, might panic during runtime. Try separation of concerns?
+          Type::StaticIndexable(Box::new(generics[0].clone()), generics.len() as u32)
+        }
+        _ => todo!(),
+      },
+      _ => self,
+    }
   }
 
   pub fn find_inner_generics(&self) -> Vec<&Type> {

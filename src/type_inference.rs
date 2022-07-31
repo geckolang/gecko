@@ -3,6 +3,7 @@ use crate::{
   visitor::{self, AnalysisVisitor},
 };
 
+pub type TypeVariableId = usize;
 pub type TypeCache = std::collections::HashMap<cache::Id, ast::Type>;
 type TypeConstraint = (ast::Type, ast::Type);
 
@@ -33,7 +34,7 @@ pub struct TypeInferenceContext<'a> {
   /// This serves as a buffer for type inference to occur. It is
   /// populated during parsing, when type variables are created, and
   /// it also is scope-less/context-free.
-  substitutions: std::collections::HashMap<usize, ast::Type>,
+  substitutions: std::collections::HashMap<cache::Id, ast::Type>,
   cache: &'a cache::Cache,
   // REVIEW: We can only store types of nodes that have ids (e.g. bindings, parameters, etc.).
   /// A mapping from a node to its most recent type.
@@ -46,6 +47,8 @@ pub struct TypeInferenceContext<'a> {
   /// the last step of type inference.
   constraints: Vec<TypeConstraint>,
   current_function_id: Option<cache::Id>,
+  /// Links the type variable ids back to their corresponding key in the type cache.
+  links: std::collections::HashMap<TypeVariableId, cache::Id>,
 }
 
 impl<'a> TypeInferenceContext<'a> {
@@ -57,6 +60,7 @@ impl<'a> TypeInferenceContext<'a> {
       type_cache: TypeCache::new(),
       constraints: Vec::new(),
       current_function_id: None,
+      links: std::collections::HashMap::new(),
     }
   }
 
@@ -64,6 +68,8 @@ impl<'a> TypeInferenceContext<'a> {
   /// Solves the constraints by performing a unification algorithm.
   ///
   /// This serves as one step of the type inference substitution algorithm.
+  /// This also checks for compatibility among types. If they are compatible,
+  /// they will be inserted into the substitution map.
   fn unify(&mut self, type_a: &ast::Type, type_b: &ast::Type) {
     // TODO: Cleanup code. Perhaps expand it to not be a big match statement?
     match (type_a, type_b) {
@@ -176,7 +182,14 @@ impl<'a> TypeInferenceContext<'a> {
       // }
 
       // Update the type for this node in the type cache.
-      self.type_cache.insert(id.clone(), ty.clone());
+      if let Some(target_node_id) = self.links.get(id) {
+        self
+          .type_cache
+          .insert(*target_node_id, ty.clone().try_downgrade());
+      }
+
+      // TODO: No downgrade?
+      self.type_cache.insert(*id, ty.clone().try_downgrade());
     }
 
     self.constraints.clear();
@@ -211,11 +224,13 @@ impl<'a> TypeInferenceContext<'a> {
   // REVIEW: What is the `expectedType` parameter used for in the type inference reference?
   fn infer_type_of(&mut self, node: &ast::NodeKind) -> ast::Type {
     // REVIEW: This only works for direct declarations. All other nodes will type `Unit`.
-    if let Some(id) = node.find_id() {
-      if let Some(cached_type) = self.type_cache.get(&id) {
-        return cached_type.clone();
-      }
-    }
+    // BUG: (1) The problem is that the element type is taking on the id of the array node.
+    // ... This possibly means that when retrieved again, it will be the type of the element and not the node itself.
+    // if let Some(id) = node.find_id() {
+    //   if let Some(cached_type) = self.type_cache.get(&id) {
+    //     return cached_type.clone();
+    //   }
+    // }
 
     // REVIEW: Shouldn't we be associating (substitutions is associations) any type variables created with the id of their corresponding nodes?
     // ... Example: Nullptr literal, its id => type variable.
@@ -236,12 +251,12 @@ impl<'a> TypeInferenceContext<'a> {
         .type_hint
         // REVISE: Cloning regardless.
         .clone()
-        .unwrap_or_else(|| self.create_type_variable(binding_stmt.id)),
+        .unwrap_or_else(|| self.create_type_variable(Some(binding_stmt.id))),
       ast::NodeKind::Parameter(parameter) => parameter
         .type_hint
         // REVISE: Cloning regardless.
         .clone()
-        .unwrap_or_else(|| self.create_type_variable(parameter.id)),
+        .unwrap_or_else(|| self.create_type_variable(Some(parameter.id))),
       ast::NodeKind::Literal(literal) => match literal {
         ast::Literal::Bool(_) => ast::Type::Basic(ast::BasicType::Bool),
         ast::Literal::Char(_) => ast::Type::Basic(ast::BasicType::Char),
@@ -250,7 +265,7 @@ impl<'a> TypeInferenceContext<'a> {
         ast::Literal::Nullptr(id, _) => {
           // TODO: Temporary.
           // return ast::Type::Pointer(Box::new(self.create_type_variable()))
-          self.create_type_variable(id.to_owned())
+          self.create_type_variable(Some(*id))
         }
       },
       ast::NodeKind::Reference(reference) => {
@@ -267,9 +282,18 @@ impl<'a> TypeInferenceContext<'a> {
         self.infer_type_of(&target)
       }
       ast::NodeKind::StaticArrayValue(static_array_value) => ast::Type::Constructor(
-        ast::TypeConstructorKind::Array,
-        vec![self.create_type_variable(static_array_value.id)],
+        ast::TypeConstructorKind::StaticIndexable,
+        vec![static_array_value
+          .elements
+          .first()
+          .and_then(|element| Some(self.infer_type_of(element)))
+          // BUG: (2) The problem is that the element type is taking on the id of the array node.
+          // FIXME: Temporary manual id.
+          .unwrap_or_else(|| self.create_type_variable(None))],
       ),
+      // ast::NodeKind::StaticArrayValue(static_array_value) => {
+      //   self.create_type_variable(static_array_value.id)
+      // }
       // REVIEW: What about other nodes? Say, indexing, array value, etc. Their types shouldn't be `Unit`.
       _ => ast::Type::Unit,
     };
@@ -279,25 +303,30 @@ impl<'a> TypeInferenceContext<'a> {
     // ... on the type cache, because only declarations have ids. Actually, it's here because this
     // ... function performs memoization of the inferred types, but apparently only for declarations.
     // ... Review what can be done, and whether it is efficient to only infer and memoize declaration's types.
-    if let Some(id) = node.find_id() {
-      // Update association of the node's id with the newly inferred type.
-      self.substitutions.insert(id, ty.clone());
-    }
+    // if let Some(id) = node.find_id() {
+    //   // Update association of the node's id with the newly inferred type.
+    //   self.substitutions.insert(id, ty.clone());
+    // }
 
     ty
   }
 
   // TODO: Why not take an id here, and directly associate?
-  fn create_type_variable(&mut self, for_node_id: cache::Id) -> ast::Type {
+  fn create_type_variable(&mut self, node_id_opt: Option<cache::Id>) -> ast::Type {
     // REVIEW: Why add have a new id for this type variable? Couldn't we use the node id?
     // let id = self.substitutions.len();
 
-    let type_variable = ast::Type::Variable(for_node_id.clone());
+    let type_variable_id = self.substitutions.len();
+    let type_variable = ast::Type::Variable(type_variable_id);
 
     // Update association of the node's id with the new fresh type variable.
     self
       .substitutions
-      .insert(for_node_id, type_variable.clone());
+      .insert(type_variable_id, type_variable.clone());
+
+    // Link the type variable's id to the node id, that way they are associated
+    // and can be retrieved once type inference is complete.
+    node_id_opt.map(|node_id| self.links.insert(type_variable_id, node_id));
 
     // REVIEW: Why add have a new id for this type variable? Couldn't we use the node id?
     // self.substitutions.insert(id, result.clone());
@@ -307,14 +336,16 @@ impl<'a> TypeInferenceContext<'a> {
 
   /// Add a constraint stating that both of the provided types are equal.
   fn report_constraint(&mut self, that_type_or_var: ast::Type, is_equal_to: ast::Type) {
-    self.constraints.push((that_type_or_var, is_equal_to));
+    self
+      .constraints
+      .push((that_type_or_var.try_upgrade(), is_equal_to.try_upgrade()));
   }
 
   fn type_hint_or_variable(&mut self, type_hint: &Option<ast::Type>, id: cache::Id) -> ast::Type {
-    match type_hint {
-      Some(type_hint) => type_hint.clone().try_upgrade(),
-      None => self.create_type_variable(id),
-    }
+    type_hint
+      .as_ref()
+      .and_then(|type_hint| Some(type_hint.clone()))
+      .unwrap_or_else(|| self.create_type_variable(Some(id)))
   }
 }
 
@@ -327,7 +358,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
     };
 
     // REVIEW: Isn't this a type constructor?
-    self.create_type_variable(id.to_owned());
+    self.create_type_variable(Some(*id));
 
     // self.substitutions.insert(id.to_owned(), ty);
   }
@@ -335,6 +366,8 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
     // FIXME: Added this constraint because it makes sense, but it was not part of the reference code.
     let value_type = self.infer_type_of(&binding_stmt.value);
+
+    dbg!(value_type.clone());
 
     // REVIEW: Isn't this being repeated in the `infer_type_of` function? If so,
     // ... abstract common code or merge.
@@ -440,7 +473,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
       .return_type_hint
       // REVISE: Cloning regardless.
       .clone()
-      .unwrap_or_else(|| self.create_type_variable(current_function_sig.return_type_id));
+      .unwrap_or_else(|| self.create_type_variable(Some(current_function_sig.return_type_id)));
 
     self.report_constraint(return_value_type, current_function_return_type);
   }
@@ -451,22 +484,38 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
   }
 
   fn visit_static_array_value(&mut self, array_value: &ast::StaticArrayValue) {
-    let array_element_type = self.create_type_variable(array_value.id);
+    // REVIEW: This check is here to prevent overriding previous type inference results.
+    // ... (Say from binding invoking `infer_type_of` upon this array value).
+    // if self.substitutions.contains_key(&array_value.id) {
+    //   return;
+    // }
 
+    let array_element_type = if let Some(first_element) = array_value.elements.first() {
+      self.infer_type_of(first_element)
+    } else {
+      self.create_type_variable(None)
+    };
+
+    // Create the static indexable type.
     let array_type = ast::Type::StaticIndexable(
+      // With our unknown element type.
       Box::new(array_element_type.clone()),
       // REVIEW: Is this conversion safe?
       array_value.elements.len() as u32,
     );
 
     // FIXME: Abstract common functionality from `infer_type_of`.
+    // Upgrade it and insert it into substitutions.
     self
       .substitutions
       .insert(array_value.id, array_type.clone().try_upgrade());
 
+    // TODO: If we constrain the element types to all match the same as the array's element type,
+    // ... we basically get a type checking advantage, since it verifies that all elements are of the same type.
     for element in &array_value.elements {
       let actual_element_type = self.infer_type_of(element);
 
+      // dbg!(actual_element_type.clone());
       self.report_constraint(actual_element_type, array_element_type.clone());
     }
     // let array_type = self.create_type_variable(array_value.id);
@@ -519,7 +568,11 @@ mod tests {
     let cache = cache::Cache::new();
     let mut type_context = TypeInferenceContext::new(&cache);
 
-    assert_eq!(type_context.create_type_variable(0), ast::Type::Variable(0));
+    assert_eq!(
+      type_context.create_type_variable(None),
+      ast::Type::Variable(0)
+    );
+
     assert_eq!(1, type_context.substitutions.len());
   }
 
@@ -578,8 +631,8 @@ mod tests {
   #[test]
   fn infer_binding_from_reference() {
     let mut cache = cache::Cache::new();
-    let binding_stmt_a_id = 0;
-    let binding_stmt_b_id = binding_stmt_a_id + 1;
+    let binding_stmt_a_id = cache.next_id();
+    let binding_stmt_b_id = cache.next_id();
 
     let binding_stmt_a = Mock::free_binding(
       binding_stmt_a_id,
@@ -603,22 +656,19 @@ mod tests {
 
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
-    type_inference_ctx.dispatch(&binding_stmt_a);
+    visitor::traverse(&binding_stmt_a, &mut type_inference_ctx);
     visitor::traverse(&binding_stmt_b, &mut type_inference_ctx);
+    dbg!(type_inference_ctx.constraints.clone());
     type_inference_ctx.solve_constraints();
-
-    assert_eq!(
-      type_inference_ctx.substitute(ast::Type::Variable(binding_stmt_b_id)),
-      ast::Type::Basic(ast::BasicType::Bool)
-    );
+    dbg!(type_inference_ctx.substitutions);
 
     // REVIEW: Why is this failing?
     assert_eq!(
+      &ast::Type::Basic(ast::BasicType::Bool),
       type_inference_ctx
         .type_cache
         .get(&binding_stmt_b_id)
         .unwrap(),
-      &ast::Type::Basic(ast::BasicType::Bool)
     );
   }
 
@@ -806,8 +856,13 @@ mod tests {
       Some(binding_type.clone()),
     );
 
-    type_inference_ctx.dispatch(&binding_stmt);
+    visitor::traverse(&binding_stmt, &mut type_inference_ctx);
+    // type_inference_ctx.dispatch(&binding_stmt);
+    dbg!(type_inference_ctx.constraints.clone());
     type_inference_ctx.solve_constraints();
+
+    dbg!(type_inference_ctx.substitutions);
+    dbg!(type_inference_ctx.links);
 
     assert_eq!(
       Some(&binding_type),
@@ -819,6 +874,11 @@ mod tests {
   fn infer_array_type_from_element() {
     let mut cache = cache::Cache::new();
     let static_array_value_id = cache.next_id();
+
+    cache
+      .links
+      .insert(static_array_value_id, static_array_value_id);
+
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
     let static_array_value = ast::NodeKind::StaticArrayValue(ast::StaticArrayValue {
@@ -827,10 +887,17 @@ mod tests {
     });
 
     type_inference_ctx.dispatch(&static_array_value);
+    dbg!(type_inference_ctx.constraints.clone());
     type_inference_ctx.solve_constraints();
+    dbg!(type_inference_ctx.substitutions);
 
     let expected_type =
       ast::Type::StaticIndexable(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 1);
+
+    // dbg!(type_inference_ctx
+    //   .substitutions
+    //   .get(&static_array_value_id)
+    //   .unwrap());
 
     assert_eq!(
       Some(&expected_type),

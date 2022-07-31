@@ -1,4 +1,5 @@
 func test():
   let arr = [1]
+  let arr2: [Int, 0] = []
 
   return true
