@@ -361,13 +361,16 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
 
     let target_node = self
       .cache
-      .find_decl_via_link(&struct_impl.target_struct_pattern.id)
+      .find_decl_via_link(&struct_impl.target_struct_pattern.link_id)
       .unwrap();
 
     // REVISE: Cleanup.
     if let ast::NodeKind::Struct(_target_struct_type) = &target_node {
       if let Some(trait_pattern) = &struct_impl.trait_pattern {
-        let trait_node = self.cache.find_decl_via_link(&trait_pattern.id).unwrap();
+        let trait_node = self
+          .cache
+          .find_decl_via_link(&trait_pattern.link_id)
+          .unwrap();
 
         if let ast::NodeKind::Trait(trait_type) = &trait_node {
           for trait_method in &trait_type.methods {
@@ -764,7 +767,9 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
             let first_argument = arguments[0].flatten();
 
             if let ast::NodeKind::Reference(ast::Reference {
-              pattern: ast::Pattern { id: target_id, .. },
+              pattern: ast::Pattern {
+                link_id: target_id, ..
+              },
               ..
             }) = &first_argument
             {
@@ -847,13 +852,13 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     self.in_unsafe_block = false;
   }
 
-  fn visit_static_array_value(&mut self, static_array_value: &ast::StaticArrayValue) {
+  fn visit_array(&mut self, array: &ast::Array) {
     let mut mixed_elements_flag = false;
 
-    // let expected_element_type = if let Some(explicit_type) = &static_array_value.type_hint {
+    // let expected_element_type = if let Some(explicit_type) = &array.type_hint {
     //   explicit_type.clone()
     // } else {
-    //   static_array_value
+    //   array
     //     .elements
     //     .first()
     //     .unwrap()
@@ -861,7 +866,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     // };
 
     // // TODO: Skip the first element during iteration, as it is redundant.
-    // for element in &static_array_value.elements {
+    // for element in &array.elements {
     //   // Report this error only once.
     //   // FIXME: Use type comparison function? And also flatten?
     //   if !mixed_elements_flag && element.infer_type(self.cache) != expected_element_type {

@@ -149,7 +149,7 @@ pub mod tests {
     pub fn reference(id: cache::Id) -> ast::Reference {
       ast::Reference {
         pattern: ast::Pattern {
-          id,
+          link_id: id,
           qualifier: None,
           base_name: "test_reference".to_string(),
           sub_name: None,

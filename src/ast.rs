@@ -69,6 +69,9 @@ pub enum TypeConstructorKind {
   StaticIndexable,
   Pointer,
   Reference,
+  Function,
+  Integer,
+  Boolean,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -92,6 +95,9 @@ pub enum Type {
   /// A meta type to be used during unification.
   ///
   /// Represents a constructor type that has not yet been solved.
+  /// Can be used to represent arrays, where the generics are its
+  /// elements, functions, where the generics are its parameters followed
+  /// by its return type, and so on.
   Constructor(TypeConstructorKind, Vec<Type>),
   /// A meta type that represents a super-type of all integer types.
   AnyInteger,
@@ -142,7 +148,7 @@ impl Type {
     )
   }
 
-  pub fn try_downgrade(self) -> Type {
+  pub fn old_try_downgrade(self) -> Type {
     match self {
       Type::Constructor(kind, generics) => match &kind {
         TypeConstructorKind::StaticIndexable => {
@@ -304,7 +310,9 @@ impl Type {
 
     // REVIEW: What if it's a pointer to a user-defined type?
     if let Type::Stub(stub_type) = self {
-      let target_node = cache.find_decl_via_link(&stub_type.pattern.id).unwrap();
+      let target_node = cache
+        .find_decl_via_link(&stub_type.pattern.link_id)
+        .unwrap();
 
       // REVIEW: What about type aliases, and other types that might be encountered in the future?
 
@@ -350,7 +358,7 @@ pub enum NodeKind {
   UnaryExpr(UnaryExpr),
   Parameter(std::rc::Rc<Parameter>),
   UnsafeExpr(UnsafeExpr),
-  StaticArrayValue(StaticArrayValue),
+  Array(Array),
   IndexingExpr(IndexingExpr),
   Enum(std::rc::Rc<Enum>),
   Struct(std::rc::Rc<Struct>),
@@ -412,8 +420,8 @@ impl NodeKind {
     //     }
     //     NodeKind::MemberAccess(member_access) => vec![&member_access.base_expr],
     //     NodeKind::Range(range) => vec![&range.start, &range.end],
-    //     NodeKind::StaticArrayValue(static_array_value) => {
-    //       map_children(static_array_value.elements).collect()
+    //     NodeKind::StaticArrayValue(array) => {
+    //       map_children(array.elements).collect()
     //     }
     //     // NodeKind::StructImpl(struct_impl) => {
     //     //   vec![struct_impl.static_methods, struct_impl.member_methods].into_iter().flatten().collect::<Vec<_>>()
@@ -538,14 +546,15 @@ impl NodeKind {
       NodeKind::Closure(closure) => Some(closure.id),
       NodeKind::Enum(enum_) => Some(enum_.id),
       // REVIEW: Should this be here as well? Not a declaration?
-      NodeKind::Pattern(pattern) => Some(pattern.id),
+      NodeKind::Pattern(pattern) => Some(pattern.link_id),
       NodeKind::BlockExpr(block_expr) => Some(block_expr.id),
       NodeKind::ExternFunction(extern_function) => Some(extern_function.id),
       NodeKind::ExternStatic(extern_static) => Some(extern_static.id),
       NodeKind::Parameter(parameter) => Some(parameter.id),
       // REVIEW: Should this be here as well? Not a declaration?
-      NodeKind::Reference(reference) => Some(reference.pattern.id),
+      NodeKind::Reference(reference) => Some(reference.pattern.link_id),
       NodeKind::Literal(Literal::Nullptr(id, _)) => Some(id.to_owned()),
+      NodeKind::Array(static_array) => Some(static_array.id),
       // TODO: What about parentheses expression (transient nodes)? Perform flattening?
       _ => None,
     }
@@ -605,7 +614,7 @@ pub struct ThisType {
 // TODO: If it's never boxed under `Node`, then there might not be a need for it to be included under `Node`?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
-  pub id: cache::Id,
+  pub link_id: cache::Id,
   pub qualifier: Option<name_resolution::Qualifier>,
   pub base_name: String,
   pub sub_name: Option<String>,
@@ -657,10 +666,14 @@ pub struct IndexingExpr {
   pub index_expr: Box<NodeKind>,
 }
 
+/// A static array value.
+///
+/// Its size is known at compile time.
 #[derive(Debug, Clone)]
-pub struct StaticArrayValue {
+pub struct Array {
   pub elements: Vec<NodeKind>,
   pub id: cache::Id,
+  pub element_type_id: cache::Id,
 }
 
 #[derive(Debug, Clone)]

@@ -118,7 +118,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     if let ast::NodeKind::Reference(reference) = &node {
       let target = self
         .cache
-        .find_decl_via_link(&reference.pattern.id)
+        .find_decl_via_link(&reference.pattern.link_id)
         .unwrap();
 
       // TODO: Ensure this recursive nature doesn't cause stack overflow.
@@ -244,7 +244,9 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
         llvm_struct_type.as_basic_type_enum()
       }
       // REVIEW: Why not resolve the type if it is a stub type, then proceed to lower it?
-      ast::Type::Stub(stub_type) => self.memoize_or_retrieve_type_by_binding(stub_type.pattern.id),
+      ast::Type::Stub(stub_type) => {
+        self.memoize_or_retrieve_type_by_binding(stub_type.pattern.link_id)
+      }
       ast::Type::Function(callable_type) => self
         .lower_callable_type(callable_type)
         .ptr_type(inkwell::AddressSpace::Generic)
@@ -984,7 +986,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // REVIEW: This may not be working, because the `memoize_declaration` function directly lowers, regardless of expected access or not.
     let llvm_target = self
       // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
-      .memoize_declaration(&reference.pattern.id, false)
+      .memoize_declaration(&reference.pattern.link_id, false)
       .unwrap();
 
     Some(llvm_target)
@@ -1238,9 +1240,9 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     )
   }
 
-  fn visit_static_array_value(
+  fn visit_array(
     &mut self,
-    array_value: &ast::StaticArrayValue,
+    array_value: &ast::Array,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     let llvm_values = array_value
       .elements

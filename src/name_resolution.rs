@@ -549,7 +549,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
 
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.local_lookup_or_error(&symbol).map(|target_id| {
-      self.cache.links.insert(pattern.id, target_id);
+      self.cache.links.insert(pattern.link_id, target_id);
     });
   }
 
@@ -641,10 +641,10 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
   }
 
   fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl) {
-    self.current_struct_type_id = Some(struct_impl.target_struct_pattern.id);
+    self.current_struct_type_id = Some(struct_impl.target_struct_pattern.link_id);
 
     self.cache.add_struct_impl(
-      struct_impl.target_struct_pattern.id,
+      struct_impl.target_struct_pattern.link_id,
       struct_impl
         .member_methods
         .iter()

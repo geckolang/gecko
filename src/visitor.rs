@@ -1,4 +1,4 @@
-use crate::ast::{self, BlockExpr};
+use crate::ast;
 
 macro_rules! define_visitor {
   (@ $name:ident $(<$lt:lifetime>)?, $return_type:ty, $default_value:expr) => {
@@ -23,7 +23,7 @@ macro_rules! define_visitor {
           ast::NodeKind::UnaryExpr(unary_expr) => self.visit_unary_expr(&unary_expr),
           ast::NodeKind::Parameter(parameter) => self.visit_parameter(&parameter),
           ast::NodeKind::UnsafeExpr(unsafe_expr) => self.enter_unsafe_expr(&unsafe_expr),
-          ast::NodeKind::StaticArrayValue(static_array_value) => self.visit_static_array_value(&static_array_value),
+          ast::NodeKind::Array(array) => self.visit_array(&array),
           ast::NodeKind::IndexingExpr(indexing_expr) => self.visit_indexing_expr(&indexing_expr),
           ast::NodeKind::Enum(enum_) => self.visit_enum(&enum_),
           ast::NodeKind::Struct(struct_) => self.visit_struct(&struct_),
@@ -181,9 +181,9 @@ macro_rules! define_visitor {
         $default_value
       }
 
-      fn visit_static_array_value(
+      fn visit_array(
         &mut self,
-        _array_value: &ast::StaticArrayValue
+        _array_value: &ast::Array
       ) -> $return_type {
         $default_value
       }
@@ -381,8 +381,8 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
       traverse(&unsafe_expr.0, visitor);
       visitor.exit_unsafe_expr(unsafe_expr);
     }
-    ast::NodeKind::StaticArrayValue(static_array_value) => {
-      for element in &static_array_value.elements {
+    ast::NodeKind::Array(array) => {
+      for element in &array.elements {
         traverse(&element, visitor);
       }
     }
@@ -565,9 +565,9 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
     }
   }
 
-  fn visit_static_array_value(&mut self, static_array_value: &ast::StaticArrayValue) {
+  fn visit_array(&mut self, array: &ast::Array) {
     for visitor in &mut self.visitors {
-      visitor.visit_static_array_value(static_array_value);
+      visitor.visit_array(array);
     }
   }
 

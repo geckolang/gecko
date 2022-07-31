@@ -102,7 +102,9 @@ impl AnalysisVisitor for LintContext {
   }
 
   fn visit_reference(&mut self, reference: &ast::Reference) {
-    self.variable_references.insert(reference.pattern.id, true);
+    self
+      .variable_references
+      .insert(reference.pattern.link_id, true);
   }
 
   fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {

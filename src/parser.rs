@@ -243,7 +243,7 @@ impl<'a> Parser<'a> {
     // TODO: Add support for static sub-entities.
 
     Ok(ast::Pattern {
-      id: self.cache.next_id(),
+      link_id: self.cache.next_id(),
       qualifier,
       base_name,
       sub_name,
@@ -912,7 +912,7 @@ impl<'a> Parser<'a> {
   }
 
   /// '[' (%expr (','))* ']'
-  fn parse_static_array_value(&mut self) -> ParserResult<ast::StaticArrayValue> {
+  fn parse_array(&mut self) -> ParserResult<ast::Array> {
     let mut elements = Vec::new();
 
     self.skip_past(&lexer::TokenKind::BracketL)?;
@@ -929,9 +929,10 @@ impl<'a> Parser<'a> {
     // Skip the closing bracket.
     self.skip()?;
 
-    Ok(ast::StaticArrayValue {
+    Ok(ast::Array {
       elements,
       id: self.cache.next_id(),
+      element_type_id: self.cache.next_id(),
     })
   }
 
@@ -1055,9 +1056,7 @@ impl<'a> Parser<'a> {
       }
       lexer::TokenKind::If => ast::NodeKind::IfExpr(self.parse_if_expr()?),
       lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
-      lexer::TokenKind::BracketL => {
-        ast::NodeKind::StaticArrayValue(self.parse_static_array_value()?)
-      }
+      lexer::TokenKind::BracketL => ast::NodeKind::Array(self.parse_array()?),
       lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
       lexer::TokenKind::Indent => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
