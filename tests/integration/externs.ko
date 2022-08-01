@@ -1,5 +1,4 @@
 extern func printf(template: Str, ...) -> Int
 
 func calling_externs():
-  unsafe:
-    printf("hello world")
+  unsafe: printf("hello world")

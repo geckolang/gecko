@@ -785,18 +785,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // FIXME: Abstract this logic for use within `closure`, and possibly wherever else this is needed, guided by calls to `attempt_build_return`?
     // If a block was left for further processing, and it has no terminator,
     // complete it here.
-    if self.get_current_block().get_terminator().is_none()
-    // FIXME: Build unreachable if applicable.
-    // && function
-    //   .body
-    //   .infer_type(self.cache)
-    //   .flatten(self.cache)
-    //   .is_a_never()
-    {
-      self.llvm_builder.build_unreachable();
-    } else {
-      self.attempt_build_return(yielded_result);
-    }
+    self.attempt_build_return(yielded_result);
 
     self.llvm_function_buffer = None;
 
@@ -1589,6 +1578,13 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     let ty = self.memoize_or_retrieve_type(&sizeof_intrinsic.ty);
 
     Some(ty.size_of().unwrap().as_basic_value_enum())
+  }
+
+  fn visit_inline_expr_stmt(
+    &mut self,
+    inline_expr_stmt: &ast::InlineExprStmt,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    self.dispatch(&inline_expr_stmt.expr)
   }
 }
 

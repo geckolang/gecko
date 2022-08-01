@@ -531,7 +531,7 @@ impl<'a> TypeInferenceContext<'a> {
 
         let constructor_type = ast::Type::Constructor(constructor_kind, vec![]);
 
-        self.report_constraint(expected_type, constructor_type);
+        self.report_constraint(constructor_type, expected_type);
       }
       ast::NodeKind::Array(array) => {
         // val newItemType = itemType.getOrElse(freshTypeVariable())
@@ -562,11 +562,6 @@ impl<'a> TypeInferenceContext<'a> {
         self.report_constraint(expected_type, constructor_type);
       }
       ast::NodeKind::BindingStmt(binding_stmt) => {
-        // val newTypeAnnotation = typeAnnotation.getOrElse(freshTypeVariable())
-        // val newValue = infer(environment, newTypeAnnotation, value)
-        // val newEnvironment = environment.updated(name, newTypeAnnotation)
-        // val newBody = infer(newEnvironment, expectedType, body)
-        // ELet(name, Some(newTypeAnnotation), newValue, newBody)
         let ty = binding_stmt
           .type_hint
           .as_ref()
@@ -653,12 +648,6 @@ impl<'a> TypeInferenceContext<'a> {
         );
       }
       ast::NodeKind::IfExpr(if_expr) => {
-        // val newCondition = infer(environment, expectedType, condition)
-        // val newThen = infer(environment, expectedType, then)
-        // val newElse = infer(environment, expectedType, else)
-        // typeConstraints += CEquality(expectedType, TConstructor("If", List(newCondition.getType(), newThen.getType(), newElse.getType())))
-        // EIf(newCondition, newThen, newElse)
-
         // Constrain the condition to be a boolean.
         self.infer_and_constrain(
           ast::Type::Constructor(ast::TypeConstructorKind::Boolean, Vec::new()),
@@ -673,6 +662,7 @@ impl<'a> TypeInferenceContext<'a> {
           self.create_type_variable()
         };
 
+        self.report_constraint(ty.clone(), expected_type);
         self.type_cache.insert(if_expr.id, ty.clone());
         self.infer_and_constrain(ty.clone(), &if_expr.then_value);
 
@@ -713,8 +703,48 @@ impl<'a> TypeInferenceContext<'a> {
           _ => todo!(),
         };
 
+        self.report_constraint(ty.clone(), expected_type);
         self.infer_and_constrain(ty.clone(), &binary_expr.left_operand);
-        self.infer_and_constrain(ty.clone(), &binary_expr.right_operand);
+        self.infer_and_constrain(ty, &binary_expr.right_operand);
+      }
+      ast::NodeKind::UnsafeExpr(unsafe_expr) => {
+        // Nothing to do on unsafe expr. It is a transient node.
+        self.infer_and_constrain(expected_type, &unsafe_expr.0);
+      }
+      ast::NodeKind::CallExpr(call_expr) => {
+        // val newFunction = infer(environment, expectedType, function)
+        // val newArguments = infer(environment, expectedType, arguments)
+        // typeConstraints += CEquality(expectedType, newFunction.getType().getReturnType())
+        // ECall(newFunction, newArguments)
+
+        // self type = callee's type (return type, that is)
+        // initially, we don't know our own type. => type variable?
+        let ty = self.create_type_variable();
+
+        // BUG: Save the type on the cache? Currently Call expr doesn't have an id.
+
+        self.infer_and_constrain(ty.clone(), &call_expr.callee_expr);
+        self.report_constraint(ty.clone(), expected_type);
+      }
+      ast::NodeKind::ExternFunction(extern_) => {
+        let ty = ast::Type::Signature(ast::SignatureType {
+          return_type: Box::new(extern_.signature.return_type_hint.as_ref().unwrap().clone()),
+          is_variadic: extern_.signature.is_variadic,
+          parameter_types: extern_
+            .signature
+            .parameters
+            .iter()
+            .map(|parameter| parameter.type_hint.as_ref().unwrap().clone())
+            .collect(),
+        });
+
+        for parameter in &extern_.signature.parameters {
+          self
+            .type_cache
+            .insert(parameter.id, parameter.type_hint.as_ref().unwrap().clone());
+        }
+
+        self.type_cache.insert(extern_.id, ty);
       }
       _ => {
         dbg!(node);

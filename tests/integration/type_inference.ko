@@ -2,5 +2,6 @@ func test(a):
   let arr = [1]
   let arr2: [Int, 0] = []
   let b = if true: true else: false
+  let c = !true
 
-  return !a
+  return a+1

@@ -14,6 +14,8 @@ fn.entry:
   store i32 2, i32* %var.b2, align 4
   %access3 = load i32, i32* %var.b2, align 4
   %int.add_op = add i32 %access, %access3
+  %var.c = alloca i32, align 4
+  store i32 %int.add_op, i32* %var.c, align 4
   %if.value = alloca i32, align 4
   br i1 true, label %if.then, label %if.else
 

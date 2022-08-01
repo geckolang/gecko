@@ -1,7 +1,7 @@
 ; ModuleID = 'type_inference'
 source_filename = "type_inference"
 
-define private i1 @.0.test(i1 %param.a) {
+define private i32 @.0.test(i32 %param.a) {
 fn.entry:
   %array.value = alloca [1 x i32], align 4
   %array.init = getelementptr [1 x i32], [1 x i32]* %array.value, i32 0, i32 0
@@ -22,8 +22,12 @@ if.then:                                          ; preds = %fn.entry
 
 if.after:                                         ; preds = %if.then, %if.else
   %access3 = load i1, i1* %if.value, align 1
-  %not_op = xor i1 %param.a, true
-  ret i1 %not_op
+  %var.b = alloca i1, align 1
+  store i1 %access3, i1* %var.b, align 1
+  %var.c = alloca i1, align 1
+  store i1 false, i1* %var.c, align 1
+  %int.add_op = add i32 %param.a, 1
+  ret i32 %int.add_op
 
 if.else:                                          ; preds = %fn.entry
   store i1 false, i1* %if.value, align 1
