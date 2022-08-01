@@ -4,7 +4,7 @@ extern crate inkwell;
 #[cfg(test)]
 mod tests {
   use gecko::{lowering, name_resolution, type_check, type_inference, visitor::LoweringVisitor};
-  // use pretty_assertions::assert_eq;
+  use pretty_assertions::assert_eq;
 
   fn lex(source_code: &str) -> Vec<gecko::lexer::Token> {
     let tokens = gecko::lexer::Lexer::from_str(source_code).lex_all();

@@ -204,6 +204,17 @@ impl<'a> TypeInferenceContext<'a> {
         // REVIEW: Unsafe unwrap?
         self.substitute(self.substitutions.get(id).unwrap().clone())
       }
+      ast::Type::Variable(id) => {
+        println!("=======================");
+        dbg!(self.constraints.clone());
+        dbg!(self.substitutions.clone());
+        println!("=======================");
+
+        panic!(
+          "Pending proper error handling; Type variable {} could not be resolved!",
+          id
+        );
+      }
       // ast::Type::Constructor(kind, generics) => ast::Type::Constructor(
       //   kind.clone(),
       //   generics
@@ -401,25 +412,22 @@ impl<'a> TypeInferenceContext<'a> {
   // Changes:
   // 1. no longer returns a type (on the ref. it was the re-constructed expression).
   // 2. caching is done per-node, because some nodes have more than 1 id (array have one for element type, and for themselves.).
-  fn infer_and_constrain(&mut self, u_expected_type: ast::Type, node: &ast::NodeKind) {
+  fn infer_and_constrain(&mut self, initial_expected_type: ast::Type, node: &ast::NodeKind) {
     // TODO:
-    let expected_type = u_expected_type.try_upgrade_constructor();
+    let expected_type = initial_expected_type.try_upgrade_constructor();
 
     match node {
+      // The expected type for blocks is the function signature's return type.
       ast::NodeKind::BlockExpr(block_expr) => {
         for statement in &block_expr.statements {
-          // FIXME: What type should be expected for statements? Or should it be Option.none?
-          // ... Or is `ast::Type::Unit` (statements don't evaluate) okay?
-          // TODO: Why not using type constructor? Yet still works?
-          self.infer_and_constrain(ast::Type::Unit, statement);
-
-          if let ast::NodeKind::ReturnStmt(ast::ReturnStmt { value }) = &statement {
-            // TODO: Explain this. Not immediately clear.
-            return if let Some(value) = value {
-              self.infer_and_constrain(expected_type, value);
-            } else {
-              self.report_constraint(expected_type, ast::Type::Unit);
-            };
+          // If the statement is a return statement, pass down the expected
+          // type for it to constrain the given signature's return type.
+          if let ast::NodeKind::ReturnStmt(_) = &statement {
+            self.infer_and_constrain(expected_type.clone(), statement);
+          } else {
+            // TODO: Why not using type constructor? Yet still works?
+            // All statements should evaluate unit type.
+            self.infer_and_constrain(ast::Type::Unit, statement);
           }
         }
 
@@ -566,18 +574,19 @@ impl<'a> TypeInferenceContext<'a> {
           .unwrap_or_else(|| self.create_type_variable());
 
         self.type_cache.insert(binding_stmt.id, ty.clone());
-
         self.infer_and_constrain(ty, &binding_stmt.value);
       }
+      // The expected type for return statement is the function signature's return type.
       ast::NodeKind::ReturnStmt(return_stmt) => {
-        // val newBody = infer(environment, expectedType, body)
-        // typeConstraints += CEquality(expectedType, TConstructor("Unit"))
-        // EReturn(newBody)
-        // self.new_super_infer(expected_type, &ast::NodeKind::Unit);
-        // Pass it down.
+        // TODO: Switch the comment around to make it more clear.
+        // If there is no return value, constrain the expected type to
+        // be unit, otherwise pass the expected type down to the value
+        // for it to constrain to.
         if let Some(return_value) = &return_stmt.value {
-          self.infer_and_constrain(expected_type, &return_value);
-        }
+          self.infer_and_constrain(expected_type, return_value);
+        } else {
+          self.report_constraint(ast::Type::Unit, expected_type);
+        };
       }
       ast::NodeKind::UnaryExpr(unary_expr) => {
         // val newOperand = infer(environment, expectedType, operand)
@@ -650,6 +659,7 @@ impl<'a> TypeInferenceContext<'a> {
         // typeConstraints += CEquality(expectedType, TConstructor("If", List(newCondition.getType(), newThen.getType(), newElse.getType())))
         // EIf(newCondition, newThen, newElse)
 
+        // Constrain the condition to be a boolean.
         self.infer_and_constrain(
           ast::Type::Constructor(ast::TypeConstructorKind::Boolean, Vec::new()),
           &if_expr.condition,
@@ -666,10 +676,6 @@ impl<'a> TypeInferenceContext<'a> {
         self.type_cache.insert(if_expr.id, ty.clone());
         self.infer_and_constrain(ty.clone(), &if_expr.then_value);
 
-        if let Some(else_value) = &if_expr.else_value {
-          self.infer_and_constrain(ty.clone(), else_value);
-        }
-
         for (condition, alternative_branch) in &if_expr.alternative_branches {
           self.infer_and_constrain(
             ast::Type::Constructor(ast::TypeConstructorKind::Boolean, Vec::new()),
@@ -677,6 +683,10 @@ impl<'a> TypeInferenceContext<'a> {
           );
 
           self.infer_and_constrain(ty.clone(), alternative_branch);
+        }
+
+        if let Some(else_value) = &if_expr.else_value {
+          self.infer_and_constrain(ty.clone(), else_value);
         }
       }
       ast::NodeKind::BinaryExpr(binary_expr) => {

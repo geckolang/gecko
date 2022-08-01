@@ -104,7 +104,7 @@ pub enum Type {
   AnyInteger,
   /// A meta type that represents the lack of a value.
   Unit,
-  // TODO: Remove. We don't have panics anymore.
+  // TODO: Remove. We don't have panics anymore. [Actually, no. What about things like early returns, say if have a return inside an if expr? Or if in the future we decide to treat return statement as an expression?].
   // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where super-types bind with subtypes?
   /// A meta type that implies a computation that will
   /// never evaluate to a value.
@@ -765,6 +765,8 @@ pub struct BlockExpr {
 #[derive(Debug, Clone)]
 pub struct ReturnStmt {
   pub value: Option<Box<NodeKind>>,
+  // REVIEW: Considering linking it to a specific function, this may ease the problems
+  // ... caused by buffers when processing inner functions (closures).
 }
 
 #[derive(Debug, Clone)]

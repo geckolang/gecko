@@ -140,7 +140,7 @@ impl AnalysisVisitor for LintContext {
     }
   }
 
-  fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr) {
+  fn visit_indexing_expr(&mut self, _indexing_expr: &ast::IndexingExpr) {
     // self
     //   .variable_references
     //   .insert(indexing_expr.target_id, true);
