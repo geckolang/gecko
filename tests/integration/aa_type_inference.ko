@@ -1,5 +1,5 @@
-func test():
+func test(a):
   let arr = [1]
   let arr2: [Int, 0] = []
 
-  return true
+  return !a

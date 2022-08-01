@@ -222,7 +222,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       },
       ast::Type::StaticIndexable(element_type, size) => self
         .lower_type(&element_type)
-        .array_type(size.clone())
+        .array_type(*size)
         .as_basic_type_enum(),
       ast::Type::Pointer(pointee_type) => self
         .lower_type(&pointee_type)
@@ -268,10 +268,10 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       //   .as_basic_type_enum(),
       // Meta types are never to be lowered.
       ast::Type::Unit
-      | ast::Type::Variable(_)
       | ast::Type::AnyInteger
       | ast::Type::Never
       | ast::Type::Any
+      | ast::Type::Variable(_)
       | ast::Type::Constructor(..) => unreachable!(),
     }
   }
@@ -306,7 +306,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       .iter()
       .map(|parameter| {
         self
-          .memoize_or_retrieve_type(&parameter.type_hint.as_ref().unwrap())
+          .memoize_or_retrieve_type(self.type_cache.get(&parameter.id).unwrap())
           .into()
       })
       .collect::<Vec<_>>();
@@ -502,8 +502,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // let value_type = binding_stmt.value.infer_flatten_type(self.cache);
     // REVIEW: Always retrieve from the type cache regardless of type hint?
     let value_type = self.type_cache.get(&binding_stmt.id).unwrap();
-
-    dbg!(value_type);
 
     // Special cases. The allocation is done elsewhere.
     if matches!(value_type, ast::Type::Signature(_)) {
@@ -1240,29 +1238,19 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     )
   }
 
-  fn visit_array(
-    &mut self,
-    array_value: &ast::Array,
-  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let llvm_values = array_value
+  fn visit_array(&mut self, array: &ast::Array) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let llvm_values = array
       .elements
       .iter()
       .map(|element| self.dispatch(element).unwrap())
       .collect::<Vec<_>>();
 
-    let llvm_indexable_type = if llvm_values.is_empty() {
-      let indexable_type = self.type_cache.get(&array_value.id).unwrap();
-
-      self.memoize_or_retrieve_type(indexable_type)
-    } else {
-      llvm_values.first().unwrap().get_type()
-    }
-    // REVIEW: Is this cast (usize -> u32) safe?
-    .array_type(llvm_values.len() as u32);
+    let array_type = self.type_cache.get(&array.id).unwrap();
+    let llvm_array_type = self.memoize_or_retrieve_type(array_type);
 
     let llvm_array_ptr = self
       .llvm_builder
-      .build_alloca(llvm_indexable_type, "array.value");
+      .build_alloca(llvm_array_type, "array.value");
 
     for (index, llvm_value) in llvm_values.iter().enumerate() {
       let first_index = self.llvm_context.i32_type().const_int(0, false);
@@ -1422,16 +1410,17 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       ast::IntrinsicKind::LengthOf => {
         let target_array = intrinsic_call.arguments.first().unwrap();
 
-        let array_static_length = match target_array.infer_flatten_type(self.cache) {
-          ast::Type::StaticIndexable(_, length) => length,
+        let array_length = match target_array.infer_flatten_type(self.cache) {
+          ast::Type::StaticIndexable(_, size) => size,
           _ => unreachable!(),
         };
 
         Some(
           self
             .llvm_context
+            // REVIEW: Why not use `i32_type`?
             .i32_type()
-            .const_int(array_static_length as u64, false)
+            .const_int(array_length as u64, false)
             .as_basic_value_enum(),
         )
       }

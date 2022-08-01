@@ -15,7 +15,7 @@ pub fn run(ast_map: &ast::AstMap, cache: &cache::Cache) -> (Vec<ast::Diagnostic>
       let initial_expected_type = type_inference_ctx.create_type_variable();
 
       // visitor::traverse(&top_level_node, &mut type_inference_ctx);
-      type_inference_ctx.new_super_infer(initial_expected_type, &top_level_node);
+      type_inference_ctx.infer_and_constrain(initial_expected_type, &top_level_node);
     }
   }
 
@@ -50,8 +50,6 @@ pub struct TypeInferenceContext<'a> {
   /// the last step of type inference.
   constraints: Vec<TypeConstraint>,
   current_function_id: Option<cache::Id>,
-  /// Links the type variable ids back to their corresponding key in the type cache.
-  links: std::collections::HashMap<TypeVariableId, cache::Id>,
 }
 
 impl<'a> TypeInferenceContext<'a> {
@@ -63,7 +61,6 @@ impl<'a> TypeInferenceContext<'a> {
       type_cache: TypeCache::new(),
       constraints: Vec::new(),
       current_function_id: None,
-      links: std::collections::HashMap::new(),
     }
   }
 
@@ -129,7 +126,14 @@ impl<'a> TypeInferenceContext<'a> {
 
         // REVISE: Proper error handling.
 
-        assert!(kind_a == kind_b && generics_a.len() == generics_b.len());
+        assert!(match kind_a {
+          ast::TypeConstructorKind::StaticIndexable(_) =>
+          // REVIEW: Is it okay to skip size comparison?
+            matches!(kind_b, ast::TypeConstructorKind::StaticIndexable(_)),
+          _ => kind_a == kind_b,
+        });
+
+        assert!(generics_a.len() == generics_b.len());
 
         for (type_a, type_b) in generics_a.iter().zip(generics_b.iter()) {
           self.unify(type_a, type_b);
@@ -182,28 +186,10 @@ impl<'a> TypeInferenceContext<'a> {
       self.type_cache.insert(*id, self.substitute(ty.clone()));
     }
 
+    dbg!(self.substitutions.clone());
+
     self.constraints.clear();
   }
-
-  // fn try_downgrade(&self, ty: ast::Type) -> ast::Type {
-  //   match ty {
-  //     ast::Type::Variable(id) => self.try_downgrade(self.substitutions.get(&id).unwrap().clone()),
-  //     ast::Type::Constructor(kind, generics) => match &kind {
-  //       ast::TypeConstructorKind::StaticIndexable => {
-  //         // TODO: Cloning.
-  //         // REVIEW: Is this conversion correct?
-  //         // REVIEW: Direct access, might panic during runtime. Try separation of concerns?
-  //         ast::Type::StaticIndexable(
-  //           Box::new(self.try_downgrade(generics[0].clone())),
-  //           generics.len() as u32,
-  //         )
-  //       }
-  //       ast::TypeConstructorKind::Boolean => ast::Type::Basic(ast::BasicType::Bool),
-  //       _ => todo!(),
-  //     },
-  //     _ => ty,
-  //   }
-  // }
 
   // REVIEW: Isn't this equivalent (or should be) to the `try_downgrade` function?
   // ... Or maybe that might mess up inner workings during unification, and instead leave it
@@ -230,10 +216,9 @@ impl<'a> TypeInferenceContext<'a> {
       // ),
       // REVIEW: Is this correct? Or is the current one?
       ast::Type::Constructor(kind, generics) => match &kind {
-        ast::TypeConstructorKind::StaticIndexable => ast::Type::StaticIndexable(
-          Box::new(self.substitute(generics[0].clone())),
-          generics.len() as u32,
-        ),
+        ast::TypeConstructorKind::StaticIndexable(size) => {
+          ast::Type::StaticIndexable(Box::new(self.substitute(generics[0].clone())), *size)
+        }
         ast::TypeConstructorKind::Boolean => ast::Type::Basic(ast::BasicType::Bool),
         ast::TypeConstructorKind::Signature => {
           // FIXME: How can we reform the type if we're missing whether it is
@@ -345,7 +330,8 @@ impl<'a> TypeInferenceContext<'a> {
       }
       ast::NodeKind::Array(array) => {
         ast::Type::Constructor(
-          ast::TypeConstructorKind::StaticIndexable,
+          // REVIEW: Is this conversion safe?
+          ast::TypeConstructorKind::StaticIndexable(array.elements.len() as u32),
           vec![array
             .elements
             .first()
@@ -418,7 +404,8 @@ impl<'a> TypeInferenceContext<'a> {
   // Changes:
   // 1. no longer returns a type (on the ref. it was the re-constructed expression).
   // 2. caching is done per-node, because some nodes have more than 1 id (array have one for element type, and for themselves.).
-  fn new_super_infer(&mut self, u_expected_type: ast::Type, node: &ast::NodeKind) {
+  fn infer_and_constrain(&mut self, u_expected_type: ast::Type, node: &ast::NodeKind) {
+    // TODO:
     let expected_type = u_expected_type.try_upgrade_constructor();
 
     match node {
@@ -427,12 +414,12 @@ impl<'a> TypeInferenceContext<'a> {
           // FIXME: What type should be expected for statements? Or should it be Option.none?
           // ... Or is `ast::Type::Unit` (statements don't evaluate) okay?
           // TODO: Why not using type constructor? Yet still works?
-          self.new_super_infer(ast::Type::Unit, statement);
+          self.infer_and_constrain(ast::Type::Unit, statement);
 
           if let ast::NodeKind::ReturnStmt(ast::ReturnStmt { value }) = &statement {
             // TODO: Explain this. Not immediately clear.
             return if let Some(value) = value {
-              self.new_super_infer(expected_type, value);
+              self.infer_and_constrain(expected_type, value);
             } else {
               self.report_constraint(expected_type, ast::Type::Unit);
             };
@@ -441,7 +428,7 @@ impl<'a> TypeInferenceContext<'a> {
 
         // REVIEW:
         if let Some(yields) = &block_expr.yields {
-          self.new_super_infer(expected_type, yields);
+          self.infer_and_constrain(expected_type, yields);
         } else {
           // TODO: Why not using type constructor? Yet still works?
           self.report_constraint(expected_type, ast::Type::Unit);
@@ -491,7 +478,7 @@ impl<'a> TypeInferenceContext<'a> {
 
         // BUG: Do we cache the body type here or when during infer of block expr?
         // ... Should we even need to cache the body's type? Is it needed?
-        self.new_super_infer(
+        self.infer_and_constrain(
           return_type.clone(),
           &ast::NodeKind::BlockExpr(std::rc::Rc::clone(&function.body)),
         );
@@ -557,11 +544,12 @@ impl<'a> TypeInferenceContext<'a> {
           .insert(array.element_type_id, element_type.clone());
 
         for element in &array.elements {
-          self.new_super_infer(element_type.clone(), element);
+          self.infer_and_constrain(element_type.clone(), element);
         }
 
         let constructor_type = ast::Type::Constructor(
-          ast::TypeConstructorKind::StaticIndexable,
+          // REVIEW: Is this conversion safe?
+          ast::TypeConstructorKind::StaticIndexable(array.elements.len() as u32),
           vec![element_type],
         );
 
@@ -582,13 +570,17 @@ impl<'a> TypeInferenceContext<'a> {
 
         self.type_cache.insert(binding_stmt.id, ty.clone());
 
-        self.new_super_infer(ty, &binding_stmt.value);
+        self.infer_and_constrain(ty, &binding_stmt.value);
       }
-      ast::NodeKind::ReturnStmt(_) => {
+      ast::NodeKind::ReturnStmt(return_stmt) => {
         // val newBody = infer(environment, expectedType, body)
         // typeConstraints += CEquality(expectedType, TConstructor("Unit"))
         // EReturn(newBody)
         // self.new_super_infer(expected_type, &ast::NodeKind::Unit);
+        // Pass it down.
+        if let Some(return_value) = &return_stmt.value {
+          self.infer_and_constrain(expected_type, &return_value);
+        }
       }
       ast::NodeKind::UnaryExpr(unary_expr) => {
         // val newOperand = infer(environment, expectedType, operand)
@@ -604,9 +596,8 @@ impl<'a> TypeInferenceContext<'a> {
           _ => unreachable!(),
         };
 
-        self.new_super_infer(ty, &unary_expr.operand);
-
-        // self.report_constraint(ty, expected_type);
+        self.infer_and_constrain(ty.clone(), &unary_expr.operand);
+        self.report_constraint(ty, expected_type);
       }
       // ast::NodeKind::Parameter(parameter) => {
       //   // TODO: What if its type is already set in the type cache/environment?
@@ -632,9 +623,12 @@ impl<'a> TypeInferenceContext<'a> {
         // val newBody = infer(newEnvironment, expectedType, body)
         // ELet(name, Some(newTypeAnnotation), newValue, newBody)
         // Pass it down.
-        self.new_super_infer(expected_type, &inline_expr_stmt.expr);
+        self.infer_and_constrain(expected_type, &inline_expr_stmt.expr);
       }
-      _ => todo!(),
+      _ => {
+        dbg!(node);
+        todo!()
+      }
     }
   }
 }
@@ -660,8 +654,6 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
     // self
     //   .links
     //   .insert(self.substitutions.len() - 1, binding_stmt.id);
-
-    dbg!(value_type.clone());
 
     // REVIEW: Isn't this being repeated in the `infer_type_of` function? If so,
     // ... abstract common code or merge.
@@ -809,7 +801,6 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
     // for element in &array_value.elements {
     //   let actual_element_type = self.infer_type_of(element);
 
-    //   // dbg!(actual_element_type.clone());
     //   self.report_constraint(actual_element_type, array_element_type.clone());
     // }
     // let array_type = self.create_type_variable(array_value.id);
@@ -912,7 +903,7 @@ mod tests {
 
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
-    type_inference_ctx.new_super_infer(initial_expected_type, &binding_stmt);
+    type_inference_ctx.infer_and_constrain(initial_expected_type, &binding_stmt);
     type_inference_ctx.solve_constraints();
 
     assert_eq!(
@@ -951,8 +942,8 @@ mod tests {
     let initial_expected_type_a = type_inference_ctx.create_type_variable();
     let initial_expected_type_b = type_inference_ctx.create_type_variable();
 
-    type_inference_ctx.new_super_infer(initial_expected_type_a, &binding_stmt_a);
-    type_inference_ctx.new_super_infer(initial_expected_type_b, &binding_stmt_b);
+    type_inference_ctx.infer_and_constrain(initial_expected_type_a, &binding_stmt_a);
+    type_inference_ctx.infer_and_constrain(initial_expected_type_b, &binding_stmt_b);
     type_inference_ctx.solve_constraints();
 
     // REVIEW: Why is this failing?
@@ -991,8 +982,8 @@ mod tests {
     let initial_expected_type_a = type_inference_ctx.create_type_variable();
     let initial_expected_type_b = type_inference_ctx.create_type_variable();
 
-    type_inference_ctx.new_super_infer(initial_expected_type_a, &binding_stmt);
-    type_inference_ctx.new_super_infer(initial_expected_type_b, &deref_expr);
+    type_inference_ctx.infer_and_constrain(initial_expected_type_a, &binding_stmt);
+    type_inference_ctx.infer_and_constrain(initial_expected_type_b, &deref_expr);
     type_inference_ctx.solve_constraints();
 
     assert_eq!(
@@ -1012,11 +1003,6 @@ mod tests {
       position: 0,
       type_hint: None,
     };
-
-    cache.declarations.insert(
-      parameter.id,
-      ast::NodeKind::Parameter(parameter.clone().into()),
-    );
 
     cache.links.insert(parameter.id, parameter.id);
 
@@ -1039,10 +1025,8 @@ mod tests {
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
-    type_inference_ctx.new_super_infer(initial_expected_type, &function);
-    dbg!(type_inference_ctx.constraints.clone());
+    type_inference_ctx.infer_and_constrain(initial_expected_type, &function);
     type_inference_ctx.solve_constraints();
-    dbg!(type_inference_ctx.substitutions);
 
     let test_expected_type = ast::Type::Signature(ast::SignatureType {
       is_variadic: false,
@@ -1125,10 +1109,8 @@ mod tests {
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
-    type_inference_ctx.new_super_infer(initial_expected_type, &function);
-    dbg!(type_inference_ctx.constraints.clone());
+    type_inference_ctx.infer_and_constrain(initial_expected_type, &function);
     type_inference_ctx.solve_constraints();
-    dbg!(type_inference_ctx.substitutions);
 
     assert_eq!(
       Some(&ast::Type::Signature(ast::SignatureType {
@@ -1160,10 +1142,8 @@ mod tests {
     let binding_stmt = Mock::free_binding(binding_stmt_id, "a", array, Some(binding_type.clone()));
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
-    type_inference_ctx.new_super_infer(initial_expected_type, &binding_stmt);
-    dbg!(type_inference_ctx.constraints.clone());
+    type_inference_ctx.infer_and_constrain(initial_expected_type, &binding_stmt);
     type_inference_ctx.solve_constraints();
-    dbg!(type_inference_ctx.substitutions);
 
     assert_eq!(
       Some(&binding_type),
@@ -1186,7 +1166,7 @@ mod tests {
 
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
-    type_inference_ctx.new_super_infer(initial_expected_type, &array);
+    type_inference_ctx.infer_and_constrain(initial_expected_type, &array);
     type_inference_ctx.solve_constraints();
 
     let test_expected_type =

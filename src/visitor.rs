@@ -296,6 +296,7 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
   visitor.dispatch(&node);
 
   // TODO: Simplify with the addition of the dispatch method.
+  // BUG: Why are there some missing `exit_function`? And also parameters?
   match &node {
     ast::NodeKind::InlineExprStmt(inline_expr_stmt) => {
       traverse(&inline_expr_stmt.expr, visitor);
@@ -322,6 +323,11 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     }
     ast::NodeKind::Function(function) => {
       visitor.visit_signature(&function.signature);
+
+      for parameter in &function.signature.parameters {
+        visitor.visit_parameter(&parameter);
+      }
+
       visitor.enter_block_expr(&function.body);
       traverse_block_expr(&function.body, visitor);
     }

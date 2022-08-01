@@ -66,7 +66,7 @@ pub enum BasicType {
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum TypeConstructorKind {
-  StaticIndexable,
+  StaticIndexable(u32),
   Pointer,
   Reference,
   Signature,
@@ -126,7 +126,7 @@ impl Type {
   /// If the type is not a type constructor, then it is returned as-is.
   pub fn try_upgrade_constructor(self) -> Type {
     let kind = match &self {
-      Type::StaticIndexable(..) => TypeConstructorKind::StaticIndexable,
+      Type::StaticIndexable(_, size) => TypeConstructorKind::StaticIndexable(*size),
       Type::Pointer(_) => TypeConstructorKind::Pointer,
       Type::Reference(_) => TypeConstructorKind::Reference,
       Type::Signature(_) => TypeConstructorKind::Signature,
@@ -154,11 +154,11 @@ impl Type {
   pub fn old_try_downgrade(self) -> Type {
     match self {
       Type::Constructor(kind, generics) => match &kind {
-        TypeConstructorKind::StaticIndexable => {
+        TypeConstructorKind::StaticIndexable(size) => {
           // TODO: Cloning.
           // REVIEW: Is this conversion correct?
           // REVIEW: Direct access, might panic during runtime. Try separation of concerns?
-          Type::StaticIndexable(Box::new(generics[0].clone()), generics.len() as u32)
+          Type::StaticIndexable(Box::new(generics[0].clone()), *size)
         }
         _ => todo!(),
       },

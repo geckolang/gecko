@@ -465,7 +465,6 @@ impl<'a> Parser<'a> {
 
   /// %name ':' %type
   fn parse_parameter(&mut self, position: u32) -> ParserResult<ast::Parameter> {
-    let location_start = self.current_location();
     let name = self.parse_name()?;
 
     let type_hint = if self.is(&&lexer::TokenKind::Colon) {
