@@ -593,6 +593,7 @@ impl<'a> TypeInferenceContext<'a> {
           ast::OperatorKind::MultiplyOrDereference => ast::Type::Any,
           // FIXME: Debugging only.
           ast::OperatorKind::SubtractOrNegate => ast::Type::AnyInteger,
+          ast::OperatorKind::Cast => unary_expr.cast_type.clone().unwrap(),
           _ => unreachable!(),
         };
 
@@ -624,6 +625,26 @@ impl<'a> TypeInferenceContext<'a> {
         // ELet(name, Some(newTypeAnnotation), newValue, newBody)
         // Pass it down.
         self.infer_and_constrain(expected_type, &inline_expr_stmt.expr);
+      }
+      ast::NodeKind::IndexingExpr(indexing_expr) => {
+        // val newOperand = infer(environment, expectedType, operand)
+        // val newIndex = infer(environment, expectedType, index)
+        // typeConstraints += CEquality(expectedType, TConstructor("Index", List(newOperand.getType(), newIndex.getType())))
+        // EIndex(newOperand, newIndex)
+        // FIXME: This is probably incorrect / missing something.
+        // ... should we expect the target to be an array of length ? and the index
+        // ... to be a u32 integer?
+
+        self.infer_and_constrain(expected_type.clone(), &indexing_expr.target_expr);
+
+        self.infer_and_constrain(
+          ast::Type::Constructor(
+            // FIXME: Integer size.
+            ast::TypeConstructorKind::Integer,
+            vec![],
+          ),
+          &indexing_expr.index_expr,
+        );
       }
       _ => {
         dbg!(node);
