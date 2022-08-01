@@ -1058,7 +1058,9 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::Identifier(_) => ast::NodeKind::Reference(self.parse_reference()?),
       lexer::TokenKind::BracketL => ast::NodeKind::Array(self.parse_array()?),
       lexer::TokenKind::New => ast::NodeKind::StructValue(self.parse_struct_value()?),
-      lexer::TokenKind::Indent => ast::NodeKind::BlockExpr(self.parse_block_expr()?),
+      lexer::TokenKind::Indent => {
+        ast::NodeKind::BlockExpr(std::rc::Rc::new(self.parse_block_expr()?))
+      }
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
       lexer::TokenKind::QuestionMark => self.parse_intrinsic()?,
       lexer::TokenKind::ParenthesesL => {

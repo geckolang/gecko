@@ -173,50 +173,17 @@ impl<'a> TypeInferenceContext<'a> {
       self.unify(&constrain.0, &constrain.1);
     }
 
-    // BUG: This will fail for type constructors because the substitutions here refer to
-    // ... the generics (inner type variables) of the type constructor.
-    for (type_variable_id, ty) in &self.substitutions {
-      // REVISE: Temporary fix until proper diagnostic handling implementation.
-      // if matches!(ty, ast::Type::Variable(_) | ast::Type::Constructor(..)) {
-      //   panic!("Type variable {} is still bound to `{:?}`", id, ty);
-      // }
-
-      // BUG: What's missing is just the association from type-variable id to node.
-      // ... Also, what about constructors? Maybe then need an id too?
-      // Update the type for this node in the type cache.
-      // if let Some(target_node_id) = self.links.get(type_variable_id) {
-      //   self
-      //     .type_cache
-      //     .insert(*target_node_id, self.try_downgrade(ty.clone()));
-      // }
-
-      // dbg!(self.substitutions.clone());
+    // REVISE: Avoid cloning.
+    for (id, ty) in &self.type_cache.clone() {
+      self.type_cache.insert(*id, self.substitute(ty.clone()));
     }
 
     self.constraints.clear();
   }
 
-  fn try_downgrade(&self, ty: ast::Type) -> ast::Type {
-    match ty {
-      ast::Type::Variable(id) => self.try_downgrade(self.substitutions.get(&id).unwrap().clone()),
-      ast::Type::Constructor(kind, generics) => match &kind {
-        ast::TypeConstructorKind::StaticIndexable => {
-          // TODO: Cloning.
-          // REVIEW: Is this conversion correct?
-          // REVIEW: Direct access, might panic during runtime. Try separation of concerns?
-          ast::Type::StaticIndexable(
-            Box::new(self.try_downgrade(generics[0].clone())),
-            generics.len() as u32,
-          )
-        }
-        ast::TypeConstructorKind::Boolean => ast::Type::Basic(ast::BasicType::Bool),
-        _ => todo!(),
-      },
-      _ => ty,
-    }
-  }
-
   // REVIEW: Isn't this equivalent (or should be) to the `try_downgrade` function?
+  // ... Or maybe that might mess up inner workings during unification, and instead leave it
+  // ... last to the specialized `try_downgrade` function?
   /// Substitute a type variable with its non-variable type (if defined).
   ///
   /// If the substitution is not defined, the same type is returned. This
@@ -237,7 +204,7 @@ impl<'a> TypeInferenceContext<'a> {
       //     .map(|generic| self.substitute(generic.clone()))
       //     .collect(),
       // ),
-      // BUG: Is this correct? Or is the current one?
+      // REVIEW: Is this correct? Or is the current one?
       ast::Type::Constructor(kind, generics) => match &kind {
         ast::TypeConstructorKind::StaticIndexable => ast::Type::StaticIndexable(
           Box::new(self.substitute(generics[0].clone())),
@@ -369,9 +336,7 @@ impl<'a> TypeInferenceContext<'a> {
 
   /// Add a constraint stating that both of the provided types are equal.
   fn report_constraint(&mut self, that_type_or_var: ast::Type, is_equal_to: ast::Type) {
-    self
-      .constraints
-      .push((that_type_or_var.try_upgrade(), is_equal_to.try_upgrade()));
+    self.constraints.push((that_type_or_var, is_equal_to));
   }
 
   fn type_hint_or_variable(&mut self, type_hint: &Option<ast::Type>, id: cache::Id) -> ast::Type {
@@ -391,6 +356,69 @@ impl<'a> TypeInferenceContext<'a> {
   // 2. caching is done per-node, because some nodes have more than 1 id (array have one for element type, and for themselves.).
   fn new_super_infer(&mut self, expected_type: ast::Type, node: &ast::NodeKind) {
     match node {
+      ast::NodeKind::Function(function) => {
+        //val newReturnType = returnType.getOrElse(freshTypeVariable())
+        // val newParameterTypes = parameters.map(_.typeAnnotation.getOrElse(freshTypeVariable()))
+        // val newParameters = parameters.zip(newParameterTypes).map { case (p, t) =>
+        //     p.copy(typeAnnotation = Some(t))
+        // }
+        // val newEnvironment = environment ++ newParameters.map { p =>
+        //     p.name -> p.typeAnnotation.get
+        // }
+        // val newBody = infer(newEnvironment, newReturnType, body)
+        // typeConstraints += CEquality(expectedType,
+        //     TConstructor(s"Function${parameters.size}", newParameterTypes ++ List(newReturnType))
+        // )
+        // ELambda(newParameters, Some(newReturnType), newBody)
+        let return_type = function
+          .signature
+          .return_type_hint
+          .as_ref()
+          .map(|type_hint| type_hint.clone())
+          .unwrap_or_else(|| self.create_type_variable());
+
+        // FIXME: Return type id? Cache it? Or is it included in the overall function type
+        // ... already?
+
+        let parameter_types = function
+          .signature
+          .parameters
+          .iter()
+          .map(|parameter| {
+            parameter
+              .type_hint
+              .as_ref()
+              .map(|parameter_type_hint| parameter_type_hint.clone())
+              .unwrap_or_else(|| self.create_type_variable())
+          })
+          .collect::<Vec<_>>();
+
+        // BUG: Do we cache the body type here or when during infer of block expr?
+        // ... Should we even need to cache the body's type? Is it needed?
+        let _body_type = self.new_super_infer(
+          return_type.clone(),
+          &ast::NodeKind::BlockExpr(std::rc::Rc::clone(&function.body)),
+        );
+
+        self.type_cache.insert(
+          function.id,
+          ast::Type::Function(ast::FunctionType {
+            is_extern: function.signature.is_extern,
+            is_variadic: function.signature.is_variadic,
+            parameter_types: parameter_types.clone(),
+            return_type: Box::new(return_type.clone()),
+          }),
+        );
+
+        let mut constructor_generics = parameter_types;
+
+        constructor_generics.extend(std::iter::once(return_type));
+
+        let constructor_type =
+          ast::Type::Constructor(ast::TypeConstructorKind::Function, constructor_generics);
+
+        self.report_constraint(expected_type, constructor_type);
+      }
       // BUG: Temporary to follow the tutorial. Only works for previously
       // ... declared variables (no functions, etc.).
       ast::NodeKind::Reference(reference) => {
@@ -431,13 +459,29 @@ impl<'a> TypeInferenceContext<'a> {
           self.new_super_infer(element_type.clone(), element);
         }
 
-        let array_type = ast::Type::Constructor(
+        let constructor_type = ast::Type::Constructor(
           ast::TypeConstructorKind::StaticIndexable,
           vec![element_type],
         );
 
-        self.type_cache.insert(array.id, array_type.clone());
-        self.report_constraint(expected_type, array_type);
+        self.type_cache.insert(array.id, constructor_type.clone());
+        self.report_constraint(expected_type, constructor_type);
+      }
+      ast::NodeKind::BindingStmt(binding_stmt) => {
+        // val newTypeAnnotation = typeAnnotation.getOrElse(freshTypeVariable())
+        // val newValue = infer(environment, newTypeAnnotation, value)
+        // val newEnvironment = environment.updated(name, newTypeAnnotation)
+        // val newBody = infer(newEnvironment, expectedType, body)
+        // ELet(name, Some(newTypeAnnotation), newValue, newBody)
+        let ty = binding_stmt
+          .type_hint
+          .as_ref()
+          .map(|type_hint| type_hint.clone())
+          .unwrap_or_else(|| self.create_type_variable());
+
+        self.type_cache.insert(binding_stmt.id, ty.clone());
+
+        self.new_super_infer(ty, &binding_stmt.value);
       }
       _ => todo!(),
     }
@@ -909,19 +953,15 @@ mod tests {
 
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
     let signature = function.find_signature().unwrap();
+    let initial_expected_type = type_inference_ctx.create_type_variable();
 
-    visitor::traverse(&function, &mut type_inference_ctx);
+    type_inference_ctx.new_super_infer(initial_expected_type, &function);
     type_inference_ctx.solve_constraints();
 
     assert_eq!(
       type_inference_ctx.type_cache.get(&signature.return_type_id),
       Some(&ast::Type::Basic(ast::BasicType::Bool))
     );
-
-    // assert_eq!(
-    //   type_inference_ctx.substitute(ast::Type::Variable(0)),
-    //   ast::Type::Basic(ast::BasicType::Bool)
-    // );
   }
 
   #[test]
@@ -941,19 +981,11 @@ mod tests {
     let binding_type =
       ast::Type::StaticIndexable(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 1);
 
-    // BUG: Solving is working, but only when it is fed type constructors wrapped in `ast::Type::Constructor`.
-    // ... One approach would be to create/use a hub to capture and transform/map type constructors.
-    // let binding_ty_test =
-    //   ast::Type::Constructor(ast::TypeConstructorKind::Array, vec![binding_type]);
-
     let binding_stmt = Mock::free_binding(binding_stmt_id, "a", array, Some(binding_type.clone()));
+    let initial_expected_type = type_inference_ctx.create_type_variable();
 
-    visitor::traverse(&binding_stmt, &mut type_inference_ctx);
-    // type_inference_ctx.dispatch(&binding_stmt);
-    dbg!(type_inference_ctx.constraints.clone());
+    type_inference_ctx.new_super_infer(initial_expected_type, &binding_stmt);
     type_inference_ctx.solve_constraints();
-    dbg!(type_inference_ctx.substitutions);
-    // dbg!(type_inference_ctx.links);
 
     assert_eq!(
       Some(&binding_type),
@@ -966,9 +998,6 @@ mod tests {
     let mut cache = cache::Cache::new();
     let array_id = cache.next_id();
     let element_type_id = cache.next_id();
-
-    cache.links.insert(array_id, array_id);
-
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
     let array = ast::NodeKind::Array(ast::Array {
@@ -977,30 +1006,13 @@ mod tests {
       element_type_id,
     });
 
-    // dbg!(type_inference_ctx
-    //   .infer_type_of(&array)
-    //   .old_try_downgrade());
-
-    // type_inference_ctx.dispatch(&array);
-    // dbg!(type_inference_ctx.constraints.clone());
-    // type_inference_ctx.solve_constraints();
-    // dbg!(type_inference_ctx.substitutions);
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
     type_inference_ctx.new_super_infer(initial_expected_type, &array);
-
-    dbg!(type_inference_ctx.constraints.clone());
     type_inference_ctx.solve_constraints();
-    dbg!(type_inference_ctx.substitutions.clone());
-    dbg!(type_inference_ctx.type_cache.clone());
 
     let test_expected_type =
       ast::Type::StaticIndexable(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 1);
-
-    // dbg!(type_inference_ctx
-    //   .substitutions
-    //   .get(&array_id)
-    //   .unwrap());
 
     let test_actual_type = type_inference_ctx
       .type_cache
@@ -1008,10 +1020,7 @@ mod tests {
       .unwrap()
       .to_owned();
 
-    assert_eq!(
-      test_expected_type,
-      type_inference_ctx.substitute(test_actual_type)
-    )
+    assert_eq!(test_expected_type, test_actual_type)
   }
 
   // TODO: Use the empty array type test.

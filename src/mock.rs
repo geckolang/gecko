@@ -146,10 +146,10 @@ pub mod tests {
       ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
     }
 
-    pub fn reference(id: cache::Id) -> ast::Reference {
+    pub fn reference(link_id: cache::Id) -> ast::Reference {
       ast::Reference {
         pattern: ast::Pattern {
-          link_id: id,
+          link_id,
           qualifier: None,
           base_name: "test_reference".to_string(),
           sub_name: None,

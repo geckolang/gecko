@@ -72,6 +72,7 @@ pub enum TypeConstructorKind {
   Function,
   Integer,
   Boolean,
+  Binding,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -117,37 +118,6 @@ pub enum Type {
 }
 
 impl Type {
-  // REVIEW: What about nested type constructors?
-  /// Attempt to lift a type to a type constructor for use with the
-  /// inference algorithm.
-  ///
-  /// If the type is not a type constructor, then it is returned as-is.
-  pub fn try_upgrade(self) -> Type {
-    let kind = match &self {
-      Type::StaticIndexable(..) => TypeConstructorKind::StaticIndexable,
-      Type::Pointer(_) => TypeConstructorKind::Pointer,
-      Type::Reference(_) => TypeConstructorKind::Reference,
-      _ => return self,
-    };
-
-    // REVIEW: I think we've got the concept of generics wrong (Or the implementation's
-    // ... handling is wrong). This looks like it should be it instead:
-    // let generics = self
-    //   .find_inner_generics()
-    //   .into_iter()
-    //   .map(|ty| ty.to_owned())
-    //   .collect();
-
-    Type::Constructor(
-      kind,
-      self
-        .find_inner_generics()
-        .into_iter()
-        .map(|generic| generic.to_owned())
-        .collect(),
-    )
-  }
-
   pub fn old_try_downgrade(self) -> Type {
     match self {
       Type::Constructor(kind, generics) => match &kind {
@@ -160,15 +130,6 @@ impl Type {
         _ => todo!(),
       },
       _ => self,
-    }
-  }
-
-  pub fn find_inner_generics(&self) -> Vec<&Type> {
-    match &self {
-      Type::StaticIndexable(inner, _) => vec![inner],
-      Type::Pointer(inner) => vec![inner],
-      Type::Reference(inner) => vec![inner],
-      _ => Vec::new(),
     }
   }
 
@@ -346,7 +307,7 @@ pub enum NodeKind {
   ExternFunction(std::rc::Rc<ExternFunction>),
   ExternStatic(std::rc::Rc<ExternStatic>),
   Function(std::rc::Rc<Function>),
-  BlockExpr(BlockExpr),
+  BlockExpr(std::rc::Rc<BlockExpr>),
   ReturnStmt(ReturnStmt),
   BindingStmt(std::rc::Rc<BindingStmt>),
   IfExpr(IfExpr),
