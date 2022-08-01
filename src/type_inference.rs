@@ -12,7 +12,10 @@ pub fn run(ast_map: &ast::AstMap, cache: &cache::Cache) -> (Vec<ast::Diagnostic>
 
   for inner_ast in ast_map.values() {
     for top_level_node in inner_ast {
-      visitor::traverse(&top_level_node, &mut type_inference_ctx);
+      let initial_expected_type = type_inference_ctx.create_type_variable();
+
+      // visitor::traverse(&top_level_node, &mut type_inference_ctx);
+      type_inference_ctx.new_super_infer(initial_expected_type, &top_level_node);
     }
   }
 
@@ -158,13 +161,14 @@ impl<'a> TypeInferenceContext<'a> {
   }
 
   // TODO: This is the same thing as `node.unification`, but it assumed nodes can be mutated as in object-oriented languages.
-  /// Solves constraints by performing unification.
+  /// Solves constraints by invoking and performing the unification
+  /// algorithm.
   ///
   /// This occurs after all the constraints have been added,
   /// and is the last step for Hindley-Milner type inference.
-  /// After this process is completed, nodes can proceed to perform
-  /// their post-unification phase, which mostly consists of replacing
-  /// their type variables with concrete types.
+  ///
+  /// This will also update the type cache with the resulting types
+  /// by performing substitution.
   fn solve_constraints(&mut self) {
     // REVIEW: What if we have conflicting constraints? Say, we have different calls with different types to the same function?
     // ... Or if the parameters are constrained to be something, yet the arguments are constrained to be different?
@@ -180,6 +184,26 @@ impl<'a> TypeInferenceContext<'a> {
 
     self.constraints.clear();
   }
+
+  // fn try_downgrade(&self, ty: ast::Type) -> ast::Type {
+  //   match ty {
+  //     ast::Type::Variable(id) => self.try_downgrade(self.substitutions.get(&id).unwrap().clone()),
+  //     ast::Type::Constructor(kind, generics) => match &kind {
+  //       ast::TypeConstructorKind::StaticIndexable => {
+  //         // TODO: Cloning.
+  //         // REVIEW: Is this conversion correct?
+  //         // REVIEW: Direct access, might panic during runtime. Try separation of concerns?
+  //         ast::Type::StaticIndexable(
+  //           Box::new(self.try_downgrade(generics[0].clone())),
+  //           generics.len() as u32,
+  //         )
+  //       }
+  //       ast::TypeConstructorKind::Boolean => ast::Type::Basic(ast::BasicType::Bool),
+  //       _ => todo!(),
+  //     },
+  //     _ => ty,
+  //   }
+  // }
 
   // REVIEW: Isn't this equivalent (or should be) to the `try_downgrade` function?
   // ... Or maybe that might mess up inner workings during unification, and instead leave it
@@ -211,6 +235,42 @@ impl<'a> TypeInferenceContext<'a> {
           generics.len() as u32,
         ),
         ast::TypeConstructorKind::Boolean => ast::Type::Basic(ast::BasicType::Bool),
+        ast::TypeConstructorKind::Signature => {
+          // FIXME: How can we reform the type if we're missing whether it is
+          // ... an extern, variadic, and so on?
+          // ast::Type::Function(ast::FunctionType {
+          //   // parameters: all types except the last one.
+          //   parameters: ,
+          //   // return type: the last type.
+          //   return_type: generics[1].clone(),
+          // })
+
+          // REVISE: Too much cloning.
+
+          let parameter_types = if (generics.len() as u32) > 1 {
+            &generics[0..generics.len() - 1]
+          } else {
+            &[]
+          }
+          .to_vec()
+          .into_iter()
+          .map(|generic| self.substitute(generic))
+          .collect();
+
+          let return_type = Box::new(self.substitute(generics[generics.len() - 1].clone()));
+
+          ast::Type::Signature(ast::SignatureType {
+            parameter_types,
+            return_type,
+            // BUG: Find a way to get rid of this on the signature type's fields.
+            // ... It's just used once, and as we can observe is inconvenient.
+            is_variadic: false,
+          })
+        }
+        ast::TypeConstructorKind::Integer => {
+          // TODO: Take into account size.
+          ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))
+        }
         _ => todo!(),
       },
       _ => ty,
@@ -354,8 +414,38 @@ impl<'a> TypeInferenceContext<'a> {
   // Changes:
   // 1. no longer returns a type (on the ref. it was the re-constructed expression).
   // 2. caching is done per-node, because some nodes have more than 1 id (array have one for element type, and for themselves.).
-  fn new_super_infer(&mut self, expected_type: ast::Type, node: &ast::NodeKind) {
+  fn new_super_infer(&mut self, u_expected_type: ast::Type, node: &ast::NodeKind) {
+    let expected_type = u_expected_type.try_upgrade_constructor();
+
     match node {
+      ast::NodeKind::BlockExpr(block_expr) => {
+        for statement in &block_expr.statements {
+          // FIXME: What type should be expected for statements? Or should it be Option.none?
+          // ... Or is `ast::Type::Unit` (statements don't evaluate) okay?
+          self.new_super_infer(ast::Type::Unit, statement);
+        }
+
+        // REVIEW:
+        if let Some(yields) = &block_expr.yields {
+          return self.new_super_infer(expected_type, yields);
+        };
+
+        // FIXME: Ensure this logic is correct, and that it will work as expected.
+        // BUG: The function to infer return values uses this infer method, so function types CAN be never!
+        // If at least one statement evaluates to type never, the type of this
+        // block is also never.
+        // let ty = if block_expr
+        //   .statements
+        //   .iter()
+        //   .any(|statement| statement.infer_flatten_type(cache).is_a_never())
+        // {
+        //   return ast::Type::Never;
+        // } else {
+        //   ast::Type::Unit
+        // };
+
+        self.report_constraint(expected_type, ast::Type::Unit);
+      }
       ast::NodeKind::Function(function) => {
         //val newReturnType = returnType.getOrElse(freshTypeVariable())
         // val newParameterTypes = parameters.map(_.typeAnnotation.getOrElse(freshTypeVariable()))
@@ -377,8 +467,9 @@ impl<'a> TypeInferenceContext<'a> {
           .map(|type_hint| type_hint.clone())
           .unwrap_or_else(|| self.create_type_variable());
 
-        // FIXME: Return type id? Cache it? Or is it included in the overall function type
-        // ... already?
+        self
+          .type_cache
+          .insert(function.signature.return_type_id, return_type.clone());
 
         let parameter_types = function
           .signature
@@ -395,19 +486,19 @@ impl<'a> TypeInferenceContext<'a> {
 
         // BUG: Do we cache the body type here or when during infer of block expr?
         // ... Should we even need to cache the body's type? Is it needed?
-        let _body_type = self.new_super_infer(
+        self.new_super_infer(
           return_type.clone(),
           &ast::NodeKind::BlockExpr(std::rc::Rc::clone(&function.body)),
         );
 
         self.type_cache.insert(
           function.id,
-          ast::Type::Function(ast::FunctionType {
-            is_extern: function.signature.is_extern,
+          ast::Type::Signature(ast::SignatureType {
             is_variadic: function.signature.is_variadic,
             parameter_types: parameter_types.clone(),
             return_type: Box::new(return_type.clone()),
-          }),
+          })
+          .try_upgrade_constructor(),
         );
 
         let mut constructor_generics = parameter_types;
@@ -415,7 +506,7 @@ impl<'a> TypeInferenceContext<'a> {
         constructor_generics.extend(std::iter::once(return_type));
 
         let constructor_type =
-          ast::Type::Constructor(ast::TypeConstructorKind::Function, constructor_generics);
+          ast::Type::Constructor(ast::TypeConstructorKind::Signature, constructor_generics);
 
         self.report_constraint(expected_type, constructor_type);
       }
@@ -433,6 +524,8 @@ impl<'a> TypeInferenceContext<'a> {
       ast::NodeKind::Literal(literal) => {
         let constructor_kind = match literal {
           ast::Literal::Bool(_) => ast::TypeConstructorKind::Boolean,
+          // BUG: Integer types should be specific, otherwise we can't re-construct them.
+          ast::Literal::Int(..) => ast::TypeConstructorKind::Integer,
           _ => todo!(),
         };
 
@@ -483,6 +576,7 @@ impl<'a> TypeInferenceContext<'a> {
 
         self.new_super_infer(ty, &binding_stmt.value);
       }
+      ast::NodeKind::ReturnStmt(_) => {}
       _ => todo!(),
     }
   }
@@ -946,21 +1040,21 @@ mod tests {
     });
 
     let function = Mock::free_function(vec![return_stmt]);
+    let function_id = function.find_id().unwrap();
 
-    cache
-      .declarations
-      .insert(function.find_id().unwrap(), function.clone());
+    cache.declarations.insert(function_id, function.clone());
 
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
-    let signature = function.find_signature().unwrap();
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
     type_inference_ctx.new_super_infer(initial_expected_type, &function);
+    dbg!(type_inference_ctx.constraints.clone());
     type_inference_ctx.solve_constraints();
+    dbg!(type_inference_ctx.substitutions);
 
     assert_eq!(
-      type_inference_ctx.type_cache.get(&signature.return_type_id),
-      Some(&ast::Type::Basic(ast::BasicType::Bool))
+      Some(&ast::Type::Basic(ast::BasicType::Bool)),
+      type_inference_ctx.type_cache.get(&function_id)
     );
   }
 
@@ -985,7 +1079,9 @@ mod tests {
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
     type_inference_ctx.new_super_infer(initial_expected_type, &binding_stmt);
+    dbg!(type_inference_ctx.constraints.clone());
     type_inference_ctx.solve_constraints();
+    dbg!(type_inference_ctx.substitutions);
 
     assert_eq!(
       Some(&binding_type),

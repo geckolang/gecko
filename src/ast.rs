@@ -69,10 +69,9 @@ pub enum TypeConstructorKind {
   StaticIndexable,
   Pointer,
   Reference,
-  Function,
+  Signature,
   Integer,
   Boolean,
-  Binding,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -87,7 +86,7 @@ pub enum Type {
   Struct(Struct),
   /// A type that needs to be resolved.
   Stub(StubType),
-  Function(FunctionType),
+  Signature(SignatureType),
   This(ThisType),
   /// A meta type to be used during unification.
   ///
@@ -104,6 +103,7 @@ pub enum Type {
   AnyInteger,
   /// A meta type that represents the lack of a value.
   Unit,
+  // TODO: Remove. We don't have panics anymore.
   // TODO: To implement sub-typing, we may just need to create/extend a generalized compare function, where super-types bind with subtypes?
   /// A meta type that implies a computation that will
   /// never evaluate to a value.
@@ -118,6 +118,38 @@ pub enum Type {
 }
 
 impl Type {
+  // REVIEW: What about nested type constructors?
+  /// Attempt to lift a type to a type constructor for use with the
+  /// inference algorithm.
+  ///
+  /// If the type is not a type constructor, then it is returned as-is.
+  pub fn try_upgrade_constructor(self) -> Type {
+    let kind = match &self {
+      Type::StaticIndexable(..) => TypeConstructorKind::StaticIndexable,
+      Type::Pointer(_) => TypeConstructorKind::Pointer,
+      Type::Reference(_) => TypeConstructorKind::Reference,
+      Type::Signature(_) => TypeConstructorKind::Signature,
+      _ => return self,
+    };
+
+    // REVIEW: I think we've got the concept of generics wrong (Or the implementation's
+    // ... handling is wrong). This looks like it should be it instead:
+    // let generics = self
+    //   .find_inner_generics()
+    //   .into_iter()
+    //   .map(|ty| ty.to_owned())
+    //   .collect();
+
+    Type::Constructor(
+      kind,
+      self
+        .find_inner_generics()
+        .into_iter()
+        .map(|generic| generic.to_owned())
+        .collect(),
+    )
+  }
+
   pub fn old_try_downgrade(self) -> Type {
     match self {
       Type::Constructor(kind, generics) => match &kind {
@@ -130,6 +162,21 @@ impl Type {
         _ => todo!(),
       },
       _ => self,
+    }
+  }
+
+  pub fn find_inner_generics(&self) -> Vec<&Type> {
+    // TODO: What if they contain nested generics? Is that possible?
+    match &self {
+      Type::StaticIndexable(inner, _) => vec![inner],
+      Type::Pointer(inner) => vec![inner],
+      Type::Reference(inner) => vec![inner],
+      Type::Signature(signature_type) => signature_type
+        .parameter_types
+        .iter()
+        .chain(std::iter::once(signature_type.return_type.as_ref()))
+        .collect::<Vec<_>>(),
+      _ => Vec::new(),
     }
   }
 
@@ -559,11 +606,10 @@ pub struct Closure {
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct FunctionType {
+pub struct SignatureType {
   pub return_type: Box<Type>,
   pub parameter_types: Vec<Type>,
   pub is_variadic: bool,
-  pub is_extern: bool,
 }
 
 #[derive(PartialEq, Clone, Debug)]

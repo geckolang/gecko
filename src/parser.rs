@@ -423,14 +423,14 @@ impl<'a> Parser<'a> {
 
     // Upgrade to a function type, if applicable.
     if self.is(&lexer::TokenKind::Arrow) {
-      ty = ast::Type::Function(self.parse_function_type(ty)?);
+      ty = ast::Type::Signature(self.parse_signature_type(ty)?);
     }
 
     Ok(ty)
   }
 
   /// fn '(' (%type (','))* ')' ('[' %type ']')
-  fn parse_function_type(&mut self, first_type: ast::Type) -> ParserResult<ast::FunctionType> {
+  fn parse_signature_type(&mut self, first_type: ast::Type) -> ParserResult<ast::SignatureType> {
     self.skip_past(&lexer::TokenKind::Arrow)?;
 
     let mut parameter_types = vec![first_type, self.parse_type()?];
@@ -448,13 +448,11 @@ impl<'a> Parser<'a> {
     //   parameter_types.clear();
     // }
 
-    Ok(ast::FunctionType {
+    Ok(ast::SignatureType {
       parameter_types,
       return_type,
       // TODO: Support for variadic functions types? Such as a reference to an extern that is variadic? Think/investigate. Remember that externs may only be invoked from unsafe blocks.
       is_variadic: false,
-      // REVISE: Support for extern functions? This might create logic bugs.
-      is_extern: false,
     })
   }
 

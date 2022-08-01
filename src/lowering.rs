@@ -247,7 +247,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       ast::Type::Stub(stub_type) => {
         self.memoize_or_retrieve_type_by_binding(stub_type.pattern.link_id)
       }
-      ast::Type::Function(callable_type) => self
+      ast::Type::Signature(callable_type) => self
         .lower_callable_type(callable_type)
         .ptr_type(inkwell::AddressSpace::Generic)
         .as_basic_type_enum(),
@@ -278,17 +278,17 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
   fn lower_callable_type(
     &mut self,
-    function_type: &ast::FunctionType,
+    signature_type: &ast::SignatureType,
   ) -> inkwell::types::FunctionType<'ctx> {
-    let llvm_parameter_types = function_type
+    let llvm_parameter_types = signature_type
       .parameter_types
       .iter()
       .map(|parameter_type| self.lower_type(&parameter_type).into())
       .collect::<Vec<_>>();
 
-    let llvm_return_type = self.lower_type(&function_type.return_type);
+    let llvm_return_type = self.lower_type(&signature_type.return_type);
 
-    llvm_return_type.fn_type(llvm_parameter_types.as_slice(), function_type.is_variadic)
+    llvm_return_type.fn_type(llvm_parameter_types.as_slice(), signature_type.is_variadic)
   }
 
   /// Returns a new LLVM function type based on the given signature.
@@ -506,7 +506,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     dbg!(value_type);
 
     // Special cases. The allocation is done elsewhere.
-    if matches!(value_type, ast::Type::Function(_)) {
+    if matches!(value_type, ast::Type::Signature(_)) {
       // REVISE: Cleanup the caching code.
       // REVIEW: Here create a definition for the closure, with the let statement as the name?
 
@@ -676,7 +676,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     extern_fn: &ast::ExternFunction,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // NOTE: The return type is always explicitly-given for extern functions.
-    let llvm_function_type = self.lower_signature(
+    let llvm_signature_type = self.lower_signature(
       &extern_fn.signature,
       extern_fn
         .signature
@@ -689,7 +689,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     let llvm_external_function = self.llvm_module.add_function(
       extern_fn.name.as_str(),
-      llvm_function_type,
+      llvm_signature_type,
       Some(inkwell::module::Linkage::External),
     );
 
@@ -715,7 +715,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .get(&function.signature.return_type_id)
       .unwrap();
 
-    let llvm_function_type = self.lower_signature(&function.signature, &return_type);
+    let llvm_signature_type = self.lower_signature(&function.signature, &return_type);
     let is_main = function.name == MAIN_FUNCTION_NAME;
 
     // TODO: Prepend `fn` to the name.
@@ -733,7 +733,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     let llvm_function = self.llvm_module.add_function(
       llvm_function_name.as_str(),
-      llvm_function_type,
+      llvm_signature_type,
       Some(if is_main {
         inkwell::module::Linkage::External
       } else {
@@ -1463,7 +1463,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     }
 
     // FIXME: Use the modified signature.
-    let llvm_function_type = self.lower_signature(
+    let llvm_signature_type = self.lower_signature(
       &closure.signature,
       // &TypeContext::infer_return_value_type(&closure.body, self.cache),
       // TODO: Implement with the addition of type inference.
@@ -1479,7 +1479,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     let llvm_function = self.llvm_module.add_function(
       llvm_function_name.as_str(),
-      llvm_function_type,
+      llvm_signature_type,
       Some(inkwell::module::Linkage::Private),
     );
 

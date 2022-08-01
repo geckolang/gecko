@@ -675,7 +675,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
   //     ast::Type::Pointer(pointee_type) => pointee_type.resolve(resolver, cache),
   //     ast::Type::Array(element_type, _) => element_type.resolve(resolver, cache),
   //     ast::Type::Struct(struct_type) => struct_type.resolve(resolver, cache),
-  //     ast::Type::Function(function_type) => function_type.resolve(resolver, cache),
+  //     ast::Type::Function(signature_type) => signature_type.resolve(resolver, cache),
   //     // REVIEW: Are there any other types that may need to be resolved?
   //     _ => {}
   //   };

@@ -42,7 +42,7 @@ impl<'a> TypeCheckContext<'a> {
   fn validate_fn_call(
     &mut self,
     argument_types: Vec<ast::Type>,
-    callee_type: ast::FunctionType,
+    callee_type: ast::SignatureType,
     cache: &cache::Cache,
   ) {
     let min_arg_count = callee_type.parameter_types.len();
@@ -81,7 +81,7 @@ impl<'a> TypeCheckContext<'a> {
     signature: &ast::Signature,
     return_type: Option<ast::Type>,
   ) -> ast::Type {
-    ast::Type::Function(ast::FunctionType {
+    ast::Type::Signature(ast::SignatureType {
       return_type: Box::new(return_type.unwrap_or(ast::Type::Unit)),
       parameter_types: signature
         .parameters
@@ -89,7 +89,6 @@ impl<'a> TypeCheckContext<'a> {
         .map(|parameter| parameter.type_hint.as_ref().unwrap().clone())
         .collect(),
       is_variadic: signature.is_variadic,
-      is_extern: signature.is_extern,
     })
   }
 
@@ -286,7 +285,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     // TODO: Unsafe unwrap.
     let callee_expr_type = self.find_type_of(&call_expr.callee_expr).unwrap();
 
-    if !matches!(callee_expr_type, ast::Type::Function(_)) {
+    if !matches!(callee_expr_type, ast::Type::Signature(_)) {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("call expression's callee is not actually callable"),
@@ -297,22 +296,22 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     }
 
     let callee_type = match callee_expr_type {
-      ast::Type::Function(callable_type) => callable_type,
+      ast::Type::Signature(callable_type) => callable_type,
       _ => unreachable!(),
     };
 
     // REVISE: Better, simpler way of doing this?
     // let attributes;
 
-    if callee_type.is_extern && !self.in_unsafe_block {
-      self.diagnostics.push(
-        codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
-          "extern function call to `{}` may only occur inside an unsafe block",
-          // TODO: Need name.
-          "<pending>"
-        )),
-      );
-    }
+    // if callee_type.is_extern && !self.in_unsafe_block {
+    //   self.diagnostics.push(
+    //     codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
+    //       "extern function call to `{}` may only occur inside an unsafe block",
+    //       // TODO: Need name.
+    //       "<pending>"
+    //     )),
+    //   );
+    // }
 
     // for attribute in attributes {
     //   // TODO: Keep it simple for now, but later, we can improve the attribute system.
@@ -497,8 +496,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       ),
     };
 
-    let target_function_type = ast::FunctionType {
-      is_extern: false,
+    let target_signature_type = ast::SignatureType {
       is_variadic: false,
       parameter_types: target_signature.0,
       return_type: Box::new(target_signature.1),
@@ -511,7 +509,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     //     // No need to flatten.
     //     .map(|argument| argument.infer_type(self.cache))
     //     .collect(),
-    //   target_function_type,
+    //   target_signature_type,
     //   self.cache,
     // );
 
@@ -576,17 +574,16 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     }
 
     if function.name == lowering::MAIN_FUNCTION_NAME {
-      let main_function_type = ast::Type::Function(ast::FunctionType {
+      let main_signature_type = ast::Type::Signature(ast::SignatureType {
         parameter_types: vec![
           ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32)),
           ast::Type::Pointer(Box::new(ast::Type::Basic(ast::BasicType::String))),
         ],
         return_type: Box::new(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
         is_variadic: false,
-        is_extern: false,
       });
 
-      // if function.infer_type(self.cache) != main_function_type {
+      // if function.infer_type(self.cache) != main_signature_type {
       //   self.diagnostics.push(
       //     codespan_reporting::diagnostic::Diagnostic::error()
       //       .with_message("the `main` function has an invalid signature")

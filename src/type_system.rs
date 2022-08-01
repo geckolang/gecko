@@ -34,7 +34,7 @@ impl TypeContext {
     signature: &ast::Signature,
     return_type: Option<ast::Type>,
   ) -> ast::Type {
-    ast::Type::Function(ast::FunctionType {
+    ast::Type::Signature(ast::SignatureType {
       return_type: Box::new(return_type.unwrap_or(ast::Type::Unit)),
       parameter_types: signature
         .parameters
@@ -42,7 +42,6 @@ impl TypeContext {
         .map(|parameter| parameter.type_hint.as_ref().unwrap().clone())
         .collect(),
       is_variadic: signature.is_variadic,
-      is_extern: signature.is_extern,
     })
   }
 
