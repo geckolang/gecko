@@ -423,28 +423,22 @@ impl<'a> TypeInferenceContext<'a> {
           // FIXME: What type should be expected for statements? Or should it be Option.none?
           // ... Or is `ast::Type::Unit` (statements don't evaluate) okay?
           self.new_super_infer(ast::Type::Unit, statement);
+
+          if let ast::NodeKind::ReturnStmt(ast::ReturnStmt { value }) = &statement {
+            return if let Some(value) = value {
+              self.new_super_infer(expected_type, value);
+            } else {
+              self.report_constraint(expected_type, ast::Type::Unit);
+            };
+          }
         }
 
         // REVIEW:
         if let Some(yields) = &block_expr.yields {
-          return self.new_super_infer(expected_type, yields);
-        };
-
-        // FIXME: Ensure this logic is correct, and that it will work as expected.
-        // BUG: The function to infer return values uses this infer method, so function types CAN be never!
-        // If at least one statement evaluates to type never, the type of this
-        // block is also never.
-        // let ty = if block_expr
-        //   .statements
-        //   .iter()
-        //   .any(|statement| statement.infer_flatten_type(cache).is_a_never())
-        // {
-        //   return ast::Type::Never;
-        // } else {
-        //   ast::Type::Unit
-        // };
-
-        self.report_constraint(expected_type, ast::Type::Unit);
+          self.new_super_infer(expected_type, yields);
+        } else {
+          self.report_constraint(expected_type, ast::Type::Unit);
+        }
       }
       ast::NodeKind::Function(function) => {
         //val newReturnType = returnType.getOrElse(freshTypeVariable())
@@ -576,7 +570,12 @@ impl<'a> TypeInferenceContext<'a> {
 
         self.new_super_infer(ty, &binding_stmt.value);
       }
-      ast::NodeKind::ReturnStmt(_) => {}
+      ast::NodeKind::ReturnStmt(_) => {
+        // val newBody = infer(environment, expectedType, body)
+        // typeConstraints += CEquality(expectedType, TConstructor("Unit"))
+        // EReturn(newBody)
+        // self.new_super_infer(expected_type, &ast::NodeKind::Unit);
+      }
       _ => todo!(),
     }
   }
@@ -842,22 +841,25 @@ mod tests {
 
   #[test]
   fn infer_binding_from_literal() {
-    let cache = cache::Cache::new();
+    let mut cache = cache::Cache::new();
+    let binding_stmt_id = cache.next_id();
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
     let binding_stmt = Mock::free_binding(
-      0,
+      binding_stmt_id,
       "a",
       ast::NodeKind::Literal(ast::Literal::Bool(true)),
       None,
     );
 
-    type_inference_ctx.dispatch(&binding_stmt);
+    let initial_expected_type = type_inference_ctx.create_type_variable();
+
+    type_inference_ctx.new_super_infer(initial_expected_type, &binding_stmt);
     type_inference_ctx.solve_constraints();
 
     assert_eq!(
-      type_inference_ctx.substitute(ast::Type::Variable(0)),
-      ast::Type::Basic(ast::BasicType::Bool)
+      Some(&ast::Type::Basic(ast::BasicType::Bool)),
+      type_inference_ctx.type_cache.get(&binding_stmt_id)
     );
   }
 
@@ -888,12 +890,12 @@ mod tests {
     );
 
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+    let initial_expected_type_a = type_inference_ctx.create_type_variable();
+    let initial_expected_type_b = type_inference_ctx.create_type_variable();
 
-    visitor::traverse(&binding_stmt_a, &mut type_inference_ctx);
-    visitor::traverse(&binding_stmt_b, &mut type_inference_ctx);
-    dbg!(type_inference_ctx.constraints.clone());
+    type_inference_ctx.new_super_infer(initial_expected_type_a, &binding_stmt_a);
+    type_inference_ctx.new_super_infer(initial_expected_type_b, &binding_stmt_b);
     type_inference_ctx.solve_constraints();
-    dbg!(type_inference_ctx.substitutions);
 
     // REVIEW: Why is this failing?
     assert_eq!(
@@ -927,6 +929,8 @@ mod tests {
       expr: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(binding_id))),
       operator: ast::OperatorKind::MultiplyOrDereference,
     });
+
+    // let initial_expected_type = type_inference_ctx.create_type_variable();
 
     visitor::traverse(&binding_stmt, &mut type_inference_ctx);
     visitor::traverse(&deref_expr, &mut type_inference_ctx);
@@ -1053,7 +1057,11 @@ mod tests {
     dbg!(type_inference_ctx.substitutions);
 
     assert_eq!(
-      Some(&ast::Type::Basic(ast::BasicType::Bool)),
+      Some(&ast::Type::Signature(ast::SignatureType {
+        parameter_types: Vec::new(),
+        return_type: Box::new(ast::Type::Basic(ast::BasicType::Bool)),
+        is_variadic: false,
+      })),
       type_inference_ctx.type_cache.get(&function_id)
     );
   }
