@@ -8,8 +8,7 @@ func binding():
   else:
     yield b
 
-  let e = func ():
-    return 0
+  # let e = func ():
+  #   return 0
 
-  let f = ???
   const g = 1

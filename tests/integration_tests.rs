@@ -3,21 +3,8 @@ extern crate inkwell;
 
 #[cfg(test)]
 mod tests {
-  use gecko::{
-    lowering, name_resolution, type_check, type_inference,
-    visitor::{self, LoweringVisitor},
-  };
-  use pretty_assertions::assert_eq;
-  use std::{fs, io::Read};
-
-  fn load_test_file(path: &std::path::PathBuf) -> String {
-    let mut file = std::fs::File::open(path).unwrap();
-    let mut contents = String::new();
-
-    file.read_to_string(&mut contents).unwrap();
-
-    contents
-  }
+  use gecko::{lowering, name_resolution, type_check, type_inference, visitor::LoweringVisitor};
+  // use pretty_assertions::assert_eq;
 
   fn lex(source_code: &str) -> Vec<gecko::lexer::Token> {
     let tokens = gecko::lexer::Lexer::from_str(source_code).lex_all();
@@ -107,58 +94,98 @@ mod tests {
     llvm_module_string
   }
 
-  #[test]
-  fn integration_tests() {
+  fn run_integration_test(name: &str) {
     // REVISE: Unsafe unwrap.
     let tests_path = std::env::current_dir().unwrap().join("tests");
-    let tests_output_path = tests_path.join("output");
+    let tests_output_path = tests_path.join("integration_output");
 
-    // REVIEW: Consider sorting to avoid fragile module output comparison test.
-    // REVISE: Unsafe unwrap.
-    let mut source_files = fs::read_dir(&tests_path.join("integration"))
-      .unwrap()
-      .map(|path| path.unwrap().path())
-      .filter(|path| path.is_file() && path.extension().unwrap() == "ko")
-      .collect::<Vec<_>>();
+    let source_file_contents = std::fs::read_to_string(
+      tests_path
+        .join("integration")
+        .join(name)
+        .with_extension("ko"),
+    )
+    .unwrap();
 
-    // Sort files to ensure consistency, and avoid fragile module output comparison.
-    source_files.sort();
+    let qualifier = gecko::name_resolution::Qualifier {
+      package_name: String::from("integration_tests"),
+      // FIXME: File names need to conform to identifier rules.
+      module_name: name.to_string(),
+    };
 
-    let mut sources = Vec::new();
+    let output_file_path = tests_output_path.join(name).with_extension("ll");
+    let output_file_contents = std::fs::read_to_string(output_file_path);
 
-    for source_file in &source_files {
-      sources.push(load_test_file(source_file));
-    }
+    assert!(output_file_contents.is_ok());
 
-    // TODO: Ensure both vectors are of same length, and zip iterators.
-    // Read, lex, parse, perform name resolution (declarations)
-    // and collect the AST (top-level nodes) from each source file.
-    for (index, source_file) in source_files.iter().enumerate() {
-      let source_file_name = source_file
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string();
+    assert_eq!(
+      output_file_contents.unwrap().trim(),
+      lower_file(&source_file_contents, qualifier).trim()
+    );
+  }
 
-      let qualifier = gecko::name_resolution::Qualifier {
-        package_name: String::from("integration_tests"),
-        // FIXME: File names need to conform to identifier rules.
-        module_name: source_file_name.clone(),
-      };
+  #[test]
+  fn type_inference() {
+    run_integration_test("type_inference");
+  }
 
-      let output_file_path = tests_output_path
-        .join(source_file_name)
-        .with_extension("ll");
+  #[test]
+  fn arrays() {
+    run_integration_test("arrays");
+  }
 
-      let output_file_contents = fs::read_to_string(output_file_path);
+  #[test]
+  fn binding() {
+    run_integration_test("binding");
+  }
 
-      assert!(output_file_contents.is_ok());
+  #[test]
+  fn block() {
+    run_integration_test("block");
+  }
 
-      assert_eq!(
-        lower_file(&sources[index], qualifier).trim(),
-        output_file_contents.unwrap().trim()
-      );
-    }
+  #[test]
+  fn closure() {
+    run_integration_test("closure");
+  }
+
+  #[test]
+  fn externs() {
+    run_integration_test("externs");
+  }
+
+  #[test]
+  fn generics() {
+    run_integration_test("generics");
+  }
+
+  #[test]
+  fn if_expr() {
+    run_integration_test("if_expr");
+  }
+
+  #[test]
+  fn intrinsic() {
+    run_integration_test("intrinsic");
+  }
+
+  #[test]
+  fn simple_program() {
+    run_integration_test("simple_program");
+  }
+
+  #[test]
+  fn strings() {
+    run_integration_test("strings");
+  }
+
+  #[test]
+  fn structs() {
+    run_integration_test("struct");
+  }
+
+  #[test]
+  fn types() {
+    run_integration_test("type");
   }
 }

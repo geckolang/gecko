@@ -841,12 +841,13 @@ pub enum OperatorKind {
   Equality,
   Cast,
   In,
+  // TODO: Missing inequality operator.
 }
 
 #[derive(Debug, Clone)]
 pub struct BinaryExpr {
-  pub left: std::rc::Rc<NodeKind>,
-  pub right: std::rc::Rc<NodeKind>,
+  pub left_operand: std::rc::Rc<NodeKind>,
+  pub right_operand: std::rc::Rc<NodeKind>,
   pub operator: OperatorKind,
 }
 

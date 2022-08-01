@@ -498,12 +498,15 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     // REVIEW: Should we be lowering const expressions as global constants? What benefits does that provide? What about scoping?
 
-    // REVISE: Optimize. The type for this construct may be cached.
-    // let value_type = binding_stmt.value.infer_flatten_type(self.cache);
     // REVIEW: Always retrieve from the type cache regardless of type hint?
-    let value_type = self.type_cache.get(&binding_stmt.id).unwrap();
+    // REVIEW: Temporarily chose to try given type-hint before retrieving from the type cache.
+    // ... This is to allow unit tests to properly execute, but it seems like the right way to go as well.
+    let value_type = binding_stmt
+      .type_hint
+      .as_ref()
+      .unwrap_or_else(|| self.type_cache.get(&binding_stmt.id).unwrap());
 
-    // Special cases. The allocation is done elsewhere.
+    // Special case. The allocation is done elsewhere.
     if matches!(value_type, ast::Type::Signature(_)) {
       // REVISE: Cleanup the caching code.
       // REVIEW: Here create a definition for the closure, with the let statement as the name?
@@ -994,8 +997,8 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     &mut self,
     binary_expr: &ast::BinaryExpr,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let mut llvm_left_value = self.dispatch(&binary_expr.left).unwrap();
-    let mut llvm_right_value = self.dispatch(&binary_expr.right).unwrap();
+    let mut llvm_left_value = self.dispatch(&binary_expr.left_operand).unwrap();
+    let mut llvm_right_value = self.dispatch(&binary_expr.right_operand).unwrap();
 
     // REVIEW: Is it okay to semi-force an access here? Why not instead make use of the `access` parameter?
     // ... Maybe the operands should always be attempted to be accessed? What about strings? Will they ever be a

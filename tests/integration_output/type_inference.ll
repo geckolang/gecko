@@ -1,5 +1,5 @@
-; ModuleID = 'aa_type_inference'
-source_filename = "aa_type_inference"
+; ModuleID = 'type_inference'
+source_filename = "type_inference"
 
 define private i1 @.0.test(i1 %param.a) {
 fn.entry:
@@ -13,6 +13,19 @@ fn.entry:
   %access2 = load [0 x i32], [0 x i32]* %array.value1, align 4
   %var.arr2 = alloca [0 x i32], align 4
   store [0 x i32] %access2, [0 x i32]* %var.arr2, align 4
+  %if.value = alloca i1, align 1
+  br i1 true, label %if.then, label %if.else
+
+if.then:                                          ; preds = %fn.entry
+  store i1 true, i1* %if.value, align 1
+  br label %if.after
+
+if.after:                                         ; preds = %if.then, %if.else
+  %access3 = load i1, i1* %if.value, align 1
   %not_op = xor i1 %param.a, true
   ret i1 %not_op
+
+if.else:                                          ; preds = %fn.entry
+  store i1 false, i1* %if.value, align 1
+  br label %if.after
 }

@@ -1,7 +1,4 @@
-use crate::{
-  ast, cache,
-  visitor::{self, AnalysisVisitor},
-};
+use crate::{ast, cache, visitor::AnalysisVisitor};
 
 pub type TypeVariableId = usize;
 pub type TypeCache = std::collections::HashMap<cache::Id, ast::Type>;
@@ -292,7 +289,7 @@ impl<'a> TypeInferenceContext<'a> {
         | ast::OperatorKind::Nor
         | ast::OperatorKind::Xor
         | ast::OperatorKind::In => ast::Type::Basic(ast::BasicType::Bool),
-        _ => self.infer_type_of(&binary_expr.left),
+        _ => self.infer_type_of(&binary_expr.left_operand),
       },
       ast::NodeKind::BindingStmt(binding_stmt) => binding_stmt
         .type_hint
@@ -646,6 +643,69 @@ impl<'a> TypeInferenceContext<'a> {
           &indexing_expr.index_expr,
         );
       }
+      ast::NodeKind::IfExpr(if_expr) => {
+        // val newCondition = infer(environment, expectedType, condition)
+        // val newThen = infer(environment, expectedType, then)
+        // val newElse = infer(environment, expectedType, else)
+        // typeConstraints += CEquality(expectedType, TConstructor("If", List(newCondition.getType(), newThen.getType(), newElse.getType())))
+        // EIf(newCondition, newThen, newElse)
+
+        self.infer_and_constrain(
+          ast::Type::Constructor(ast::TypeConstructorKind::Boolean, Vec::new()),
+          &if_expr.condition,
+        );
+
+        // The if expression will always have a unit type if it is
+        // missing its else branch.
+        let ty = if if_expr.else_value.is_none() {
+          ast::Type::Unit
+        } else {
+          self.create_type_variable()
+        };
+
+        self.type_cache.insert(if_expr.id, ty.clone());
+        self.infer_and_constrain(ty.clone(), &if_expr.then_value);
+
+        if let Some(else_value) = &if_expr.else_value {
+          self.infer_and_constrain(ty.clone(), else_value);
+        }
+
+        for (condition, alternative_branch) in &if_expr.alternative_branches {
+          self.infer_and_constrain(
+            ast::Type::Constructor(ast::TypeConstructorKind::Boolean, Vec::new()),
+            condition,
+          );
+
+          self.infer_and_constrain(ty.clone(), alternative_branch);
+        }
+      }
+      ast::NodeKind::BinaryExpr(binary_expr) => {
+        let ty = match binary_expr.operator {
+          ast::OperatorKind::Add
+          | ast::OperatorKind::SubtractOrNegate
+          | ast::OperatorKind::MultiplyOrDereference
+          | ast::OperatorKind::Divide => {
+            ast::Type::Constructor(ast::TypeConstructorKind::Integer, Vec::new())
+          }
+          // TODO: Any missing?
+          ast::OperatorKind::Equality
+          | ast::OperatorKind::And
+          | ast::OperatorKind::Or
+          | ast::OperatorKind::Nor
+          | ast::OperatorKind::GreaterThan
+          | ast::OperatorKind::GreaterThanOrEqual
+          | ast::OperatorKind::LessThan
+          | ast::OperatorKind::LessThanOrEqual
+          | ast::OperatorKind::Xor => {
+            ast::Type::Constructor(ast::TypeConstructorKind::Boolean, Vec::new())
+          }
+          // TODO:
+          _ => todo!(),
+        };
+
+        self.infer_and_constrain(ty.clone(), &binary_expr.left_operand);
+        self.infer_and_constrain(ty.clone(), &binary_expr.right_operand);
+      }
       _ => {
         dbg!(node);
         todo!()
@@ -723,8 +783,8 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
   }
 
   fn visit_binary_expr(&mut self, binary_expr: &ast::BinaryExpr) {
-    let left_expr_type = self.infer_type_of(&binary_expr.left);
-    let right_expr_type = self.infer_type_of(&binary_expr.right);
+    let left_expr_type = self.infer_type_of(&binary_expr.left_operand);
+    let right_expr_type = self.infer_type_of(&binary_expr.right_operand);
 
     // REVIEW: Should we report a constraint that both operands must be of the same type?
     // ... Or is it implied by both being expected to equal the same type? Will it affect the
@@ -1158,7 +1218,7 @@ mod tests {
     });
 
     let binding_type =
-      ast::Type::StaticIndexable(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 1);
+      ast::Type::StaticIndexable(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 0);
 
     let binding_stmt = Mock::free_binding(binding_stmt_id, "a", array, Some(binding_type.clone()));
     let initial_expected_type = type_inference_ctx.create_type_variable();

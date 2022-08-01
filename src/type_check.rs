@@ -695,8 +695,8 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_binary_expr(&mut self, binary_expr: &ast::BinaryExpr) {
-    let left_type = binary_expr.left.infer_flatten_type(self.cache);
-    let right_type = binary_expr.right.infer_flatten_type(self.cache);
+    let left_type = binary_expr.left_operand.infer_flatten_type(self.cache);
+    let right_type = binary_expr.right_operand.infer_flatten_type(self.cache);
 
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
@@ -750,8 +750,8 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       // }
 
       if let ast::NodeKind::BinaryExpr(ast::BinaryExpr {
-        left: _,
-        right,
+        left_operand: _,
+        right_operand: right,
         operator: ast::OperatorKind::In,
       }) = &node.flatten()
       {

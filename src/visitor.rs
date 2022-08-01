@@ -288,6 +288,11 @@ fn traverse_block_expr(block_expr: &ast::BlockExpr, visitor: &mut impl AnalysisV
     traverse(statement, visitor);
   }
 
+  // NOTE: Yields are not part of statements. They won't be visited twice.
+  if let Some(yields) = &block_expr.yields {
+    traverse(yields, visitor);
+  }
+
   visitor.exit_block_expr(&block_expr);
 }
 
@@ -302,8 +307,8 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
       traverse(&inline_expr_stmt.expr, visitor);
     }
     ast::NodeKind::BinaryExpr(binary_expr) => {
-      traverse(&binary_expr.left, visitor);
-      traverse(&binary_expr.right, visitor);
+      traverse(&binary_expr.left_operand, visitor);
+      traverse(&binary_expr.right_operand, visitor);
     }
     ast::NodeKind::BindingStmt(binding_stmt) => {
       traverse(&binding_stmt.value, visitor);

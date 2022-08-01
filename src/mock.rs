@@ -39,7 +39,7 @@ pub mod tests {
       self
     }
 
-    pub fn finish_and_verify(mut self) -> Self {
+    pub fn _finish_and_verify(self) -> Self {
       // TODO: Create builder, build return void and verify module.
 
       self
@@ -188,6 +188,7 @@ pub mod tests {
       }
     }
 
+    // TODO: Change order of arguments and parameters. Expected should always come first.
     pub fn compare(actual: &str, expected: &str) {
       // REVIEW: Perhaps this can be improved (in terms of efficiency).
 
@@ -199,17 +200,17 @@ pub mod tests {
       let expected_normalized_whitespace = whitespace_regex.replace_all(&expected_no_comments, " ");
 
       pretty_assertions::assert_eq!(
-        actual_normalized_whitespace.trim(),
-        expected_normalized_whitespace.trim()
+        expected_normalized_whitespace.trim(),
+        actual_normalized_whitespace.trim()
       );
     }
 
     pub fn compare_with_file(actual: &str, file_name: &str) {
-      let mut path = std::path::PathBuf::from("tests");
+      let path = std::path::PathBuf::from("tests")
+        .join("unit_output")
+        .join(file_name)
+        .with_extension("ll");
 
-      path.push("lowering");
-      path.push(file_name);
-      path.set_extension("ll");
       Mock::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
     }
 

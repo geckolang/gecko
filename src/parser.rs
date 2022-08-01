@@ -298,9 +298,6 @@ impl<'a> Parser<'a> {
 
   /// {%indent (%statement+) %dedent | '=' {%statement | %expr}}
   fn parse_block_expr(&mut self) -> ParserResult<BlockExpr> {
-    let start_location = self.current_location();
-
-    // let initial_indentation_level = self.indentation_level;
     let mut statements = Vec::new();
     let mut yields = None;
 
@@ -1151,8 +1148,8 @@ impl<'a> Parser<'a> {
       }
 
       let kind = ast::NodeKind::BinaryExpr(ast::BinaryExpr {
-        left: std::rc::Rc::new(buffer),
-        right: std::rc::Rc::new(right),
+        left_operand: std::rc::Rc::new(buffer),
+        right_operand: std::rc::Rc::new(right),
         operator,
       });
 
