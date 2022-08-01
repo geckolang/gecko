@@ -1186,7 +1186,7 @@ impl<'a> Parser<'a> {
 
     Ok(ast::UnaryExpr {
       operator,
-      expr,
+      operand: expr,
       cast_type,
     })
   }

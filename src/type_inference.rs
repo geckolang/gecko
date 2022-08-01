@@ -264,6 +264,8 @@ impl<'a> TypeInferenceContext<'a> {
             return_type,
             // BUG: Find a way to get rid of this on the signature type's fields.
             // ... It's just used once, and as we can observe is inconvenient.
+            // ... If miraculously we end up needed it, then leave it as `false` since only
+            // ... non-externs (non-variadic) can have type inference?
             is_variadic: false,
           })
         }
@@ -271,6 +273,8 @@ impl<'a> TypeInferenceContext<'a> {
           // TODO: Take into account size.
           ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))
         }
+        // FIXME: Debugging only.
+        ast::TypeConstructorKind::Nullptr => ast::Type::Any,
         _ => todo!(),
       },
       _ => ty,
@@ -399,7 +403,7 @@ impl<'a> TypeInferenceContext<'a> {
     self.constraints.push((that_type_or_var, is_equal_to));
   }
 
-  fn type_hint_or_variable(&mut self, type_hint: &Option<ast::Type>, id: cache::Id) -> ast::Type {
+  fn type_hint_or_variable(&mut self, type_hint: &Option<ast::Type>) -> ast::Type {
     type_hint
       .as_ref()
       .and_then(|type_hint| Some(type_hint.clone()))
@@ -422,9 +426,11 @@ impl<'a> TypeInferenceContext<'a> {
         for statement in &block_expr.statements {
           // FIXME: What type should be expected for statements? Or should it be Option.none?
           // ... Or is `ast::Type::Unit` (statements don't evaluate) okay?
+          // TODO: Why not using type constructor? Yet still works?
           self.new_super_infer(ast::Type::Unit, statement);
 
           if let ast::NodeKind::ReturnStmt(ast::ReturnStmt { value }) = &statement {
+            // TODO: Explain this. Not immediately clear.
             return if let Some(value) = value {
               self.new_super_infer(expected_type, value);
             } else {
@@ -437,6 +443,7 @@ impl<'a> TypeInferenceContext<'a> {
         if let Some(yields) = &block_expr.yields {
           self.new_super_infer(expected_type, yields);
         } else {
+          // TODO: Why not using type constructor? Yet still works?
           self.report_constraint(expected_type, ast::Type::Unit);
         }
       }
@@ -470,11 +477,15 @@ impl<'a> TypeInferenceContext<'a> {
           .parameters
           .iter()
           .map(|parameter| {
-            parameter
+            let ty = parameter
               .type_hint
               .as_ref()
               .map(|parameter_type_hint| parameter_type_hint.clone())
-              .unwrap_or_else(|| self.create_type_variable())
+              .unwrap_or_else(|| self.create_type_variable());
+
+            self.type_cache.insert(parameter.id, ty.clone());
+
+            ty
           })
           .collect::<Vec<_>>();
 
@@ -515,11 +526,14 @@ impl<'a> TypeInferenceContext<'a> {
 
         self.report_constraint(expected_type, variable_type);
       }
+      // On literals and known types (unary, binary expressions, etc.),
+      // report constraints. On others, pass it down.
       ast::NodeKind::Literal(literal) => {
         let constructor_kind = match literal {
           ast::Literal::Bool(_) => ast::TypeConstructorKind::Boolean,
           // BUG: Integer types should be specific, otherwise we can't re-construct them.
           ast::Literal::Int(..) => ast::TypeConstructorKind::Integer,
+          ast::Literal::Nullptr(..) => ast::TypeConstructorKind::Nullptr,
           _ => todo!(),
         };
 
@@ -576,6 +590,50 @@ impl<'a> TypeInferenceContext<'a> {
         // EReturn(newBody)
         // self.new_super_infer(expected_type, &ast::NodeKind::Unit);
       }
+      ast::NodeKind::UnaryExpr(unary_expr) => {
+        // val newOperand = infer(environment, expectedType, operand)
+        // typeConstraints += CEquality(expectedType, TConstructor("UnaryOp", List(newOperand.getType())))
+        // EUnaryOp(op, newOperand)
+        let ty = match &unary_expr.operator {
+          ast::OperatorKind::Not => ast::Type::Basic(ast::BasicType::Bool),
+          // TODO: Add more operators.
+          // FIXME: Debugging only.
+          ast::OperatorKind::MultiplyOrDereference => ast::Type::Any,
+          // FIXME: Debugging only.
+          ast::OperatorKind::SubtractOrNegate => ast::Type::AnyInteger,
+          _ => unreachable!(),
+        };
+
+        self.new_super_infer(ty, &unary_expr.operand);
+
+        // self.report_constraint(ty, expected_type);
+      }
+      // ast::NodeKind::Parameter(parameter) => {
+      //   // TODO: What if its type is already set in the type cache/environment?
+      //   todo!();
+
+      //   // val newTypeAnnotation = typeAnnotation.getOrElse(freshTypeVariable())
+      //   // val newEnvironment = environment.updated(name, newTypeAnnotation)
+      //   // val newBody = infer(newEnvironment, expectedType, body)
+      //   // EParameter(name, Some(newTypeAnnotation), newBody)
+      //   let ty = parameter
+      //     .type_hint
+      //     .as_ref()
+      //     .map(|type_hint| type_hint.clone())
+      //     .unwrap_or_else(|| self.create_type_variable());
+
+      //   self.type_cache.insert(parameter.id, ty.clone());
+      //   self.report_constraint(expected_type, ty);
+      // }
+      ast::NodeKind::InlineExprStmt(inline_expr_stmt) => {
+        // val newTypeAnnotation = typeAnnotation.getOrElse(freshTypeVariable())
+        // val newValue = infer(environment, newTypeAnnotation, value)
+        // val newEnvironment = environment.updated(name, newTypeAnnotation)
+        // val newBody = infer(newEnvironment, expectedType, body)
+        // ELet(name, Some(newTypeAnnotation), newValue, newBody)
+        // Pass it down.
+        self.new_super_infer(expected_type, &inline_expr_stmt.expr);
+      }
       _ => todo!(),
     }
   }
@@ -607,7 +665,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
 
     // REVIEW: Isn't this being repeated in the `infer_type_of` function? If so,
     // ... abstract common code or merge.
-    let binding_type = self.type_hint_or_variable(&binding_stmt.type_hint, binding_stmt.id);
+    let binding_type = self.type_hint_or_variable(&binding_stmt.type_hint);
 
     self.report_constraint(binding_type, value_type);
 
@@ -625,7 +683,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
 
   fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
     // REVIEW: We need to insert a substitution? Otherwise what links the constraint back to this?
-    let expr_type = self.infer_type_of(&unary_expr.expr);
+    let expr_type = self.infer_type_of(&unary_expr.operand);
 
     match unary_expr.operator {
       ast::OperatorKind::Add | ast::OperatorKind::SubtractOrNegate => {
@@ -719,7 +777,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
     // ... make it an `rc::Rc<>`, and possibly use a buffer id to be able to retrieve it during visitation.
   }
 
-  fn visit_array(&mut self, array_value: &ast::Array) {
+  fn visit_array(&mut self, _array_value: &ast::Array) {
     // REVIEW: This check is here to prevent overriding previous type inference results.
     // ... (Say from binding invoking `infer_type_of` upon this array value).
     // if self.substitutions.contains_key(&array_value.id) {
@@ -926,59 +984,75 @@ mod tests {
 
     let deref_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
       cast_type: None,
-      expr: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(binding_id))),
+      operand: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(binding_id))),
       operator: ast::OperatorKind::MultiplyOrDereference,
     });
 
-    // let initial_expected_type = type_inference_ctx.create_type_variable();
+    let initial_expected_type_a = type_inference_ctx.create_type_variable();
+    let initial_expected_type_b = type_inference_ctx.create_type_variable();
 
-    visitor::traverse(&binding_stmt, &mut type_inference_ctx);
-    visitor::traverse(&deref_expr, &mut type_inference_ctx);
+    type_inference_ctx.new_super_infer(initial_expected_type_a, &binding_stmt);
+    type_inference_ctx.new_super_infer(initial_expected_type_b, &deref_expr);
     type_inference_ctx.solve_constraints();
 
     assert_eq!(
-      type_inference_ctx.substitute(ast::Type::Variable(0)),
       // FIXME: Awaiting type constructor inference.
-      ast::Type::Any
+      Some(&ast::Type::Any),
+      type_inference_ctx.type_cache.get(&binding_id)
     );
   }
 
   #[test]
   fn infer_parameter_from_unary_expr() {
     let mut cache = cache::Cache::new();
-    let id = 0;
 
-    let parameter = ast::NodeKind::Parameter(std::rc::Rc::new(ast::Parameter {
-      id,
+    let parameter = ast::Parameter {
+      id: cache.next_id(),
       name: "a".to_string(),
       position: 0,
       type_hint: None,
-    }));
+    };
 
-    cache.links.insert(id, id);
-    cache.declarations.insert(id, parameter.clone());
+    cache.declarations.insert(
+      parameter.id,
+      ast::NodeKind::Parameter(parameter.clone().into()),
+    );
 
-    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+    cache.links.insert(parameter.id, parameter.id);
 
     let negation_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
       cast_type: None,
-      expr: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(id))),
-      operator: ast::OperatorKind::SubtractOrNegate,
+      operand: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(parameter.id))),
+      operator: ast::OperatorKind::Not,
     });
 
-    type_inference_ctx.dispatch(&parameter);
-    visitor::traverse(&negation_expr, &mut type_inference_ctx);
-    type_inference_ctx.solve_constraints();
+    let function_id = cache.next_id();
 
-    assert_eq!(
-      type_inference_ctx.substitute(ast::Type::Variable(id)),
-      // FIXME: Awaiting type constructor inference.
-      ast::Type::AnyInteger
+    let function = Mock::free_function(
+      function_id,
+      vec![parameter],
+      vec![ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
+        expr: Box::new(negation_expr),
+      })],
     );
 
+    let mut type_inference_ctx = TypeInferenceContext::new(&cache);
+    let initial_expected_type = type_inference_ctx.create_type_variable();
+
+    type_inference_ctx.new_super_infer(initial_expected_type, &function);
+    dbg!(type_inference_ctx.constraints.clone());
+    type_inference_ctx.solve_constraints();
+    dbg!(type_inference_ctx.substitutions);
+
+    let test_expected_type = ast::Type::Signature(ast::SignatureType {
+      is_variadic: false,
+      parameter_types: vec![ast::Type::Basic(ast::BasicType::Bool)],
+      return_type: Box::new(ast::Type::Unit),
+    });
+
     assert_eq!(
-      type_inference_ctx.type_cache.get(&id).unwrap(),
-      &ast::Type::AnyInteger
+      Some(&test_expected_type),
+      type_inference_ctx.type_cache.get(&function_id)
     );
   }
 
@@ -1043,8 +1117,8 @@ mod tests {
       value: Some(Box::new(ast::NodeKind::Literal(ast::Literal::Bool(true)))),
     });
 
-    let function = Mock::free_function(vec![return_stmt]);
-    let function_id = function.find_id().unwrap();
+    let function_id = cache.next_id();
+    let function = Mock::free_function(function_id, Vec::new(), vec![return_stmt]);
 
     cache.declarations.insert(function_id, function.clone());
 

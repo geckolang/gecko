@@ -98,7 +98,11 @@ pub mod tests {
   }
 
   impl<'a, 'ctx> Mock<'a, 'ctx> {
-    pub fn free_function(statements: Vec<ast::NodeKind>) -> ast::NodeKind {
+    pub fn free_function(
+      id: cache::Id,
+      parameters: Vec<ast::Parameter>,
+      statements: Vec<ast::NodeKind>,
+    ) -> ast::NodeKind {
       ast::NodeKind::Function(std::rc::Rc::new(ast::Function {
         attributes: Vec::new(),
         body: std::rc::Rc::new(ast::BlockExpr {
@@ -106,7 +110,7 @@ pub mod tests {
           statements,
           yields: None,
         }),
-        id: 0,
+        id,
         generics: None,
         name: "test_function".to_string(),
         signature: ast::Signature {
@@ -114,7 +118,10 @@ pub mod tests {
           instance_type_id: None,
           is_extern: false,
           is_variadic: false,
-          parameters: Vec::new(),
+          parameters: parameters
+            .into_iter()
+            .map(|parameter| std::rc::Rc::new(parameter))
+            .collect(),
           return_type_hint: None,
           return_type_id: 2,
           this_parameter: None,

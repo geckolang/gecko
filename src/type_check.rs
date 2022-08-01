@@ -945,7 +945,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
-    let expr_type = &unary_expr.expr.infer_flatten_type(self.cache);
+    let expr_type = &unary_expr.operand.infer_flatten_type(self.cache);
 
     match unary_expr.operator {
       ast::OperatorKind::MultiplyOrDereference => {

@@ -72,6 +72,7 @@ pub enum TypeConstructorKind {
   Signature,
   Integer,
   Boolean,
+  Nullptr,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -851,7 +852,7 @@ pub struct BinaryExpr {
 
 #[derive(Debug, Clone)]
 pub struct UnaryExpr {
-  pub expr: std::rc::Rc<NodeKind>,
+  pub operand: std::rc::Rc<NodeKind>,
   pub operator: OperatorKind,
   /// Represents the type being casted to.
   ///

@@ -375,7 +375,7 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
       visitor.exit_struct_impl(struct_impl);
     }
     ast::NodeKind::UnaryExpr(unary_expr) => {
-      traverse(&unary_expr.expr, visitor);
+      traverse(&unary_expr.operand, visitor);
     }
     ast::NodeKind::UnsafeExpr(unsafe_expr) => {
       traverse(&unsafe_expr.0, visitor);

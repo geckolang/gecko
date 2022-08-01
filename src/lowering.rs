@@ -553,7 +553,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
     Some(match unary_expr.operator {
       ast::OperatorKind::Not => {
-        let llvm_value = self.dispatch(&unary_expr.expr).unwrap();
+        let llvm_value = self.dispatch(&unary_expr.operand).unwrap();
         let llvm_final_value = self.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be a boolean. This should be enforced during type-checking.
@@ -563,7 +563,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
           .as_basic_value_enum()
       }
       ast::OperatorKind::SubtractOrNegate => {
-        let llvm_value = self.dispatch(&unary_expr.expr).unwrap();
+        let llvm_value = self.dispatch(&unary_expr.operand).unwrap();
         let llvm_final_value = self.attempt_access(llvm_value);
 
         // NOTE: We expect the value to be an integer or float. This should be enforced during type-checking.
@@ -586,13 +586,13 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
         // TODO: For the time being, this isn't being returned. This should be the return value.
         // unary_expr.expr.lower(generator, cache, false).unwrap()
-        self.dispatch(&unary_expr.expr).unwrap()
+        self.dispatch(&unary_expr.operand).unwrap()
 
         // TODO: Continue implementation (if necessary).
         // todo!()
       }
       ast::OperatorKind::MultiplyOrDereference => {
-        let llvm_value = self.dispatch(&unary_expr.expr).unwrap();
+        let llvm_value = self.dispatch(&unary_expr.operand).unwrap();
 
         // BUG: If the value is a reference to a let-statement, the pointer of
         // ... the let-statement will be removed, but the actual pointer value will
@@ -600,7 +600,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         self.access(llvm_value.into_pointer_value())
       }
       ast::OperatorKind::Cast => {
-        let llvm_value = self.dispatch(&unary_expr.expr).unwrap();
+        let llvm_value = self.dispatch(&unary_expr.operand).unwrap();
         let llvm_final_value = self.attempt_access(llvm_value);
 
         let llvm_to_type = self.memoize_or_retrieve_type(unary_expr.cast_type.as_ref().unwrap());
