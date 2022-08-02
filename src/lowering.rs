@@ -427,16 +427,20 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
     let buffers = self.copy_buffers();
 
-    let llvm_value_opt = self.lower_with_access(declaration).and_then(|llvm_value| {
+    let llvm_value_opt = self.dispatch(declaration).and_then(|llvm_value| {
       // Cache the value without applying access rules.
       // This way, access rules may be chosen to be applied upon cache retrieval.
       self.llvm_cached_values.insert(id.clone(), llvm_value);
 
-      Some(if self.do_access {
-        self.apply_access_rules(declaration, llvm_value)
-      } else {
-        llvm_value
-      })
+      // REVIEW: This was causing a forced-access bug. But what if the declaration is a pointer
+      // ... value and the retrieval wanted to apply access rules? Should it be done by the caller manually instead?
+      // Some(if self.do_access {
+      //   self.apply_access_rules(declaration, llvm_value)
+      // } else {
+      //   llvm_value
+      // })
+
+      Some(llvm_value)
     });
 
     // Restore buffers after processing, if requested.
@@ -1297,10 +1301,12 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     // FIXME: Might need an abstraction to specify to NOT lower with
     // ... / disregard access flag? This is here for debugging:
-    self.do_access = false;
+    // self.do_access = false;
 
     // REVIEW: Opted not to use access rules. Ensure this is correct.
     let llvm_target = self.dispatch(&indexing_expr.target_expr).unwrap();
+
+    dbg!("Is pointer value ----- ", llvm_target.is_pointer_value());
 
     // TODO: Need a way to handle possible segfaults (due to an index being out-of-bounds).
     unsafe {

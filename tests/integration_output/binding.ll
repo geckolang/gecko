@@ -9,9 +9,9 @@ fn.entry:
   store i32 2, i32* %var.b, align 4
   %var.a1 = alloca i32, align 4
   store i32 1, i32* %var.a1, align 4
-  %access = load i32, i32* %var.a1, align 4
   %var.b2 = alloca i32, align 4
   store i32 2, i32* %var.b2, align 4
+  %access = load i32, i32* %var.a1, align 4
   %access3 = load i32, i32* %var.b2, align 4
   %int.add_op = add i32 %access, %access3
   %var.c = alloca i32, align 4

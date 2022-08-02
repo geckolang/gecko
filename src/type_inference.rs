@@ -638,6 +638,10 @@ impl<'a> TypeInferenceContext<'a> {
         // ... should we expect the target to be an array of length ? and the index
         // ... to be a u32 integer?
 
+        // BUG: Type getting inferred as an array instead of an element. We have no mechanism
+        // ... to handle the size of array constructor type yet. (We could constrain the target to
+        // ... be an array of ? element type, but the size requirement for type is impeding that.)
+
         self.infer_and_constrain(expected_type.clone(), &indexing_expr.target_expr);
 
         self.infer_and_constrain(
