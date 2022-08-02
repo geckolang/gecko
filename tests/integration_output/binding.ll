@@ -32,7 +32,7 @@ if.after:                                         ; preds = %if.then, %if.else
   store i32 %access8, i32* %var.d, align 4
   %var.g = alloca i32, align 4
   store i32 1, i32* %var.g, align 4
-  unreachable
+  ret void
 
 if.else:                                          ; preds = %fn.entry
   %var.b4 = alloca i32, align 4

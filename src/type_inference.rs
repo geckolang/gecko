@@ -268,6 +268,7 @@ impl<'a> TypeInferenceContext<'a> {
         }
         // FIXME: Debugging only.
         ast::TypeConstructorKind::Nullptr => ast::Type::Any,
+        ast::TypeConstructorKind::String => ast::Type::Basic(ast::BasicType::String),
         _ => todo!(),
       },
       _ => ty,
@@ -526,6 +527,7 @@ impl<'a> TypeInferenceContext<'a> {
           // BUG: Integer types should be specific, otherwise we can't re-construct them.
           ast::Literal::Int(..) => ast::TypeConstructorKind::Integer,
           ast::Literal::Nullptr(..) => ast::TypeConstructorKind::Nullptr,
+          ast::Literal::String(..) => ast::TypeConstructorKind::String,
           _ => todo!(),
         };
 

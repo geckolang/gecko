@@ -464,7 +464,7 @@ impl<'a> Parser<'a> {
   fn parse_parameter(&mut self, position: u32) -> ParserResult<ast::Parameter> {
     let name = self.parse_name()?;
 
-    let type_hint = if self.is(&&lexer::TokenKind::Colon) {
+    let type_hint = if self.is(&lexer::TokenKind::Colon) {
       self.skip()?;
 
       Some(self.parse_type()?)
@@ -507,7 +507,6 @@ impl<'a> Parser<'a> {
     let mut accepts_instance = false;
 
     let this_parameter = if self.is(&lexer::TokenKind::This) {
-      self.skip()?;
       parameter_index_counter += 1;
       accepts_instance = true;
 
@@ -988,32 +987,6 @@ impl<'a> Parser<'a> {
     Ok(result)
   }
 
-  // TODO: Retire this function. Remove it once its no longer needed.
-  fn after_pattern_is(&self, token: &lexer::TokenKind) -> bool {
-    let mut index = self.index;
-    let mut delimiter_switch = false;
-    let is_past_eof_at = |index: usize| index >= self.tokens.len();
-
-    // REVISE: This is hacky code. Fix up.
-    // REVIEW: Ensure this works as expected with the modifications done.
-    while !is_past_eof_at(index)
-      && match self.tokens.get(index).unwrap().0 {
-        lexer::TokenKind::Dot | lexer::TokenKind::Colon if delimiter_switch => true,
-        lexer::TokenKind::Identifier(_) if !delimiter_switch => true,
-        _ => false,
-      }
-    {
-      delimiter_switch = !delimiter_switch;
-      index += 1;
-    }
-
-    if let Some(token_at_index) = self.tokens.get(index) {
-      &token_at_index.0 == token
-    } else {
-      false
-    }
-  }
-
   fn is_promotion_chain(&self) -> bool {
     if self.is_eof() {
       return false;
@@ -1116,6 +1089,7 @@ impl<'a> Parser<'a> {
   }
 
   // REVISE: Move to use the Pratt-parsing technique instead to replace the non-tail recursive method.
+  // ... Or, simply adjust this implementation to not be recursive.
   /// %expr %operator %expr
   fn parse_binary_expr_or_default(
     &mut self,
@@ -1614,28 +1588,6 @@ mod tests {
     assert!(!parser.is_eof());
     assert!(parser.skip().is_ok());
     assert!(parser.is_eof());
-  }
-
-  #[test]
-  fn after_pattern_is() {
-    let mut cache = cache::Cache::new();
-
-    let mut parser = create_parser(
-      vec![lexer::TokenKind::Identifier("test".to_string())],
-      &mut cache,
-    );
-
-    parser.tokens.push((lexer::TokenKind::BraceL, 0));
-    assert!(parser.after_pattern_is(&lexer::TokenKind::BraceL));
-    parser.tokens.pop();
-    parser.tokens.push((lexer::TokenKind::Dot, 0));
-
-    parser
-      .tokens
-      .push((lexer::TokenKind::Identifier("foo".to_string()), 0));
-
-    parser.tokens.push((lexer::TokenKind::BraceL, 0));
-    assert!(parser.after_pattern_is(&lexer::TokenKind::BraceL));
   }
 
   #[test]

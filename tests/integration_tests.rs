@@ -36,6 +36,10 @@ mod tests {
     let mut parser = gecko::parser::Parser::new(tokens, &mut cache);
     let parse_result = parser.parse_all();
 
+    if parse_result.is_err() {
+      dbg!(parse_result.clone());
+    }
+
     assert!(parse_result.is_ok());
     ast_map.insert(qualifier.clone(), parse_result.unwrap());
     assert!(name_resolution::run(&mut ast_map, &mut cache).is_empty());

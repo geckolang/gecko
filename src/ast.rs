@@ -73,6 +73,7 @@ pub enum TypeConstructorKind {
   Integer,
   Boolean,
   Nullptr,
+  String,
 }
 
 #[derive(PartialEq, Clone, Debug)]
