@@ -15,7 +15,7 @@
 
 #### Technology & principles
 
-Gecko is a general-purpose, strongly-typed programming language, with a focus on a powerful type system, memory safety, and simplicity. Inspired by Rust, Python, Java, C#, JavaScript, Scala, and others. Built using Rust. It uses [🔗LLVM](https://llvm.org/) as its backend.
+Gecko is a general-purpose, strongly-typed programming language, with a focus on a powerful type system, memory safety, and simplicity. Inspired by Rust, Lua, Python, Java, TypeScript, Scala, and others. Built using Rust. It uses [🔗LLVM](https://llvm.org/) as its backend.
 
 Overview:
 
@@ -48,7 +48,7 @@ _🔨 &mdash; Work in progress._ _✔️ &mdash; Completed._
 | Structs | Definition, declaration & accessing of structs. | 🔨 |
 | Modules | - | 🔨 |
 | Generics | - | 🔨 |
-| `if` statement | Includes the `else` statement as well. | ✔️ |
+| `if` | Includes the `else` statement as well. | ✔️ |
 | `return` statement | - | ✔️ |
 | Variables | Declaration, assignment, and reference of variables. | ✔️ |
 | Casting | Type casts between primitives. | ✔️ |
@@ -88,8 +88,8 @@ Here is the exact regular expression rule for identifiers:
 
 Only single-line comments are available for simplicity. All comments start with the `#` character, and anything after that is considered part of the comment and is ignored by the compiler.
 
-```py
-# This is a comment.
+```lua
+-- This is a comment.
 ```
 
 It should be noted that string literals take precedence over comments, in the case that they appear before comments (as one would logically expected):
@@ -129,7 +129,7 @@ Function definitions & calls follow conventional norms. They are easy to define 
 
 Omitting the return type will imply that such function does not return a value (the equivalent to other languages' `void` type). Functions without return types may not return a value, nor are they required to have a `return` statement on their bodies.
 
-```rust
+```py
 func main(argc: Int, argv: *Str):
   return 0
 
@@ -147,36 +147,22 @@ let product: Int = 3 * 4
 
 For convenience, variables can also be declared without specifying their types by using the `let` keyword for type inference. When inferring type from a literal integer, the preferred type inferred by the compiler will be `i32`, unless the integer cannot fit into `i32`'s bit-size, in which case it will be either `i64` or `i128` depending on the value's required bit-width. For example, a value larger than `2147483647` will be inferred as `i64` because it cannot fit into `i32`.
 
-Variable declarations are _immutable_ by default, unless the `mut` keyword is used.
+Variable declarations are _immutable_ by default, unless the `var` keyword is used.
 
-```rust
+```ts
 let five: Int = 5 // type is explicitly given
 let inferred_three = 3 // inferred type is `Int`
 let big_number_i64 = 2147483647 + 1 // type is inferred to be `I64`
 var counter = 0 // can be mutated/re-assigned
 ```
 
-#### &mdash; Loops
+#### &mdash; For-in
 
-There is a single loop construct that can be used to emulate while, for, and infinite loops. The loop construct is a _pre-test loop_, meaning its condition is always evaluated before its body is executed.
+There is a single loop construct that makes use of ranges.
 
-You can use the `continue` and `break` keywords as statements inside the loop body to control the loop.
-
-```rs
-loop: // no condition specified: infinite loop (the condition is assumed to be `true`)
+```py
+for i in 0..10:
   pass
-
-loop condition: // pre-test loop with a condition, emulates a while loop
-  pass
-```
-
-Here's a code example that will iterate 10 times:
-
-```rs
-let mut counter = 0
-
-loop counter < 9:
-  counter += 1
 ```
 
 #### &mdash; Attributes
@@ -196,7 +182,7 @@ Below is a list of all the intrinsic attributes available:
 - `@inline`: Marks a function as _inline_. This will cause the compiler to inline the function, which may result in a performance gain.
 - `@export`: Marks a function to be exported externally. Its named will not be mangled.
 - `@no_discard`: The result of the function must be used, otherwise a warning will be issued.
-- `@tail_recursive`: Marks a recursive function to be validated for tail-recursion. In case that the function cannot be validated to be
+- `@tail_rec`: Marks a recursive function to be validated for tail-recursion. In case that the function cannot be validated to be
   tail-recursive, an error will be issued. This is useful to prevent possible stack overflow exceptions caused by logic errors.
 - `@calling_convention(str)`: Specifies the calling convention of an extern function. Attaching this attribute to a non-extern function will result in an error.
 

@@ -955,11 +955,11 @@ impl<'a> Parser<'a> {
 
   fn parse_sizeof_intrinsic(&mut self) -> ParserResult<ast::SizeofIntrinsic> {
     self.skip_past(&lexer::TokenKind::Sizeof)?;
-    self.skip_past(&lexer::TokenKind::BracketL)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
     let ty = self.parse_type()?;
 
-    self.skip_past(&lexer::TokenKind::BracketR)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
     Ok(ast::SizeofIntrinsic { ty })
   }
@@ -1140,11 +1140,11 @@ impl<'a> Parser<'a> {
 
     self.skip_past(&lexer::TokenKind::Dot)?;
     self.skip_past(&lexer::TokenKind::As)?;
-    self.skip_past(&lexer::TokenKind::LessThan)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
     let cast_type = self.parse_type()?;
 
-    self.skip_past(&lexer::TokenKind::GreaterThan)?;
+    self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
     Ok(ast::CastExpr {
       cast_type,

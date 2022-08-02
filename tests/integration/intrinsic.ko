@@ -3,8 +3,8 @@ struct Complex:
   second: Int,
 
 func size_of():
-  let int_size = ?sizeof[Int]
-  let person_size = ?sizeof[Complex]
+  let int_size = ?sizeof(Int)
+  let person_size = ?sizeof(Complex)
 
 func length_of():
   let arr = [1,2,3]
