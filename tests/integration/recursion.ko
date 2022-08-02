@@ -1,9 +1,9 @@
-#func factorial_tail_recursive(n2, acc):
-#  if n2 == 0:
-#    return acc
-#
-#  return factorial_tail_recursive(n2 - 1, n2 * acc)
-#
+--func factorial_tail_recursive(n2, acc):
+--  if n2 == 0:
+--    return acc
+--
+--  return factorial_tail_recursive(n2 - 1, n2 * acc)
+--
 
 func factorial(n):
   if n == 0:

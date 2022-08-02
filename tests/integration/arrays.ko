@@ -1,6 +1,6 @@
 func arrays():
   let empty_arr: [Int, 0] = []
   let arr = [1]
-  let arr_2 = [arr[`U32 0]]
+  let arr_2 = [arr[0.as<U32>]]
 
-  return arr[`U32 0]
+  return arr[0.as<U32>]

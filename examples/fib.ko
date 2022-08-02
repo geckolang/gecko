@@ -9,7 +9,7 @@ func fib(n: Int):
 
   var i = 2
 
-  # Omitting the condition will create an infinite loop.
+  -- Omitting the condition will create an infinite loop.
   loop i <= n:
     let c = a + b
 
@@ -20,7 +20,7 @@ func fib(n: Int):
   return b
 
 func main(argc: Int, argv: *Str):
-  # Variables created with `let` are immutable.
+  -- Variables created with `let` are immutable.
   let n = 10
 
   unsafe: printf("fib of %d: %d\n", n, fib(n))

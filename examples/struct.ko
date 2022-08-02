@@ -5,14 +5,14 @@ struct Person:
   greeting: Str,
 
 impl Person:
-  # Methods must always specify the `this` keyword as the first argument.
+  -- Methods must always specify the `this` keyword as the first argument.
   func greet(this):
-    # Any call to an extern function is considered unsafe.
+    -- Any call to an extern function is considered unsafe.
     unsafe: printf("%s says: %s\n", this.name, this.greeting)
 
 func main(argc: Int, argv: *Str):
-  # The `new` keyword is used to create a new instance of a struct.
-  # The constructor is also implicitly called (if any is defined).
+  -- The `new` keyword is used to create a new instance of a struct.
+  -- The constructor is also implicitly called (if any is defined).
   let john = new Person{"John", "hello"}
 
   john.greet()

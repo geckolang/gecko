@@ -5,7 +5,7 @@ pub struct TypeCheckContext<'a> {
   in_unsafe_block: bool,
   in_struct_impl: bool,
   current_function_id: Option<symbol_table::NodeId>,
-  usings: Vec<ast::Using>,
+  usings: Vec<ast::Import>,
   /// A map from a type variable's id to a type.
   ///
   /// This serves as a buffer for type inference to occur. It is
@@ -425,7 +425,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     self.in_struct_impl = false;
   }
 
-  fn visit_using(&mut self, using: &ast::Using) {
+  fn visit_import(&mut self, using: &ast::Import) {
     // FIXME: Can't just push the import once encountered; only when it's actually used.
     self.usings.push(using.clone());
   }
@@ -985,24 +985,29 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
         // TODO: Implement.
         return;
       }
-      ast::OperatorKind::Cast => {
-        // REVIEW: What if it's an alias? This could be solved by flattening above.
-        if !matches!(expr_type, ast::Type::Basic(_))
-          || !matches!(unary_expr.cast_type.as_ref().unwrap(), ast::Type::Basic(_))
-        {
-          self.diagnostics.push(
-            codespan_reporting::diagnostic::Diagnostic::error()
-              .with_message("can only cast between primitive types"),
-          );
-        } else if expr_type.is(unary_expr.cast_type.as_ref().unwrap()) {
-          self.diagnostics.push(
-            codespan_reporting::diagnostic::Diagnostic::warning()
-              .with_message("redundant cast to the same type"),
-          );
-        }
-      }
       _ => unreachable!(),
     };
+  }
+
+  fn visit_cast_expr(&mut self, cast_expr: &ast::CastExpr) {
+    let expr_type = &cast_expr.operand.infer_flatten_type(self.cache);
+
+    // REVIEW: What if it's an alias? This could be solved by flattening above.
+    if !matches!(expr_type, ast::Type::Basic(_))
+      || !matches!(cast_expr.cast_type, ast::Type::Basic(_))
+    {
+      self.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::error()
+          .with_message("can only cast between primitive types"),
+      );
+    }
+    // REVIEW: Flatten cast type?
+    else if expr_type.is(&cast_expr.cast_type) {
+      self.diagnostics.push(
+        codespan_reporting::diagnostic::Diagnostic::warning()
+          .with_message("redundant cast to the same type"),
+      );
+    }
   }
 
   fn visit_struct_value(&mut self, struct_value: &ast::StructValue) {

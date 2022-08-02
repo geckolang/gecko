@@ -600,11 +600,16 @@ impl<'a> TypeInferenceContext<'a> {
           ast::OperatorKind::MultiplyOrDereference => ast::Type::Any,
           // FIXME: Debugging only.
           ast::OperatorKind::SubtractOrNegate => ast::Type::AnyInteger,
-          ast::OperatorKind::Cast => unary_expr.cast_type.clone().unwrap(),
           _ => unreachable!(),
         };
 
         self.infer_and_constrain(ty.clone(), &unary_expr.operand);
+        self.report_constraint(ty, expected_type);
+      }
+      ast::NodeKind::CastExpr(cast_expr) => {
+        let ty = cast_expr.cast_type.clone();
+
+        self.infer_and_constrain(ty.clone(), &cast_expr.operand);
         self.report_constraint(ty, expected_type);
       }
       // ast::NodeKind::Parameter(parameter) => {
@@ -870,7 +875,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
       | ast::OperatorKind::Nor
       | ast::OperatorKind::Xor => ast::Type::Basic(ast::BasicType::Bool),
       // TODO: Implement.
-      ast::OperatorKind::Cast | ast::OperatorKind::In => todo!(),
+      ast::OperatorKind::In => todo!(),
       // NOTE: All cases for binary operators are covered above.
       _ => return,
     };
@@ -1118,7 +1123,6 @@ mod tests {
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
     let deref_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
-      cast_type: None,
       operand: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(binding_id))),
       operator: ast::OperatorKind::MultiplyOrDereference,
     });
@@ -1151,7 +1155,6 @@ mod tests {
     cache.links.insert(parameter.id, parameter.id);
 
     let negation_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
-      cast_type: None,
       operand: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(parameter.id))),
       operator: ast::OperatorKind::Not,
     });

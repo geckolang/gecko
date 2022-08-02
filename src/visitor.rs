@@ -36,10 +36,11 @@ macro_rules! define_visitor {
           ast::NodeKind::StructImpl(struct_impl) => self.enter_struct_impl(&struct_impl),
           ast::NodeKind::Trait(trait_) => self.visit_trait(&trait_),
           ast::NodeKind::ParenthesesExpr(parentheses_expr) => self.visit_parentheses_expr(&parentheses_expr),
-          ast::NodeKind::Using(using) => self.visit_using(&using),
+          ast::NodeKind::Import(import) => self.visit_import(&import),
           ast::NodeKind::SizeofIntrinsic(sizeof_intrinsic) => self.visit_sizeof_intrinsic(&sizeof_intrinsic),
           ast::NodeKind::Range(range) => self.visit_range(&range),
-          ast::NodeKind::Type(ty) => self.visit_type(&ty)
+          ast::NodeKind::Type(ty) => self.visit_type(&ty),
+          ast::NodeKind::CastExpr(cast_expr) => self.visit_cast_expr(&cast_expr)
         }
       }
 
@@ -148,7 +149,7 @@ macro_rules! define_visitor {
         $default_value
       }
 
-      fn visit_using(&mut self, _using: &ast::Using) -> $return_type {
+      fn visit_import(&mut self, _using: &ast::Import) -> $return_type {
         $default_value
       }
 
@@ -261,6 +262,10 @@ macro_rules! define_visitor {
       }
 
       fn visit_type(&mut self, _ty: &ast::Type) -> $return_type {
+        $default_value
+      }
+
+      fn visit_cast_expr(&mut self, _cast_expr: &ast::CastExpr) -> $return_type {
         $default_value
       }
     }
@@ -417,6 +422,9 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     ast::NodeKind::Reference(reference) => {
       visitor.visit_pattern(&reference.pattern);
     }
+    ast::NodeKind::CastExpr(cast_expr) => {
+      traverse(&cast_expr.operand, visitor);
+    }
     ast::NodeKind::Enum(_)
     | ast::NodeKind::ExternFunction(_)
     | ast::NodeKind::ExternStatic(_)
@@ -424,7 +432,7 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     | ast::NodeKind::Parameter(_)
     | ast::NodeKind::Struct(_)
     | ast::NodeKind::Pattern(_)
-    | ast::NodeKind::Using(_)
+    | ast::NodeKind::Import(_)
     | ast::NodeKind::SizeofIntrinsic(_)
     | ast::NodeKind::Trait(_)
     | ast::NodeKind::TypeAlias(_)
@@ -548,9 +556,9 @@ impl<'a> AnalysisVisitor for AggregateVisitor<'a> {
     }
   }
 
-  fn visit_using(&mut self, using: &ast::Using) {
+  fn visit_import(&mut self, using: &ast::Import) {
     for visitor in &mut self.visitors {
-      visitor.visit_using(using);
+      visitor.visit_import(using);
     }
   }
 

@@ -729,7 +729,7 @@ impl<'a> Parser<'a> {
       }
       lexer::TokenKind::Impl => ast::NodeKind::StructImpl(self.parse_struct_impl()?),
       lexer::TokenKind::Trait => ast::NodeKind::Trait(std::rc::Rc::new(self.parse_trait()?)),
-      lexer::TokenKind::Using => ast::NodeKind::Using(self.parse_using()?),
+      lexer::TokenKind::Using => ast::NodeKind::Import(self.parse_import()?),
       _ => return Err(self.expected("top-level construct")),
     })
   }
@@ -1041,6 +1041,9 @@ impl<'a> Parser<'a> {
     while self.is_promotion_chain() {
       node = match self.get_token()? {
         lexer::TokenKind::ParenthesesL => ast::NodeKind::CallExpr(self.parse_call_expr(node)?),
+        lexer::TokenKind::Dot if self.peek_is(&lexer::TokenKind::As) => {
+          ast::NodeKind::CastExpr(self.parse_cast_expr(node)?)
+        }
         lexer::TokenKind::Dot => ast::NodeKind::MemberAccess(self.parse_member_access(node)?),
         lexer::TokenKind::BracketL => ast::NodeKind::IndexingExpr(self.parse_indexing_expr(node)?),
         _ => unreachable!(),
@@ -1076,7 +1079,6 @@ impl<'a> Parser<'a> {
       lexer::TokenKind::LessThan => ast::OperatorKind::LessThan,
       lexer::TokenKind::GreaterThan => ast::OperatorKind::GreaterThan,
       lexer::TokenKind::Ampersand => ast::OperatorKind::AddressOf,
-      lexer::TokenKind::Backtick => ast::OperatorKind::Cast,
       lexer::TokenKind::Equality => ast::OperatorKind::Equality,
       // TODO: Implement logic for GTE & LTE.
       _ => return Err(self.expected("operator")),
@@ -1132,20 +1134,32 @@ impl<'a> Parser<'a> {
     Ok(buffer)
   }
 
+  /// %expr '.' as '<' %type '>'
+  fn parse_cast_expr(&mut self, operand: ast::NodeKind) -> ParserResult<ast::CastExpr> {
+    // REVIEW: Consider having a dual syntax for ergonomics: `expr as T`.
+
+    self.skip_past(&lexer::TokenKind::Dot)?;
+    self.skip_past(&lexer::TokenKind::As)?;
+    self.skip_past(&lexer::TokenKind::LessThan)?;
+
+    let cast_type = self.parse_type()?;
+
+    self.skip_past(&lexer::TokenKind::GreaterThan)?;
+
+    Ok(ast::CastExpr {
+      cast_type,
+      operand: std::rc::Rc::new(operand),
+    })
+  }
+
   /// %operator %expr
   fn parse_unary_expr(&mut self) -> ParserResult<ast::UnaryExpr> {
+    // Aid the user by providing a helpful diagnostic.
     if !self.is_unary_operator() {
       return Err(self.expected("unary operator"));
     }
 
     let operator = self.parse_operator()?;
-
-    let cast_type = if operator == ast::OperatorKind::Cast {
-      Some(self.parse_type()?)
-    } else {
-      None
-    };
-
     let expr = std::rc::Rc::new(self.parse_expr()?);
 
     // TODO:
@@ -1156,7 +1170,6 @@ impl<'a> Parser<'a> {
     Ok(ast::UnaryExpr {
       operator,
       operand: expr,
-      cast_type,
     })
   }
 
@@ -1461,9 +1474,9 @@ impl<'a> Parser<'a> {
     Ok(ast::ParenthesesExpr(std::rc::Rc::new(expr)))
   }
 
-  /// using %pattern ('::' '{' (%name ',')+ '}')
-  fn parse_using(&mut self) -> ParserResult<ast::Using> {
-    self.skip_past(&lexer::TokenKind::Using)?;
+  /// import %pattern ('::' '{' (%name ',')+ '}')
+  fn parse_import(&mut self) -> ParserResult<ast::Import> {
+    self.skip_past(&lexer::TokenKind::Import)?;
 
     let package_name = self.parse_name()?;
 
@@ -1471,7 +1484,7 @@ impl<'a> Parser<'a> {
 
     let module_name = self.parse_name()?;
 
-    Ok(ast::Using {
+    Ok(ast::Import {
       package_name,
       module_name,
     })

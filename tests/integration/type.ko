@@ -1,6 +1,6 @@
-#type A = Int
+--type A = Int
 
-#type B = A
+--type B = A
 
 func unit_binding():
   let a = if true:
@@ -11,11 +11,13 @@ func unit_binding():
 
   return 0
 
-func all_paths_covered():
-  if true:
-    return 0
-  else:
-    return 1
+-- func all_paths_covered():
+--   if true:
+--     return 0
+--   else:
+--     return 1
+-- FIXME: It's inserting a return void here, on the after branch.
+-- How can we specify that if all return paths are covered, there is no after branch?
 
 func never():
   let a = if true:

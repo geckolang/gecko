@@ -611,29 +611,32 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         // ... not be accessed. Perhaps will need to remove special treatment of let-statements.
         self.access(llvm_value.into_pointer_value())
       }
-      ast::OperatorKind::Cast => {
-        let llvm_value = self.dispatch(&unary_expr.operand).unwrap();
-        let llvm_final_value = self.attempt_access(llvm_value);
-
-        let llvm_to_type = self.memoize_or_retrieve_type(unary_expr.cast_type.as_ref().unwrap());
-
-        if !llvm_value.is_int_value() {
-          // TODO: Implement for other cases.
-          todo!();
-        }
-
-        self.llvm_builder.build_cast(
-          // FIXME: Different instruction opcodes depending on whether the target type
-          // ... is bigger or smaller (extend vs. truncate). As well as from different
-          // ... types of values, such as when going from int to float, etc.
-          inkwell::values::InstructionOpcode::Trunc,
-          llvm_final_value,
-          llvm_to_type,
-          "cast_op",
-        )
-      }
       _ => unreachable!(),
     })
+  }
+
+  fn visit_cast_expr(
+    &mut self,
+    cast_expr: &ast::CastExpr,
+  ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
+    let llvm_value = self.dispatch(&cast_expr.operand).unwrap();
+    let llvm_final_value = self.attempt_access(llvm_value);
+    let llvm_to_type = self.memoize_or_retrieve_type(&cast_expr.cast_type);
+
+    if !llvm_value.is_int_value() {
+      // TODO: Implement for other cases.
+      todo!();
+    }
+
+    Some(self.llvm_builder.build_cast(
+      // FIXME: Different instruction opcodes depending on whether the target type
+      // ... is bigger or smaller (extend vs. truncate). As well as from different
+      // ... types of values, such as when going from int to float, etc.
+      inkwell::values::InstructionOpcode::Trunc,
+      llvm_final_value,
+      llvm_to_type,
+      "cast_op",
+    ))
   }
 
   fn visit_return_stmt(

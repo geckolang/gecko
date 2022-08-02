@@ -89,6 +89,8 @@ pub enum TokenKind {
   In,
   Indexof,
   This,
+  Import,
+  As,
 }
 
 pub struct Lexer {
@@ -209,7 +211,7 @@ impl Lexer {
   }
 
   fn read_comment(&mut self) -> String {
-    // Skip the hash symbol.
+    // Skip the comment symbol.
     self.read_char();
 
     self.read_while(|character| character != '\n')
@@ -355,7 +357,11 @@ impl Lexer {
     }
 
     let result = match current_char {
-      '#' => TokenKind::Comment(self.read_comment()),
+      '-' if self.peek_char() == Some('-') => {
+        self.read_char();
+
+        TokenKind::Comment(self.read_comment())
+      }
       '"' => return Ok(TokenKind::String(self.read_string()?)),
       '\'' => TokenKind::Char(self.read_character()?),
       '{' => TokenKind::BraceL,
@@ -509,6 +515,7 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "true" => TokenKind::Bool(true),
     "false" => TokenKind::Bool(false),
     "using" => TokenKind::Using,
+    "import" => TokenKind::Import,
     "sizeof" => TokenKind::Sizeof,
     "const" => TokenKind::Const,
     "pass" => TokenKind::Pass,
@@ -517,6 +524,7 @@ fn match_identifier(identifier: &str) -> Option<TokenKind> {
     "in" => TokenKind::In,
     "indexof" => TokenKind::Indexof,
     "this" => TokenKind::This,
+    "as" => TokenKind::As,
     _ => return None,
   })
 }
@@ -667,7 +675,7 @@ mod tests {
 
   #[test]
   fn lex_comment() {
-    let mut lexer = Lexer::from_str("#test");
+    let mut lexer = Lexer::from_str("--test");
 
     assert_eq!(
       Ok(TokenKind::Comment("test".to_string())),
@@ -677,17 +685,17 @@ mod tests {
 
   #[test]
   fn lex_comment_space() {
-    let mut lexer = Lexer::from_str("#hello world");
+    let mut lexer = Lexer::from_str("-- hello world");
 
     assert_eq!(
-      Ok(TokenKind::Comment("hello world".to_string())),
+      Ok(TokenKind::Comment(" hello world".to_string())),
       lexer.lex_token()
     );
   }
 
   #[test]
   fn lex_comment_new_line() {
-    let mut lexer = Lexer::from_str("#hello\n world");
+    let mut lexer = Lexer::from_str("--hello\n world");
 
     assert_eq!(
       Ok(TokenKind::Comment("hello".to_string())),
@@ -697,7 +705,7 @@ mod tests {
 
   #[test]
   fn lex_comment_before() {
-    let mut lexer = Lexer::from_str("a#hello\n world");
+    let mut lexer = Lexer::from_str("a--hello\n world");
 
     assert_eq!(true, lexer.lex_token().is_ok());
 

@@ -381,10 +381,11 @@ pub enum NodeKind {
   StructImpl(StructImpl),
   Trait(std::rc::Rc<Trait>),
   ParenthesesExpr(ParenthesesExpr),
-  Using(Using),
+  Import(Import),
   SizeofIntrinsic(SizeofIntrinsic),
   Range(Range),
   Type(Type),
+  CastExpr(CastExpr),
 }
 
 impl NodeKind {
@@ -594,7 +595,7 @@ pub struct Range {
 }
 
 #[derive(Debug, Clone)]
-pub struct Using {
+pub struct Import {
   pub package_name: String,
   pub module_name: String,
 }
@@ -842,7 +843,6 @@ pub enum OperatorKind {
   LessThanOrEqual,
   GreaterThanOrEqual,
   Equality,
-  Cast,
   In,
   // TODO: Missing inequality operator.
 }
@@ -858,10 +858,12 @@ pub struct BinaryExpr {
 pub struct UnaryExpr {
   pub operand: std::rc::Rc<NodeKind>,
   pub operator: OperatorKind,
-  /// Represents the type being casted to.
-  ///
-  /// Only available when the unary expression is a cast.
-  pub cast_type: Option<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CastExpr {
+  pub operand: std::rc::Rc<NodeKind>,
+  pub cast_type: Type,
 }
 
 #[derive(Debug, Clone)]
