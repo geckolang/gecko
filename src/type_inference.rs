@@ -1,7 +1,7 @@
 use crate::{ast, cache, visitor::AnalysisVisitor};
 
 pub type TypeVariableId = usize;
-pub type TypeCache = std::collections::HashMap<cache::Id, ast::Type>;
+pub type TypeCache = std::collections::HashMap<cache::NodeId, ast::Type>;
 type TypeConstraint = (ast::Type, ast::Type);
 
 pub fn run(ast_map: &ast::AstMap, cache: &cache::Cache) -> (Vec<ast::Diagnostic>, TypeCache) {
@@ -34,7 +34,7 @@ pub struct TypeInferenceContext<'a> {
   /// This serves as a buffer for type inference to occur. It is
   /// populated during parsing, when type variables are created, and
   /// it also is scope-less/context-free.
-  substitutions: std::collections::HashMap<cache::Id, ast::Type>,
+  substitutions: std::collections::HashMap<cache::NodeId, ast::Type>,
   cache: &'a cache::Cache,
   // REVIEW: We can only store types of nodes that have ids (e.g. bindings, parameters, etc.).
   /// A mapping from a node to its most recent type.
@@ -46,7 +46,7 @@ pub struct TypeInferenceContext<'a> {
   /// They are first gathered, then the unification algorithm is performed to solve types, at
   /// the last step of type inference.
   constraints: Vec<TypeConstraint>,
-  current_function_id: Option<cache::Id>,
+  current_function_id: Option<cache::NodeId>,
 }
 
 impl<'a> TypeInferenceContext<'a> {
@@ -640,9 +640,22 @@ impl<'a> TypeInferenceContext<'a> {
 
         // BUG: Type getting inferred as an array instead of an element. We have no mechanism
         // ... to handle the size of array constructor type yet. (We could constrain the target to
-        // ... be an array of ? element type, but the size requirement for type is impeding that.)
+        // ... be an array of ? element type, but the size requirement for type is impeding that.).
 
-        self.infer_and_constrain(expected_type.clone(), &indexing_expr.target_expr);
+        // We don't know and/or don't have direct access to the element type.
+        let element_type = self.create_type_variable();
+
+        let array_type = ast::Type::Constructor(
+          // FIXME: How can we determine the array size? Currently we rely on the magic special
+          // ... case on the unify function that ignores the size of array constructors. In other words,
+          // ... since this array type is just used for comparison and not registered on the type cache,
+          // ... the size here doesn't really matter -- it's just a dummy value.
+          ast::TypeConstructorKind::StaticIndexable(0),
+          vec![element_type.clone()],
+        );
+
+        self.report_constraint(element_type, expected_type);
+        self.infer_and_constrain(array_type, &indexing_expr.target_expr);
 
         self.infer_and_constrain(
           ast::Type::Constructor(
@@ -662,7 +675,7 @@ impl<'a> TypeInferenceContext<'a> {
 
         // The if expression will always have a unit type if it is
         // missing its else branch.
-        let ty = if if_expr.else_value.is_none() {
+        let ty = if if_expr.else_branch.is_none() {
           ast::Type::Unit
         } else {
           self.create_type_variable()
@@ -670,7 +683,7 @@ impl<'a> TypeInferenceContext<'a> {
 
         self.report_constraint(ty.clone(), expected_type);
         self.type_cache.insert(if_expr.id, ty.clone());
-        self.infer_and_constrain(ty.clone(), &if_expr.then_value);
+        self.infer_and_constrain(ty.clone(), &if_expr.then_branch);
 
         for (condition, alternative_branch) in &if_expr.alternative_branches {
           self.infer_and_constrain(
@@ -681,7 +694,7 @@ impl<'a> TypeInferenceContext<'a> {
           self.infer_and_constrain(ty.clone(), alternative_branch);
         }
 
-        if let Some(else_value) = &if_expr.else_value {
+        if let Some(else_value) = &if_expr.else_branch {
           self.infer_and_constrain(ty.clone(), else_value);
         }
       }

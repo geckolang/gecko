@@ -338,14 +338,14 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     }
     ast::NodeKind::IfExpr(if_expr) => {
       traverse(&if_expr.condition, visitor);
-      traverse(&if_expr.then_value, visitor);
+      traverse(&if_expr.then_branch, visitor);
 
       for alternative_branches in &if_expr.alternative_branches {
         traverse(&alternative_branches.0, visitor);
         traverse(&alternative_branches.1, visitor);
       }
 
-      if let Some(else_expr) = &if_expr.else_value {
+      if let Some(else_expr) = &if_expr.else_branch {
         traverse(&else_expr, visitor);
       }
     }

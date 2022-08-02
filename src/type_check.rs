@@ -4,7 +4,7 @@ pub struct TypeCheckContext<'a> {
   pub diagnostics: Vec<ast::Diagnostic>,
   in_unsafe_block: bool,
   in_struct_impl: bool,
-  current_function_id: Option<cache::Id>,
+  current_function_id: Option<cache::NodeId>,
   usings: Vec<ast::Using>,
   /// A map from a type variable's id to a type.
   ///
@@ -12,8 +12,8 @@ pub struct TypeCheckContext<'a> {
   /// populated during parsing phase, when type variables are created, and
   /// it also is scope-less/context-free.
   substitutions: std::collections::HashMap<usize, ast::Type>,
-  type_cache: std::collections::HashMap<cache::Id, ast::Type>,
-  bound_checked_arrays: std::collections::HashSet<cache::Id>,
+  type_cache: std::collections::HashMap<cache::NodeId, ast::Type>,
+  bound_checked_arrays: std::collections::HashSet<cache::NodeId>,
   cache: &'a cache::Cache,
 }
 

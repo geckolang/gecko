@@ -840,9 +840,9 @@ impl<'a> Parser<'a> {
     Ok(ast::IfExpr {
       id: self.cache.next_id(),
       condition,
-      then_value,
+      then_branch: then_value,
       alternative_branches,
-      else_value,
+      else_branch: else_value,
     })
   }
 

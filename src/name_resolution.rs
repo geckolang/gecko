@@ -59,7 +59,7 @@ pub struct Symbol {
   pub kind: SymbolKind,
 }
 
-pub type Scope = std::collections::HashMap<Symbol, cache::Id>;
+pub type Scope = std::collections::HashMap<Symbol, cache::NodeId>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct Qualifier {
@@ -70,7 +70,7 @@ pub struct Qualifier {
 pub struct NameResDeclContext<'a> {
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
-  pub scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
+  pub scope_map: std::collections::HashMap<cache::NodeId, Vec<Scope>>,
   /// Contains the modules with their respective top-level definitions.
   pub global_scopes: std::collections::HashMap<Qualifier, Scope>,
   pub diagnostics: Vec<ast::Diagnostic>,
@@ -126,7 +126,7 @@ impl<'a> NameResDeclContext<'a> {
   /// Returns `false`, and creates an error diagnostic in the local diagnostic builder, if
   /// the symbol was already defined in the current scope, or `true` if it was successfully
   /// registered.
-  fn declare_symbol(&mut self, symbol: Symbol, id: cache::Id) -> bool {
+  fn declare_symbol(&mut self, symbol: Symbol, id: cache::NodeId) -> bool {
     // Check for existing definitions.
     if self.current_scope_contains(&symbol) {
       self.diagnostics.push(
@@ -145,7 +145,7 @@ impl<'a> NameResDeclContext<'a> {
     true
   }
 
-  fn declare_node(&mut self, symbol: Symbol, id: cache::Id, node: ast::NodeKind) {
+  fn declare_node(&mut self, symbol: Symbol, id: cache::NodeId, node: ast::NodeKind) {
     self.cache.declarations.insert(id, node);
 
     self.declare_symbol(symbol, id);
@@ -184,7 +184,7 @@ impl<'a> NameResDeclContext<'a> {
   ///
   /// If an entry with the same unique id already exists, the scope tree will
   /// be appended onto the existing definition.
-  fn finish_scope_tree(&mut self, id: cache::Id) {
+  fn finish_scope_tree(&mut self, id: cache::NodeId) {
     let mut scope_tree = vec![self.force_pop_scope()];
 
     // Clone the relative scope tree.
@@ -201,7 +201,7 @@ impl<'a> NameResDeclContext<'a> {
   /// Register a name on the last scope for name resolution lookups.
   ///
   /// If there are no relative scopes, the symbol is registered in the global scope.
-  fn bind(&mut self, symbol: Symbol, id: cache::Id) {
+  fn bind(&mut self, symbol: Symbol, id: cache::NodeId) {
     self.get_current_scope().insert(symbol, id);
   }
 
@@ -439,14 +439,14 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
 pub struct NameResLinkContext<'a> {
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
-  scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
+  scope_map: std::collections::HashMap<cache::NodeId, Vec<Scope>>,
   cache: &'a mut cache::Cache,
   current_scope_qualifier: Option<Qualifier>,
-  current_struct_type_id: Option<cache::Id>,
+  current_struct_type_id: Option<cache::NodeId>,
   // REVIEW: If we can get rid of these flags, we may possibly use the traverse method instead
   // ... of manual visitation.
   /// The unique id of the current block's scope. Used in the resolve step.
-  block_id_stack: Vec<cache::Id>,
+  block_id_stack: Vec<cache::NodeId>,
   /// Contains the modules with their respective top-level definitions.
   global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
   pub diagnostics: Vec<ast::Diagnostic>,
@@ -455,7 +455,7 @@ pub struct NameResLinkContext<'a> {
 impl<'a> NameResLinkContext<'a> {
   pub fn new(
     global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
-    scope_map: std::collections::HashMap<cache::Id, Vec<Scope>>,
+    scope_map: std::collections::HashMap<cache::NodeId, Vec<Scope>>,
     cache: &'a mut cache::Cache,
   ) -> Self {
     Self {
@@ -472,7 +472,7 @@ impl<'a> NameResLinkContext<'a> {
 
 impl<'a> NameResLinkContext<'a> {
   /// Lookup a symbol in the global scope of a specific package and module.
-  fn lookup(&mut self, qualifier: Qualifier, symbol: &Symbol) -> Option<cache::Id> {
+  fn lookup(&mut self, qualifier: Qualifier, symbol: &Symbol) -> Option<cache::NodeId> {
     if !self.global_scopes.contains_key(&qualifier) {
       return None;
     }
@@ -488,7 +488,7 @@ impl<'a> NameResLinkContext<'a> {
 
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope
   /// of the current module.
-  fn local_lookup(&mut self, symbol: &Symbol) -> Option<cache::Id> {
+  fn local_lookup(&mut self, symbol: &Symbol) -> Option<cache::NodeId> {
     // If applicable, lookup on the relative scopes. This may not
     // be the case for when resolving global entities such as struct
     // types that reference other structs in their fields (in such case,
@@ -510,7 +510,7 @@ impl<'a> NameResLinkContext<'a> {
     self.lookup(self.current_scope_qualifier.clone().unwrap(), symbol)
   }
 
-  fn local_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::Id> {
+  fn local_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::NodeId> {
     if let Some(id) = self.local_lookup(symbol) {
       return Some(id.clone());
     }

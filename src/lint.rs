@@ -4,7 +4,7 @@ use crate::{ast, cache, visitor::AnalysisVisitor};
 // ... Perhaps we can also get rid of variable reference counting, in favor of functional programming.
 pub struct LintContext {
   pub diagnostics: Vec<ast::Diagnostic>,
-  variable_references: std::collections::HashMap<cache::Id, bool>,
+  variable_references: std::collections::HashMap<cache::NodeId, bool>,
 }
 
 // REVISE: Use the `traverse` method to walk the AST and invoke these

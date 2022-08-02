@@ -38,7 +38,7 @@ pub struct Parameter {
   pub name: String,
   pub type_hint: Option<Type>,
   pub position: u32,
-  pub id: cache::Id,
+  pub id: cache::NodeId,
 }
 
 #[derive(PartialEq, PartialOrd, Clone, Debug)]
@@ -546,7 +546,7 @@ impl NodeKind {
     todo!()
   }
 
-  pub fn find_id(&self) -> Option<cache::Id> {
+  pub fn find_id(&self) -> Option<cache::NodeId> {
     match self {
       NodeKind::BindingStmt(binding_stmt) => Some(binding_stmt.id),
       NodeKind::Function(function) => Some(function.id),
@@ -583,7 +583,7 @@ impl NodeKind {
 pub struct Node {
   pub kind: NodeKind,
   // TODO: In the future, we may be able to use node location as its id.
-  pub id: cache::Id,
+  pub id: cache::NodeId,
   pub location: (usize, usize),
 }
 
@@ -601,8 +601,8 @@ pub struct Using {
 
 #[derive(Debug, Clone)]
 pub struct Closure {
-  pub id: cache::Id,
-  pub captures: Vec<(String, Option<cache::Id>)>,
+  pub id: cache::NodeId,
+  pub captures: Vec<(String, Option<cache::NodeId>)>,
   pub signature: Signature,
   pub body: std::rc::Rc<BlockExpr>,
 }
@@ -616,14 +616,14 @@ pub struct SignatureType {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct ThisType {
-  pub target_id: Option<cache::Id>,
+  pub target_id: Option<cache::NodeId>,
 }
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
 // TODO: If it's never boxed under `Node`, then there might not be a need for it to be included under `Node`?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
-  pub link_id: cache::Id,
+  pub link_id: cache::NodeId,
   pub qualifier: Option<name_resolution::Qualifier>,
   pub base_name: String,
   pub sub_name: Option<String>,
@@ -641,7 +641,7 @@ pub struct StructValue {
   pub fields: Vec<std::rc::Rc<NodeKind>>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
-  pub target_id: cache::Id,
+  pub target_id: cache::NodeId,
   pub ty: Option<Type>,
 }
 
@@ -658,14 +658,14 @@ pub struct StructImpl {
 pub struct Trait {
   pub name: String,
   pub methods: Vec<(String, Signature)>,
-  pub id: cache::Id,
+  pub id: cache::NodeId,
 }
 
 #[derive(Debug, Clone)]
 pub struct Enum {
   pub name: String,
-  pub variants: Vec<(String, cache::Id)>,
-  pub id: cache::Id,
+  pub variants: Vec<(String, cache::NodeId)>,
+  pub id: cache::NodeId,
   pub value_type: Type,
 }
 
@@ -681,8 +681,8 @@ pub struct IndexingExpr {
 #[derive(Debug, Clone)]
 pub struct Array {
   pub elements: Vec<NodeKind>,
-  pub id: cache::Id,
-  pub element_type_id: cache::Id,
+  pub id: cache::NodeId,
+  pub element_type_id: cache::NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -709,7 +709,7 @@ pub enum Literal {
   Int(u64, IntSize),
   Char(char),
   String(String),
-  Nullptr(cache::Id, Option<Type>),
+  Nullptr(cache::NodeId, Option<Type>),
 }
 
 #[derive(Debug, Clone)]
@@ -719,8 +719,8 @@ pub struct Signature {
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
-  pub instance_type_id: Option<cache::Id>,
-  pub return_type_id: cache::Id,
+  pub instance_type_id: Option<cache::NodeId>,
+  pub return_type_id: cache::NodeId,
   pub this_parameter: Option<Parameter>,
 }
 
@@ -729,14 +729,14 @@ pub struct ExternFunction {
   pub name: String,
   pub signature: Signature,
   pub attributes: Vec<Attribute>,
-  pub id: cache::Id,
+  pub id: cache::NodeId,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExternStatic {
   pub name: String,
   pub ty: Type,
-  pub id: cache::Id,
+  pub id: cache::NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -752,7 +752,7 @@ pub struct Function {
   pub signature: Signature,
   pub body: std::rc::Rc<BlockExpr>,
   pub attributes: Vec<Attribute>,
-  pub id: cache::Id,
+  pub id: cache::NodeId,
   pub generics: Option<Generics>,
 }
 
@@ -760,7 +760,7 @@ pub struct Function {
 pub struct BlockExpr {
   pub statements: Vec<NodeKind>,
   pub yields: Option<Box<NodeKind>>,
-  pub id: cache::Id,
+  pub id: cache::NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -775,17 +775,17 @@ pub struct BindingStmt {
   pub name: String,
   pub value: Box<NodeKind>,
   pub is_const_expr: bool,
-  pub id: cache::Id,
+  pub id: cache::NodeId,
   pub type_hint: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
 pub struct IfExpr {
-  pub id: cache::Id,
+  pub id: cache::NodeId,
   pub condition: Box<NodeKind>,
-  pub then_value: Box<NodeKind>,
+  pub then_branch: Box<NodeKind>,
   pub alternative_branches: Vec<(NodeKind, NodeKind)>,
-  pub else_value: Option<Box<NodeKind>>,
+  pub else_branch: Option<Box<NodeKind>>,
 }
 
 #[derive(Debug, Clone)]
@@ -812,7 +812,7 @@ pub struct IntrinsicCall {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct Struct {
-  pub id: cache::Id,
+  pub id: cache::NodeId,
   pub name: String,
   pub fields: Vec<(String, Type)>,
 }
@@ -821,7 +821,7 @@ pub struct Struct {
 pub struct TypeAlias {
   pub name: String,
   pub ty: Type,
-  pub id: cache::Id,
+  pub id: cache::NodeId,
 }
 
 #[derive(PartialEq, Debug, Clone)]

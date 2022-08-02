@@ -174,6 +174,11 @@ mod tests {
   }
 
   #[test]
+  fn recursion() {
+    run_integration_test("recursion");
+  }
+
+  #[test]
   fn simple_program() {
     run_integration_test("simple_program");
   }

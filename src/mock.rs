@@ -99,7 +99,7 @@ pub mod tests {
 
   impl<'a, 'ctx> Mock<'a, 'ctx> {
     pub fn free_function(
-      id: cache::Id,
+      id: cache::NodeId,
       parameters: Vec<ast::Parameter>,
       statements: Vec<ast::NodeKind>,
     ) -> ast::NodeKind {
@@ -131,7 +131,7 @@ pub mod tests {
     }
 
     pub fn free_binding(
-      id: cache::Id,
+      id: cache::NodeId,
       name: &str,
       value: ast::NodeKind,
       type_hint: Option<ast::Type>,
@@ -153,7 +153,7 @@ pub mod tests {
       ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
     }
 
-    pub fn reference(link_id: cache::Id) -> ast::Reference {
+    pub fn reference(link_id: cache::NodeId) -> ast::Reference {
       ast::Reference {
         pattern: ast::Pattern {
           link_id,
@@ -256,7 +256,7 @@ pub mod tests {
       self
     }
 
-    fn next_id(&mut self) -> cache::Id {
+    fn next_id(&mut self) -> cache::NodeId {
       let id = self.id_counter;
 
       self.id_counter += 1;
