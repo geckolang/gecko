@@ -2,7 +2,7 @@
 // ... inference / retrieval of types.
 
 use crate::{
-  ast, cache, type_inference,
+  ast, symbol_table, type_inference,
   visitor::{self, LoweringVisitor},
 };
 
@@ -26,14 +26,15 @@ pub struct LoweringContext<'a, 'ctx> {
   // REVIEW: Why do we need the cache here? If we retrieve nodes from it, remember that we've
   // ... outlined that option already because of design issues. Find a better way to handle lowering
   // ... of things like what a reference refers to.
-  cache: &'a cache::Cache,
+  cache: &'a symbol_table::SymbolTable,
   type_cache: &'a type_inference::TypeCache,
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
   // TODO: Shouldn't this be a vector instead?
   llvm_cached_values:
-    std::collections::HashMap<cache::NodeId, Option<inkwell::values::BasicValueEnum<'ctx>>>,
-  llvm_cached_types: std::collections::HashMap<cache::NodeId, inkwell::types::BasicTypeEnum<'ctx>>,
+    std::collections::HashMap<symbol_table::NodeId, Option<inkwell::values::BasicValueEnum<'ctx>>>,
+  llvm_cached_types:
+    std::collections::HashMap<symbol_table::NodeId, inkwell::types::BasicTypeEnum<'ctx>>,
   mangle_counter: usize,
   do_access: bool,
 }
@@ -41,7 +42,7 @@ pub struct LoweringContext<'a, 'ctx> {
 impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   pub fn new(
     type_cache: &'a type_inference::TypeCache,
-    cache: &'a cache::Cache,
+    cache: &'a symbol_table::SymbolTable,
     llvm_context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
   ) -> Self {
@@ -187,7 +188,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     }
   }
 
-  fn find_type_id(&self, ty: &ast::Type) -> Option<cache::NodeId> {
+  fn find_type_id(&self, ty: &ast::Type) -> Option<symbol_table::NodeId> {
     Some(match ty.flatten(self.cache) {
       ast::Type::Struct(struct_type) => struct_type.id.clone(),
       // REVIEW: Any more?
@@ -357,7 +358,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
   fn memoize_or_retrieve_type_by_binding(
     &mut self,
-    id: cache::NodeId,
+    id: symbol_table::NodeId,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
     if let Some(existing_definition) = self.llvm_cached_types.get(&id) {
       return existing_definition.clone();
@@ -406,7 +407,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   /// otherwise they will all be restored.
   fn memoize_declaration(
     &mut self,
-    node_id: &cache::NodeId,
+    node_id: &symbol_table::NodeId,
     forward_buffers: bool,
     apply_access_rules: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
@@ -952,6 +953,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
       self.llvm_builder.build_store(
         llvm_if_value.unwrap().into_pointer_value(),
+        // BUG: There is a bug with the `type.ko` integration test.
         llvm_then_block_opt.unwrap(),
       );
 
@@ -1619,7 +1621,7 @@ mod tests {
   #[test]
   fn lower_binding_stmt_const_val() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let mut mock = Mock::new(&type_cache, &cache, &llvm_context, &llvm_module);
@@ -1639,10 +1641,10 @@ mod tests {
   #[test]
   fn lower_binding_stmt_ref_val() {
     let type_cache = type_inference::TypeCache::new();
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let a_id: cache::NodeId = 0;
+    let a_id: symbol_table::NodeId = 0;
 
     let binding_stmt_rc_a = std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
@@ -1678,7 +1680,7 @@ mod tests {
   #[test]
   fn lower_binding_stmt_nullptr_val() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
@@ -1703,12 +1705,12 @@ mod tests {
   #[test]
   fn lower_binding_stmt_ptr_ref_val() {
     let type_cache = type_inference::TypeCache::new();
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
     let pointer_type = ast::Type::Pointer(Box::new(ty.clone()));
-    let a_id: cache::NodeId = 0;
+    let a_id: symbol_table::NodeId = 0;
 
     let binding_stmt_rc_a = std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
@@ -1746,7 +1748,7 @@ mod tests {
 
   #[test]
   fn lower_binding_stmt_string_val() {
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let type_cache = type_inference::TypeCache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
@@ -1763,7 +1765,7 @@ mod tests {
   #[test]
   fn lower_enum() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1783,7 +1785,7 @@ mod tests {
   #[test]
   fn lower_return_stmt_unit() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt { value: None });
@@ -1797,7 +1799,7 @@ mod tests {
   #[test]
   fn lower_return_stmt() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1814,7 +1816,7 @@ mod tests {
   #[test]
   fn lower_extern_fn() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1835,7 +1837,7 @@ mod tests {
   #[test]
   fn lower_extern_static() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1853,7 +1855,7 @@ mod tests {
 
   #[test]
   fn lower_if_expr_simple() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let if_expr_id = cache.next_id();
     let mut type_cache = type_inference::TypeCache::new();
 

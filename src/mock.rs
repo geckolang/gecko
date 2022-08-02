@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod tests {
-  use crate::{ast, cache, lowering, visitor::LoweringVisitor};
+  use crate::{ast, lowering, symbol_table, visitor::LoweringVisitor};
   use crate::{name_resolution, type_inference};
 
   pub trait ComparableMock: ToString {
@@ -99,7 +99,7 @@ pub mod tests {
 
   impl<'a, 'ctx> Mock<'a, 'ctx> {
     pub fn free_function(
-      id: cache::NodeId,
+      id: symbol_table::NodeId,
       parameters: Vec<ast::Parameter>,
       statements: Vec<ast::NodeKind>,
     ) -> ast::NodeKind {
@@ -131,7 +131,7 @@ pub mod tests {
     }
 
     pub fn free_binding(
-      id: cache::NodeId,
+      id: symbol_table::NodeId,
       name: &str,
       value: ast::NodeKind,
       type_hint: Option<ast::Type>,
@@ -153,7 +153,7 @@ pub mod tests {
       ast::NodeKind::Literal(ast::Literal::Int(1, ast::IntSize::I32))
     }
 
-    pub fn reference(link_id: cache::NodeId) -> ast::Reference {
+    pub fn reference(link_id: symbol_table::NodeId) -> ast::Reference {
       ast::Reference {
         pattern: ast::Pattern {
           link_id,
@@ -216,7 +216,7 @@ pub mod tests {
 
     pub fn new(
       type_cache: &'a type_inference::TypeCache,
-      cache: &'a cache::Cache,
+      cache: &'a symbol_table::SymbolTable,
       context: &'ctx inkwell::context::Context,
       module: &'a inkwell::module::Module<'ctx>,
     ) -> Self {
@@ -256,7 +256,7 @@ pub mod tests {
       self
     }
 
-    fn next_id(&mut self) -> cache::NodeId {
+    fn next_id(&mut self) -> symbol_table::NodeId {
       let id = self.id_counter;
 
       self.id_counter += 1;

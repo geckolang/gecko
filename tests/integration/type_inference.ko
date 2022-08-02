@@ -1,7 +1,13 @@
+# BUG: Why does it work when we remove the other function?
+func inferReturnType(a):
+  !a
+
+  return !a
+
 func test(a):
-  let arr = [1]
-  let arr2: [Int, 0] = []
+  let array = [1]
+  let empty_array: [Int, 0] = []
   let b = if true: true else: false
   let c = !true
 
-  return a+1
+  return a and b and c

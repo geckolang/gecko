@@ -1,10 +1,10 @@
-use crate::{ast, cache, lowering, visitor::AnalysisVisitor};
+use crate::{ast, lowering, symbol_table, visitor::AnalysisVisitor};
 
 pub struct TypeCheckContext<'a> {
   pub diagnostics: Vec<ast::Diagnostic>,
   in_unsafe_block: bool,
   in_struct_impl: bool,
-  current_function_id: Option<cache::NodeId>,
+  current_function_id: Option<symbol_table::NodeId>,
   usings: Vec<ast::Using>,
   /// A map from a type variable's id to a type.
   ///
@@ -12,13 +12,13 @@ pub struct TypeCheckContext<'a> {
   /// populated during parsing phase, when type variables are created, and
   /// it also is scope-less/context-free.
   substitutions: std::collections::HashMap<usize, ast::Type>,
-  type_cache: std::collections::HashMap<cache::NodeId, ast::Type>,
-  bound_checked_arrays: std::collections::HashSet<cache::NodeId>,
-  cache: &'a cache::Cache,
+  type_cache: std::collections::HashMap<symbol_table::NodeId, ast::Type>,
+  bound_checked_arrays: std::collections::HashSet<symbol_table::NodeId>,
+  cache: &'a symbol_table::SymbolTable,
 }
 
 impl<'a> TypeCheckContext<'a> {
-  pub fn new(cache: &'a cache::Cache) -> Self {
+  pub fn new(cache: &'a symbol_table::SymbolTable) -> Self {
     Self {
       cache,
       type_cache: std::collections::HashMap::new(),
@@ -43,7 +43,7 @@ impl<'a> TypeCheckContext<'a> {
     &mut self,
     argument_types: Vec<ast::Type>,
     callee_type: ast::SignatureType,
-    cache: &cache::Cache,
+    cache: &symbol_table::SymbolTable,
   ) {
     let min_arg_count = callee_type.parameter_types.len();
     let actual_arg_count = argument_types.len();

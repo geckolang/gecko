@@ -1,10 +1,13 @@
-use crate::{ast, cache, visitor::AnalysisVisitor};
+use crate::{ast, symbol_table, visitor::AnalysisVisitor};
 
 pub type TypeVariableId = usize;
-pub type TypeCache = std::collections::HashMap<cache::NodeId, ast::Type>;
+pub type TypeCache = std::collections::HashMap<symbol_table::NodeId, ast::Type>;
 type TypeConstraint = (ast::Type, ast::Type);
 
-pub fn run(ast_map: &ast::AstMap, cache: &cache::Cache) -> (Vec<ast::Diagnostic>, TypeCache) {
+pub fn run(
+  ast_map: &ast::AstMap,
+  cache: &symbol_table::SymbolTable,
+) -> (Vec<ast::Diagnostic>, TypeCache) {
   let mut type_inference_ctx = TypeInferenceContext::new(cache);
 
   for inner_ast in ast_map.values() {
@@ -34,8 +37,8 @@ pub struct TypeInferenceContext<'a> {
   /// This serves as a buffer for type inference to occur. It is
   /// populated during parsing, when type variables are created, and
   /// it also is scope-less/context-free.
-  substitutions: std::collections::HashMap<cache::NodeId, ast::Type>,
-  cache: &'a cache::Cache,
+  substitutions: std::collections::HashMap<symbol_table::NodeId, ast::Type>,
+  cache: &'a symbol_table::SymbolTable,
   // REVIEW: We can only store types of nodes that have ids (e.g. bindings, parameters, etc.).
   /// A mapping from a node to its most recent type.
   ///
@@ -46,11 +49,11 @@ pub struct TypeInferenceContext<'a> {
   /// They are first gathered, then the unification algorithm is performed to solve types, at
   /// the last step of type inference.
   constraints: Vec<TypeConstraint>,
-  current_function_id: Option<cache::NodeId>,
+  current_function_id: Option<symbol_table::NodeId>,
 }
 
 impl<'a> TypeInferenceContext<'a> {
-  pub fn new(cache: &'a cache::Cache) -> Self {
+  pub fn new(cache: &'a symbol_table::SymbolTable) -> Self {
     Self {
       diagnostics: Vec::new(),
       substitutions: std::collections::HashMap::new(),
@@ -513,6 +516,7 @@ impl<'a> TypeInferenceContext<'a> {
       ast::NodeKind::Reference(reference) => {
         let variable_type = self
           .type_cache
+          // BUG: Name resolution is messed up. It's linking with other definitions in another function.
           .get(self.cache.links.get(&reference.pattern.link_id).unwrap())
           .unwrap()
           .clone();
@@ -968,7 +972,7 @@ mod tests {
 
   #[test]
   fn occurs_in() {
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
     let first_index_id = 0;
     let second_index_id = first_index_id + 1;
@@ -990,7 +994,7 @@ mod tests {
 
   #[test]
   fn create_type_variable() {
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let mut type_context = TypeInferenceContext::new(&cache);
 
     assert_eq!(type_context.create_type_variable(), ast::Type::Variable(0));
@@ -999,7 +1003,7 @@ mod tests {
 
   #[test]
   fn solve_constraints() {
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let mut type_context = TypeInferenceContext::new(&cache);
 
     // TODO: Add actual constraints to complete this test.
@@ -1010,7 +1014,7 @@ mod tests {
 
   #[test]
   fn substitute() {
-    let cache = cache::Cache::new();
+    let cache = symbol_table::SymbolTable::new();
     let mut type_context = TypeInferenceContext::new(&cache);
 
     assert_eq!(ast::Type::Unit, type_context.substitute(ast::Type::Unit));
@@ -1030,7 +1034,7 @@ mod tests {
 
   #[test]
   fn infer_binding_from_literal() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let binding_stmt_id = cache.next_id();
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
@@ -1054,7 +1058,7 @@ mod tests {
 
   #[test]
   fn infer_binding_from_reference() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let binding_stmt_a_id = cache.next_id();
     let binding_stmt_b_id = cache.next_id();
 
@@ -1098,7 +1102,7 @@ mod tests {
 
   #[test]
   fn infer_binding_from_nullptr() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let binding_id = 0;
 
     let binding_stmt = Mock::free_binding(
@@ -1135,7 +1139,7 @@ mod tests {
 
   #[test]
   fn infer_parameter_from_unary_expr() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
 
     let parameter = ast::Parameter {
       id: cache.next_id(),
@@ -1235,7 +1239,7 @@ mod tests {
 
   #[test]
   fn infer_return_type_from_literal() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
 
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
       value: Some(Box::new(ast::NodeKind::Literal(ast::Literal::Bool(true)))),
@@ -1264,7 +1268,7 @@ mod tests {
 
   #[test]
   fn infer_array_type_from_binding_hint() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let binding_stmt_id = cache.next_id();
     let array_id = cache.next_id();
     let array_element_id = cache.next_id();
@@ -1293,7 +1297,7 @@ mod tests {
 
   #[test]
   fn infer_array_type_from_element() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let array_id = cache.next_id();
     let element_type_id = cache.next_id();
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);

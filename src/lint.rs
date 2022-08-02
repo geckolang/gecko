@@ -1,10 +1,10 @@
-use crate::{ast, cache, visitor::AnalysisVisitor};
+use crate::{ast, symbol_table, visitor::AnalysisVisitor};
 
 // REVIEW: Why not abstract the error reporting to the lint methods themselves? This is more functional.
 // ... Perhaps we can also get rid of variable reference counting, in favor of functional programming.
 pub struct LintContext {
   pub diagnostics: Vec<ast::Diagnostic>,
-  variable_references: std::collections::HashMap<cache::NodeId, bool>,
+  variable_references: std::collections::HashMap<symbol_table::NodeId, bool>,
 }
 
 // REVISE: Use the `traverse` method to walk the AST and invoke these
@@ -18,7 +18,7 @@ impl LintContext {
     }
   }
 
-  pub fn finalize(&mut self, _cache: &cache::Cache) {
+  pub fn finalize(&mut self, _cache: &symbol_table::SymbolTable) {
     // TODO: Re-implement.
   }
 

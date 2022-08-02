@@ -1,6 +1,6 @@
 use crate::{
   ast::{self, BlockExpr},
-  cache, lexer, name_resolution,
+  lexer, name_resolution, symbol_table,
 };
 
 // TODO: Add more test cases for larger numbers than `0`. Also, is there a need for a panic here? If so, consider using `unreachable!()`. Additionally, should `unreachabe!()` panics even be reported on the documentation?
@@ -45,11 +45,11 @@ type ParserResult<T> = Result<T, ast::Diagnostic>;
 pub struct Parser<'a> {
   tokens: Vec<lexer::Token>,
   index: usize,
-  cache: &'a mut cache::Cache,
+  cache: &'a mut symbol_table::SymbolTable,
 }
 
 impl<'a> Parser<'a> {
-  pub fn new(tokens: Vec<lexer::Token>, cache: &'a mut cache::Cache) -> Self {
+  pub fn new(tokens: Vec<lexer::Token>, cache: &'a mut symbol_table::SymbolTable) -> Self {
     Self {
       tokens,
       index: 0,
@@ -1520,14 +1520,17 @@ mod tests {
   use super::*;
   use pretty_assertions::{assert_eq, assert_ne};
 
-  fn create_parser<'a>(tokens: Vec<lexer::TokenKind>, cache: &'a mut cache::Cache) -> Parser<'a> {
+  fn create_parser<'a>(
+    tokens: Vec<lexer::TokenKind>,
+    cache: &'a mut symbol_table::SymbolTable,
+  ) -> Parser<'a> {
     // TODO: Consider making the position incremental.
     Parser::new(tokens.into_iter().map(|token| (token, 0)).collect(), cache)
   }
 
   #[test]
   fn proper_initial_values() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let parser = create_parser(Vec::new(), &mut cache);
 
     assert_eq!(0, parser.index);
@@ -1535,7 +1538,7 @@ mod tests {
 
   #[test]
   fn is() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let mut parser = create_parser(Vec::new(), &mut cache);
 
     assert!(!parser.is(&lexer::TokenKind::EOF));
@@ -1548,7 +1551,7 @@ mod tests {
 
   #[test]
   fn is_empty() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let parser = create_parser(Vec::new(), &mut cache);
 
     assert_eq!(false, parser.is(&lexer::TokenKind::Func));
@@ -1556,7 +1559,7 @@ mod tests {
 
   #[test]
   fn skip() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
 
     let mut parser = create_parser(
       vec![lexer::TokenKind::Func, lexer::TokenKind::Func],
@@ -1569,7 +1572,7 @@ mod tests {
 
   #[test]
   fn skip_out_of_bounds() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let mut parser = create_parser(vec![lexer::TokenKind::Func], &mut cache);
 
     assert!(parser.skip().is_ok());
@@ -1578,7 +1581,7 @@ mod tests {
 
   #[test]
   fn is_eof() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let mut parser = create_parser(Vec::new(), &mut cache);
 
     assert!(parser.is_eof());
@@ -1603,7 +1606,7 @@ mod tests {
 
   #[test]
   fn peek_is() {
-    let mut cache = cache::Cache::new();
+    let mut cache = symbol_table::SymbolTable::new();
     let mut parser = create_parser(Vec::new(), &mut cache);
 
     assert!(!parser.peek_is(&lexer::TokenKind::BraceL));

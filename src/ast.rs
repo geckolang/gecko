@@ -1,4 +1,4 @@
-use crate::{cache, name_resolution, type_inference};
+use crate::{name_resolution, symbol_table, type_inference};
 
 #[macro_export]
 macro_rules! force_match {
@@ -38,7 +38,7 @@ pub struct Parameter {
   pub name: String,
   pub type_hint: Option<Type>,
   pub position: u32,
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
 }
 
 #[derive(PartialEq, PartialOrd, Clone, Debug)]
@@ -244,7 +244,7 @@ impl Type {
     false
   }
 
-  pub fn flat_is(&self, other: &Type, cache: &cache::Cache) -> bool {
+  pub fn flat_is(&self, other: &Type, cache: &symbol_table::SymbolTable) -> bool {
     self.flatten(cache).is(&other.flatten(cache))
   }
 
@@ -315,7 +315,7 @@ impl Type {
   /// Resolve a possible user-defined type, so it can be used properly.
   ///
   /// Should be used when the type is to be compared.
-  pub fn flatten(&self, cache: &cache::Cache) -> Type {
+  pub fn flatten(&self, cache: &symbol_table::SymbolTable) -> Type {
     // REVISE: Cleanup.
 
     // REVIEW: What if it's a pointer to a user-defined type?
@@ -541,12 +541,12 @@ impl NodeKind {
   /// Infer and attempt to flatten this node's type.
   ///
   /// Should be used when the type is to be compared.
-  pub fn infer_flatten_type(&self, cache: &cache::Cache) -> Type {
+  pub fn infer_flatten_type(&self, cache: &symbol_table::SymbolTable) -> Type {
     // self.infer_type(cache).flatten(cache)
     todo!()
   }
 
-  pub fn find_id(&self) -> Option<cache::NodeId> {
+  pub fn find_id(&self) -> Option<symbol_table::NodeId> {
     match self {
       NodeKind::BindingStmt(binding_stmt) => Some(binding_stmt.id),
       NodeKind::Function(function) => Some(function.id),
@@ -583,7 +583,7 @@ impl NodeKind {
 pub struct Node {
   pub kind: NodeKind,
   // TODO: In the future, we may be able to use node location as its id.
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
   pub location: (usize, usize),
 }
 
@@ -601,8 +601,8 @@ pub struct Using {
 
 #[derive(Debug, Clone)]
 pub struct Closure {
-  pub id: cache::NodeId,
-  pub captures: Vec<(String, Option<cache::NodeId>)>,
+  pub id: symbol_table::NodeId,
+  pub captures: Vec<(String, Option<symbol_table::NodeId>)>,
   pub signature: Signature,
   pub body: std::rc::Rc<BlockExpr>,
 }
@@ -616,14 +616,14 @@ pub struct SignatureType {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct ThisType {
-  pub target_id: Option<cache::NodeId>,
+  pub target_id: Option<symbol_table::NodeId>,
 }
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
 // TODO: If it's never boxed under `Node`, then there might not be a need for it to be included under `Node`?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
-  pub link_id: cache::NodeId,
+  pub link_id: symbol_table::NodeId,
   pub qualifier: Option<name_resolution::Qualifier>,
   pub base_name: String,
   pub sub_name: Option<String>,
@@ -641,7 +641,7 @@ pub struct StructValue {
   pub fields: Vec<std::rc::Rc<NodeKind>>,
   /// A unique id targeting the struct value's type. Resolved
   /// during name resolution.
-  pub target_id: cache::NodeId,
+  pub target_id: symbol_table::NodeId,
   pub ty: Option<Type>,
 }
 
@@ -658,14 +658,14 @@ pub struct StructImpl {
 pub struct Trait {
   pub name: String,
   pub methods: Vec<(String, Signature)>,
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
 }
 
 #[derive(Debug, Clone)]
 pub struct Enum {
   pub name: String,
-  pub variants: Vec<(String, cache::NodeId)>,
-  pub id: cache::NodeId,
+  pub variants: Vec<(String, symbol_table::NodeId)>,
+  pub id: symbol_table::NodeId,
   pub value_type: Type,
 }
 
@@ -681,8 +681,8 @@ pub struct IndexingExpr {
 #[derive(Debug, Clone)]
 pub struct Array {
   pub elements: Vec<NodeKind>,
-  pub id: cache::NodeId,
-  pub element_type_id: cache::NodeId,
+  pub id: symbol_table::NodeId,
+  pub element_type_id: symbol_table::NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -709,7 +709,7 @@ pub enum Literal {
   Int(u64, IntSize),
   Char(char),
   String(String),
-  Nullptr(cache::NodeId, Option<Type>),
+  Nullptr(symbol_table::NodeId, Option<Type>),
 }
 
 #[derive(Debug, Clone)]
@@ -719,8 +719,8 @@ pub struct Signature {
   pub is_variadic: bool,
   pub is_extern: bool,
   pub accepts_instance: bool,
-  pub instance_type_id: Option<cache::NodeId>,
-  pub return_type_id: cache::NodeId,
+  pub instance_type_id: Option<symbol_table::NodeId>,
+  pub return_type_id: symbol_table::NodeId,
   pub this_parameter: Option<Parameter>,
 }
 
@@ -729,14 +729,14 @@ pub struct ExternFunction {
   pub name: String,
   pub signature: Signature,
   pub attributes: Vec<Attribute>,
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExternStatic {
   pub name: String,
   pub ty: Type,
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -752,7 +752,7 @@ pub struct Function {
   pub signature: Signature,
   pub body: std::rc::Rc<BlockExpr>,
   pub attributes: Vec<Attribute>,
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
   pub generics: Option<Generics>,
 }
 
@@ -760,7 +760,7 @@ pub struct Function {
 pub struct BlockExpr {
   pub statements: Vec<NodeKind>,
   pub yields: Option<Box<NodeKind>>,
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
 }
 
 #[derive(Debug, Clone)]
@@ -775,13 +775,13 @@ pub struct BindingStmt {
   pub name: String,
   pub value: Box<NodeKind>,
   pub is_const_expr: bool,
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
   pub type_hint: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
 pub struct IfExpr {
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
   pub condition: Box<NodeKind>,
   pub then_branch: Box<NodeKind>,
   pub alternative_branches: Vec<(NodeKind, NodeKind)>,
@@ -812,7 +812,7 @@ pub struct IntrinsicCall {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct Struct {
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
   pub name: String,
   pub fields: Vec<(String, Type)>,
 }
@@ -821,7 +821,7 @@ pub struct Struct {
 pub struct TypeAlias {
   pub name: String,
   pub ty: Type,
-  pub id: cache::NodeId,
+  pub id: symbol_table::NodeId,
 }
 
 #[derive(PartialEq, Debug, Clone)]

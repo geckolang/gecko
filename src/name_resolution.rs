@@ -1,9 +1,12 @@
 use crate::{
-  ast, cache, lowering,
+  ast, lowering, symbol_table,
   visitor::{self, AnalysisVisitor},
 };
 
-pub fn run(ast_map: &mut ast::AstMap, cache: &mut cache::Cache) -> Vec<ast::Diagnostic> {
+pub fn run(
+  ast_map: &mut ast::AstMap,
+  cache: &mut symbol_table::SymbolTable,
+) -> Vec<ast::Diagnostic> {
   if ast_map.is_empty() {
     return Vec::new();
   }
@@ -59,7 +62,7 @@ pub struct Symbol {
   pub kind: SymbolKind,
 }
 
-pub type Scope = std::collections::HashMap<Symbol, cache::NodeId>;
+pub type Scope = std::collections::HashMap<Symbol, symbol_table::NodeId>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct Qualifier {
@@ -70,11 +73,11 @@ pub struct Qualifier {
 pub struct NameResDeclContext<'a> {
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
-  pub scope_map: std::collections::HashMap<cache::NodeId, Vec<Scope>>,
+  pub scope_map: std::collections::HashMap<symbol_table::NodeId, Vec<Scope>>,
   /// Contains the modules with their respective top-level definitions.
   pub global_scopes: std::collections::HashMap<Qualifier, Scope>,
   pub diagnostics: Vec<ast::Diagnostic>,
-  cache: &'a mut cache::Cache,
+  cache: &'a mut symbol_table::SymbolTable,
   current_scope_qualifier: Option<Qualifier>,
   /// Contains volatile, relative scopes.
   ///
@@ -84,7 +87,10 @@ pub struct NameResDeclContext<'a> {
 }
 
 impl<'a> NameResDeclContext<'a> {
-  pub fn new(initial_module_qualifier: Qualifier, cache: &'a mut cache::Cache) -> Self {
+  pub fn new(
+    initial_module_qualifier: Qualifier,
+    cache: &'a mut symbol_table::SymbolTable,
+  ) -> Self {
     let mut result = Self {
       cache,
       diagnostics: Vec::new(),
@@ -126,7 +132,7 @@ impl<'a> NameResDeclContext<'a> {
   /// Returns `false`, and creates an error diagnostic in the local diagnostic builder, if
   /// the symbol was already defined in the current scope, or `true` if it was successfully
   /// registered.
-  fn declare_symbol(&mut self, symbol: Symbol, id: cache::NodeId) -> bool {
+  fn declare_symbol(&mut self, symbol: Symbol, id: symbol_table::NodeId) -> bool {
     // Check for existing definitions.
     if self.current_scope_contains(&symbol) {
       self.diagnostics.push(
@@ -143,12 +149,6 @@ impl<'a> NameResDeclContext<'a> {
     self.bind(symbol, id);
 
     true
-  }
-
-  fn declare_node(&mut self, symbol: Symbol, id: cache::NodeId, node: ast::NodeKind) {
-    self.cache.declarations.insert(id, node);
-
-    self.declare_symbol(symbol, id);
   }
 
   /// Retrieve the last pushed relative scope, or if there are none,
@@ -172,20 +172,13 @@ impl<'a> NameResDeclContext<'a> {
     self.relative_scopes.push(std::collections::HashMap::new());
   }
 
-  /// Pop the last scope off the relatives scopes stack, and return it.
-  ///
-  /// Will panic if there are no relative scopes.
-  fn force_pop_scope(&mut self) -> Scope {
-    self.relative_scopes.pop().unwrap()
-  }
-
   /// Force-pop the last scope off the relatives scopes stack, and create
   /// a scope tree. This tree will then be inserted into the scope map.
   ///
   /// If an entry with the same unique id already exists, the scope tree will
   /// be appended onto the existing definition.
-  fn finish_scope_tree(&mut self, id: cache::NodeId) {
-    let mut scope_tree = vec![self.force_pop_scope()];
+  fn finish_scope_tree(&mut self, id: symbol_table::NodeId) {
+    let mut scope_tree = vec![self.relative_scopes.pop().unwrap()];
 
     // Clone the relative scope tree.
     scope_tree.extend(self.relative_scopes.iter().rev().cloned());
@@ -201,7 +194,7 @@ impl<'a> NameResDeclContext<'a> {
   /// Register a name on the last scope for name resolution lookups.
   ///
   /// If there are no relative scopes, the symbol is registered in the global scope.
-  fn bind(&mut self, symbol: Symbol, id: cache::NodeId) {
+  fn bind(&mut self, symbol: Symbol, id: symbol_table::NodeId) {
     self.get_current_scope().insert(symbol, id);
   }
 
@@ -291,7 +284,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     // ... The `push_scope()` and `close_scope_tree()` lines where commented out. Once uncommented,
     // ... everything SEEMS to be working fine, but still need tests if there aren't any already, and
     // ... review of the code, and possibly integration tests.
-    // Parameter scope.
+    // Push the parameter scope.
     self.push_scope();
 
     // REVIEW: Perhaps make generics their own node?
@@ -331,6 +324,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
   fn exit_function(&mut self, function: &ast::Function) -> () {
     // NOTE: The scope tree won't be overwritten by the block's, nor the
     // signature's scope tree, instead they will be merged, as expected.
+    // BUG: Where is this scope tree accessed/retrieved?
     self.finish_scope_tree(function.id);
   }
 
@@ -439,14 +433,14 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
 pub struct NameResLinkContext<'a> {
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
-  scope_map: std::collections::HashMap<cache::NodeId, Vec<Scope>>,
-  cache: &'a mut cache::Cache,
+  scope_trees: std::collections::HashMap<symbol_table::NodeId, Vec<Scope>>,
+  cache: &'a mut symbol_table::SymbolTable,
   current_scope_qualifier: Option<Qualifier>,
-  current_struct_type_id: Option<cache::NodeId>,
+  current_struct_type_id: Option<symbol_table::NodeId>,
   // REVIEW: If we can get rid of these flags, we may possibly use the traverse method instead
   // ... of manual visitation.
   /// The unique id of the current block's scope. Used in the resolve step.
-  block_id_stack: Vec<cache::NodeId>,
+  scope_id_stack: Vec<symbol_table::NodeId>,
   /// Contains the modules with their respective top-level definitions.
   global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
   pub diagnostics: Vec<ast::Diagnostic>,
@@ -455,15 +449,15 @@ pub struct NameResLinkContext<'a> {
 impl<'a> NameResLinkContext<'a> {
   pub fn new(
     global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
-    scope_map: std::collections::HashMap<cache::NodeId, Vec<Scope>>,
-    cache: &'a mut cache::Cache,
+    scope_trees: std::collections::HashMap<symbol_table::NodeId, Vec<Scope>>,
+    cache: &'a mut symbol_table::SymbolTable,
   ) -> Self {
     Self {
-      scope_map,
+      scope_trees,
       cache,
       current_scope_qualifier: None,
       current_struct_type_id: None,
-      block_id_stack: Vec::new(),
+      scope_id_stack: Vec::new(),
       global_scopes,
       diagnostics: vec![],
     }
@@ -472,30 +466,31 @@ impl<'a> NameResLinkContext<'a> {
 
 impl<'a> NameResLinkContext<'a> {
   /// Lookup a symbol in the global scope of a specific package and module.
-  fn lookup(&mut self, qualifier: Qualifier, symbol: &Symbol) -> Option<cache::NodeId> {
-    if !self.global_scopes.contains_key(&qualifier) {
-      return None;
-    }
-
-    let global_scope = self.global_scopes.get(&qualifier).unwrap();
-
-    if let Some(id) = global_scope.get(&symbol) {
-      return Some(id.clone());
-    }
-
-    None
+  fn global_lookup(
+    &mut self,
+    qualifier: Qualifier,
+    symbol: &Symbol,
+  ) -> Option<symbol_table::NodeId> {
+    return self
+      .global_scopes
+      .get(&qualifier)
+      .and_then(|global_scope| global_scope.get(&symbol).map(|node_id| *node_id));
   }
 
   /// Lookup a symbol starting from the nearest scope, all the way to the global scope
   /// of the current module.
-  fn local_lookup(&mut self, symbol: &Symbol) -> Option<cache::NodeId> {
+  fn local_lookup(&mut self, symbol: &Symbol) -> Option<symbol_table::NodeId> {
     // If applicable, lookup on the relative scopes. This may not
     // be the case for when resolving global entities such as struct
     // types that reference other structs in their fields (in such case,
     // the relative scopes will be empty and the `current_block_id`
     // buffer would be `None`).
-    if let Some(current_block_id) = self.block_id_stack.last() {
-      let scope_tree = self.scope_map.get(&current_block_id).unwrap();
+    // BUG: Perhaps the name resolution bug is with the stack? Where is the function id's parameter scope
+    // ... accessed? Nowhere it seems. That might be the bug? How come it's crossing boundaries across functions?
+    // ... Why is it even a stack instead of a buffer? To restore it up the call bubble, since we can't do that
+    // ... with a buffer with the new enter/exit system? Then where is the function id scope retrieved (parameters)?
+    if let Some(current_scope_id) = self.scope_id_stack.last() {
+      let scope_tree = self.scope_trees.get(&current_scope_id).unwrap();
 
       // First, attempt to find the symbol in the relative scopes.
       for scope in scope_tree {
@@ -507,12 +502,12 @@ impl<'a> NameResLinkContext<'a> {
 
     // REVISE: Unsafe unwrap.
     // Otherwise, attempt to find the symbol in the current module's global scope.
-    self.lookup(self.current_scope_qualifier.clone().unwrap(), symbol)
+    self.global_lookup(self.current_scope_qualifier.clone().unwrap(), symbol)
   }
 
-  fn local_lookup_or_error(&mut self, symbol: &Symbol) -> Option<cache::NodeId> {
+  fn local_lookup_or_error(&mut self, symbol: &Symbol) -> Option<symbol_table::NodeId> {
     if let Some(id) = self.local_lookup(symbol) {
-      return Some(id.clone());
+      return Some(id);
     }
 
     // TODO: Include sub-name if available.
@@ -535,7 +530,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
 
     if let Some(qualifier) = &pattern.qualifier {
       // TODO: Abstract and reuse error handling.
-      if self.lookup(qualifier.clone(), &symbol).is_none() {
+      if self.global_lookup(qualifier.clone(), &symbol).is_none() {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error().with_message(format!(
             "qualified symbol does not exist: {}::{}::{}",
@@ -571,12 +566,12 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
   }
 
   fn enter_block_expr(&mut self, block: &ast::BlockExpr) {
-    // BUG: Something's wrong when an if-expression is present, with a block as its `then` value. It won't resolve declarations.
-    self.block_id_stack.push(block.id);
+    // BUG: (Before scope stack => ) Something's wrong when an if-expression is present, with a block as its `then` value. It won't resolve declarations.
+    self.scope_id_stack.push(block.id);
   }
 
   fn exit_block_expr(&mut self, _block: &ast::BlockExpr) {
-    self.block_id_stack.pop();
+    self.scope_id_stack.pop();
   }
 
   fn visit_signature(&mut self, signature: &ast::Signature) {
@@ -714,101 +709,164 @@ mod tests {
   //   // assert!(name_resolver.global_scopes.is_empty());
   // }
 
-  // #[test]
-  // fn push_pop_scope() {
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
+  #[test]
+  fn push_scope() {
+    let mut cache = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
 
-  //   assert!(name_resolver.relative_scopes.is_empty());
-  //   name_resolver.push_scope();
-  //   assert_eq!(1, name_resolver.relative_scopes.len());
-  //   name_resolver.force_pop_scope();
-  //   assert!(name_resolver.relative_scopes.is_empty());
-  // }
+    assert!(name_resolver.relative_scopes.is_empty());
+    name_resolver.push_scope();
+    assert_eq!(1, name_resolver.relative_scopes.len());
+  }
 
-  // #[test]
-  // fn get_current_scope() {
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
+  #[test]
+  fn get_current_scope() {
+    let mut cache = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
 
-  //   name_resolver.get_current_scope();
-  // }
+    // TODO: Finish implementing.
+    name_resolver.get_current_scope();
+  }
 
-  // #[test]
-  // fn current_scope_contains() {
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
-  //   let symbol = mock_symbol();
+  #[test]
+  fn current_scope_contains() {
+    let mut cache = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+    let symbol = mock_symbol();
 
-  //   assert!(!name_resolver.current_scope_contains(&symbol));
-  //   name_resolver.bind(symbol.clone(), 0);
-  //   assert!(name_resolver.current_scope_contains(&symbol));
-  // }
+    assert!(!name_resolver.current_scope_contains(&symbol));
+    name_resolver.bind(symbol.clone(), 0);
+    assert!(name_resolver.current_scope_contains(&symbol));
+  }
 
-  // #[test]
-  // fn declare_symbol() {
-  //   let id: cache::Id = 0;
-  //   let symbol = mock_symbol();
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
+  #[test]
+  fn declare_symbol() {
+    let mut cache = symbol_table::SymbolTable::new();
+    let id: symbol_table::NodeId = cache.next_id();
+    let symbol = mock_symbol();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
 
-  //   assert!(name_resolver.declare_symbol(symbol.clone(), id.clone()));
-  //   assert!(name_resolver.diagnostics.is_empty());
-  //   assert!(!name_resolver.declare_symbol(symbol.clone(), id));
-  //   assert_eq!(1, name_resolver.diagnostics.len());
-  //   assert!(name_resolver.current_scope_contains(&symbol));
-  // }
+    assert!(name_resolver.declare_symbol(symbol.clone(), id.clone()));
+    assert!(name_resolver.diagnostics.is_empty());
+    assert!(!name_resolver.declare_symbol(symbol.clone(), id));
+    assert_eq!(1, name_resolver.diagnostics.len());
+    assert!(name_resolver.current_scope_contains(&symbol));
+  }
 
-  // #[test]
-  // fn create_module() {
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
+  #[test]
+  fn create_module() {
+    let mut cache = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
 
-  //   assert!(!name_resolver.create_module(mock_qualifier()));
-  //   assert!(name_resolver.current_scope_qualifier.is_some());
-  // }
+    assert!(!name_resolver.create_module(mock_qualifier()));
+    assert!(name_resolver.current_scope_qualifier.is_some());
+  }
 
-  // #[test]
-  // fn lookup() {
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
-  //   let symbol = mock_symbol();
+  #[test]
+  fn global_lookup() {
+    let mut cache = symbol_table::SymbolTable::new();
+    let fake_node_id = cache.next_id();
+    let mut global_scopes = std::collections::HashMap::new();
+    let mut symbol_mappings = std::collections::HashMap::new();
+    let qualifier = mock_qualifier();
+    let symbol = mock_symbol();
 
-  //   assert!(name_resolver.lookup(mock_qualifier(), &symbol).is_none());
-  //   name_resolver.bind(symbol.clone(), 0);
-  //   assert!(name_resolver.lookup(mock_qualifier(), &symbol).is_some());
-  // }
+    symbol_mappings.insert(symbol.clone(), fake_node_id);
+    global_scopes.insert(qualifier.clone(), symbol_mappings);
 
-  // #[test]
-  // fn local_lookup() {
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
-  //   let symbol = mock_symbol();
-  //   let id: cache::Id = 0;
+    let scope_tree_map = std::collections::HashMap::new();
+    let mut name_resolver = NameResLinkContext::new(&global_scopes, scope_tree_map, &mut cache);
 
-  //   // REVIEW: Ensure this is test is well-formed.
-  //   assert!(name_resolver.local_lookup(&symbol).is_none());
-  //   name_resolver.push_scope();
-  //   name_resolver.bind(symbol.clone(), id.clone());
-  //   name_resolver.close_scope_tree(id);
-  //   name_resolver.current_block_id = Some(id);
-  //   assert!(name_resolver.local_lookup(&symbol).is_some());
-  // }
+    assert_eq!(
+      Some(fake_node_id),
+      name_resolver.global_lookup(qualifier, &symbol)
+    );
+  }
 
-  // #[test]
-  // fn local_lookup_or_error() {
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
+  // TODO: Add test to ensure that cross-lookups don't occur, which is a suspected bug.
 
-  //   // REVIEW: Consider testing behavior of the function as well?
-  //   assert!(name_resolver.diagnostics.is_empty());
+  #[test]
+  fn local_lookup() {
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let scope_id = symbol_table.next_id();
+    let target_id = symbol_table.next_id();
+    let global_scopes = std::collections::HashMap::new();
+    let symbol = mock_symbol();
 
-  //   assert!(name_resolver
-  //     .local_lookup_or_error(&mock_symbol())
-  //     .is_none());
+    let mut name_resolver = NameResLinkContext::new(
+      &global_scopes,
+      std::collections::HashMap::new(),
+      &mut symbol_table,
+    );
 
-  //   assert_eq!(1, name_resolver.diagnostics.len());
-  // }
+    // FIXME: Because of the way it's built, this panics when it defaults to global lookup.
+    // assert!(name_resolver.local_lookup(&symbol).is_none());
 
-  // #[test]
-  // fn close_scope_tree() {
-  //   let mut name_resolver = NameResolver::new(mock_qualifier());
+    let mut scope = std::collections::HashMap::new();
 
-  //   name_resolver.push_scope();
-  //   name_resolver.close_scope_tree(0);
-  //   assert!(name_resolver.relative_scopes.is_empty());
-  //   assert_eq!(1, name_resolver.scope_map.len());
-  // }
+    scope.insert(symbol.clone(), target_id);
+    name_resolver.scope_trees.insert(scope_id, vec![scope]);
+    name_resolver.scope_id_stack.push(scope_id);
+    assert!(name_resolver.local_lookup(&symbol).is_some());
+  }
+
+  #[test]
+  fn local_lookup_or_error() {
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let global_scopes = std::collections::HashMap::new();
+
+    let mut name_resolver = NameResLinkContext::new(
+      &global_scopes,
+      std::collections::HashMap::new(),
+      &mut symbol_table,
+    );
+
+    // REVIEW: Consider testing behavior of the function as well?
+    assert!(name_resolver.diagnostics.is_empty());
+
+    assert!(name_resolver
+      .local_lookup_or_error(&mock_symbol())
+      .is_none());
+
+    assert_eq!(1, name_resolver.diagnostics.len());
+  }
+
+  #[test]
+  fn finish_scope_tree() {
+    let mut cache = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+
+    name_resolver.push_scope();
+    name_resolver.finish_scope_tree(0);
+    assert!(name_resolver.relative_scopes.is_empty());
+    assert_eq!(1, name_resolver.scope_map.len());
+  }
+
+  // TODO: More tests for when scope trees are merged, and so on. These are essential.
+
+  #[test]
+  fn declare_parameter() {
+    let mut cache = symbol_table::SymbolTable::new();
+    let parameter_id = cache.next_id();
+    let scope_id = cache.next_id();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+
+    name_resolver.push_scope();
+
+    name_resolver.visit_parameter(&ast::Parameter {
+      id: parameter_id,
+      name: "test".to_string(),
+      position: 0,
+      type_hint: None,
+    });
+
+    name_resolver.finish_scope_tree(scope_id);
+    assert_eq!(1, name_resolver.scope_map.len());
+
+    let scope = name_resolver.scope_map.get(&scope_id).unwrap();
+
+    assert_eq!(1, scope.len());
+  }
+
+  // BUG: Need more tests to iron out the cross-function parameter access bug once and for all.
 }

@@ -323,8 +323,15 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     }
     ast::NodeKind::Closure(closure) => {
       visitor.visit_signature(&closure.signature);
+
+      for parameter in &closure.signature.parameters {
+        visitor.visit_parameter(&parameter);
+      }
+
       visitor.enter_block_expr(&closure.body);
       traverse_block_expr(&closure.body, visitor);
+
+      // REVIEW: No `exit_closure`?
     }
     ast::NodeKind::Function(function) => {
       visitor.visit_signature(&function.signature);
@@ -335,6 +342,7 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
 
       visitor.enter_block_expr(&function.body);
       traverse_block_expr(&function.body, visitor);
+      visitor.exit_function(function);
     }
     ast::NodeKind::IfExpr(if_expr) => {
       traverse(&if_expr.condition, visitor);

@@ -3,7 +3,7 @@ use crate::ast;
 pub type NodeId = usize;
 pub type LinkId = usize;
 
-pub struct Cache {
+pub struct SymbolTable {
   pub struct_impls: std::collections::HashMap<NodeId, Vec<(NodeId, String)>>,
   /// A mapping from a referential id to the id of its target node.
   ///
@@ -20,7 +20,7 @@ pub struct Cache {
   id_counter: usize,
 }
 
-impl Cache {
+impl SymbolTable {
   pub fn new() -> Self {
     Self {
       links: std::collections::HashMap::new(),

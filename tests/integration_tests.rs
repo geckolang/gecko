@@ -28,7 +28,7 @@ mod tests {
     source_file_contents: &str,
     qualifier: gecko::name_resolution::Qualifier,
   ) -> String {
-    let mut cache = gecko::cache::Cache::new();
+    let mut cache = gecko::symbol_table::SymbolTable::new();
     // let mut lint_context = gecko::lint::LintContext::new();
     // let mut llvm_generator = gecko::lowering::LlvmGenerator::new(&llvm_context, &llvm_module);
     let mut ast_map = std::collections::BTreeMap::new();

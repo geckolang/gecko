@@ -1,11 +1,11 @@
-use crate::{ast, cache};
+use crate::{ast, symbol_table};
 
 pub struct TypeContext {
   diagnostics: Vec<ast::Diagnostic>,
 }
 
 impl TypeContext {
-  pub fn run(ast: &Vec<ast::Node>, cache: &cache::Cache) -> Vec<ast::Diagnostic> {
+  pub fn run(ast: &Vec<ast::Node>, cache: &symbol_table::SymbolTable) -> Vec<ast::Diagnostic> {
     let mut type_context = TypeContext::new();
 
     // TODO: What about constraint reports, and post-unification?

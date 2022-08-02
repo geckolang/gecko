@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms)]
 
 pub mod ast;
-pub mod cache;
+pub mod symbol_table;
 pub mod lexer;
 pub mod lint;
 pub mod lowering;
