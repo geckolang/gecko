@@ -330,8 +330,7 @@ impl<'a> Parser<'a> {
     Ok(ast::BlockExpr {
       statements,
       yields,
-      // FIXME: Id no longer needed.
-      id: 0,
+      id: self.cache.next_id(),
     })
   }
 

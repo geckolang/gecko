@@ -1,8 +1,11 @@
-# BUG: Why does it work when we remove the other function?
-func inferReturnType(a):
-  !a
-
+func infer_return_type_1(a):
   return !a
+
+func infer_return_type_2(a):
+  return a+a
+
+func infer_return_type_3(a):
+  return a+1
 
 func test(a):
   let array = [1]

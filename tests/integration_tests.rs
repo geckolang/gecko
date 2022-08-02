@@ -174,6 +174,11 @@ mod tests {
   }
 
   #[test]
+  fn name_resolution() {
+    run_integration_test("name_resolution");
+  }
+
+  #[test]
   fn recursion() {
     run_integration_test("recursion");
   }

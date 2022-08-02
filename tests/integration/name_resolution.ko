@@ -1,0 +1,10 @@
+func first(a):
+  return !a
+
+func second(a):
+  let b = 1
+
+  unsafe:
+    let c = b
+
+  return a+a
