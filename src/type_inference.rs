@@ -750,6 +750,7 @@ impl<'a> TypeInferenceContext<'a> {
         let ty = self.create_type_variable();
 
         // BUG: Save the type on the cache? Currently Call expr doesn't have an id.
+        // TODO: What about arguments?
 
         self.infer_and_constrain(ty.clone(), &call_expr.callee_expr);
         self.report_constraint(ty.clone(), expected_type);
@@ -773,6 +774,28 @@ impl<'a> TypeInferenceContext<'a> {
         }
 
         self.type_cache.insert(extern_.id, ty);
+      }
+      ast::NodeKind::IntrinsicCall(intrinsic_call) => {
+        let constructor_kind = match intrinsic_call.kind {
+          ast::IntrinsicKind::LengthOf => ast::TypeConstructorKind::Integer,
+        };
+
+        let ty = ast::Type::Constructor(constructor_kind, Vec::new());
+
+        // TODO: What about arguments?
+
+        self.report_constraint(ty, expected_type);
+      }
+      ast::NodeKind::SizeofIntrinsic(_) => {
+        // TODO: What about the argument? Ignore it since we don't care about its type?
+
+        self.report_constraint(
+          ast::Type::Constructor(ast::TypeConstructorKind::Integer, Vec::new()),
+          expected_type,
+        );
+      }
+      ast::NodeKind::Struct(_) | ast::NodeKind::StructValue(_) => {
+        // TODO: Implement.
       }
       _ => {
         dbg!(node);

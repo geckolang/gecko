@@ -358,15 +358,15 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
   fn memoize_or_retrieve_type_by_binding(
     &mut self,
-    id: symbol_table::NodeId,
+    node_id: symbol_table::NodeId,
   ) -> inkwell::types::BasicTypeEnum<'ctx> {
-    if let Some(existing_definition) = self.llvm_cached_types.get(&id) {
+    if let Some(existing_definition) = self.llvm_cached_types.get(&node_id) {
       return existing_definition.clone();
     }
 
     // REVIEW: Consider making a separate map for types in the cache.
 
-    let declaration = self.cache.find_decl_via_link(&id).unwrap();
+    let declaration = self.cache.find_decl_via_link(&node_id).unwrap();
 
     // REVIEW: Why not perform type-flattening here instead?
     let ty = match &declaration {
@@ -378,7 +378,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
     let llvm_type = self.lower_type(&ty);
 
-    self.llvm_cached_types.insert(id, llvm_type);
+    self.llvm_cached_types.insert(node_id, llvm_type);
 
     llvm_type
   }

@@ -997,11 +997,13 @@ impl<'a> Parser<'a> {
     )
   }
 
-  /// '?' {%name | sizeof}
+  /// '@' %name '(' (%expr ',')* ')'
   fn parse_intrinsic(&mut self) -> ParserResult<ast::NodeKind> {
-    self.skip_past(&lexer::TokenKind::QuestionMark)?;
+    self.skip_past(&lexer::TokenKind::At)?;
 
     Ok(match self.get_token()? {
+      // TODO: Make types first-class (accessible within const-functions only)
+      // ... and merge sizeof intrinsic as a normal intrinsic call.
       lexer::TokenKind::Sizeof => ast::NodeKind::SizeofIntrinsic(self.parse_sizeof_intrinsic()?),
       lexer::TokenKind::Identifier(_) => ast::NodeKind::IntrinsicCall(self.parse_intrinsic_call()?),
       _ => return Err(self.expected("intrinsic")),
@@ -1028,7 +1030,7 @@ impl<'a> Parser<'a> {
         ast::NodeKind::BlockExpr(std::rc::Rc::new(self.parse_block_expr()?))
       }
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
-      lexer::TokenKind::QuestionMark => self.parse_intrinsic()?,
+      lexer::TokenKind::At => self.parse_intrinsic()?,
       lexer::TokenKind::ParenthesesL => {
         ast::NodeKind::ParenthesesExpr(self.parse_parentheses_expr()?)
       }
