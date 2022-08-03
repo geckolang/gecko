@@ -110,11 +110,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     if matches!(
       node.flatten(),
       ast::NodeKind::Parameter(_) | ast::NodeKind::Literal(ast::Literal::String(_))
-    )
-    // || node
-    //   .infer_type(self.cache)
-    //   .is(&ast::Type::Basic(ast::BasicType::String))
-    {
+    ) {
       return llvm_value;
     }
 
@@ -342,7 +338,6 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     .into_function_type()
   }
 
-  // TODO: Ensure that there isn't any possible recursion problems going on.
   fn memoize_or_retrieve_type(&mut self, ty: &ast::Type) -> inkwell::types::BasicTypeEnum<'ctx> {
     if let Some(id) = self.find_type_id(ty) {
       // REVIEW: Isn't this indirectly recursive? Will it cause problems?
@@ -360,11 +355,8 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       return existing_definition.clone();
     }
 
-    // REVIEW: Consider making a separate map for types in the cache.
-
     let declaration = self.symbol_table.find_decl_via_link(&node_id).unwrap();
 
-    // REVIEW: Why not perform type-flattening here instead?
     let ty = match &declaration {
       ast::NodeKind::Struct(struct_type) => ast::Type::Struct(struct_type.as_ref().clone()),
       ast::NodeKind::TypeAlias(type_alias) => type_alias.ty.clone(),
@@ -372,6 +364,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       _ => unreachable!(),
     };
 
+    // REVIEW: Ensure that there isn't any possible recursion problems going on.
     let llvm_type = self.lower_type(&ty);
 
     self.llvm_cached_types.insert(node_id, llvm_type);
@@ -1277,14 +1270,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       }
     }
 
-    // REVIEW: Might not need to access the array in order to initialize it, but to return it?
-    // BUG: There seems to be a bug regarding this, and indexing arrays. "Expected PointerValue variant".
-    // ... See commented code for possible* made up solution?
-    // let llvm_array_value = self
-    //   .access(llvm_array_ptr)
-    //   .into_array_value()
-    //   .as_basic_value_enum();
-
     Some(if self.do_access {
       self
         .access(llvm_array_ptr)
@@ -1293,8 +1278,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     } else {
       llvm_array_ptr.as_basic_value_enum()
     })
-
-    // Some(llvm_array_value)
   }
 
   fn visit_indexing_expr(
@@ -1308,10 +1291,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .unwrap()
       .into_int_value();
 
-    // FIXME: Might need an abstraction to specify to NOT lower with
-    // ... / disregard access flag? This is here for debugging:
-    // self.do_access = false;
-
     // REVIEW: Opted not to use access rules. Ensure this is correct.
     let llvm_target = self
       .lower_with_do_access_flag(&indexing_expr.target_expr, false)
@@ -1323,7 +1302,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       let first_index = self.llvm_context.i32_type().const_int(0, false);
 
       let llvm_gep_ptr = self.llvm_builder.build_in_bounds_gep(
-        // BUG: Access bug?
         llvm_target.into_pointer_value(),
         &[first_index, llvm_index],
         "array.index.gep",

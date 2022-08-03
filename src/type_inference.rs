@@ -706,6 +706,67 @@ impl<'a> TypeInferenceContext<'a> {
 
         // TODO: Finish implementation.
       }
+      ast::NodeKind::Closure(closure) => {
+        // REVISE: Repeated logic from function. Abstract common code and simplify.
+
+        let return_type = closure
+          .signature
+          .return_type_hint
+          .as_ref()
+          .map(|type_hint| type_hint.clone())
+          .unwrap_or_else(|| self.create_type_variable());
+
+        self
+          .type_cache
+          .insert(closure.signature.return_type_id, return_type.clone());
+
+        let parameter_types = closure
+          .signature
+          .parameters
+          .iter()
+          .map(|parameter| {
+            let ty = parameter
+              .type_hint
+              .as_ref()
+              .map(|parameter_type_hint| parameter_type_hint.clone())
+              .unwrap_or_else(|| self.create_type_variable());
+
+            self.type_cache.insert(parameter.id, ty.clone());
+
+            ty
+          })
+          .collect::<Vec<_>>();
+
+        // Cache the function type before inferring the body to allow
+        // for recursion, otherwise they may try to retrieve the function type
+        // when it hasn't been set yet.
+        self.type_cache.insert(
+          closure.id,
+          ast::Type::Signature(ast::SignatureType {
+            // Closures are never variadic.
+            is_variadic: false,
+            parameter_types: parameter_types.clone(),
+            return_type: Box::new(return_type.clone()),
+          })
+          .try_upgrade_constructor(),
+        );
+
+        // BUG: Do we cache the body type here or when during infer of block expr?
+        // ... Should we even need to cache the body's type? Is it needed?
+        self.infer_and_constrain(
+          return_type.clone(),
+          &ast::NodeKind::BlockExpr(std::rc::Rc::clone(&closure.body)),
+        );
+
+        let mut constructor_generics = parameter_types;
+
+        constructor_generics.extend(std::iter::once(return_type));
+
+        let constructor_type =
+          ast::Type::Constructor(ast::TypeConstructorKind::Function, constructor_generics);
+
+        self.report_constraint(expected_type, constructor_type);
+      }
       _ => {
         dbg!(node);
         todo!()
