@@ -69,11 +69,12 @@ pub enum TypeConstructorKind {
   StaticIndexable(u32),
   Pointer,
   Reference,
-  Signature,
+  Function,
   Integer,
   Boolean,
   Nullptr,
   String,
+  // TODO: Consider having a constructor for type-sizes.
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -130,7 +131,7 @@ impl Type {
       Type::StaticIndexable(_, size) => TypeConstructorKind::StaticIndexable(*size),
       Type::Pointer(_) => TypeConstructorKind::Pointer,
       Type::Reference(_) => TypeConstructorKind::Reference,
-      Type::Signature(_) => TypeConstructorKind::Signature,
+      Type::Signature(_) => TypeConstructorKind::Function,
       _ => return self,
     };
 
@@ -180,14 +181,6 @@ impl Type {
         .collect::<Vec<_>>(),
       _ => Vec::new(),
     }
-  }
-
-  pub fn is_a_constructor(&self) -> bool {
-    return matches!(
-      self,
-      // FIXME: Any more? Yes! Missing `nullptr`, which is a constructor (generic).
-      Type::StaticIndexable(..) | Type::Pointer(_) | Type::Reference(_)
-    );
   }
 
   /// Determine whether the type is a unit type.
@@ -244,8 +237,8 @@ impl Type {
     false
   }
 
-  pub fn flat_is(&self, other: &Type, cache: &symbol_table::SymbolTable) -> bool {
-    self.flatten(cache).is(&other.flatten(cache))
+  pub fn flat_is(&self, other: &Type, symbol_table: &symbol_table::SymbolTable) -> bool {
+    self.flatten(symbol_table).is(&other.flatten(symbol_table))
   }
 
   // FIXME: Every type comparison should be using this function.
@@ -315,12 +308,12 @@ impl Type {
   /// Resolve a possible user-defined type, so it can be used properly.
   ///
   /// Should be used when the type is to be compared.
-  pub fn flatten(&self, cache: &symbol_table::SymbolTable) -> Type {
+  pub fn flatten(&self, symbol_table: &symbol_table::SymbolTable) -> Type {
     // REVISE: Cleanup.
 
     // REVIEW: What if it's a pointer to a user-defined type?
     if let Type::Stub(stub_type) = self {
-      let target_node = cache
+      let target_node = symbol_table
         .find_decl_via_link(&stub_type.pattern.link_id)
         .unwrap();
 
@@ -328,15 +321,15 @@ impl Type {
 
       // REVISE: Cleanup!
       if let NodeKind::TypeAlias(type_alias) = &target_node {
-        return type_alias.ty.flatten(cache);
+        return type_alias.ty.flatten(symbol_table);
       } else if let NodeKind::Struct(target_type) = &target_node {
         // REVIEW: Why is `flatten_type` being called again with a struct type inside?
-        return Type::Struct(target_type.as_ref().clone()).flatten(cache);
+        return Type::Struct(target_type.as_ref().clone()).flatten(symbol_table);
       }
     } else if let Type::This(this_type) = &self {
       // REVISE: No need to clone?
-      let target_struct_type = cache
-        .find_decl_via_link(&this_type.target_id.unwrap())
+      let target_struct_type = symbol_table
+        .find_decl_via_link(&this_type.target_link_id)
         .unwrap();
 
       if let NodeKind::Struct(struct_type) = &target_struct_type {
@@ -393,143 +386,6 @@ impl NodeKind {
     self.find_id().and_then(|id| type_cache.get(&id))
   }
 
-  // TODO: Can this be made a Rust Iterator? This way we get all of Iterator's features.
-  pub fn traverse<'a>(&'a self, mut visitor: impl FnMut(&'a NodeKind) -> bool) {
-    todo!();
-    // let map_children = |children: &'a Vec<Node>| children.iter().map(|child_node| &child_node);
-
-    // // TODO: signature.
-    // // let map_signature = |signature: &'a signature| map_children(&signature.parameters);
-
-    // let dispatcher = |node: &'a NodeKind| -> Vec<&NodeKind> {
-    //   match node {
-    //     NodeKind::InlineExprStmt(inline_expr_stmt) => vec![&inline_expr_stmt.expr],
-    //     NodeKind::BinaryExpr(binary_expr) => {
-    //       vec![&binary_expr.left, &binary_expr.right]
-    //     }
-    //     NodeKind::BlockExpr(block_expr) => map_children(block_expr.statements).collect(),
-    //     NodeKind::UnaryExpr(unary_expr) => vec![&unary_expr.expr],
-    //     NodeKind::UnsafeExpr(unsafe_expr) => vec![&unsafe_expr.0],
-    //     NodeKind::ParenthesesExpr(parentheses_expr) => vec![&parentheses_expr.0],
-    //     NodeKind::CallExpr(call_expr) => vec![&call_expr.callee_expr]
-    //       .into_iter()
-    //       .chain(map_children(call_expr.arguments))
-    //       .collect(),
-    //     // TODO: Include `else` expression, and alternative branches.
-    //     NodeKind::IfExpr(if_expr) => vec![&if_expr.condition, &if_expr.then_value],
-    //     // TODO: Missing signature.
-    //     // NodeKind::Closure(closure) => map_children(&closure.body.statements).collect(),
-    //     // TODO: Missing signature.
-    //     NodeKind::Function(function) => map_children(function.body.statements).collect(),
-    //     NodeKind::BindingStmt(binding_stmt) => vec![&binding_stmt.value],
-    //     NodeKind::ReturnStmt(ReturnStmt { value: Some(value) }) => vec![&value],
-    //     NodeKind::IndexingExpr(indexing_expr) => {
-    //       vec![&indexing_expr.index_expr]
-    //     }
-    //     NodeKind::IntrinsicCall(intrinsic_call) => {
-    //       map_children(intrinsic_call.arguments).collect()
-    //     }
-    //     NodeKind::MemberAccess(member_access) => vec![&member_access.base_expr],
-    //     NodeKind::Range(range) => vec![&range.start, &range.end],
-    //     NodeKind::StaticArrayValue(array) => {
-    //       map_children(array.elements).collect()
-    //     }
-    //     // NodeKind::StructImpl(struct_impl) => {
-    //     //   vec![struct_impl.static_methods, struct_impl.member_methods].into_iter().flatten().collect::<Vec<_>>()
-    //     // }
-    //     NodeKind::StructValue(struct_value) => map_children(struct_value.fields).collect(),
-    //     // NodeKind::Trait(trait_) => {
-    //     //   map_children(&trait_.methods).collect()
-    //     // }
-    //     // REVIEW: Not all nodes can be processed like this: What about signatures?
-    //     _ => vec![],
-    //   }
-    // };
-
-    // let mut queue = VecDeque::from([self]);
-
-    // while let Some(node) = queue.pop_front() {
-    //   if !visitor(node) {
-    //     return;
-    //   }
-
-    //   let children = dispatcher(node);
-
-    //   queue.reserve(children.len());
-
-    //   for child in children {
-    //     queue.push_back(child);
-    //   }
-    // }
-  }
-
-  /// Traverse the AST of the provided node until the provided
-  /// predicate returns `true`, at which point the last node is
-  /// returned.
-  ///
-  /// If the predicate returns `false` for all nodes, `None` is
-  /// returned instead, indicating that no node was found matching the
-  /// given predicate.
-  ///
-  /// The time complexity of this method is `O(n)`, where `n` is the number of
-  /// nodes in the AST.
-  pub fn find_node<'a>(
-    &'a self,
-    mut predicate: impl FnMut(&NodeKind) -> bool,
-  ) -> Option<&NodeKind> {
-    let mut result = None;
-
-    self.traverse(|node| {
-      if predicate(node) {
-        result = Some(node);
-
-        return false;
-      }
-
-      true
-    });
-
-    result
-  }
-
-  pub fn any(&self, mut predicate: impl FnMut(&NodeKind) -> bool) -> bool {
-    let mut result = false;
-
-    self.traverse(|node| {
-      if predicate(&node) {
-        result = true;
-
-        return false;
-      }
-
-      true
-    });
-
-    result
-  }
-
-  pub fn all(&self, mut predicate: impl FnMut(&NodeKind) -> bool) -> bool {
-    !self.any(|node| !predicate(node))
-  }
-
-  pub fn is_constant_expr(&self) -> bool {
-    let is_const_node = |node: &NodeKind| {
-      if let NodeKind::BindingStmt(binding_stmt) = node {
-        return binding_stmt.is_const_expr;
-      }
-
-      matches!(
-        node,
-        NodeKind::Literal(_)
-          | NodeKind::ParenthesesExpr(_)
-          | NodeKind::UnaryExpr(_)
-          | NodeKind::SizeofIntrinsic(_)
-      )
-    };
-
-    self.all(is_const_node)
-  }
-
   // REVIEW: Ensure this is tail-recursive.
   pub fn flatten<'a>(&'a self) -> &'a NodeKind {
     if let NodeKind::ParenthesesExpr(parentheses_expr) = self {
@@ -539,11 +395,12 @@ impl NodeKind {
     self
   }
 
+  // TODO: Remove.
   /// Infer and attempt to flatten this node's type.
   ///
   /// Should be used when the type is to be compared.
-  pub fn infer_flatten_type(&self, cache: &symbol_table::SymbolTable) -> Type {
-    // self.infer_type(cache).flatten(cache)
+  pub fn infer_flatten_type(&self, _symbol_table: &symbol_table::SymbolTable) -> Type {
+    // self.infer_type(_symbol_table).flatten(_symbol_table)
     todo!()
   }
 
@@ -564,7 +421,7 @@ impl NodeKind {
       NodeKind::Parameter(parameter) => Some(parameter.id),
       // REVIEW: Should this be here as well? Not a declaration?
       NodeKind::Reference(reference) => Some(reference.pattern.link_id),
-      NodeKind::Literal(Literal::Nullptr(id, _)) => Some(id.to_owned()),
+      NodeKind::Literal(Literal::Nullptr(node_id)) => Some(node_id.to_owned()),
       NodeKind::Array(static_array) => Some(static_array.id),
       // TODO: What about parentheses expression (transient nodes)? Perform flattening?
       _ => None,
@@ -617,7 +474,7 @@ pub struct SignatureType {
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct ThisType {
-  pub target_id: Option<symbol_table::NodeId>,
+  pub target_link_id: symbol_table::LinkId,
 }
 
 // FIXME: This will no longer have the `member_path` field. It will be replaced by the implementation of `MemberAccess`.
@@ -693,7 +550,7 @@ pub struct UnsafeExpr(pub Box<NodeKind>);
 pub struct Reference {
   pub pattern: Pattern,
   // REVIEW: Why not have the reference have a `Rc<>` to the target? This would remove dependence
-  // ... on the cache, and would be filled during name resolution. We should note that the cache
+  // ... on the symbol table, and would be filled during name resolution. We should note that the symbol table
   // ... isn't available during the `resolve()` name resolution step (that's not a such a big problem,
   // ... however). The question is, where would these `Rc<>`s be sourced from? (they must consume `T`).
   // REVIEW: What about having an auxiliary mapping from `UniqueId` to `Type`?
@@ -710,7 +567,7 @@ pub enum Literal {
   Int(u64, IntSize),
   Char(char),
   String(String),
-  Nullptr(symbol_table::NodeId, Option<Type>),
+  Nullptr(symbol_table::NodeId),
 }
 
 #[derive(Debug, Clone)]
@@ -870,48 +727,4 @@ pub struct CastExpr {
 pub struct MemberAccess {
   pub base_expr: std::rc::Rc<NodeKind>,
   pub member_name: String,
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use pretty_assertions::{assert_eq, assert_ne};
-
-  // #[test]
-  // fn traverse_ast() {
-  //   let node = NodeKind::BlockExpr(BlockExpr {
-  //     id: 0,
-  //     statements: Vec::new(),
-  //     yields: None,
-  //   });
-
-  //   let mut visitations = 0;
-
-  //   node.traverse(|_| {
-  //     visitations += 1;
-
-  //     true
-  //   });
-
-  //   assert_eq!(1, visitations);
-  // }
-
-  // TODO: Re-do.
-  // #[test]
-  // fn find_node_in_ast() {
-  //   let target_node = NodeKind::BreakStmt(BreakStmt);
-
-  //   let block = NodeKind::BlockExpr(BlockExpr {
-  //     id: 0,
-  //     statements: vec![Node {
-  //       cached_type: None,
-  //       kind: target_node.clone(),
-  //     }],
-  //     yields: None,
-  //   });
-
-  //   let search_result = block.find_node(|node| matches!(node, NodeKind::BreakStmt(_)));
-
-  //   assert!(matches!(search_result, Some(NodeKind::BreakStmt(_))));
-  // }
 }

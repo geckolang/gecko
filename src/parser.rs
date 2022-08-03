@@ -365,8 +365,9 @@ impl<'a> Parser<'a> {
   fn parse_this_type(&mut self) -> ParserResult<ast::Type> {
     self.skip_past(&lexer::TokenKind::TypeThis)?;
 
-    // BUG: This must be filled here, and it should no longer be `Option<>`. AST is always immutable.
-    Ok(ast::Type::This(ast::ThisType { target_id: None }))
+    Ok(ast::Type::This(ast::ThisType {
+      target_link_id: self.cache.next_id(),
+    }))
   }
 
   /// '[' %type, 0-9+ ']'
@@ -484,7 +485,10 @@ impl<'a> Parser<'a> {
   fn parse_this_parameter(&mut self) -> ParserResult<ast::Parameter> {
     self.skip_past(&lexer::TokenKind::This)?;
 
-    let type_hint = Some(ast::Type::This(ast::ThisType { target_id: None }));
+    let type_hint = Some(ast::Type::This(ast::ThisType {
+      // TODO: No name resolution for this yet.
+      target_link_id: self.cache.next_id(),
+    }));
 
     let parameter = ast::Parameter {
       name: String::from("this"),
@@ -946,11 +950,7 @@ impl<'a> Parser<'a> {
     self.skip_past(&lexer::TokenKind::Nullptr)?;
     self.skip_past(&lexer::TokenKind::BracketL)?;
 
-    let ty = self.parse_type()?;
-
-    self.skip_past(&lexer::TokenKind::BracketR)?;
-
-    Ok(ast::Literal::Nullptr(self.cache.next_id(), Some(ty)))
+    Ok(ast::Literal::Nullptr(self.cache.next_id()))
   }
 
   fn parse_sizeof_intrinsic(&mut self) -> ParserResult<ast::SizeofIntrinsic> {

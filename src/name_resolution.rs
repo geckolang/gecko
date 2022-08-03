@@ -5,13 +5,14 @@ use crate::{
 
 pub fn run(
   ast_map: &mut ast::AstMap,
-  cache: &mut symbol_table::SymbolTable,
+  symbol_table: &mut symbol_table::SymbolTable,
 ) -> Vec<ast::Diagnostic> {
   if ast_map.is_empty() {
     return Vec::new();
   }
 
-  let mut name_res_decl = NameResDeclContext::new(ast_map.keys().next().unwrap().clone(), cache);
+  let mut name_res_decl =
+    NameResDeclContext::new(ast_map.keys().next().unwrap().clone(), symbol_table);
   // let mut name_resolver = NameResolver::new(ast_map.keys().next().unwrap().clone());
 
   // // BUG: Cannot be processed linearly. Once an import is used, the whole corresponding
@@ -34,7 +35,7 @@ pub fn run(
   let mut name_res_link = NameResLinkContext::new(
     &name_res_decl.global_scopes,
     name_res_decl.scope_trees,
-    cache,
+    symbol_table,
   );
 
   for (qualifier, ast) in ast_map {
@@ -80,7 +81,7 @@ pub struct NameResDeclContext<'a> {
   /// Contains the modules with their respective top-level definitions.
   pub global_scopes: std::collections::HashMap<Qualifier, Scope>,
   pub diagnostics: Vec<ast::Diagnostic>,
-  cache: &'a mut symbol_table::SymbolTable,
+  symbol_table: &'a mut symbol_table::SymbolTable,
   current_scope_qualifier: Option<Qualifier>,
   /// Contains volatile, relative scopes.
   ///
@@ -92,10 +93,10 @@ pub struct NameResDeclContext<'a> {
 impl<'a> NameResDeclContext<'a> {
   pub fn new(
     initial_module_qualifier: Qualifier,
-    cache: &'a mut symbol_table::SymbolTable,
+    symbol_table: &'a mut symbol_table::SymbolTable,
   ) -> Self {
     let mut result = Self {
-      cache,
+      symbol_table,
       diagnostics: Vec::new(),
       current_scope_qualifier: None,
       global_scopes: std::collections::HashMap::new(),
@@ -213,38 +214,38 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
     // TODO: There might be a way to simplify this (macro or trait?).
     match node {
       ast::NodeKind::Function(function) => {
-        self.cache.declarations.insert(
+        self.symbol_table.declarations.insert(
           function.id,
           ast::NodeKind::Function(std::rc::Rc::clone(&function)),
         );
       }
       ast::NodeKind::ExternFunction(extern_fn) => {
-        self.cache.declarations.insert(
+        self.symbol_table.declarations.insert(
           extern_fn.id,
           ast::NodeKind::ExternFunction(std::rc::Rc::clone(&extern_fn)),
         );
       }
       ast::NodeKind::ExternStatic(extern_static) => {
-        self.cache.declarations.insert(
+        self.symbol_table.declarations.insert(
           extern_static.id,
           ast::NodeKind::ExternStatic(std::rc::Rc::clone(&extern_static)),
         );
       }
       ast::NodeKind::Enum(enum_) => {
         self
-          .cache
+          .symbol_table
           .declarations
           .insert(enum_.id, ast::NodeKind::Enum(std::rc::Rc::clone(&enum_)));
       }
       ast::NodeKind::TypeAlias(type_alias) => {
-        self.cache.declarations.insert(
+        self.symbol_table.declarations.insert(
           type_alias.id,
           ast::NodeKind::TypeAlias(std::rc::Rc::clone(&type_alias)),
         );
       }
 
       ast::NodeKind::Struct(struct_) => {
-        self.cache.declarations.insert(
+        self.symbol_table.declarations.insert(
           struct_.id,
           ast::NodeKind::Struct(std::rc::Rc::clone(&struct_)),
         );
@@ -253,7 +254,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
       // This means that they are registered as `ast::NodeKind`s, under blocks. They
       // must be dispatched.
       ast::NodeKind::BindingStmt(binding_stmt) => {
-        self.cache.declarations.insert(
+        self.symbol_table.declarations.insert(
           binding_stmt.id,
           ast::NodeKind::BindingStmt(std::rc::Rc::clone(&binding_stmt)),
         );
@@ -285,12 +286,7 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
   }
 
   fn enter_function(&mut self, function: &ast::Function) {
-    // BUG: Something is wrong with this scope tree. Consider adding tests for this API.
-    // ... The `push_scope()` and `close_scope_tree()` lines where commented out. Once uncommented,
-    // ... everything SEEMS to be working fine, but still need tests if there aren't any already, and
-    // ... review of the code, and possibly integration tests.
-
-    // TODO: Cleanup.
+    // REVISE: Cleanup.
     // Declare the function on the global scope.
     self.declare_symbol(
       Symbol {
@@ -333,8 +329,6 @@ impl<'a> AnalysisVisitor for NameResDeclContext<'a> {
   fn exit_function(&mut self, function: &ast::Function) -> () {
     // NOTE: The scope tree won't be overwritten by the block's, nor the
     // signature's scope tree, instead they will be merged, as expected.
-    // BUG: Where is this scope tree accessed/retrieved? Actually, I think the problem is that the scope trees are
-    // ... being messed up / interlinked during name declaration.
     self.finish_scope_tree(function.body.id);
   }
 
@@ -444,7 +438,7 @@ pub struct NameResLinkContext<'a> {
   /// A mapping of a scope's unique key to its own scope, and all visible parent
   /// relative scopes, excluding the global scope.
   scope_trees: std::collections::HashMap<symbol_table::NodeId, Vec<Scope>>,
-  cache: &'a mut symbol_table::SymbolTable,
+  symbol_table: &'a mut symbol_table::SymbolTable,
   current_scope_qualifier: Option<Qualifier>,
   current_struct_type_id: Option<symbol_table::NodeId>,
   // REVIEW: If we can get rid of these flags, we may possibly use the traverse method instead
@@ -460,11 +454,11 @@ impl<'a> NameResLinkContext<'a> {
   pub fn new(
     global_scopes: &'a std::collections::HashMap<Qualifier, Scope>,
     scope_trees: std::collections::HashMap<symbol_table::NodeId, Vec<Scope>>,
-    cache: &'a mut symbol_table::SymbolTable,
+    symbol_table: &'a mut symbol_table::SymbolTable,
   ) -> Self {
     Self {
       scope_trees,
-      cache,
+      symbol_table,
       current_scope_qualifier: None,
       current_struct_type_id: None,
       scope_id_stack: Vec::new(),
@@ -495,10 +489,6 @@ impl<'a> NameResLinkContext<'a> {
     // types that reference other structs in their fields (in such case,
     // the relative scopes will be empty and the `current_block_id`
     // buffer would be `None`).
-    // BUG: Perhaps the name resolution bug is with the stack? Where is the function id's parameter scope
-    // ... accessed? Nowhere it seems. That might be the bug? How come it's crossing boundaries across functions?
-    // ... Why is it even a stack instead of a buffer? To restore it up the call bubble, since we can't do that
-    // ... with a buffer with the new enter/exit system? Then where is the function id scope retrieved (parameters)?
     if let Some(current_scope_id) = self.scope_id_stack.last() {
       let scope_tree = self.scope_trees.get(&current_scope_id).unwrap();
 
@@ -554,7 +544,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
 
     // REVISE: A bit misleading, since `lookup_or_error` returns `Option<>`.
     self.local_lookup_or_error(&symbol).map(|target_id| {
-      self.cache.links.insert(pattern.link_id, target_id);
+      self.symbol_table.links.insert(pattern.link_id, target_id);
     });
   }
 
@@ -564,61 +554,35 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
     // REVIEW: Should we have this check positioned here? Or should it be placed elsewhere?
     // ... Also, should the main function binding id be located under the cache?
     if function.name == lowering::MAIN_FUNCTION_NAME {
-      if self.cache.main_function_id.is_some() {
+      if self.symbol_table.main_function_id.is_some() {
         self.diagnostics.push(
           codespan_reporting::diagnostic::Diagnostic::error()
             .with_message("multiple main functions defined"),
         );
       } else {
-        self.cache.main_function_id = Some(function.id);
+        self.symbol_table.main_function_id = Some(function.id);
       }
     }
-
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-    // FIXME: Added for debugging.
-    // self.scope_id_stack.push(function.id);
-
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  }
-
-  fn exit_function(&mut self, _function: &ast::Function) -> () {
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-    // FIXME: Added for debugging.
-    // self.scope_id_stack.pop();
-
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   }
 
   fn enter_block_expr(&mut self, block: &ast::BlockExpr) {
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-    // BUG: The bug is with the block scope id and the function scope id. However, when we remove this block's id push it works, but
-    // ... we also lose proper cross-block scope resolution.
     self.scope_id_stack.push(block.id);
-
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   }
 
   fn exit_block_expr(&mut self, _block: &ast::BlockExpr) {
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
     self.scope_id_stack.pop();
-
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   }
 
   fn visit_signature(&mut self, signature: &ast::Signature) {
     if let Some(instance_type_id) = &signature.instance_type_id {
-      self.cache.links.insert(
+      self.symbol_table.links.insert(
         instance_type_id.to_owned(),
         self.current_struct_type_id.unwrap(),
       );
     }
 
     for parameter in &signature.parameters {
-      self.cache.declarations.insert(
+      self.symbol_table.declarations.insert(
         parameter.id,
         ast::NodeKind::Parameter(std::rc::Rc::clone(parameter)),
       );
@@ -633,7 +597,10 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
         kind: SymbolKind::Type,
       })
       .map(|target_id| {
-        self.cache.links.insert(struct_value.target_id, target_id);
+        self
+          .symbol_table
+          .links
+          .insert(struct_value.target_id, target_id);
       });
   }
 
@@ -673,7 +640,7 @@ impl<'a> AnalysisVisitor for NameResLinkContext<'a> {
   fn enter_struct_impl(&mut self, struct_impl: &ast::StructImpl) {
     self.current_struct_type_id = Some(struct_impl.target_struct_pattern.link_id);
 
-    self.cache.add_struct_impl(
+    self.symbol_table.add_struct_impl(
       struct_impl.target_struct_pattern.link_id,
       struct_impl
         .member_methods
@@ -746,8 +713,8 @@ mod tests {
 
   #[test]
   fn push_scope() {
-    let mut cache = symbol_table::SymbolTable::new();
-    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut symbol_table);
 
     assert!(name_resolver.relative_scopes.is_empty());
     name_resolver.push_scope();
@@ -756,8 +723,8 @@ mod tests {
 
   #[test]
   fn get_current_scope() {
-    let mut cache = symbol_table::SymbolTable::new();
-    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut symbol_table);
 
     // TODO: Finish implementing.
     name_resolver.get_current_scope();
@@ -765,8 +732,8 @@ mod tests {
 
   #[test]
   fn current_scope_contains() {
-    let mut cache = symbol_table::SymbolTable::new();
-    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut symbol_table);
     let symbol = mock_symbol();
 
     assert!(!name_resolver.current_scope_contains(&symbol));
@@ -790,8 +757,8 @@ mod tests {
 
   #[test]
   fn create_module() {
-    let mut cache = symbol_table::SymbolTable::new();
-    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut symbol_table);
 
     assert!(!name_resolver.create_module(mock_qualifier()));
     assert!(name_resolver.current_scope_qualifier.is_some());
@@ -799,8 +766,8 @@ mod tests {
 
   #[test]
   fn global_lookup() {
-    let mut cache = symbol_table::SymbolTable::new();
-    let fake_node_id = cache.next_id();
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let fake_node_id = symbol_table.next_id();
     let mut global_scopes = std::collections::HashMap::new();
     let mut symbol_mappings = std::collections::HashMap::new();
     let qualifier = mock_qualifier();
@@ -810,7 +777,9 @@ mod tests {
     global_scopes.insert(qualifier.clone(), symbol_mappings);
 
     let scope_tree_map = std::collections::HashMap::new();
-    let mut name_resolver = NameResLinkContext::new(&global_scopes, scope_tree_map, &mut cache);
+
+    let mut name_resolver =
+      NameResLinkContext::new(&global_scopes, scope_tree_map, &mut symbol_table);
 
     assert_eq!(
       Some(fake_node_id),
@@ -869,8 +838,8 @@ mod tests {
 
   #[test]
   fn finish_scope_tree() {
-    let mut cache = symbol_table::SymbolTable::new();
-    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut symbol_table);
 
     name_resolver.push_scope();
     name_resolver.finish_scope_tree(0);
@@ -882,10 +851,10 @@ mod tests {
 
   #[test]
   fn declare_parameter() {
-    let mut cache = symbol_table::SymbolTable::new();
-    let parameter_id = cache.next_id();
-    let scope_id = cache.next_id();
-    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut cache);
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let parameter_id = symbol_table.next_id();
+    let scope_id = symbol_table.next_id();
+    let mut name_resolver = NameResDeclContext::new(mock_qualifier(), &mut symbol_table);
 
     name_resolver.push_scope();
 
@@ -903,6 +872,4 @@ mod tests {
 
     assert_eq!(1, scope.len());
   }
-
-  // BUG: Need more tests to iron out the cross-function parameter access bug once and for all.
 }

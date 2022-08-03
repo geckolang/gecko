@@ -9,21 +9,21 @@ Tasks:
 	☐ Begin laying out foundations to allow for concurrency during processing phases such as semantic checking, code generation, and others.
 	✔ Setup environment for integration testing. @done
   ☐ Merge the driver project into this project. They should be placed in individual crates.
-	✔ Populate the cache after the AST has been resolved @done
+	✔ Populate the symbol table after the AST has been resolved @done
 
 Revisions:
 	✔ Use the `code_span` crate instead of `DiagnosticBuilder`. This will also remove the need for the `diagnostic.rs` module. @done
 
 Design:
-	✘ Should lazy-evaluation design be changed to eager-evaluation? Eager evaluation removes the need for node retrieval from the cache. However, this would require more analysis before lowering. @cancelled
-	✘ Is there a way to have lazy-evaluation without needing the cache? @cancelled
-	✘ Should the cache be a singleton? This would remove the need for the cache to be passed around. @cancelled
-	✔ Should the cache contain unresolved node copies, or must they be resolved? @done
-	✔ Revise current design flaws. These might include, for example, the unsafe retrieval from the cache, among others. @done
+	✘ Should lazy-evaluation design be changed to eager-evaluation? Eager evaluation removes the need for node retrieval from the symbol table. However, this would require more analysis before lowering. @cancelled
+	✘ Is there a way to have lazy-evaluation without needing the symbol table? @cancelled
+	✘ Should the symbol table be a singleton? This would remove the need for the symbol table to be passed around. @cancelled
+	✔ Should the symbol table contain unresolved node copies, or must they be resolved? @done
+	✔ Revise current design flaws. These might include, for example, the unsafe retrieval from the symbol table, among others. @done
 	☐ Consider deferring responsability of functions that assume, and use unsafe retrieval, and instead abstracting it to their consumers (separation of concerns). The tradeoff of more boilerplate might apply.
 	✔ Create a flowchart of the ideal system's process and design. @done
 	✘ Should a typed-AST be implemented and used? @cancelled
-	✔ Find a better alternative to having to resort to clone nodes to populate the cache. Consider making every node field an `Rc<>`. @done
+	✔ Find a better alternative to having to resort to clone nodes to populate the symbol table. Consider making every node field an `Rc<>`. @done
 	✔ Come up with a better design/approach for intrinsic functions. Use objective analysis and consideration. @done
 	☐ Rid of node caching, as it is not necessary. Only their types are needed.
 

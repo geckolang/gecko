@@ -73,7 +73,7 @@ pub mod tests {
   impl ModuleMock<'_, '_> {
     pub fn lower(&mut self, node: &ast::NodeKind) -> &mut Self {
       // TODO:
-      // node.lower(&mut self.mock.lowering_visitor, &self.mock.cache, access);
+      // node.lower(&mut self.mock.lowering_visitor, &self.mock.symbol_table, access);
       self.mock.lowering_context.dispatch(node);
 
       self
@@ -216,14 +216,19 @@ pub mod tests {
 
     pub fn new(
       type_cache: &'a type_inference::TypeCache,
-      cache: &'a symbol_table::SymbolTable,
+      symbol_table: &'a symbol_table::SymbolTable,
       context: &'ctx inkwell::context::Context,
       module: &'a inkwell::module::Module<'ctx>,
     ) -> Self {
       Self {
         context,
         llvm_module: module,
-        lowering_context: lowering::LoweringContext::new(&type_cache, &cache, context, module),
+        lowering_context: lowering::LoweringContext::new(
+          &type_cache,
+          &symbol_table,
+          context,
+          module,
+        ),
         id_counter: 0,
       }
     }

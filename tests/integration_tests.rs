@@ -3,7 +3,9 @@ extern crate inkwell;
 
 #[cfg(test)]
 mod tests {
-  use gecko::{lowering, name_resolution, type_check, type_inference, visitor::LoweringVisitor};
+  use gecko::{
+    lowering, name_resolution, semantic_check, type_inference, visitor::LoweringVisitor,
+  };
   use pretty_assertions::assert_eq;
 
   fn lex(source_code: &str) -> Vec<gecko::lexer::Token> {
@@ -48,7 +50,7 @@ mod tests {
 
     assert!(inference_diagnostics.is_empty());
 
-    let mut type_check_context = type_check::TypeCheckContext::new(&cache);
+    let mut type_check_context = semantic_check::SemanticCheckContext::new(&cache);
 
     // // Once symbols are resolved, we can proceed to the other phases.
     for inner_ast in ast_map.values() {

@@ -23,10 +23,10 @@ pub struct LoweringContext<'a, 'ctx> {
   pub(super) llvm_builder: inkwell::builder::Builder<'ctx>,
   pub(super) llvm_function_buffer: Option<inkwell::values::FunctionValue<'ctx>>,
   pub module_name: String,
-  // REVIEW: Why do we need the cache here? If we retrieve nodes from it, remember that we've
+  // REVIEW: Why do we need the symbol table here? If we retrieve nodes from it, remember that we've
   // ... outlined that option already because of design issues. Find a better way to handle lowering
   // ... of things like what a reference refers to.
-  cache: &'a symbol_table::SymbolTable,
+  symbol_table: &'a symbol_table::SymbolTable,
   type_cache: &'a type_inference::TypeCache,
   llvm_context: &'ctx inkwell::context::Context,
   llvm_module: &'a inkwell::module::Module<'ctx>,
@@ -42,12 +42,12 @@ pub struct LoweringContext<'a, 'ctx> {
 impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   pub fn new(
     type_cache: &'a type_inference::TypeCache,
-    cache: &'a symbol_table::SymbolTable,
+    symbol_table: &'a symbol_table::SymbolTable,
     llvm_context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
   ) -> Self {
     Self {
-      cache,
+      symbol_table,
       type_cache,
       // TODO: Proper name?
       module_name: "unnamed".to_string(),
@@ -120,7 +120,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
     if let ast::NodeKind::Reference(reference) = &node {
       let target = self
-        .cache
+        .symbol_table
         .find_decl_via_link(&reference.pattern.link_id)
         .unwrap();
 
@@ -189,7 +189,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
   }
 
   fn find_type_id(&self, ty: &ast::Type) -> Option<symbol_table::NodeId> {
-    Some(match ty.flatten(self.cache) {
+    Some(match ty.flatten(self.symbol_table) {
       ast::Type::Struct(struct_type) => struct_type.id.clone(),
       // REVIEW: Any more?
       _ => return None,
@@ -257,18 +257,14 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
       // TODO: Implement.
       ast::Type::Reference(_reference_type) => todo!(),
       // TODO: Implement.
-      ast::Type::This(this_type) => {
-        self.memoize_or_retrieve_type_by_binding(this_type.target_id.unwrap())
-      }
-      // FIXME: Will never be able to treat void type as we expect here, because it is only usable to create void return types!
-      // FIXME: Should be lowering to the void type instead, but not allowed by return type!
+      ast::Type::This(this_type) => self.memoize_or_retrieve_type_by_binding(
+        *self
+          .symbol_table
+          .links
+          .get(&this_type.target_link_id)
+          .unwrap(),
+      ),
       // FIXME: What about when a resolved function type is encountered? Wouldn't it need to be lowered here?
-      // REVIEW: Consider lowering the unit type as void? Only in case we actually use this, otherwise no. (This also serves as a bug catcher).
-      // ast::Type::Unit => self
-      //   .llvm_context
-      //   .bool_type()
-      //   .ptr_type(inkwell::AddressSpace::Generic)
-      //   .as_basic_type_enum(),
       // Meta types are never to be lowered.
       ast::Type::Unit
       | ast::Type::AnyInteger
@@ -366,7 +362,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
 
     // REVIEW: Consider making a separate map for types in the cache.
 
-    let declaration = self.cache.find_decl_via_link(&node_id).unwrap();
+    let declaration = self.symbol_table.find_decl_via_link(&node_id).unwrap();
 
     // REVIEW: Why not perform type-flattening here instead?
     let ty = match &declaration {
@@ -411,7 +407,7 @@ impl<'a, 'ctx> LoweringContext<'a, 'ctx> {
     forward_buffers: bool,
     apply_access_rules: bool,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    let declaration = self.cache.declarations.get(node_id).unwrap();
+    let declaration = self.symbol_table.declarations.get(node_id).unwrap();
 
     // BUG: If a definition is lowered elsewhere without the use of this function,
     // ... there will not be any call to `lower_with_access_rules` for it. This means
@@ -463,7 +459,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     let mut llvm_arguments = call_expr
       .arguments
       .iter()
-      .map(|node| self.lower_with_access(node).unwrap().into())
+      .map(|node| self.lower_with_do_access_flag(node, true).unwrap().into())
       .collect::<Vec<_>>();
 
     // Insert the instance pointer as the first argument, if applicable.
@@ -473,12 +469,6 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     }
 
     // BUG: It seems that this is causing stack-overflow because results aren't cached? What's going on? Or maybe it's the parser?
-    // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
-    // let llvm_target_callable = call_expr
-    //   .callee_expr
-    //   .lower(generator, false)
-    //   .unwrap()
-    //   .into_pointer_value();
     let llvm_target_callable = self
       .dispatch(&call_expr.callee_expr)
       .unwrap()
@@ -848,10 +838,8 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
         .llvm_builder
         .build_global_string_ptr(value.as_str(), "string_literal")
         .as_basic_value_enum(),
-      ast::Literal::Nullptr(_, ty) => self
-        // FIXME: In the future, nullptr literal will no longer have a type attached to it.
-        // ... Instead, use the type cache to retrieve it's type.
-        .lower_type(ty.as_ref().unwrap())
+      ast::Literal::Nullptr(node_id) => self
+        .lower_type(self.type_cache.get(node_id).unwrap())
         .ptr_type(inkwell::AddressSpace::Generic)
         .const_null()
         .as_basic_value_enum(),
@@ -872,7 +860,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       .type_cache
       .get(&if_expr.id)
       .unwrap()
-      .flatten(self.cache);
+      .flatten(self.symbol_table);
 
     // This if-expression will never yield a value if its type
     // is unit or never.
@@ -994,7 +982,11 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     let llvm_target = self
       // REVIEW: Here we opted not to forward buffers. Ensure this is correct.
       .memoize_declaration(
-        &self.cache.links.get(&reference.pattern.link_id).unwrap(),
+        &self
+          .symbol_table
+          .links
+          .get(&reference.pattern.link_id)
+          .unwrap(),
         false,
         self.do_access,
       )
@@ -1428,7 +1420,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
       ast::IntrinsicKind::LengthOf => {
         let target_array = intrinsic_call.arguments.first().unwrap();
 
-        let array_length = match target_array.infer_flatten_type(self.cache) {
+        let array_length = match target_array.infer_flatten_type(self.symbol_table) {
           ast::Type::StaticIndexable(_, size) => size,
           _ => unreachable!(),
         };
@@ -1532,7 +1524,9 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 
     // Flatten the type in case it is a `ThisType`.
     let llvm_struct_type = crate::force_match!(
-      member_access.base_expr.infer_flatten_type(self.cache),
+      member_access
+        .base_expr
+        .infer_flatten_type(self.symbol_table),
       ast::Type::Struct
     );
 
@@ -1560,7 +1554,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     // REVIEW: Is it safe to use the binding id of an inferred struct type?
     // Otherwise, it must be a method.
     let impl_method_info = self
-      .cache
+      .symbol_table
       .struct_impls
       .get(&llvm_struct_type.id)
       .unwrap()
@@ -1624,10 +1618,10 @@ mod tests {
   #[test]
   fn lower_binding_stmt_const_val() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = symbol_table::SymbolTable::new();
+    let symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut mock = Mock::new(&type_cache, &cache, &llvm_context, &llvm_module);
+    let mut mock = Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module);
 
     let binding_stmt = mock.binding(
       "a",
@@ -1644,7 +1638,7 @@ mod tests {
   #[test]
   fn lower_binding_stmt_ref_val() {
     let type_cache = type_inference::TypeCache::new();
-    let mut cache = symbol_table::SymbolTable::new();
+    let mut symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let a_id: symbol_table::NodeId = 0;
@@ -1657,11 +1651,11 @@ mod tests {
       type_hint: Some(Mock::int_type()),
     });
 
-    cache
+    symbol_table
       .declarations
       .insert(a_id, ast::NodeKind::BindingStmt(binding_stmt_rc_a.clone()));
 
-    cache.links.insert(a_id, a_id);
+    symbol_table.links.insert(a_id, a_id);
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(binding_stmt_rc_a);
 
@@ -1673,7 +1667,7 @@ mod tests {
       type_hint: Some(Mock::int_type()),
     }));
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&binding_stmt_a)
       .lower(&binding_stmt_b)
@@ -1682,24 +1676,25 @@ mod tests {
 
   #[test]
   fn lower_binding_stmt_nullptr_val() {
-    let type_cache = type_inference::TypeCache::new();
-    let cache = symbol_table::SymbolTable::new();
+    let mut type_cache = type_inference::TypeCache::new();
+    let nullptr_id = 1;
+    let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
+    let symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
+
+    // REVISE: This is the wrong type.
+    type_cache.insert(nullptr_id, ty.clone());
 
     let binding_stmt = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
-      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(
-        1,
-        Some(ty.clone()),
-      ))),
+      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(nullptr_id))),
       is_const_expr: false,
       id: 0,
       type_hint: Some(ast::Type::Pointer(Box::new(ty))),
     }));
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&binding_stmt)
       .compare_with_file("binding_stmt_nullptr_val");
@@ -1707,30 +1702,30 @@ mod tests {
 
   #[test]
   fn lower_binding_stmt_ptr_ref_val() {
-    let type_cache = type_inference::TypeCache::new();
-    let mut cache = symbol_table::SymbolTable::new();
+    let mut type_cache = type_inference::TypeCache::new();
+    let mut symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
     let ty = ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32));
     let pointer_type = ast::Type::Pointer(Box::new(ty.clone()));
     let a_id: symbol_table::NodeId = 0;
+    let nullptr_id = a_id + 2;
+
+    type_cache.insert(nullptr_id, ty.clone());
 
     let binding_stmt_rc_a = std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
-      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(
-        a_id + 2,
-        Some(ty.clone()),
-      ))),
+      value: Box::new(ast::NodeKind::Literal(ast::Literal::Nullptr(nullptr_id))),
       is_const_expr: false,
       id: a_id,
       type_hint: Some(pointer_type.clone()),
     });
 
-    cache
+    symbol_table
       .declarations
       .insert(a_id, ast::NodeKind::BindingStmt(binding_stmt_rc_a.clone()));
 
-    cache.links.insert(a_id, a_id);
+    symbol_table.links.insert(a_id, a_id);
 
     let binding_stmt_a = ast::NodeKind::BindingStmt(binding_stmt_rc_a);
 
@@ -1742,7 +1737,7 @@ mod tests {
       type_hint: Some(pointer_type),
     }));
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&binding_stmt_a)
       .lower(&binding_stmt_b)
@@ -1751,11 +1746,11 @@ mod tests {
 
   #[test]
   fn lower_binding_stmt_string_val() {
-    let cache = symbol_table::SymbolTable::new();
+    let symbol_table = symbol_table::SymbolTable::new();
     let type_cache = type_inference::TypeCache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut mock = Mock::new(&type_cache, &cache, &llvm_context, &llvm_module);
+    let mut mock = Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module);
     let value = ast::NodeKind::Literal(ast::Literal::String("hello".to_string()));
     let binding_stmt = mock.binding("a", value, Some(ast::Type::Basic(ast::BasicType::String)));
 
@@ -1768,7 +1763,7 @@ mod tests {
   #[test]
   fn lower_enum() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = symbol_table::SymbolTable::new();
+    let symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1779,7 +1774,7 @@ mod tests {
       id: 0,
     }));
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .module()
       .lower(&enum_)
       .compare_with_file("enum");
@@ -1802,7 +1797,7 @@ mod tests {
   #[test]
   fn lower_return_stmt() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = symbol_table::SymbolTable::new();
+    let symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1810,7 +1805,7 @@ mod tests {
       value: Some(Box::new(Mock::literal_int())),
     });
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&return_stmt)
       .compare_with_file("return_stmt");
@@ -1819,7 +1814,7 @@ mod tests {
   #[test]
   fn lower_extern_fn() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = symbol_table::SymbolTable::new();
+    let symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1831,7 +1826,7 @@ mod tests {
       id: 0,
     }));
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .module()
       .lower(&extern_fn)
       .compare_with_file("extern_fn");
@@ -1840,7 +1835,7 @@ mod tests {
   #[test]
   fn lower_extern_static() {
     let type_cache = type_inference::TypeCache::new();
-    let cache = symbol_table::SymbolTable::new();
+    let symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
 
@@ -1850,7 +1845,7 @@ mod tests {
       id: 0,
     }));
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .module()
       .lower(&extern_static)
       .compare_with_file("extern_static");
@@ -1858,8 +1853,8 @@ mod tests {
 
   #[test]
   fn lower_if_expr_simple() {
-    let mut cache = symbol_table::SymbolTable::new();
-    let if_expr_id = cache.next_id();
+    let mut symbol_table = symbol_table::SymbolTable::new();
+    let if_expr_id = symbol_table.next_id();
     let mut type_cache = type_inference::TypeCache::new();
 
     type_cache.insert(if_expr_id, ast::Type::Unit);
@@ -1875,7 +1870,7 @@ mod tests {
       else_branch: None,
     });
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&if_expr)
       .compare_with_file("if_expr_simple");

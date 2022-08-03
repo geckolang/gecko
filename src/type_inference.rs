@@ -6,9 +6,9 @@ type TypeConstraint = (ast::Type, ast::Type);
 
 pub fn run(
   ast_map: &ast::AstMap,
-  cache: &symbol_table::SymbolTable,
+  symbol_table: &symbol_table::SymbolTable,
 ) -> (Vec<ast::Diagnostic>, TypeCache) {
-  let mut type_inference_ctx = TypeInferenceContext::new(cache);
+  let mut type_inference_ctx = TypeInferenceContext::new(symbol_table);
 
   for inner_ast in ast_map.values() {
     for top_level_node in inner_ast {
@@ -49,7 +49,6 @@ pub struct TypeInferenceContext<'a> {
   /// They are first gathered, then the unification algorithm is performed to solve types, at
   /// the last step of type inference.
   constraints: Vec<TypeConstraint>,
-  current_function_id: Option<symbol_table::NodeId>,
 }
 
 impl<'a> TypeInferenceContext<'a> {
@@ -60,7 +59,6 @@ impl<'a> TypeInferenceContext<'a> {
       cache,
       type_cache: TypeCache::new(),
       constraints: Vec::new(),
-      current_function_id: None,
     }
   }
 
@@ -231,7 +229,7 @@ impl<'a> TypeInferenceContext<'a> {
           ast::Type::StaticIndexable(Box::new(self.substitute(generics[0].clone())), *size)
         }
         ast::TypeConstructorKind::Boolean => ast::Type::Basic(ast::BasicType::Bool),
-        ast::TypeConstructorKind::Signature => {
+        ast::TypeConstructorKind::Function => {
           // FIXME: How can we reform the type if we're missing whether it is
           // ... an extern, variadic, and so on?
           // ast::Type::Function(ast::FunctionType {
@@ -276,101 +274,6 @@ impl<'a> TypeInferenceContext<'a> {
       },
       _ => ty,
     }
-  }
-
-  // REVIEW: Now with the implementation of `node.find_id()`, things like `(expr)` might have issues.
-  // ... Perhaps employ the use of node flattening to solve any issues?
-  // REVIEW: What is the `expectedType` parameter used for in the type inference reference?
-  fn infer_type_of(&mut self, node: &ast::NodeKind) -> ast::Type {
-    // REVIEW: This only works for direct declarations. All other nodes will type `Unit`.
-    // BUG: (1) The problem is that the element type is taking on the id of the array node.
-    // ... This possibly means that when retrieved again, it will be the type of the element and not the node itself.
-    // if let Some(id) = node.find_id() {
-    //   if let Some(cached_type) = self.type_cache.get(&id) {
-    //     return cached_type.clone();
-    //   }
-    // }
-
-    // REVIEW: Shouldn't we be associating (substitutions is associations) any type variables created with the id of their corresponding nodes?
-    // ... Example: Nullptr literal, its id => type variable.
-    let ty = match &node {
-      ast::NodeKind::BinaryExpr(binary_expr) => match binary_expr.operator {
-        ast::OperatorKind::LessThan
-        | ast::OperatorKind::GreaterThan
-        | ast::OperatorKind::Equality
-        | ast::OperatorKind::And
-        | ast::OperatorKind::Or
-        | ast::OperatorKind::Nand
-        | ast::OperatorKind::Nor
-        | ast::OperatorKind::Xor
-        | ast::OperatorKind::In => ast::Type::Basic(ast::BasicType::Bool),
-        _ => self.infer_type_of(&binary_expr.left_operand),
-      },
-      ast::NodeKind::BindingStmt(binding_stmt) => binding_stmt
-        .type_hint
-        // REVISE: Cloning regardless.
-        .clone()
-        .unwrap_or_else(|| self.create_type_variable()),
-      ast::NodeKind::Parameter(parameter) => parameter
-        .type_hint
-        // REVISE: Cloning regardless.
-        .clone()
-        .unwrap_or_else(|| self.create_type_variable()),
-      ast::NodeKind::Literal(literal) => match literal {
-        ast::Literal::Bool(_) => ast::Type::Basic(ast::BasicType::Bool),
-        ast::Literal::Char(_) => ast::Type::Basic(ast::BasicType::Char),
-        ast::Literal::Int(_, size) => ast::Type::Basic(ast::BasicType::Int(size.clone())),
-        ast::Literal::String(_) => ast::Type::Basic(ast::BasicType::String),
-        ast::Literal::Nullptr(..) => {
-          // TODO: Temporary.
-          // return ast::Type::Pointer(Box::new(self.create_type_variable()))
-          self.create_type_variable()
-        }
-      },
-      ast::NodeKind::Reference(reference) => {
-        // BUG: Other instances don't infer types of other things, take a look at the binding
-        // ... statement for example, it doesn't look at its value here. Same goes for the static
-        // ... array value. So why is this here? If we do make it a simple unknown type variable,
-        // ... then what connection will there be? Will it even work? Or, is it that we've just
-        // ... made the inference external to use constraints on the visitation methods?
-        let target = self
-          .cache
-          .find_decl_via_link(&reference.pattern.link_id)
-          .unwrap();
-
-        self.infer_type_of(&target)
-      }
-      ast::NodeKind::Array(array) => {
-        ast::Type::Constructor(
-          // REVIEW: Is this conversion safe?
-          ast::TypeConstructorKind::StaticIndexable(array.elements.len() as u32),
-          vec![array
-            .elements
-            .first()
-            .and_then(|element| Some(self.infer_type_of(element)))
-            // BUG: (2) The problem is that the element type is taking on the id of the array node.
-            .unwrap_or_else(|| self.create_type_variable())],
-        )
-      }
-      // ast::NodeKind::StaticArrayValue(array) => {
-      //   self.create_type_variable(array.id)
-      // }
-      // REVIEW: What about other nodes? Say, indexing, array value, etc. Their types shouldn't be `Unit`.
-      _ => ast::Type::Unit,
-    };
-
-    // REVIEW: Why is this here? We need to report things' types somewhere to fill up the
-    // ... type cache, but why here? Also, probably only declaration's types are to be inserted
-    // ... on the type cache, because only declarations have ids. Actually, it's here because this
-    // ... function performs memoization of the inferred types, but apparently only for declarations.
-    // ... Review what can be done, and whether it is efficient to only infer and memoize declaration's types.
-    if let Some(node_id) = node.find_id() {
-      // Update association of the node's id with the newly inferred type.
-      // TODO: Better way to do this. Not all paths may create a type variable. And it's hacky.
-      // self.links.insert(node_id, self.substitutions.len() - 1);
-    }
-
-    ty
   }
 
   // TODO: Why not take an id here, and directly associate?
@@ -444,19 +347,6 @@ impl<'a> TypeInferenceContext<'a> {
         }
       }
       ast::NodeKind::Function(function) => {
-        //val newReturnType = returnType.getOrElse(freshTypeVariable())
-        // val newParameterTypes = parameters.map(_.typeAnnotation.getOrElse(freshTypeVariable()))
-        // val newParameters = parameters.zip(newParameterTypes).map { case (p, t) =>
-        //     p.copy(typeAnnotation = Some(t))
-        // }
-        // val newEnvironment = environment ++ newParameters.map { p =>
-        //     p.name -> p.typeAnnotation.get
-        // }
-        // val newBody = infer(newEnvironment, newReturnType, body)
-        // typeConstraints += CEquality(expectedType,
-        //     TConstructor(s"Function${parameters.size}", newParameterTypes ++ List(newReturnType))
-        // )
-        // ELambda(newParameters, Some(newReturnType), newBody)
         let return_type = function
           .signature
           .return_type_hint
@@ -485,13 +375,9 @@ impl<'a> TypeInferenceContext<'a> {
           })
           .collect::<Vec<_>>();
 
-        // BUG: Do we cache the body type here or when during infer of block expr?
-        // ... Should we even need to cache the body's type? Is it needed?
-        self.infer_and_constrain(
-          return_type.clone(),
-          &ast::NodeKind::BlockExpr(std::rc::Rc::clone(&function.body)),
-        );
-
+        // Cache the function type before inferring the body to allow
+        // for recursion, otherwise they may try to retrieve the function type
+        // when it hasn't been set yet.
         self.type_cache.insert(
           function.id,
           ast::Type::Signature(ast::SignatureType {
@@ -502,26 +388,32 @@ impl<'a> TypeInferenceContext<'a> {
           .try_upgrade_constructor(),
         );
 
+        // BUG: Do we cache the body type here or when during infer of block expr?
+        // ... Should we even need to cache the body's type? Is it needed?
+        self.infer_and_constrain(
+          return_type.clone(),
+          &ast::NodeKind::BlockExpr(std::rc::Rc::clone(&function.body)),
+        );
+
         let mut constructor_generics = parameter_types;
 
         constructor_generics.extend(std::iter::once(return_type));
 
         let constructor_type =
-          ast::Type::Constructor(ast::TypeConstructorKind::Signature, constructor_generics);
+          ast::Type::Constructor(ast::TypeConstructorKind::Function, constructor_generics);
 
         self.report_constraint(expected_type, constructor_type);
       }
       // BUG: Temporary to follow the tutorial. Only works for previously
       // ... declared variables (no functions, etc.).
       ast::NodeKind::Reference(reference) => {
-        let variable_type = self
+        let target_type = self
           .type_cache
-          // BUG: Name resolution is messed up. It's linking with other definitions in another function.
           .get(self.cache.links.get(&reference.pattern.link_id).unwrap())
           .unwrap()
           .clone();
 
-        self.report_constraint(expected_type, variable_type);
+        self.report_constraint(expected_type, target_type);
       }
       // On literals and known types (unary, binary expressions, etc.),
       // report constraints. On others, pass it down.
@@ -740,20 +632,32 @@ impl<'a> TypeInferenceContext<'a> {
         self.infer_and_constrain(expected_type, &unsafe_expr.0);
       }
       ast::NodeKind::CallExpr(call_expr) => {
-        // val newFunction = infer(environment, expectedType, function)
-        // val newArguments = infer(environment, expectedType, arguments)
-        // typeConstraints += CEquality(expectedType, newFunction.getType().getReturnType())
-        // ECall(newFunction, newArguments)
-
         // self type = callee's type (return type, that is)
         // initially, we don't know our own type. => type variable?
-        let ty = self.create_type_variable();
+        let return_type = self.create_type_variable();
+
+        let argument_types = call_expr.arguments.iter().map(|argument| {
+          // We don't have access to the argument type.
+          let argument_type = self.create_type_variable();
+
+          // Constrain it to be our new type variable.
+          self.infer_and_constrain(argument_type.clone(), argument);
+
+          argument_type
+        });
+
+        let callee_type = ast::Type::Constructor(
+          ast::TypeConstructorKind::Function,
+          argument_types
+            .into_iter()
+            .chain(std::iter::once(return_type.clone()))
+            .collect(),
+        );
 
         // BUG: Save the type on the cache? Currently Call expr doesn't have an id.
-        // TODO: What about arguments?
 
-        self.infer_and_constrain(ty.clone(), &call_expr.callee_expr);
-        self.report_constraint(ty.clone(), expected_type);
+        self.infer_and_constrain(callee_type, &call_expr.callee_expr);
+        self.report_constraint(return_type, expected_type);
       }
       ast::NodeKind::ExternFunction(extern_) => {
         let ty = ast::Type::Signature(ast::SignatureType {
@@ -806,191 +710,7 @@ impl<'a> TypeInferenceContext<'a> {
 }
 
 impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
-  fn visit_literal(&mut self, _literal: &ast::Literal) {
-    // let id = match literal {
-    //   ast::Literal::Nullptr(id, _) => id,
-    //   // Only the nullptr literal has the juicy stuff.
-    //   _ => return,
-    // };
-
-    // REVIEW: Isn't this a type constructor?
-    // self.create_type_variable();
-
-    // self.substitutions.insert(id.to_owned(), ty);
-  }
-
-  fn visit_binding_stmt(&mut self, binding_stmt: &ast::BindingStmt) {
-    // FIXME: Added this constraint because it makes sense, but it was not part of the reference code.
-    let value_type = self.infer_type_of(&binding_stmt.value);
-
-    // self
-    //   .links
-    //   .insert(self.substitutions.len() - 1, binding_stmt.id);
-
-    // REVIEW: Isn't this being repeated in the `infer_type_of` function? If so,
-    // ... abstract common code or merge.
-    let binding_type = self.type_hint_or_variable(&binding_stmt.type_hint);
-
-    self.report_constraint(binding_type, value_type);
-
-    // REVIEW: Don't we have to specify that the type of the binding must equal its value's type,
-    // ... regardless of the type hint's presence?
-    // if binding_stmt.type_hint.is_some() {
-    //   return;
-    // }
-
-    // Associate the fresh type variable with the binding.
-    // self
-    //   .substitutions
-    //   .insert(binding_stmt.id, fresh_type_variable.clone());
-  }
-
-  fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
-    // REVIEW: We need to insert a substitution? Otherwise what links the constraint back to this?
-    let expr_type = self.infer_type_of(&unary_expr.operand);
-
-    match unary_expr.operator {
-      ast::OperatorKind::Add | ast::OperatorKind::SubtractOrNegate => {
-        // Report that the type of the unary expression's operand must
-        // be an integer.
-        self.report_constraint(expr_type, ast::Type::AnyInteger);
-      }
-      // TODO: Add support for missing hints; logical not, and address-of?
-      ast::OperatorKind::MultiplyOrDereference => {
-        // let _pointer_inner_type = self.create_type_variable();
-
-        // TODO: How to specify/deal with type constructor? Currently just defaulting to creating a type variable.
-        // self.report_constraint(expr_type, ast::Type::Pointer(Box::new(pointer_inner_type)))
-
-        // TODO: Temporary.
-        self.report_constraint(expr_type, ast::Type::Any);
-      }
-      ast::OperatorKind::Not => {
-        self.report_constraint(expr_type, ast::Type::Basic(ast::BasicType::Bool));
-      }
-      // NOTE: All cases for unary operators are covered above.
-      _ => {}
-    }
-  }
-
-  fn visit_binary_expr(&mut self, binary_expr: &ast::BinaryExpr) {
-    let left_expr_type = self.infer_type_of(&binary_expr.left_operand);
-    let right_expr_type = self.infer_type_of(&binary_expr.right_operand);
-
-    // REVIEW: Should we report a constraint that both operands must be of the same type?
-    // ... Or is it implied by both being expected to equal the same type? Will it affect the
-    // ... algorithm if we don't report them to be equal to each other specifically?
-
-    // REVIEW: What about the right expression?
-    let ty = match binary_expr.operator {
-      ast::OperatorKind::Add
-      | ast::OperatorKind::SubtractOrNegate
-      | ast::OperatorKind::MultiplyOrDereference
-      | ast::OperatorKind::Divide
-      | ast::OperatorKind::LessThan
-      | ast::OperatorKind::LessThanOrEqual
-      | ast::OperatorKind::Equality
-      | ast::OperatorKind::GreaterThan
-      | ast::OperatorKind::GreaterThanOrEqual => ast::Type::AnyInteger,
-      ast::OperatorKind::And
-      | ast::OperatorKind::Or
-      | ast::OperatorKind::Nand
-      | ast::OperatorKind::Nor
-      | ast::OperatorKind::Xor => ast::Type::Basic(ast::BasicType::Bool),
-      // TODO: Implement.
-      ast::OperatorKind::In => todo!(),
-      // NOTE: All cases for binary operators are covered above.
-      _ => return,
-    };
-
-    self.report_constraint(left_expr_type, ty.clone());
-    self.report_constraint(right_expr_type, ty);
-  }
-
-  fn visit_return_stmt(&mut self, return_stmt: &ast::ReturnStmt) {
-    // REVIEW: What about block yielding as the return value of a function?
-
-    let return_value_type = if let Some(return_value) = &return_stmt.value {
-      self.infer_type_of(&return_value)
-    } else {
-      ast::Type::Unit
-    };
-
-    let current_function_sig = self
-      .cache
-      // NOTE: No need to follow declaration link because it is directly set.
-      .declarations
-      .get(&self.current_function_id.unwrap())
-      .unwrap()
-      .find_signature()
-      .unwrap();
-
-    // FIXME: Here, we are manually doing the job of `infer_type_of`, which does automatic caching as well.
-    // ... Prone to bugs. Consider abstracting the common functionality, or merge into `infer_type_of`.
-    let current_function_return_type = current_function_sig
-      .return_type_hint
-      // REVISE: Cloning regardless.
-      .clone()
-      .unwrap_or_else(|| self.create_type_variable());
-
-    self.report_constraint(return_value_type, current_function_return_type);
-  }
-
-  fn visit_signature(&mut self, _signature: &ast::Signature) {
-    // TODO: For the return type, we might need to add the `id` field to `ast::Signature`, and then
-    // ... make it an `rc::Rc<>`, and possibly use a buffer id to be able to retrieve it during visitation.
-  }
-
-  fn visit_array(&mut self, _array_value: &ast::Array) {
-    // REVIEW: This check is here to prevent overriding previous type inference results.
-    // ... (Say from binding invoking `infer_type_of` upon this array value).
-    // if self.substitutions.contains_key(&array_value.id) {
-    //   return;
-    // }
-
-    // let array_element_type = if let Some(first_element) = array_value.elements.first() {
-    //   self.infer_type_of(first_element)
-    // } else {
-    //   self.create_type_variable()
-    // };
-
-    // // Create the static indexable type.
-    // let array_type = ast::Type::StaticIndexable(
-    //   // With our unknown element type.
-    //   Box::new(array_element_type.clone()),
-    //   // REVIEW: Is this conversion safe?
-    //   array_value.elements.len() as u32,
-    // );
-
-    // FIXME: Abstract common functionality from `infer_type_of`.
-    // Upgrade it and insert it into substitutions.
-    // self
-    //   .substitutions
-    //   .insert(array_value.id, array_type.clone().try_upgrade());
-
-    // TODO: If we constrain the element types to all match the same as the array's element type,
-    // ... we basically get a type checking advantage, since it verifies that all elements are of the same type.
-    // for element in &array_value.elements {
-    //   let actual_element_type = self.infer_type_of(element);
-
-    //   self.report_constraint(actual_element_type, array_element_type.clone());
-    // }
-    // let array_type = self.create_type_variable(array_value.id);
-
-    // let element_types
-  }
-
-  fn visit_call_expr(&mut self, _call_expr: &ast::CallExpr) {
-    // TODO: The arguments of the call constrain the types of the target's parameters.
-  }
-
-  fn enter_function(&mut self, function: &ast::Function) {
-    self.current_function_id = Some(function.id);
-  }
-
-  fn exit_function(&mut self, _function: &ast::Function) -> () {
-    self.current_function_id = None;
-  }
+  //
 }
 
 #[cfg(test)]
@@ -1131,12 +851,12 @@ mod tests {
   #[test]
   fn infer_binding_from_nullptr() {
     let mut cache = symbol_table::SymbolTable::new();
-    let binding_id = 0;
+    let binding_id = cache.next_id();
 
     let binding_stmt = Mock::free_binding(
       binding_id.clone(),
       "a",
-      ast::NodeKind::Literal(ast::Literal::Nullptr(1, None)),
+      ast::NodeKind::Literal(ast::Literal::Nullptr(cache.next_id())),
       None,
     );
 

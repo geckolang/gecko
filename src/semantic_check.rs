@@ -1,6 +1,6 @@
 use crate::{ast, lowering, symbol_table, visitor::AnalysisVisitor};
 
-pub struct TypeCheckContext<'a> {
+pub struct SemanticCheckContext<'a> {
   pub diagnostics: Vec<ast::Diagnostic>,
   in_unsafe_block: bool,
   in_struct_impl: bool,
@@ -13,14 +13,13 @@ pub struct TypeCheckContext<'a> {
   /// it also is scope-less/context-free.
   substitutions: std::collections::HashMap<usize, ast::Type>,
   type_cache: std::collections::HashMap<symbol_table::NodeId, ast::Type>,
-  bound_checked_arrays: std::collections::HashSet<symbol_table::NodeId>,
-  cache: &'a symbol_table::SymbolTable,
+  symbol_table: &'a symbol_table::SymbolTable,
 }
 
-impl<'a> TypeCheckContext<'a> {
-  pub fn new(cache: &'a symbol_table::SymbolTable) -> Self {
+impl<'a> SemanticCheckContext<'a> {
+  pub fn new(symbol_table: &'a symbol_table::SymbolTable) -> Self {
     Self {
-      cache,
+      symbol_table,
       type_cache: std::collections::HashMap::new(),
       diagnostics: Vec::new(),
       in_unsafe_block: false,
@@ -29,7 +28,6 @@ impl<'a> TypeCheckContext<'a> {
       usings: Vec::new(),
       // constraints: Vec::new(),
       substitutions: std::collections::HashMap::new(),
-      bound_checked_arrays: std::collections::HashSet::new(),
     }
   }
 
@@ -276,7 +274,7 @@ impl<'a> TypeCheckContext<'a> {
   }
 }
 
-impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
+impl<'a> AnalysisVisitor for SemanticCheckContext<'a> {
   fn visit_call_expr(&mut self, call_expr: &ast::CallExpr) {
     // REVIEW: Consider adopting a `expected` and `actual` API for diagnostics, when applicable.
     // REVIEW: Need access to the current function?
@@ -359,7 +357,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     }
 
     let target_node = self
-      .cache
+      .symbol_table
       .find_decl_via_link(&struct_impl.target_struct_pattern.link_id)
       .unwrap();
 
@@ -367,7 +365,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     if let ast::NodeKind::Struct(_target_struct_type) = &target_node {
       if let Some(trait_pattern) = &struct_impl.trait_pattern {
         let trait_node = self
-          .cache
+          .symbol_table
           .find_decl_via_link(&trait_pattern.link_id)
           .unwrap();
 
@@ -431,7 +429,11 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_sizeof_intrinsic(&mut self, sizeof_intrinsic: &ast::SizeofIntrinsic) {
-    if sizeof_intrinsic.ty.flatten(self.cache).is(&ast::Type::Unit) {
+    if sizeof_intrinsic
+      .ty
+      .flatten(self.symbol_table)
+      .is(&ast::Type::Unit)
+    {
       self.diagnostics.push(
         codespan_reporting::diagnostic::Diagnostic::error()
           .with_message("cannot determine size of unit type"),
@@ -440,7 +442,9 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_member_access(&mut self, member_access: &ast::MemberAccess) {
-    let base_expr_type = member_access.base_expr.infer_flatten_type(self.cache);
+    let base_expr_type = member_access
+      .base_expr
+      .infer_flatten_type(self.symbol_table);
 
     let struct_type = match base_expr_type {
       ast::Type::Struct(struct_type) => struct_type,
@@ -518,7 +522,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       && intrinsic_call.arguments.len() == 1
     {
       let target_array = intrinsic_call.arguments.first().unwrap();
-      let target_array_type = target_array.infer_flatten_type(self.cache);
+      let target_array_type = target_array.infer_flatten_type(self.symbol_table);
 
       if !matches!(target_array_type, ast::Type::StaticIndexable(..)) {
         self.diagnostics.push(
@@ -623,7 +627,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
 
   fn visit_return_stmt(&mut self, return_stmt: &ast::ReturnStmt) {
     let current_function_node = self
-      .cache
+      .symbol_table
       .declarations
       .get(&self.current_function_id.unwrap())
       .unwrap();
@@ -695,8 +699,12 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_binary_expr(&mut self, binary_expr: &ast::BinaryExpr) {
-    let left_type = binary_expr.left_operand.infer_flatten_type(self.cache);
-    let right_type = binary_expr.right_operand.infer_flatten_type(self.cache);
+    let left_type = binary_expr
+      .left_operand
+      .infer_flatten_type(self.symbol_table);
+    let right_type = binary_expr
+      .right_operand
+      .infer_flatten_type(self.symbol_table);
 
     // TODO: Also add checks for when using operators with wrong values (ex. less-than or greater-than comparison of booleans).
 
@@ -733,60 +741,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_if_expr(&mut self, if_expr: &ast::IfExpr) {
-    let mut bounded_array_buffer = None;
-
-    if_expr.condition.traverse(|node| {
-      // if let ast::NodeKind::BinaryExpr(ast::BinaryExpr {
-      //   left: _,
-      //   right:
-      //     ast::Node {kind: ast::NodeKind::IntrinsicCall(ast::IntrinsicCall {
-      //       arguments,
-      //       kind: ast::IntrinsicKind::LengthOf,
-      //     })), cached_type: _},
-      //   operator: ast::OperatorKind::In,
-      // }) = &node.flatten()
-      // {
-      //   //
-      // }
-
-      if let ast::NodeKind::BinaryExpr(ast::BinaryExpr {
-        left_operand: _,
-        right_operand: right,
-        operator: ast::OperatorKind::In,
-      }) = &node.flatten()
-      {
-        if let ast::NodeKind::IntrinsicCall(ast::IntrinsicCall {
-          arguments,
-          kind: ast::IntrinsicKind::LengthOf,
-        }) = &right.flatten()
-        {
-          if arguments.len() == 1 {
-            let first_argument = arguments[0].flatten();
-
-            if let ast::NodeKind::Reference(ast::Reference {
-              pattern: ast::Pattern {
-                link_id: target_id, ..
-              },
-              ..
-            }) = &first_argument
-            {
-              if matches!(
-                first_argument.infer_flatten_type(self.cache),
-                ast::Type::StaticIndexable(..)
-              ) {
-                bounded_array_buffer = Some(target_id);
-
-                return true;
-              }
-            }
-          }
-        }
-      }
-
-      false
-    });
-
-    let condition_type = if_expr.condition.infer_flatten_type(self.cache);
+    let condition_type = if_expr.condition.infer_flatten_type(self.symbol_table);
 
     if !condition_type.is(&ast::Type::Basic(ast::BasicType::Bool)) {
       self.diagnostics.push(
@@ -796,22 +751,6 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
     }
 
     // TODO: Check for type-mismatch between branches (they may yield).
-
-    // TODO: Simplify.
-    // If the condition provides bound checks for a static array,
-    // mark the subject array as checked within the `then` expression
-    // only.
-    if let Some(bounded_array_id) = bounded_array_buffer {
-      self
-        .bound_checked_arrays
-        .insert(bounded_array_id.to_owned());
-    }
-
-    // If an array bound check was provided, remove it after the `then`
-    // expression has been checked.
-    if let Some(bounded_array_id) = bounded_array_buffer {
-      self.bound_checked_arrays.remove(bounded_array_id);
-    }
   }
 
   fn visit_reference(&mut self, reference: &ast::Reference) {
@@ -878,7 +817,9 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_indexing_expr(&mut self, indexing_expr: &ast::IndexingExpr) {
-    let index_expr_type = indexing_expr.index_expr.infer_flatten_type(self.cache);
+    let index_expr_type = indexing_expr
+      .index_expr
+      .infer_flatten_type(self.symbol_table);
 
     let is_index_proper_type =
       index_expr_type.is(&ast::Type::Basic(ast::BasicType::Int(ast::IntSize::U32)));
@@ -945,7 +886,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_unary_expr(&mut self, unary_expr: &ast::UnaryExpr) {
-    let expr_type = &unary_expr.operand.infer_flatten_type(self.cache);
+    let expr_type = &unary_expr.operand.infer_flatten_type(self.symbol_table);
 
     match unary_expr.operator {
       ast::OperatorKind::MultiplyOrDereference => {
@@ -990,7 +931,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
   }
 
   fn visit_cast_expr(&mut self, cast_expr: &ast::CastExpr) {
-    let expr_type = &cast_expr.operand.infer_flatten_type(self.cache);
+    let expr_type = &cast_expr.operand.infer_flatten_type(self.symbol_table);
 
     // REVIEW: What if it's an alias? This could be solved by flattening above.
     if !matches!(expr_type, ast::Type::Basic(_))
@@ -1012,7 +953,7 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
 
   fn visit_struct_value(&mut self, struct_value: &ast::StructValue) {
     let struct_type_node = self
-      .cache
+      .symbol_table
       .find_decl_via_link(&struct_value.target_id)
       .unwrap();
 
@@ -1045,6 +986,25 @@ impl<'a> AnalysisVisitor for TypeCheckContext<'a> {
       //     index, struct_type.name
       //   ));
       // }
+    }
+  }
+
+  fn enter_block_expr(&mut self, block: &ast::BlockExpr) -> () {
+    let mut did_return = false;
+
+    for statement in &block.statements {
+      if did_return {
+        self.diagnostics.push(
+          codespan_reporting::diagnostic::Diagnostic::warning()
+            .with_message("unreachable code after return statement"),
+        );
+
+        // REVIEW: Consider whether we should stop linting the block at this point.
+      }
+
+      if matches!(statement, ast::NodeKind::ReturnStmt(_)) {
+        did_return = true;
+      }
     }
   }
 }
