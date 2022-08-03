@@ -74,6 +74,7 @@ pub enum TokenKind {
   LessThanEqualTo,
   GreaterThanEqualTo,
   Equality,
+  Inequality,
   FatArrow,
   LongEllipsis,
   ShortEllipsis,
@@ -391,6 +392,11 @@ impl Lexer {
       '-' => TokenKind::Minus,
       '*' => TokenKind::Asterisk,
       '/' => TokenKind::Slash,
+      '!' if self.peek_char() == Some('=') => {
+        self.read_char();
+
+        TokenKind::Inequality
+      }
       '!' => TokenKind::Bang,
       '=' if self.peek_char() == Some('=') => {
         self.read_char();

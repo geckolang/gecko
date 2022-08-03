@@ -18,6 +18,7 @@ fn minimum_int_size_of(number: &u64) -> ast::IntSize {
   } else if minimum_bit_size <= 64 {
     ast::IntSize::I64
   } else {
+    // REVIEW: Any way to avoid this panic?
     panic!("expected minimum bit-size to be smaller than 64");
   }
 }
@@ -77,6 +78,7 @@ impl<'a> Parser<'a> {
         | lexer::TokenKind::Xor
         | lexer::TokenKind::Equality
         | lexer::TokenKind::In
+        | lexer::TokenKind::Inequality
     )
   }
 
@@ -89,18 +91,6 @@ impl<'a> Parser<'a> {
     }
 
     Ok(result)
-  }
-
-  fn current_location(&self) -> usize {
-    // TODO: Handle EOF or out of bounds errors.
-    let token = &self.tokens[self.index];
-
-    token.1
-  }
-
-  fn seal_location(&self, start_location: usize) -> (usize, usize) {
-    // TODO: Missing end-location?
-    (start_location, self.current_location())
   }
 
   fn skip_past(&mut self, token_kind: &lexer::TokenKind) -> ParserResult<()> {
@@ -993,7 +983,10 @@ impl<'a> Parser<'a> {
 
     matches!(
       self.get_token().unwrap_or(&lexer::TokenKind::EOF),
-      lexer::TokenKind::Dot | lexer::TokenKind::ParenthesesL | lexer::TokenKind::BracketL
+      lexer::TokenKind::Dot
+        | lexer::TokenKind::ParenthesesL
+        | lexer::TokenKind::BracketL
+        | lexer::TokenKind::As
     )
   }
 
@@ -1044,6 +1037,7 @@ impl<'a> Parser<'a> {
         lexer::TokenKind::Dot if self.peek_is(&lexer::TokenKind::As) => {
           ast::NodeKind::CastExpr(self.parse_cast_expr(node)?)
         }
+        lexer::TokenKind::As => ast::NodeKind::CastExpr(self.parse_cast_expr(node)?),
         lexer::TokenKind::Dot => ast::NodeKind::MemberAccess(self.parse_member_access(node)?),
         lexer::TokenKind::BracketL => ast::NodeKind::IndexingExpr(self.parse_indexing_expr(node)?),
         _ => unreachable!(),
@@ -1134,17 +1128,25 @@ impl<'a> Parser<'a> {
     Ok(buffer)
   }
 
-  /// %expr '.' as '<' %type '>'
+  /// %expr {'.' as '<' %type '>' | as %type}
   fn parse_cast_expr(&mut self, operand: ast::NodeKind) -> ParserResult<ast::CastExpr> {
-    // REVIEW: Consider having a dual syntax for ergonomics: `expr as T`.
+    let is_chain_style = if self.is(&lexer::TokenKind::Dot) {
+      self.skip_past(&lexer::TokenKind::Dot)?;
+      self.skip_past(&lexer::TokenKind::As)?;
+      self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
-    self.skip_past(&lexer::TokenKind::Dot)?;
-    self.skip_past(&lexer::TokenKind::As)?;
-    self.skip_past(&lexer::TokenKind::ParenthesesL)?;
+      true
+    } else {
+      self.skip_past(&lexer::TokenKind::As)?;
+
+      false
+    };
 
     let cast_type = self.parse_type()?;
 
-    self.skip_past(&lexer::TokenKind::ParenthesesR)?;
+    if is_chain_style {
+      self.skip_past(&lexer::TokenKind::ParenthesesR)?;
+    }
 
     Ok(ast::CastExpr {
       cast_type,
@@ -1530,7 +1532,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use pretty_assertions::{assert_eq, assert_ne};
+  use pretty_assertions::assert_eq;
 
   fn create_parser<'a>(
     tokens: Vec<lexer::TokenKind>,

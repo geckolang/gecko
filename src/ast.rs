@@ -683,7 +683,7 @@ pub enum OperatorKind {
   GreaterThanOrEqual,
   Equality,
   In,
-  // TODO: Missing inequality operator.
+  Inequality,
 }
 
 #[derive(Debug, Clone)]

@@ -1,9 +1,9 @@
 func binding():
   let a = 1
-  let b: Int = 2
+  let b = 2
   let c = a+b
 
-  let d: Int = if true:
+  let d = if true:
     yield a
   else:
     yield b
