@@ -4,6 +4,8 @@ pub type TypeVariableId = usize;
 pub type TypeCache = std::collections::HashMap<symbol_table::NodeId, ast::Type>;
 type TypeConstraint = (ast::Type, ast::Type);
 
+// REVIEW: Consider using a trait-visitor pattern here.
+
 pub fn run(
   ast_map: &ast::AstMap,
   symbol_table: &symbol_table::SymbolTable,
@@ -162,7 +164,6 @@ impl<'a> TypeInferenceContext<'a> {
     }
   }
 
-  // TODO: This is the same thing as `node.unification`, but it assumed nodes can be mutated as in object-oriented languages.
   /// Solves constraints by invoking and performing the unification
   /// algorithm.
   ///
@@ -270,7 +271,10 @@ impl<'a> TypeInferenceContext<'a> {
         // FIXME: Debugging only.
         ast::TypeConstructorKind::Nullptr => ast::Type::Any,
         ast::TypeConstructorKind::String => ast::Type::Basic(ast::BasicType::String),
-        _ => todo!(),
+        _ => {
+          dbg!(ty);
+          todo!()
+        }
       },
       _ => ty,
     }
@@ -278,23 +282,12 @@ impl<'a> TypeInferenceContext<'a> {
 
   // TODO: Why not take an id here, and directly associate?
   fn create_type_variable(&mut self) -> ast::Type {
-    // REVIEW: Why add have a new id for this type variable? Couldn't we use the node id?
-    // let id = self.substitutions.len();
-
     let type_variable_id = self.substitutions.len();
     let type_variable = ast::Type::Variable(type_variable_id);
 
-    // Update association of the node's id with the new fresh type variable.
     self
       .substitutions
       .insert(type_variable_id, type_variable.clone());
-
-    // Link the type variable's id to the node id, that way they are associated
-    // and can be retrieved once type inference is complete.
-    // node_id_opt.map(|node_id| self.links.insert(type_variable_id, node_id));
-
-    // REVIEW: Why add have a new id for this type variable? Couldn't we use the node id?
-    // self.substitutions.insert(id, result.clone());
 
     type_variable
   }
@@ -698,8 +691,20 @@ impl<'a> TypeInferenceContext<'a> {
           expected_type,
         );
       }
-      ast::NodeKind::Struct(_) | ast::NodeKind::StructValue(_) => {
+      ast::NodeKind::Struct(_) | ast::NodeKind::StructValue(_) | ast::NodeKind::StructImpl(_) => {
         // TODO: Implement.
+      }
+      ast::NodeKind::MemberAccess(member_access) => {
+        // The overall type is the type of the field.
+
+        // TODO: Generics?
+        // Let the base expression be a struct type constructor.
+        let base_expr_type = ast::Type::Constructor(ast::TypeConstructorKind::Struct, vec![]);
+
+        // Infer it and constrain it to our expectation.
+        self.infer_and_constrain(base_expr_type, &member_access.base_expr);
+
+        // TODO: Finish implementation.
       }
       _ => {
         dbg!(node);
@@ -716,7 +721,7 @@ impl<'a> AnalysisVisitor for TypeInferenceContext<'a> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::mock::tests::Mock;
+  use crate::test::tests::Test;
 
   #[test]
   fn occurs_in() {
@@ -786,7 +791,7 @@ mod tests {
     let binding_stmt_id = cache.next_id();
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
-    let binding_stmt = Mock::free_binding(
+    let binding_stmt = Test::free_binding(
       binding_stmt_id,
       "a",
       ast::NodeKind::Literal(ast::Literal::Bool(true)),
@@ -810,7 +815,7 @@ mod tests {
     let binding_stmt_a_id = cache.next_id();
     let binding_stmt_b_id = cache.next_id();
 
-    let binding_stmt_a = Mock::free_binding(
+    let binding_stmt_a = Test::free_binding(
       binding_stmt_a_id,
       "a",
       ast::NodeKind::Literal(ast::Literal::Bool(true)),
@@ -823,10 +828,10 @@ mod tests {
       .declarations
       .insert(binding_stmt_a_id, binding_stmt_a.clone());
 
-    let binding_stmt_b = Mock::free_binding(
+    let binding_stmt_b = Test::free_binding(
       binding_stmt_b_id,
       "b",
-      ast::NodeKind::Reference(Mock::reference(binding_stmt_a_id)),
+      ast::NodeKind::Reference(Test::reference(binding_stmt_a_id)),
       None,
     );
 
@@ -853,7 +858,7 @@ mod tests {
     let mut cache = symbol_table::SymbolTable::new();
     let binding_id = cache.next_id();
 
-    let binding_stmt = Mock::free_binding(
+    let binding_stmt = Test::free_binding(
       binding_id.clone(),
       "a",
       ast::NodeKind::Literal(ast::Literal::Nullptr(cache.next_id())),
@@ -866,7 +871,7 @@ mod tests {
     let mut type_inference_ctx = TypeInferenceContext::new(&cache);
 
     let deref_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
-      operand: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(binding_id))),
+      operand: std::rc::Rc::new(ast::NodeKind::Reference(Test::reference(binding_id))),
       operator: ast::OperatorKind::MultiplyOrDereference,
     });
 
@@ -898,13 +903,13 @@ mod tests {
     cache.links.insert(parameter.id, parameter.id);
 
     let negation_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
-      operand: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(parameter.id))),
+      operand: std::rc::Rc::new(ast::NodeKind::Reference(Test::reference(parameter.id))),
       operator: ast::OperatorKind::Not,
     });
 
     let function_id = cache.next_id();
 
-    let function = Mock::free_function(
+    let function = Test::free_function(
       function_id,
       vec![parameter],
       vec![ast::NodeKind::InlineExprStmt(ast::InlineExprStmt {
@@ -930,59 +935,6 @@ mod tests {
     );
   }
 
-  // #[test]
-  // fn infer_parameter_from_call_expr() {
-  //   let mut cache = cache::Cache::new();
-  //   let id = 0;
-
-  //   let mut function = Mock::free_function(Vec::new());
-
-  //   let mut sig = function.find_signature().unwrap();
-
-  //   let inner_param = ast::Parameter {
-  //     id,
-  //     name: "a".to_string(),
-  //     position: 0,
-  //     type_hint: None,
-  //   };
-
-  //   let parameter = ast::NodeKind::Parameter(std::rc::Rc::new(inner_param));
-
-  //   sig.parameters.push(std::rc::Rc::new(inner_param));
-  //   cache.links.insert(id, id);
-  //   cache.declarations.insert(id, parameter.clone());
-
-  //   let mut type_inference_ctx = TypeInferenceContext::new(&cache);
-
-  //   let negation_expr = ast::NodeKind::UnaryExpr(ast::UnaryExpr {
-  //     cast_type: None,
-  //     expr: std::rc::Rc::new(ast::NodeKind::Reference(Mock::reference(id))),
-  //     operator: ast::OperatorKind::SubtractOrNegate,
-  //   });
-
-  //   let bool_literal = ast::NodeKind::Literal(ast::Literal::Bool(true));
-
-  //   let call_expr = ast::NodeKind::CallExpr(ast::CallExpr {
-  //     arguments: vec![bool_literal],
-  //     callee_expr:
-  //   });
-
-  //   type_inference_ctx.dispatch(&parameter);
-  //   visitor::traverse(&negation_expr, &mut type_inference_ctx);
-  //   type_inference_ctx.solve_constraints();
-
-  //   assert_eq!(
-  //     type_inference_ctx.substitute(ast::Type::Variable(id)),
-  //     // FIXME: Awaiting type constructor inference.
-  //     ast::Type::AnyInteger
-  //   );
-
-  //   assert_eq!(
-  //     type_inference_ctx.type_cache.get(&id).unwrap(),
-  //     &ast::Type::AnyInteger
-  //   );
-  // }
-
   #[test]
   fn infer_return_type_from_literal() {
     let mut cache = symbol_table::SymbolTable::new();
@@ -992,7 +944,7 @@ mod tests {
     });
 
     let function_id = cache.next_id();
-    let function = Mock::free_function(function_id, Vec::new(), vec![return_stmt]);
+    let function = Test::free_function(function_id, Vec::new(), vec![return_stmt]);
 
     cache.declarations.insert(function_id, function.clone());
 
@@ -1029,7 +981,7 @@ mod tests {
     let binding_type =
       ast::Type::StaticIndexable(Box::new(ast::Type::Basic(ast::BasicType::Bool)), 0);
 
-    let binding_stmt = Mock::free_binding(binding_stmt_id, "a", array, Some(binding_type.clone()));
+    let binding_stmt = Test::free_binding(binding_stmt_id, "a", array, Some(binding_type.clone()));
     let initial_expected_type = type_inference_ctx.create_type_variable();
 
     type_inference_ctx.infer_and_constrain(initial_expected_type, &binding_stmt);
@@ -1070,7 +1022,4 @@ mod tests {
 
     assert_eq!(test_expected_type, test_actual_type)
   }
-
-  // TODO: Use the empty array type test.
-  // TODO: Also, create a second test for inferring of parameter types.
 }

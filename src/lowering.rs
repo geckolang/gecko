@@ -1581,11 +1581,11 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
     None
   }
 
-  fn visit_parentheses_expr(
+  fn visit_grouping(
     &mut self,
-    parentheses_expr: &ast::ParenthesesExpr,
+    grouping: &ast::Grouping,
   ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-    self.dispatch(&parentheses_expr.0)
+    self.dispatch(&grouping.0)
   }
 
   fn visit_sizeof_intrinsic(
@@ -1608,7 +1608,7 @@ impl<'a, 'ctx> visitor::LoweringVisitor<'ctx> for LoweringContext<'a, 'ctx> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::mock::tests::{ComparableMock, Mock};
+  use crate::test::tests::{Comparable, Test};
 
   #[test]
   fn proper_initial_values() {
@@ -1621,11 +1621,11 @@ mod tests {
     let symbol_table = symbol_table::SymbolTable::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut mock = Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module);
+    let mut mock = Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module);
 
     let binding_stmt = mock.binding(
       "a",
-      Mock::literal_int(),
+      Test::literal_int(),
       Some(ast::Type::Basic(ast::BasicType::Int(ast::IntSize::I32))),
     );
 
@@ -1645,10 +1645,10 @@ mod tests {
 
     let binding_stmt_rc_a = std::rc::Rc::new(ast::BindingStmt {
       name: "a".to_string(),
-      value: Box::new(Mock::literal_int()),
+      value: Box::new(Test::literal_int()),
       is_const_expr: false,
       id: a_id,
-      type_hint: Some(Mock::int_type()),
+      type_hint: Some(Test::int_type()),
     });
 
     symbol_table
@@ -1661,13 +1661,13 @@ mod tests {
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "b".to_string(),
-      value: Box::new(ast::NodeKind::Reference(Mock::reference(a_id))),
+      value: Box::new(ast::NodeKind::Reference(Test::reference(a_id))),
       is_const_expr: false,
       id: a_id + 1,
-      type_hint: Some(Mock::int_type()),
+      type_hint: Some(Test::int_type()),
     }));
 
-    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&binding_stmt_a)
       .lower(&binding_stmt_b)
@@ -1694,7 +1694,7 @@ mod tests {
       type_hint: Some(ast::Type::Pointer(Box::new(ty))),
     }));
 
-    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&binding_stmt)
       .compare_with_file("binding_stmt_nullptr_val");
@@ -1731,13 +1731,13 @@ mod tests {
 
     let binding_stmt_b = ast::NodeKind::BindingStmt(std::rc::Rc::new(ast::BindingStmt {
       name: "b".to_string(),
-      value: Box::new(ast::NodeKind::Reference(Mock::reference(a_id))),
+      value: Box::new(ast::NodeKind::Reference(Test::reference(a_id))),
       is_const_expr: false,
       id: a_id + 1,
       type_hint: Some(pointer_type),
     }));
 
-    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&binding_stmt_a)
       .lower(&binding_stmt_b)
@@ -1750,7 +1750,7 @@ mod tests {
     let type_cache = type_inference::TypeCache::new();
     let llvm_context = inkwell::context::Context::create();
     let llvm_module = llvm_context.create_module("test");
-    let mut mock = Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module);
+    let mut mock = Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module);
     let value = ast::NodeKind::Literal(ast::Literal::String("hello".to_string()));
     let binding_stmt = mock.binding("a", value, Some(ast::Type::Basic(ast::BasicType::String)));
 
@@ -1774,7 +1774,7 @@ mod tests {
       id: 0,
     }));
 
-    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .module()
       .lower(&enum_)
       .compare_with_file("enum");
@@ -1788,7 +1788,7 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt { value: None });
 
-    Mock::new(&type_cache, &cache, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &cache, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&return_stmt)
       .compare_with_file("return_stmt_unit");
@@ -1802,10 +1802,10 @@ mod tests {
     let llvm_module = llvm_context.create_module("test");
 
     let return_stmt = ast::NodeKind::ReturnStmt(ast::ReturnStmt {
-      value: Some(Box::new(Mock::literal_int())),
+      value: Some(Box::new(Test::literal_int())),
     });
 
-    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&return_stmt)
       .compare_with_file("return_stmt");
@@ -1821,12 +1821,12 @@ mod tests {
     let extern_fn = ast::NodeKind::ExternFunction(std::rc::Rc::new(ast::ExternFunction {
       name: "a".to_string(),
       // TODO: Provide parameters in the signature.
-      signature: Mock::signature_simple(true),
+      signature: Test::signature_simple(true),
       attributes: Vec::new(),
       id: 0,
     }));
 
-    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .module()
       .lower(&extern_fn)
       .compare_with_file("extern_fn");
@@ -1845,7 +1845,7 @@ mod tests {
       id: 0,
     }));
 
-    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .module()
       .lower(&extern_static)
       .compare_with_file("extern_static");
@@ -1865,12 +1865,12 @@ mod tests {
     let if_expr = ast::NodeKind::IfExpr(ast::IfExpr {
       id: if_expr_id,
       condition: Box::new(ast::NodeKind::Literal(ast::Literal::Bool(true))),
-      then_branch: Box::new(Mock::literal_int()),
+      then_branch: Box::new(Test::literal_int()),
       alternative_branches: Vec::new(),
       else_branch: None,
     });
 
-    Mock::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
+    Test::new(&type_cache, &symbol_table, &llvm_context, &llvm_module)
       .llvm_function()
       .lower(&if_expr)
       .compare_with_file("if_expr_simple");

@@ -58,3 +58,5 @@ impl SymbolTable {
     None
   }
 }
+
+// TODO: Add tests.

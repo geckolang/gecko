@@ -30,8 +30,9 @@ pub struct Generics {
   pub constraints: Option<Vec<GenericConstraint>>,
 }
 
+/// A parentheses grouping.
 #[derive(Debug, Clone)]
-pub struct ParenthesesExpr(pub std::rc::Rc<NodeKind>);
+pub struct Grouping(pub std::rc::Rc<NodeKind>);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
@@ -74,6 +75,7 @@ pub enum TypeConstructorKind {
   Boolean,
   Nullptr,
   String,
+  Struct,
   // TODO: Consider having a constructor for type-sizes.
 }
 
@@ -151,21 +153,6 @@ impl Type {
         .map(|generic| generic.to_owned())
         .collect(),
     )
-  }
-
-  pub fn old_try_downgrade(self) -> Type {
-    match self {
-      Type::Constructor(kind, generics) => match &kind {
-        TypeConstructorKind::StaticIndexable(size) => {
-          // TODO: Cloning.
-          // REVIEW: Is this conversion correct?
-          // REVIEW: Direct access, might panic during runtime. Try separation of concerns?
-          Type::StaticIndexable(Box::new(generics[0].clone()), *size)
-        }
-        _ => todo!(),
-      },
-      _ => self,
-    }
   }
 
   pub fn find_inner_generics(&self) -> Vec<&Type> {
@@ -373,7 +360,7 @@ pub enum NodeKind {
   MemberAccess(MemberAccess),
   StructImpl(StructImpl),
   Trait(std::rc::Rc<Trait>),
-  ParenthesesExpr(ParenthesesExpr),
+  Grouping(Grouping),
   Import(Import),
   SizeofIntrinsic(SizeofIntrinsic),
   Range(Range),
@@ -388,7 +375,7 @@ impl NodeKind {
 
   // REVIEW: Ensure this is tail-recursive.
   pub fn flatten<'a>(&'a self) -> &'a NodeKind {
-    if let NodeKind::ParenthesesExpr(parentheses_expr) = self {
+    if let NodeKind::Grouping(parentheses_expr) = self {
       return &parentheses_expr.0.flatten();
     }
 
@@ -549,11 +536,6 @@ pub struct UnsafeExpr(pub Box<NodeKind>);
 #[derive(Debug, Clone)]
 pub struct Reference {
   pub pattern: Pattern,
-  // REVIEW: Why not have the reference have a `Rc<>` to the target? This would remove dependence
-  // ... on the symbol table, and would be filled during name resolution. We should note that the symbol table
-  // ... isn't available during the `resolve()` name resolution step (that's not a such a big problem,
-  // ... however). The question is, where would these `Rc<>`s be sourced from? (they must consume `T`).
-  // REVIEW: What about having an auxiliary mapping from `UniqueId` to `Type`?
 }
 
 #[derive(Debug, Clone)]

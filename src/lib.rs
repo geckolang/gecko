@@ -3,7 +3,7 @@
 pub mod ast;
 pub mod lexer;
 pub mod lowering;
-mod mock;
+mod test;
 pub mod name_resolution;
 pub mod parser;
 pub mod semantic_check;

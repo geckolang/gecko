@@ -3,28 +3,28 @@ pub mod tests {
   use crate::{ast, lowering, symbol_table, visitor::LoweringVisitor};
   use crate::{name_resolution, type_inference};
 
-  pub trait ComparableMock: ToString {
+  pub trait Comparable: ToString {
     fn compare_with(&self, expected: &str) {
-      Mock::compare(&self.to_string(), expected);
+      Test::compare(&self.to_string(), expected);
     }
 
     fn compare_with_file(&self, file_name: &str) {
-      Mock::compare_with_file(&self.to_string(), file_name);
+      Test::compare_with_file(&self.to_string(), file_name);
     }
   }
 
-  pub trait ThenMock<'a, 'ctx> {
-    fn then(&mut self) -> &mut Mock<'a, 'ctx>;
+  pub trait Then<'a, 'ctx> {
+    fn then(&mut self) -> &mut Test<'a, 'ctx>;
   }
 
-  pub struct FunctionMock<'a, 'ctx> {
-    mock: &'a mut Mock<'a, 'ctx>,
+  pub struct FunctionBuilder<'a, 'ctx> {
+    mock: &'a mut Test<'a, 'ctx>,
     function: inkwell::values::FunctionValue<'ctx>,
   }
 
-  impl<'a, 'ctx> FunctionMock<'a, 'ctx> {
+  impl<'a, 'ctx> FunctionBuilder<'a, 'ctx> {
     fn new(
-      builder: &'a mut Mock<'a, 'ctx>,
+      builder: &'a mut Test<'a, 'ctx>,
       function: inkwell::values::FunctionValue<'ctx>,
     ) -> Self {
       Self {
@@ -46,13 +46,13 @@ pub mod tests {
     }
   }
 
-  impl<'a, 'ctx> ThenMock<'a, 'ctx> for FunctionMock<'a, 'ctx> {
-    fn then(&mut self) -> &mut Mock<'a, 'ctx> {
+  impl<'a, 'ctx> Then<'a, 'ctx> for FunctionBuilder<'a, 'ctx> {
+    fn then(&mut self) -> &mut Test<'a, 'ctx> {
       &mut self.mock
     }
   }
 
-  impl ToString for FunctionMock<'_, '_> {
+  impl ToString for FunctionBuilder<'_, '_> {
     fn to_string(&self) -> String {
       self
         .function
@@ -62,15 +62,15 @@ pub mod tests {
     }
   }
 
-  impl ComparableMock for FunctionMock<'_, '_> {
+  impl Comparable for FunctionBuilder<'_, '_> {
     //
   }
 
-  pub struct ModuleMock<'a, 'ctx> {
-    mock: &'a mut Mock<'a, 'ctx>,
+  pub struct ModuleBuilder<'a, 'ctx> {
+    mock: &'a mut Test<'a, 'ctx>,
   }
 
-  impl ModuleMock<'_, '_> {
+  impl ModuleBuilder<'_, '_> {
     pub fn lower(&mut self, node: &ast::NodeKind) -> &mut Self {
       // TODO:
       // node.lower(&mut self.mock.lowering_visitor, &self.mock.symbol_table, access);
@@ -80,24 +80,24 @@ pub mod tests {
     }
   }
 
-  impl ToString for ModuleMock<'_, '_> {
+  impl ToString for ModuleBuilder<'_, '_> {
     fn to_string(&self) -> String {
       self.mock.llvm_module.print_to_string().to_string()
     }
   }
 
-  impl ComparableMock for ModuleMock<'_, '_> {
+  impl Comparable for ModuleBuilder<'_, '_> {
     //
   }
 
-  pub struct Mock<'a, 'ctx> {
+  pub struct Test<'a, 'ctx> {
     context: &'ctx inkwell::context::Context,
     llvm_module: &'a inkwell::module::Module<'ctx>,
     lowering_context: lowering::LoweringContext<'a, 'ctx>,
     id_counter: usize,
   }
 
-  impl<'a, 'ctx> Mock<'a, 'ctx> {
+  impl<'a, 'ctx> Test<'a, 'ctx> {
     pub fn free_function(
       id: symbol_table::NodeId,
       parameters: Vec<ast::Parameter>,
@@ -211,7 +211,7 @@ pub mod tests {
         .join(file_name)
         .with_extension("ll");
 
-      Mock::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
+      Test::compare(actual, std::fs::read_to_string(path).unwrap().as_str());
     }
 
     pub fn new(
@@ -233,7 +233,7 @@ pub mod tests {
       }
     }
 
-    pub fn llvm_function(&'a mut self) -> FunctionMock<'a, 'ctx> {
+    pub fn llvm_function(&'a mut self) -> FunctionBuilder<'a, 'ctx> {
       let function =
         self
           .llvm_module
@@ -248,11 +248,11 @@ pub mod tests {
 
       self.lowering_context.llvm_function_buffer = Some(function);
 
-      FunctionMock::new(self, function)
+      FunctionBuilder::new(self, function)
     }
 
-    pub fn module(&'a mut self) -> ModuleMock<'a, 'ctx> {
-      ModuleMock { mock: self }
+    pub fn module(&'a mut self) -> ModuleBuilder<'a, 'ctx> {
+      ModuleBuilder { mock: self }
     }
 
     pub fn _verify(&mut self) -> &mut Self {

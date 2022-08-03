@@ -35,7 +35,7 @@ macro_rules! define_visitor {
           ast::NodeKind::MemberAccess(member_access) => self.visit_member_access(&member_access),
           ast::NodeKind::StructImpl(struct_impl) => self.enter_struct_impl(&struct_impl),
           ast::NodeKind::Trait(trait_) => self.visit_trait(&trait_),
-          ast::NodeKind::ParenthesesExpr(parentheses_expr) => self.visit_parentheses_expr(&parentheses_expr),
+          ast::NodeKind::Grouping(grouping) => self.visit_grouping(&grouping),
           ast::NodeKind::Import(import) => self.visit_import(&import),
           ast::NodeKind::SizeofIntrinsic(sizeof_intrinsic) => self.visit_sizeof_intrinsic(&sizeof_intrinsic),
           ast::NodeKind::Range(range) => self.visit_range(&range),
@@ -210,9 +210,9 @@ macro_rules! define_visitor {
         $default_value
       }
 
-      fn visit_parentheses_expr(
+      fn visit_grouping(
         &mut self,
-        _parentheses_expr: &ast::ParenthesesExpr
+        _grouping: &ast::Grouping
       ) -> $return_type {
         $default_value
       }
@@ -369,7 +369,7 @@ pub fn traverse(node: &ast::NodeKind, visitor: &mut impl AnalysisVisitor) {
     ast::NodeKind::MemberAccess(member_expr) => {
       traverse(&member_expr.base_expr, visitor);
     }
-    ast::NodeKind::ParenthesesExpr(parentheses_expr) => {
+    ast::NodeKind::Grouping(parentheses_expr) => {
       traverse(&parentheses_expr.0, visitor);
     }
     ast::NodeKind::Signature(signature) => {

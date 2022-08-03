@@ -1031,9 +1031,7 @@ impl<'a> Parser<'a> {
       }
       lexer::TokenKind::Unsafe => ast::NodeKind::UnsafeExpr(self.parse_unsafe_expr()?),
       lexer::TokenKind::At => self.parse_intrinsic()?,
-      lexer::TokenKind::ParenthesesL => {
-        ast::NodeKind::ParenthesesExpr(self.parse_parentheses_expr()?)
-      }
+      lexer::TokenKind::ParenthesesL => ast::NodeKind::Grouping(self.parse_parentheses_expr()?),
       _ if self.is_unary_operator() => ast::NodeKind::UnaryExpr(self.parse_unary_expr()?),
       // Default to a literal if nothing else matched.
       _ => ast::NodeKind::Literal(self.parse_literal()?),
@@ -1466,14 +1464,14 @@ impl<'a> Parser<'a> {
     })
   }
 
-  fn parse_parentheses_expr(&mut self) -> ParserResult<ast::ParenthesesExpr> {
+  fn parse_parentheses_expr(&mut self) -> ParserResult<ast::Grouping> {
     self.skip_past(&lexer::TokenKind::ParenthesesL)?;
 
     let expr = self.parse_expr()?;
 
     self.skip_past(&lexer::TokenKind::ParenthesesR)?;
 
-    Ok(ast::ParenthesesExpr(std::rc::Rc::new(expr)))
+    Ok(ast::Grouping(std::rc::Rc::new(expr)))
   }
 
   /// import %pattern ('::' '{' (%name ',')+ '}')
